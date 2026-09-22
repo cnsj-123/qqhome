@@ -1,0 +1,1929 @@
+From 808c9ea88806b45ae41835f93f8b66386e6f5519 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 22 Sep 2026 23:38:08 +0800
+Subject: [PATCH] feat(android): harden local backup and restore
+
+- Recover interrupted restores on startup before repository reads JSON
+- Referential integrity validation for items/wear/wash/ootd/outfit
+- parseFile rejects JSON null (no longer coerced to empty list)
+- ZIP per-entry byte limit during copy and duplicate-entry rejection
+- Delete old snapshot only after successful reload and health check
+- validateDataDirectory for staging and post-swap health checks
+- CSV UTF-8 BOM for Excel; zip MIME for restore picker
+- Best-effort delete of failed export documents
+- Fix pre-existing API 26 lint error for navigation bar (move to values-v27)
+- Remove temporary patch files from repo; update README
+---
+ README.md                                     |  41 +-
+ .../closie/data/backup/BackupManager.kt       | 423 +++++++++
+ .../repository/LocalWardrobeRepository.kt     |  16 +-
+ .../data/repository/WardrobeRepository.kt     |   1 +
+ .../closie/navigation/ClosieNavigation.kt     |   4 +
+ .../com/xiaoming/closie/ui/home/HomeScreen.kt |   5 +
+ .../closie/ui/settings/DataSettingsScreen.kt  | 117 +++
+ app/src/main/res/values-v27/styles.xml        |   6 +
+ app/src/main/res/values/styles.xml            |   2 +-
+ closie-compose-final-compile-fix.patch        | 256 -----
+ closie-product-import-outfit.patch            | 892 ------------------
+ 11 files changed, 587 insertions(+), 1176 deletions(-)
+ create mode 100644 app/src/main/java/com/xiaoming/closie/data/backup/BackupManager.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt
+ create mode 100644 app/src/main/res/values-v27/styles.xml
+ delete mode 100644 closie-compose-final-compile-fix.patch
+ delete mode 100644 closie-product-import-outfit.patch
+
+diff --git a/README.md b/README.md
+index 9376baa..22852d8 100644
+--- a/README.md
++++ b/README.md
+@@ -1,34 +1,23 @@
+-# Closie 衣橱 · v0.2（开发中）
++# Closie 衣橱 · v0.3（开发中）
+ 
+-一个本地优先的私人衣橱与 AI 伙伴 Android App。第一版的数据只储存在手机；相册图片以 URI 引用，不会上传到服务器。
++一个本地优先的私人衣橱 Android App。所有数据只保存在手机本地（JSON + 私有图片），不会上传到服务器。
+ 
+-## 当前进度
++## 当前已支持
+ 
+-### P0：Android 本地可靠衣橱（进行中）
++- **衣橱管理**：Owned（拥有）/ Returned（试过·退货）两套衣橱，支持多图片（平铺 / 本人 / 模特 / 商品图）
++- **商品链接导入**：粘贴商品链接自动解析标题、价格、原价、品牌、店铺、平台与主图（Open Graph + JSON-LD）
++- **搜索 / 筛选 / 排序**：多字段搜索、动态类别筛选、多种排序、只看未穿过
++- **单品资料**：名称、分类、子类别、品牌、店铺、平台、商品链接、价格、原价、购买日期、尺码、安全类别、评分（0–5 星）、评价、面料成分、具体尺寸（含单位）
++- **使用记录**：穿着 / 洗涤记录，历史列表、补录历史日期、误操作可删除，自动计算单次穿着成本
++- **OOTD 日历**：按日期记录每日穿搭（含照片），保存后自动联动穿着记录
++- **搭配室（Outfit Studio）**：画布拖拽、缩放、层级调整，支持试穿照片
++- **本地备份与恢复**：导出 / 恢复完整备份（ZIP，含图片），以及导出衣橱 CSV
+ 
+-- [x] 拆分 `MainActivity`、模型、仓储、导航与页面目录
+-- [x] 用类型化 Compose Navigation 替代字符串页面状态
+-- [x] 扩充衣物、图片、面料、尺寸、购买字段
+-- [x] 动态添加多条面料与具体尺寸
+-- [x] 用 `OpenDocument` 后复制到 App 私有目录，图片重启后仍可用并保留 PNG/WebP alpha
+-- [x] 首次升级时迁移旧 SharedPreferences 基础衣物数据
+-- [x] 编辑与删除单品、独立品牌与店铺、购买日期选择
+-- [ ] P1 共享 FastAPI/SQLite 服务端与 Web
+-- [ ] P2 事件化 OOTD 日历
+-- [ ] P3 搭配室
+-- [ ] P4 本地衣橱观察、筛选排序和统计
++## 数据说明
+ 
+-## 原型已有功能
+-
+-- 已有衣服 / 试过退货两套衣橱
+-- 单品资料：名称、分类、店铺、价格、购买日、面料、动态尺码、安全类别、评价
+-- 平铺图、本人与模特参考图
+-- 穿着与洗涤记录，自动计算单次穿着成本
+-- OOTD 日历（保存当天搭配后自动增加穿着次数）
+-- 有性格的衣橱伙伴「小柿」：基于本地衣橱给出评论与关怀
++- 数据仍是 **local-only**：只存在设备本地（`filesDir/closie/`）。
++- **Web / server 同步尚未实现**，暂不支持云同步。
+ 
+ ## 手机上构建 APK
+ 
+-把项目上传到 GitHub 的 `main` 分支后，打开仓库 **Actions → Build Android APK**，下载 `closie-debug-apk`，解压并安装其中的 APK。首次安装时请允许浏览器或文件管理器安装未知来源应用。
+-
+-真实 AI 服务的 API 密钥不会写进仓库；下一步会加入设置页面，以本地加密方式保存。
++把项目上传到 GitHub 的 `main` 分支后，打开仓库 **Actions → Android CI**，下载 `closie-debug-apk`，解压并安装其中的 APK。首次安装时请允许浏览器或文件管理器安装未知来源应用。
+diff --git a/app/src/main/java/com/xiaoming/closie/data/backup/BackupManager.kt b/app/src/main/java/com/xiaoming/closie/data/backup/BackupManager.kt
+new file mode 100644
+index 0000000..6c08cfa
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/data/backup/BackupManager.kt
+@@ -0,0 +1,423 @@
++package com.xiaoming.closie.data.backup
++
++import android.content.Context
++import android.net.Uri
++import com.google.gson.Gson
++import com.google.gson.reflect.TypeToken
++import com.xiaoming.closie.data.model.*
++import com.xiaoming.closie.data.repository.WardrobeRepository
++import java.io.File
++import java.util.UUID
++import java.util.zip.ZipEntry
++import java.util.zip.ZipInputStream
++import java.util.zip.ZipOutputStream
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++
++const val BACKUP_FORMAT_VERSION = 1
++const val BACKUP_SCHEMA_VERSION = 1
++
++/** Backward/forward-compatible backup format version. */
++data class BackupManifest(
++    val formatVersion: Int = BACKUP_FORMAT_VERSION,
++    val schemaVersion: Int = BACKUP_SCHEMA_VERSION,
++    val createdAt: String = ""
++)
++
++/**
++ * Creates and restores a complete local backup (all JSON plus private images) as a single ZIP.
++ * Restore is staged: everything is fully built and validated in a temporary sibling directory and
++ * only swapped into place atomically, so a failed restore leaves the current wardrobe untouched.
++ */
++object BackupManager {
++    const val FORMAT_VERSION = BACKUP_FORMAT_VERSION
++    const val SCHEMA_VERSION = BACKUP_SCHEMA_VERSION
++
++    // ZIP resource limits (defensive against corrupt/malicious archives).
++    private const val MAX_ENTRIES = 20_000
++    private const val MAX_ENTRY_SIZE = 512L * 1024 * 1024
++    private const val MAX_TOTAL_SIZE = 5L * 1024 * 1024 * 1024
++
++    private val gson = Gson()
++    private val itemType = object : TypeToken<List<ClothingItem>>() {}.type
++    private val wearType = object : TypeToken<List<WearEvent>>() {}.type
++    private val washType = object : TypeToken<List<WashEvent>>() {}.type
++    private val ootdType = object : TypeToken<List<Ootd>>() {}.type
++    private val outfitType = object : TypeToken<List<Outfit>>() {}.type
++
++    private fun dataDir(context: Context) = File(context.filesDir, "closie")
++
++    /**
++     * Recovers from a restore that was interrupted (e.g. process killed) between the two directory
++     * renames. Must run before the repository reads JSON. Never throws.
++     */
++    fun recoverInterruptedRestore(context: Context) {
++        val filesDir = context.filesDir
++        val closie = File(filesDir, "closie")
++        val olds = listDirs(filesDir, ".closie_restore_old_")
++        val stages = listDirs(filesDir, ".closie_restore_stage_")
++
++        // "closie" missing but an old snapshot exists -> likely died mid-swap; restore the old data.
++        if (!closie.exists() && olds.isNotEmpty()) {
++            runCatching { olds.first().renameTo(closie) }
++        }
++        // Stale staging dirs are always safe to drop.
++        stages.forEach { runCatching { it.deleteRecursively() } }
++        // Only drop stale old snapshots once the live directory looks valid, to never delete the
++        // user's only complete copy.
++        if (closie.exists() && olds.isNotEmpty() && validateDataDirectory(closie)) {
++            olds.forEach { runCatching { it.deleteRecursively() } }
++        }
++    }
++
++    private fun listDirs(parent: File, prefix: String): List<File> =
++        parent.listFiles()?.filter { it.name.startsWith(prefix) }?.sortedByDescending { it.lastModified() }.orEmpty()
++
++    /** Returns true when a data directory contains all five JSON files and they all parse. */
++    fun validateDataDirectory(dir: File): Boolean {
++        val files = listOf(
++            "items.json" to itemType,
++            "wear.json" to wearType,
++            "wash.json" to washType,
++            "ootds.json" to ootdType,
++            "outfits.json" to outfitType
++        )
++        return files.all { (name, type) ->
++            val f = File(dir, name)
++            f.isFile && runCatching { gson.fromJson<Any>(f.readText(), type) }.getOrNull() != null
++        }
++    }
++
++    /** Writes a complete backup ZIP to [outputUri] (SAF document). */
++    suspend fun export(context: Context, repo: WardrobeRepository, outputUri: Uri): Result<String> =
++        withContext(Dispatchers.IO) {
++            runCatching {
++                val items = repo.listItems()
++                val wears = repo.listWearEvents()
++                val washes = repo.washEvents.value
++                val ootds = repo.listOotds()
++                val outfits = repo.listOutfits()
++
++                val tmpDir = File(context.cacheDir, "backup_export_${System.currentTimeMillis()}").apply { mkdirs() }
++                val imagesDir = File(tmpDir, "images").apply { mkdirs() }
++
++                val allPaths = mutableListOf<String>()
++                items.forEach { it.images.forEach { img -> img.localPath?.let { p -> allPaths += p } } }
++                ootds.forEach { it.images.forEach { p -> if (p.isNotBlank()) allPaths += p } }
++                outfits.forEach { it.tryOnImages.forEach { p -> if (p.isNotBlank()) allPaths += p } }
++
++                // Never silently drop referenced images: fail if a local file is missing.
++                val missing = allPaths.distinct().filter { path ->
++                    val f = File(path)
++                    !f.exists() || !f.isFile || f.length() <= 0L
++                }
++                if (missing.isNotEmpty()) {
++                    throw IllegalStateException("有 ${missing.size} 张本地图片缺失，无法创建完整备份")
++                }
++
++                val pathMap = mutableMapOf<String, String>()
++                var index = 0
++                allPaths.distinct().forEach { path ->
++                    val f = File(path)
++                    val ext = f.extension.ifBlank { "bin" }
++                    val name = "img_%04d.$ext".format(index++)
++                    f.copyTo(File(imagesDir, name), overwrite = true)
++                    pathMap[path] = name
++                }
++
++                fun mappedPath(p: String?): String? = p?.let { pathMap[it]?.let { n -> "images/$n" } }
++
++                val mappedItems = items.map { item ->
++                    item.copy(images = item.images.map { img -> img.copy(localPath = mappedPath(img.localPath)) })
++                }
++                val mappedOotds = ootds.map { o -> o.copy(images = o.images.mapNotNull { mappedPath(it) }) }
++                val mappedOutfits = outfits.map { o -> o.copy(tryOnImages = o.tryOnImages.mapNotNull { mappedPath(it) }) }
++
++                val manifest = BackupManifest(
++                    formatVersion = FORMAT_VERSION,
++                    schemaVersion = SCHEMA_VERSION,
++                    createdAt = java.time.Instant.now().toString()
++                )
++
++                context.contentResolver.openOutputStream(outputUri)?.use { raw ->
++                    ZipOutputStream(raw).use { zip ->
++                        fun writeEntry(name: String, content: String) {
++                            zip.putNextEntry(ZipEntry(name))
++                            zip.write(content.toByteArray(Charsets.UTF_8))
++                            zip.closeEntry()
++                        }
++                        writeEntry("manifest.json", gson.toJson(manifest))
++                        writeEntry("data/items.json", gson.toJson(mappedItems))
++                        writeEntry("data/wear.json", gson.toJson(wears))
++                        writeEntry("data/wash.json", gson.toJson(washes))
++                        writeEntry("data/ootds.json", gson.toJson(mappedOotds))
++                        writeEntry("data/outfits.json", gson.toJson(mappedOutfits))
++                        imagesDir.listFiles().orEmpty().forEach { f ->
++                            zip.putNextEntry(ZipEntry("images/${f.name}"))
++                            f.inputStream().use { it.copyTo(zip) }
++                            zip.closeEntry()
++                        }
++                    }
++                } ?: throw IllegalStateException("无法写入目标文件")
++                tmpDir.deleteRecursively()
++                "OK"
++            }.also { runCatching { context.cacheDir?.listFiles().orEmpty().filter { it.name.startsWith("backup_export_") }.forEach { it.deleteRecursively() } } }
++        }
++
++    /** Restores a backup ZIP via a fully staged, rollback-safe flow. */
++    suspend fun restore(context: Context, repo: WardrobeRepository, inputUri: Uri): Result<Unit> =
++        withContext(Dispatchers.IO) {
++            runCatching {
++                val ts = System.currentTimeMillis()
++                val extractDir = File(context.cacheDir, "backup_restore_extract_$ts")
++                val stageDir = File(context.filesDir, ".closie_restore_stage_$ts")
++                val oldDir = File(context.filesDir, ".closie_restore_old_$ts")
++                try {
++                    unzipSafely(context, inputUri, extractDir)
++
++                    // 1. Validate manifest.
++                    val manifestFile = File(extractDir, "manifest.json")
++                    if (!manifestFile.exists()) throw IllegalStateException("备份缺少 manifest.json")
++                    val manifest = gson.fromJson(manifestFile.readText(), BackupManifest::class.java)
++                        ?: throw IllegalStateException("备份 manifest 无效")
++                    if (manifest.formatVersion != FORMAT_VERSION) {
++                        throw IllegalStateException("该备份版本暂不支持（formatVersion=${manifest.formatVersion}）")
++                    }
++
++                    // 2. Parse and validate all JSON.
++                    val items = parseFile<ClothingItem>(File(extractDir, "data/items.json"), itemType)
++                    val wears = parseFile<WearEvent>(File(extractDir, "data/wear.json"), wearType)
++                    val washes = parseFile<WashEvent>(File(extractDir, "data/wash.json"), washType)
++                    val ootds = parseFile<Ootd>(File(extractDir, "data/ootds.json"), ootdType)
++                    val outfits = parseFile<Outfit>(File(extractDir, "data/outfits.json"), outfitType)
++                    validateReferences(items, wears, washes, ootds, outfits)
++
++                    // 3. Build the full future "closie/" inside staging.
++                    stageDir.mkdirs()
++                    val restoredItems = items.map { item ->
++                        item.copy(images = item.images.map { img ->
++                            img.copy(localPath = if (img.localPath.isNullOrBlank()) null else stageImageStrict(context, extractDir, stageDir, img.localPath, "items"))
++                        })
++                    }
++                    val restoredOotds = ootds.map { o ->
++                        o.copy(images = o.images.mapNotNull { p ->
++                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "ootd")
++                        })
++                    }
++                    val restoredOutfits = outfits.map { o ->
++                        o.copy(tryOnImages = o.tryOnImages.mapNotNull { p ->
++                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "outfit")
++                        })
++                    }
++
++                    // 4. Write the staged JSON.
++                    writeAtomic(stageDir, "items.json", gson.toJson(restoredItems))
++                    writeAtomic(stageDir, "wear.json", gson.toJson(wears))
++                    writeAtomic(stageDir, "wash.json", gson.toJson(washes))
++                    writeAtomic(stageDir, "ootds.json", gson.toJson(restoredOotds))
++                    writeAtomic(stageDir, "outfits.json", gson.toJson(restoredOutfits))
++
++                    // 5. Re-validate the fully assembled staging directory before committing.
++                    if (!validateDataDirectory(stageDir)) throw IllegalStateException("备份数据校验失败")
++
++                    // 6. Commit via directory-level swap with rollback.
++                    val closieDir = dataDir(context)
++                    if (closieDir.exists() && !closieDir.renameTo(oldDir)) {
++                        throw IllegalStateException("无法暂存旧数据")
++                    }
++                    try {
++                        if (!stageDir.renameTo(closieDir)) {
++                            if (oldDir.exists() && !closieDir.exists()) runCatching { oldDir.renameTo(closieDir) }
++                            throw IllegalStateException("无法应用新数据")
++                        }
++                    } catch (e: Exception) {
++                        if (oldDir.exists() && !closieDir.exists()) runCatching { oldDir.renameTo(closieDir) }
++                        throw e
++                    }
++
++                    // 7. Refresh in-memory state and health-check before dropping the old snapshot.
++                    repo.reloadFromDisk()
++                    if (!validateDataDirectory(closieDir)) {
++                        if (oldDir.exists()) {
++                            runCatching { closieDir.deleteRecursively() }
++                            runCatching { oldDir.renameTo(closieDir) }
++                            repo.reloadFromDisk()
++                        }
++                        throw IllegalStateException("恢复后数据校验失败")
++                    }
++                    oldDir.deleteRecursively()
++                    Unit
++                } finally {
++                    extractDir.deleteRecursively()
++                    if (stageDir.exists()) stageDir.deleteRecursively()
++                }
++            }
++        }
++
++    /** Exports the wardrobe as a CSV (UTF-8 with BOM) for viewing on a computer. */
++    suspend fun exportCsv(context: Context, repo: WardrobeRepository, outputUri: Uri): Result<Unit> =
++        withContext(Dispatchers.IO) {
++            runCatching {
++                val items = repo.listItems()
++                val wears = repo.listWearEvents()
++                val washes = repo.washEvents.value
++                val wearCount = wears.groupingBy { it.itemId }.eachCount()
++                val washCount = washes.groupingBy { it.itemId }.eachCount()
++
++                val header = listOf(
++                    "id", "status", "name", "category", "subcategory", "brand", "store",
++                    "platform", "productUrl", "price", "originalPrice", "purchaseDate",
++                    "sizeLabel", "rating", "wearCount", "washCount"
++                )
++                val lines = StringBuilder("\uFEFF")
++                lines.appendLine(header.joinToString(",") { csvCell(it) })
++                items.forEach { item ->
++                    val row = listOf(
++                        item.id, item.status.name, item.name, item.category, item.subcategory,
++                        item.brand, item.store, item.purchasePlatform, item.productUrl,
++                        item.price?.toString().orEmpty(), item.originalPrice?.toString().orEmpty(),
++                        item.purchaseDate, item.sizeLabel, item.rating.toString(),
++                        (wearCount[item.id] ?: 0).toString(), (washCount[item.id] ?: 0).toString()
++                    )
++                    lines.appendLine(row.joinToString(",") { csvCell(it) })
++                }
++                context.contentResolver.openOutputStream(outputUri)?.use { raw ->
++                    raw.write(lines.toString().toByteArray(Charsets.UTF_8))
++                } ?: throw IllegalStateException("无法写入目标文件")
++            }
++        }
++
++    private fun csvCell(value: String): String = "\"" + value.replace("\"", "\"\"") + "\""
++
++    private fun <T> parseFile(file: File, type: java.lang.reflect.Type): List<T> {
++        if (!file.exists()) throw IllegalStateException("备份缺少 ${file.name}")
++        val result = runCatching { gson.fromJson<List<T>>(file.readText(), type) }
++            .getOrElse { throw IllegalStateException("备份数据无法解析（${file.name}）") }
++        if (result == null) throw IllegalStateException("备份数据无效（${file.name}）")
++        return result
++    }
++
++    /** Basic referential integrity checks; inconsistent backups must fail, not be silently fixed. */
++    private fun validateReferences(
++        items: List<ClothingItem>,
++        wears: List<WearEvent>,
++        washes: List<WashEvent>,
++        ootds: List<Ootd>,
++        outfits: List<Outfit>
++    ) {
++        fun fail() { throw IllegalStateException("备份数据引用关系无效") }
++
++        val itemIds = items.map { it.id }.toSet()
++        if (items.any { it.id.isBlank() }) fail()
++        if (itemIds.size != items.size) fail()
++
++        val wearIds = wears.map { it.id }.toSet()
++        if (wearIds.size != wears.size) fail()
++        wears.forEach { w ->
++            if (w.itemId !in itemIds) fail()
++            if (w.source == WearSource.OOTD) {
++                if (w.ootdId.isNullOrBlank()) fail()
++                if (ootds.none { it.id == w.ootdId }) fail()
++            }
++        }
++
++        val washIds = washes.map { it.id }.toSet()
++        if (washIds.size != washes.size) fail()
++        washes.forEach { w -> if (w.itemId !in itemIds) fail() }
++
++        val ootdIds = ootds.map { it.id }.toSet()
++        if (ootdIds.size != ootds.size) fail()
++        val ownedIds = items.filter { it.status == ItemStatus.OWNED }.map { it.id }.toSet()
++        ootds.forEach { o -> o.itemIds.forEach { iid -> if (iid !in ownedIds) fail() } }
++
++        val outfitIds = outfits.map { it.id }.toSet()
++        if (outfitIds.size != outfits.size) fail()
++        outfits.forEach { o ->
++            o.itemIds.forEach { iid -> if (iid !in itemIds) fail() }
++            o.placements.forEach { p -> if (p.itemId !in itemIds) fail() }
++        }
++    }
++
++    private fun writeAtomic(dir: File, name: String, content: String) {
++        dir.mkdirs()
++        val f = File(dir, name)
++        val t = File(dir, ".$name.tmp")
++        t.writeText(content)
++        if (!t.renameTo(f)) { f.delete(); check(t.renameTo(f)) }
++    }
++
++    /**
++     * Copies a backed-up image ("images/xxx.png") into staging and returns its final absolute path.
++     * Strictly validates the reference: canonical path must stay inside the backup's images/ tree,
++     * the file must exist, be a regular file and have non-zero size. Throws on any violation.
++     */
++    private fun stageImageStrict(context: Context, extractDir: File, stageDir: File, relPath: String, subdir: String): String {
++        if (!relPath.startsWith("images/") || relPath.contains("..")) {
++            throw IllegalStateException("备份引用的图片路径非法：$relPath")
++        }
++        val imagesRoot = File(extractDir, "images").canonicalFile
++        val candidate = File(extractDir, relPath).canonicalFile
++        if (!candidate.path.startsWith(imagesRoot.path + File.separator)) {
++            throw IllegalStateException("备份引用的图片路径非法：$relPath")
++        }
++        if (!candidate.exists() || !candidate.isFile) {
++            throw IllegalStateException("备份引用的图片缺失或无效：$relPath")
++        }
++        if (candidate.length() <= 0L) {
++            throw IllegalStateException("备份引用的图片无效：$relPath")
++        }
++        val targetSubdir = when (subdir) {
++            "ootd" -> "images/ootd"
++            "outfit" -> "images/outfit"
++            else -> "images"
++        }
++        val targetDir = File(stageDir, targetSubdir).apply { mkdirs() }
++        val ext = candidate.extension.ifBlank { "bin" }
++        val name = "${UUID.randomUUID()}.$ext"
++        val target = File(targetDir, name)
++        candidate.copyTo(target, overwrite = true)
++        if (target.length() <= 0L) throw IllegalStateException("备份图片复制失败：$relPath")
++        return File(context.filesDir, "closie/$targetSubdir/$name").absolutePath
++    }
++
++    private fun unzipSafely(context: Context, inputUri: Uri, destDir: File) {
++        val root = destDir.canonicalFile
++        var entryCount = 0
++        var totalBytes = 0L
++        val seen = mutableSetOf<String>()
++        context.contentResolver.openInputStream(inputUri)?.use { raw ->
++            ZipInputStream(raw).use { zip ->
++                while (true) {
++                    val entry = zip.nextEntry ?: break
++                    entryCount++
++                    if (entryCount > MAX_ENTRIES) throw IllegalStateException("备份文件条目过多")
++                    if (entry.size > MAX_ENTRY_SIZE) throw IllegalStateException("备份文件过大")
++                    if (!seen.add(entry.name)) throw IllegalStateException("备份文件包含重复条目：${entry.name}")
++                    val target = File(root, entry.name).canonicalFile
++                    if (!target.path.startsWith(root.path + File.separator)) {
++                        throw SecurityException("备份包含非法路径：${entry.name}")
++                    }
++                    if (entry.isDirectory) {
++                        target.mkdirs()
++                    } else {
++                        target.parentFile?.mkdirs()
++                        val buffer = ByteArray(8192)
++                        var entryBytes = 0L
++                        target.outputStream().use { out ->
++                            var read = zip.read(buffer)
++                            while (read > 0) {
++                                entryBytes += read
++                                totalBytes += read
++                                if (entryBytes > MAX_ENTRY_SIZE) throw IllegalStateException("备份文件单条目过大")
++                                if (totalBytes > MAX_TOTAL_SIZE) throw IllegalStateException("备份文件过大")
++                                out.write(buffer, 0, read)
++                                read = zip.read(buffer)
++                            }
++                        }
++                    }
++                    zip.closeEntry()
++                }
++            }
++        } ?: throw IllegalStateException("无法读取备份文件")
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/data/repository/LocalWardrobeRepository.kt b/app/src/main/java/com/xiaoming/closie/data/repository/LocalWardrobeRepository.kt
+index 885b180..1485208 100644
+--- a/app/src/main/java/com/xiaoming/closie/data/repository/LocalWardrobeRepository.kt
++++ b/app/src/main/java/com/xiaoming/closie/data/repository/LocalWardrobeRepository.kt
+@@ -5,6 +5,7 @@ import android.net.Uri
+ import com.google.gson.Gson
+ import com.google.gson.reflect.TypeToken
+ import com.xiaoming.closie.data.ImageStore
++import com.xiaoming.closie.data.backup.BackupManager
+ import com.xiaoming.closie.data.model.*
+ import java.io.File
+ import java.util.UUID
+@@ -14,13 +15,18 @@ import kotlinx.coroutines.flow.StateFlow
+ /** JSON persistence with atomic replacement and observable in-memory snapshots. */
+ class LocalWardrobeRepository(private val context: Context) : WardrobeRepository {
+     private val gson = Gson()
+-    private val folder = File(context.filesDir, "closie").apply { mkdirs() }
++    private val folder = File(context.filesDir, "closie")
+     private val itemType = object : TypeToken<List<ClothingItem>>() {}.type
+     private val wearType = object : TypeToken<List<WearEvent>>() {}.type
+     private val washType = object : TypeToken<List<WashEvent>>() {}.type
+     private val ootdType = object : TypeToken<List<Ootd>>() {}.type
+     private val outfitType = object : TypeToken<List<Outfit>>() {}.type
+ 
++    init {
++        BackupManager.recoverInterruptedRestore(context)
++        folder.mkdirs()
++    }
++
+     private fun <T> read(name: String, type: java.lang.reflect.Type): List<T> =
+         runCatching { File(folder, name).takeIf { it.exists() }?.let { gson.fromJson<List<T>>(it.readText(), type) } ?: emptyList() }
+             .getOrDefault(emptyList())
+@@ -147,6 +153,14 @@ class LocalWardrobeRepository(private val context: Context) : WardrobeRepository
+         putOutfits(outfits.value.filterNot { it.id == id })
+         old?.tryOnImages.orEmpty().forEach { ImageStore.deletePrivatePath(context, it) }
+     }
++
++    override fun reloadFromDisk() {
++        _items.value = read<ClothingItem>("items.json", itemType).sortedByDescending { it.updatedAt }
++        _wear.value = read<WearEvent>("wear.json", wearType)
++        _wash.value = read<WashEvent>("wash.json", washType)
++        _ootds.value = read<Ootd>("ootds.json", ootdType)
++        _outfits.value = read<Outfit>("outfits.json", outfitType)
++    }
+ }
+ 
+ private class LegacyMigration(private val context: Context, private val repo: WardrobeRepository) {
+diff --git a/app/src/main/java/com/xiaoming/closie/data/repository/WardrobeRepository.kt b/app/src/main/java/com/xiaoming/closie/data/repository/WardrobeRepository.kt
+index 7fe1298..41f7639 100644
+--- a/app/src/main/java/com/xiaoming/closie/data/repository/WardrobeRepository.kt
++++ b/app/src/main/java/com/xiaoming/closie/data/repository/WardrobeRepository.kt
+@@ -17,4 +17,5 @@ interface WardrobeRepository {
+     fun wearCount(itemId: String): Int; fun washCount(itemId: String): Int
+     fun listOotds(): List<Ootd>; fun saveOotd(ootd: Ootd): Ootd; fun deleteOotd(id: String)
+     fun listOutfits(): List<Outfit>; fun saveOutfit(outfit: Outfit): Outfit; fun deleteOutfit(id: String)
++    fun reloadFromDisk()
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+index e0fe6a6..4e672ec 100644
+--- a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
++++ b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+@@ -15,6 +15,7 @@ import com.xiaoming.closie.ui.home.HomeScreen
+ import com.xiaoming.closie.ui.ootd.OotdScreen
+ import com.xiaoming.closie.ui.outfit.OutfitListScreen
+ import com.xiaoming.closie.ui.outfit.OutfitStudioScreen
++import com.xiaoming.closie.ui.settings.DataSettingsScreen
+ 
+ sealed class Destination(val route: String) {
+     data object Home : Destination("home")
+@@ -26,6 +27,7 @@ sealed class Destination(val route: String) {
+     data object Edit : Destination("edit/{id}")
+     data object Outfits : Destination("outfits")
+     data object OutfitEdit : Destination("outfit_edit/{id}")
++    data object Settings : Destination("settings")
+ }
+ 
+ @Composable
+@@ -83,5 +85,7 @@ fun ClosieNavHost(repository: WardrobeRepository) {
+             val id = entry.arguments?.getString("id")
+             OutfitStudioScreen(repository, id?.takeIf { it != "new" }) { nav.popBackStack() }
+         }
++
++        composable(Destination.Settings.route) { DataSettingsScreen(repository) { nav.popBackStack() } }
+     }
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+index 3812fc0..ff90de7 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+@@ -86,6 +86,11 @@ fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
+         item {
+             Text(if (ootds.any { it.date == today }) "今天已记录 OOTD" else "今天还没有 OOTD", color = Rose)
+         }
++        item {
++            OutlinedButton(onClick = { go(Destination.Settings.route) }, modifier = Modifier.fillMaxWidth()) {
++                Text("数据与备份")
++            }
++        }
+     }
+ }
+ 
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt
+new file mode 100644
+index 0000000..a6b73b7
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt
+@@ -0,0 +1,117 @@
++package com.xiaoming.closie.ui.settings
++
++import android.net.Uri
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.data.backup.BackupManager
++import com.xiaoming.closie.data.repository.WardrobeRepository
++import com.xiaoming.closie.ui.BackButton
++import com.xiaoming.closie.ui.Rose
++import java.time.LocalDate
++import kotlinx.coroutines.launch
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
++    val context = LocalContext.current
++    val scope = rememberCoroutineScope()
++
++    var busy by remember { mutableStateOf(false) }
++    var message by remember { mutableStateOf<String?>(null) }
++    var confirmRestore by remember { mutableStateOf<Uri?>(null) }
++
++    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
++        if (uri != null) {
++            busy = true; message = null
++            scope.launch {
++                val result = BackupManager.export(context, repo, uri)
++                result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
++                message = result.fold({ "备份已导出" }, { "导出失败：${it.message ?: "未知错误"}" })
++                busy = false
++            }
++        }
++    }
++
++    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
++        if (uri != null) {
++            busy = true; message = null
++            scope.launch {
++                val result = BackupManager.exportCsv(context, repo, uri)
++                result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
++                message = result.fold({ "CSV 已导出" }, { "导出失败：${it.message ?: "未知错误"}" })
++                busy = false
++            }
++        }
++    }
++
++    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
++        if (uri != null) confirmRestore = uri
++    }
++
++    Scaffold(
++        topBar = { TopAppBar(title = { Text("数据与备份") }, navigationIcon = { BackButton(back) }) }
++    ) { pad ->
++        Column(
++            Modifier.padding(pad).padding(18.dp).verticalScroll(rememberScrollState()),
++            verticalArrangement = Arrangement.spacedBy(12.dp)
++        ) {
++            Text("数据与备份", style = MaterialTheme.typography.titleMedium)
++            Text(
++                "所有衣橱数据都只保存在本机（JSON + 私有图片）。建议定期导出完整备份，以防卸载、清除数据或换机时丢失。恢复会替换当前本地数据。",
++                style = MaterialTheme.typography.bodySmall
++            )
++
++            Button(
++                onClick = { exportLauncher.launch("closie-backup-${LocalDate.now()}.zip") },
++                enabled = !busy,
++                modifier = Modifier.fillMaxWidth()
++            ) { Text("导出完整备份") }
++            OutlinedButton(
++                onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) },
++                enabled = !busy,
++                modifier = Modifier.fillMaxWidth()
++            ) { Text("恢复备份") }
++            OutlinedButton(
++                onClick = { csvLauncher.launch("closie-wardrobe-${LocalDate.now()}.csv") },
++                enabled = !busy,
++                modifier = Modifier.fillMaxWidth()
++            ) { Text("导出衣橱 CSV") }
++
++            if (busy) Text("处理中…", color = Rose)
++            message?.let {
++                val isError = it.startsWith("导出失败") || it.startsWith("恢复失败")
++                Text(it, color = if (isError) MaterialTheme.colorScheme.error else Rose)
++            }
++        }
++    }
++
++    confirmRestore?.let { uri ->
++        AlertDialog(
++            onDismissRequest = { confirmRestore = null },
++            title = { Text("恢复备份？") },
++            text = { Text("恢复备份将替换当前本地衣橱数据，且无法撤销。建议先导出一份当前备份。") },
++            confirmButton = {
++                TextButton(onClick = {
++                    val u = uri
++                    confirmRestore = null
++                    busy = true; message = null
++                    scope.launch {
++                        val result = BackupManager.restore(context, repo, u)
++                        message = result.fold({ "恢复成功" }, { "恢复失败：${it.message ?: "未知错误"}" })
++                        busy = false
++                    }
++                }) { Text("确认恢复") }
++            },
++            dismissButton = { TextButton(onClick = { confirmRestore = null }) { Text("取消") } }
++        )
++    }
++}
+diff --git a/app/src/main/res/values-v27/styles.xml b/app/src/main/res/values-v27/styles.xml
+new file mode 100644
+index 0000000..a1fca3b
+--- /dev/null
++++ b/app/src/main/res/values-v27/styles.xml
+@@ -0,0 +1,6 @@
++<resources>
++    <style name="Theme.Closie" parent="android:style/Theme.Material.Light.NoActionBar">
++        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#765661</item>
++        <item name="android:navigationBarColor">#FFF8F7</item><item name="android:windowLightNavigationBar">true</item>
++    </style>
++</resources>
+diff --git a/app/src/main/res/values/styles.xml b/app/src/main/res/values/styles.xml
+index fccac39..54c76f8 100644
+--- a/app/src/main/res/values/styles.xml
++++ b/app/src/main/res/values/styles.xml
+@@ -1,7 +1,7 @@
+ <resources>
+     <style name="Theme.Closie" parent="android:style/Theme.Material.Light.NoActionBar">
+         <item name="android:fontFamily">sans</item><item name="android:colorAccent">#765661</item>
+-        <item name="android:navigationBarColor">#FFF8F7</item><item name="android:windowLightNavigationBar">true</item>
++        <item name="android:navigationBarColor">#FFF8F7</item>
+     </style>
+ </resources>
+ 
+diff --git a/closie-compose-final-compile-fix.patch b/closie-compose-final-compile-fix.patch
+deleted file mode 100644
+index 767fcd5..0000000
+--- a/closie-compose-final-compile-fix.patch
++++ /dev/null
+@@ -1,256 +0,0 @@
+-From 17a5b25d61e15e75ab4741eb289077c04d8caa96 Mon Sep 17 00:00:00 2001
+-From: Codex <codex@openai.com>
+-Date: Tue, 22 Sep 2026 21:35:51 +0800
+-Subject: [PATCH] fix(android): opt-in Material3 experimental APIs and rebuild
+- detail screen
+-
+-- Add @OptIn(ExperimentalMaterial3Api::class) to Closet/Detail/Editor/Ootd screens
+-- Rewrite DetailScreen as multi-line with correct LazyColumn item scoping
+-- Extract cost-per-wear into a helper to avoid nested string templates
+----
+- .../xiaoming/closie/ui/closet/ClosetScreen.kt |  2 +
+- .../xiaoming/closie/ui/detail/DetailScreen.kt | 93 ++++++++++++++++++-
+- .../xiaoming/closie/ui/editor/EditorScreen.kt |  2 +
+- .../com/xiaoming/closie/ui/ootd/OotdScreen.kt | 69 +++++++++++++-
+- 4 files changed, 164 insertions(+), 2 deletions(-)
+-
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+-index 6fcb0f3..2aaaba2 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+-@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
+- import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+- import androidx.compose.foundation.lazy.grid.items
+- import androidx.compose.material3.*
+-+import androidx.compose.material3.ExperimentalMaterial3Api
+- import androidx.compose.runtime.*
+- import androidx.compose.ui.Modifier
+- import androidx.compose.ui.layout.ContentScale
+-@@ -16,6 +17,7 @@ import com.xiaoming.closie.data.repository.WardrobeRepository
+- import com.xiaoming.closie.ui.*
+- import java.io.File
+- 
+-+@OptIn(ExperimentalMaterial3Api::class)
+- @Composable
+- fun ClosetScreen(
+-     repo: WardrobeRepository,
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+-index 0a24e71..99177e1 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+-@@ -1,7 +1,9 @@
+- package com.xiaoming.closie.ui.detail
+-+
+- import androidx.compose.foundation.layout.*
+- import androidx.compose.foundation.lazy.LazyColumn
+- import androidx.compose.material3.*
+-+import androidx.compose.material3.ExperimentalMaterial3Api
+- import androidx.compose.runtime.*
+- import androidx.compose.ui.Modifier
+- import androidx.compose.ui.layout.ContentScale
+-@@ -12,4 +14,93 @@ import com.xiaoming.closie.data.repository.WardrobeRepository
+- import com.xiaoming.closie.ui.*
+- import java.io.File
+- import java.time.LocalDate
+--@Composable fun DetailScreen(repo:WardrobeRepository,id:String,edit:(String)->Unit,back:()->Unit){val all by repo.items.collectAsState();val ws by repo.wearEvents.collectAsState();val xs by repo.washEvents.collectAsState();val v=all.firstOrNull{it.id==id};var deleting by remember{mutableStateOf(false)};if(v==null){back();return};Scaffold(topBar={TopAppBar(title={Text(v.name)},navigationIcon={BackButton(back)},actions={TextButton(onClick={edit(id)}){Text("编辑")};TextButton(onClick={deleting=true}){Text("删除")}})}){pad->LazyColumn(Modifier.padding(pad).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{v.images.firstOrNull{it.kind==ImageKind.FLAT}?.localPath?.let{AsyncImage(File(it),v.name,Modifier.fillMaxWidth().height(300.dp),contentScale=ContentScale.Fit)}};item{Section("图片"){ImageKind.entries.filter{it!=ImageKind.FLAT}.forEach{k->v.images.filter{it.kind==k}.forEach{it.localPath?.let{p->AsyncImage(File(p),k.name,Modifier.fillMaxWidth().height(180.dp),contentScale=ContentScale.Crop)}}}};item{Section("购买信息"){Text("类别：${v.category} ${v.subcategory}");Text("品牌：${v.brand} · 店铺：${v.store} · 平台：${v.purchasePlatform}");Text("购买价：${v.price?:"未填写"} · 原价：${v.originalPrice?:"未填写"}");Text("购买日期：${v.purchaseDate} · 尺码：${v.sizeLabel}");Text("安全类别：${v.safetyCategory}");Text("评价：${v.comment}");if(v.status==ItemStatus.RETURNED)Text("退货原因：${v.returnReason}")}};item{Section("面料与尺寸"){v.materials.forEach{Text("${it.name} ${it.percentage}")};v.measurements.forEach{Text("${it.name} ${it.value}${it.unit}")}}};if(v.status==ItemStatus.OWNED)item{val wears=ws.count{it.itemId==id};Section("使用记录"){Text("穿着 $wears 次 · 洗涤 ${xs.count{it.itemId==id}} 次");Text("单次穿着成本：${v.price?.let{if(wears==0)"尚未穿着"else "¥${"%.2f".format(it/wears)}"}?:"未填写价格"}");Button(onClick={repo.addWear(id,LocalDate.now().toString())}){Text("今天穿了 +1")};OutlinedButton(onClick={repo.addWash(id,LocalDate.now().toString())}){Text("洗过 +1")}}}}};if(deleting)AlertDialog(onDismissRequest={deleting=false},title={Text("删除这件衣服？")},text={Text("关联记录、引用和私有图片会清理。")},confirmButton={TextButton(onClick={repo.deleteItem(id);back()}){Text("删除")}},dismissButton={TextButton(onClick={deleting=false}){Text("取消")}})} }
+-+
+-+@OptIn(ExperimentalMaterial3Api::class)
+-+@Composable
+-+fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, back: () -> Unit) {
+-+    val all by repo.items.collectAsState()
+-+    val ws by repo.wearEvents.collectAsState()
+-+    val xs by repo.washEvents.collectAsState()
+-+    val v = all.firstOrNull { it.id == id }
+-+    var deleting by remember { mutableStateOf(false) }
+-+    if (v == null) { back(); return }
+-+
+-+    Scaffold(
+-+        topBar = {
+-+            TopAppBar(
+-+                title = { Text(v.name) },
+-+                navigationIcon = { BackButton(back) },
+-+                actions = {
+-+                    TextButton(onClick = { edit(id) }) { Text("编辑") }
+-+                    TextButton(onClick = { deleting = true }) { Text("删除") }
+-+                }
+-+            )
+-+        }
+-+    ) { pad ->
+-+        LazyColumn(
+-+            Modifier.padding(pad).padding(18.dp),
+-+            verticalArrangement = Arrangement.spacedBy(12.dp)
+-+        ) {
+-+            item {
+-+                v.images.firstOrNull { it.kind == ImageKind.FLAT }?.localPath?.let {
+-+                    AsyncImage(File(it), v.name, Modifier.fillMaxWidth().height(300.dp), contentScale = ContentScale.Fit)
+-+                }
+-+            }
+-+            item {
+-+                Section("图片") {
+-+                    ImageKind.entries.filter { it != ImageKind.FLAT }.forEach { k ->
+-+                        v.images.filter { it.kind == k }.forEach {
+-+                            it.localPath?.let { p ->
+-+                                AsyncImage(File(p), k.name, Modifier.fillMaxWidth().height(180.dp), contentScale = ContentScale.Crop)
+-+                            }
+-+                        }
+-+                    }
+-+                }
+-+            }
+-+            item {
+-+                Section("购买信息") {
+-+                    Text("类别：${v.category} ${v.subcategory}")
+-+                    Text("品牌：${v.brand} · 店铺：${v.store} · 平台：${v.purchasePlatform}")
+-+                    Text("购买价：${v.price ?: "未填写"} · 原价：${v.originalPrice ?: "未填写"}")
+-+                    Text("购买日期：${v.purchaseDate} · 尺码：${v.sizeLabel}")
+-+                    Text("安全类别：${v.safetyCategory}")
+-+                    Text("评价：${v.comment}")
+-+                    if (v.status == ItemStatus.RETURNED) Text("退货原因：${v.returnReason}")
+-+                }
+-+            }
+-+            item {
+-+                Section("面料与尺寸") {
+-+                    v.materials.forEach { Text("${it.name} ${it.percentage}") }
+-+                    v.measurements.forEach { Text("${it.name} ${it.value}${it.unit}") }
+-+                }
+-+            }
+-+            if (v.status == ItemStatus.OWNED) {
+-+                item {
+-+                    val wears = ws.count { it.itemId == id }
+-+                    Section("使用记录") {
+-+                        Text("穿着 $wears 次 · 洗涤 ${xs.count { it.itemId == id }} 次")
+-+                        Text("单次穿着成本：" + costPerWear(v.price, wears))
+-+                        Button(onClick = { repo.addWear(id, LocalDate.now().toString()) }) { Text("今天穿了 +1") }
+-+                        OutlinedButton(onClick = { repo.addWash(id, LocalDate.now().toString()) }) { Text("洗过 +1") }
+-+                    }
+-+                }
+-+            }
+-+        }
+-+    }
+-+
+-+    if (deleting) {
+-+        AlertDialog(
+-+            onDismissRequest = { deleting = false },
+-+            title = { Text("删除这件衣服？") },
+-+            text = { Text("这会同时移除穿着、洗涤等使用记录。") },
+-+            confirmButton = { TextButton(onClick = { repo.deleteItem(id); back() }) { Text("删除") } },
+-+            dismissButton = { TextButton(onClick = { deleting = false }) { Text("取消") } }
+-+        )
+-+    }
+-+}
+-+
+-+private fun costPerWear(price: Double?, wears: Int): String = when {
+-+    price == null -> "未填写价格"
+-+    wears == 0 -> "尚未穿着"
+-+    else -> "¥" + "%.2f".format(price / wears)
+-+}
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+-index 7a98d37..828b9f6 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+-@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
+- import androidx.compose.foundation.lazy.LazyRow
+- import androidx.compose.foundation.lazy.items
+- import androidx.compose.material3.*
+-+import androidx.compose.material3.ExperimentalMaterial3Api
+- import androidx.compose.runtime.*
+- import androidx.compose.ui.Modifier
+- import androidx.compose.ui.layout.ContentScale
+-@@ -22,6 +23,7 @@ import com.xiaoming.closie.ui.Rose
+- import java.io.File
+- import java.time.LocalDate
+- 
+-+@OptIn(ExperimentalMaterial3Api::class)
+- @Composable
+- fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: String?, done: () -> Unit) {
+-     val context = LocalContext.current
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt
+-index 529ae61..ee70ccc 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt
+-@@ -1,10 +1,12 @@
+- package com.xiaoming.closie.ui.ootd
+-+
+- import android.app.DatePickerDialog
+- import androidx.compose.foundation.clickable
+- import androidx.compose.foundation.layout.*
+- import androidx.compose.foundation.lazy.LazyColumn
+- import androidx.compose.foundation.lazy.items
+- import androidx.compose.material3.*
+-+import androidx.compose.material3.ExperimentalMaterial3Api
+- import androidx.compose.runtime.*
+- import androidx.compose.ui.Modifier
+- import androidx.compose.ui.platform.LocalContext
+-@@ -13,4 +15,69 @@ import com.xiaoming.closie.data.model.*
+- import com.xiaoming.closie.data.repository.WardrobeRepository
+- import com.xiaoming.closie.ui.BackButton
+- import java.time.LocalDate
+--@Composable fun OotdScreen(repo:WardrobeRepository,back:()->Unit){val context=LocalContext.current;val all by repo.items.collectAsState();val ootds by repo.ootds.collectAsState();var date by remember{mutableStateOf(LocalDate.now().toString())};var editing by remember{mutableStateOf<Ootd?>(null)};var note by remember{mutableStateOf("")};var selected by remember{mutableStateOf(setOf<String>())};fun load(o:Ootd?){editing=o;note=o?.note.orEmpty();selected=o?.itemIds?.toSet()?:emptySet()};Scaffold(topBar={TopAppBar(title={Text("OOTD 日历")},navigationIcon={BackButton(back)})},floatingActionButton={FloatingActionButton(onClick={load(null)}){Text("+")}}){pad->LazyColumn(Modifier.padding(pad).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){item{OutlinedButton(onClick={val d=LocalDate.parse(date);DatePickerDialog(context,{_,y,m,day->date="%04d-%02d-%02d".format(y,m+1,day)},d.year,d.monthValue-1,d.dayOfMonth).show()}){Text("选择日期：$date")}};items(ootds.filter{it.date==date}){o->Card(Modifier.fillMaxWidth().clickable{load(o)}){Column(Modifier.padding(12.dp)){Text(o.note.ifBlank{"OOTD"});Text("${o.itemIds.size} 件单品")}}};if(editing!=null||selected.isNotEmpty())item{Text("编辑 OOTD",style=MaterialTheme.typography.titleMedium);OutlinedTextField(note,{note=it},label={Text("备注")},modifier=Modifier.fillMaxWidth());all.filter{it.status==ItemStatus.OWNED}.forEach{i->Row(Modifier.fillMaxWidth().clickable{selected=if(i.id in selected)selected-i.id else selected+i.id}.padding(6.dp)){Checkbox(i.id in selected,onCheckedChange={selected=if(it)selected+i.id else selected-i.id});Text(i.name,Modifier.padding(start=8.dp))}};Row{Button(enabled=selected.isNotEmpty(),onClick={repo.saveOotd((editing?:Ootd(date=date)).copy(date=date,itemIds=selected.toList(),note=note));editing=null;selected=emptySet();note=""}){Text("保存 OOTD")};if(editing!=null)TextButton(onClick={repo.deleteOotd(editing!!.id);editing=null;selected=emptySet()}){Text("删除")}}}}}}
+-+
+-+@OptIn(ExperimentalMaterial3Api::class)
+-+@Composable
+-+fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+-+    val context = LocalContext.current
+-+    val all by repo.items.collectAsState()
+-+    val ootds by repo.ootds.collectAsState()
+-+    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+-+    var editing by remember { mutableStateOf<Ootd?>(null) }
+-+    var note by remember { mutableStateOf("") }
+-+    var selected by remember { mutableStateOf(setOf<String>()) }
+-+
+-+    fun load(o: Ootd?) {
+-+        editing = o
+-+        note = o?.note.orEmpty()
+-+        selected = o?.itemIds?.toSet() ?: emptySet()
+-+    }
+-+
+-+    Scaffold(
+-+        topBar = { TopAppBar(title = { Text("OOTD 日历") }, navigationIcon = { BackButton(back) }) },
+-+        floatingActionButton = { FloatingActionButton(onClick = { load(null) }) { Text("+") } }
+-+    ) { pad ->
+-+        LazyColumn(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-+            item {
+-+                OutlinedButton(onClick = {
+-+                    val d = LocalDate.parse(date)
+-+                    DatePickerDialog(context, { _, y, m, day ->
+-+                        date = "%04d-%02d-%02d".format(y, m + 1, day)
+-+                    }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+-+                }) { Text("选择日期：$date") }
+-+            }
+-+            items(ootds.filter { it.date == date }) { o ->
+-+                Card(Modifier.fillMaxWidth().clickable { load(o) }) {
+-+                    Column(Modifier.padding(12.dp)) {
+-+                        Text(o.note.ifBlank { "OOTD" })
+-+                        Text("${o.itemIds.size} 件单品")
+-+                    }
+-+                }
+-+            }
+-+            if (editing != null || selected.isNotEmpty()) {
+-+                item {
+-+                    Text("编辑 OOTD", style = MaterialTheme.typography.titleMedium)
+-+                    OutlinedTextField(note, { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
+-+                    all.filter { it.status == ItemStatus.OWNED }.forEach { i ->
+-+                        Row(
+-+                            Modifier.fillMaxWidth().clickable { selected = if (i.id in selected) selected - i.id else selected + i.id }.padding(6.dp)
+-+                        ) {
+-+                            Checkbox(i.id in selected, onCheckedChange = { selected = if (it) selected + i.id else selected - i.id })
+-+                            Text(i.name, Modifier.padding(start = 8.dp))
+-+                        }
+-+                    }
+-+                    Row {
+-+                        Button(
+-+                            enabled = selected.isNotEmpty(),
+-+                            onClick = {
+-+                                repo.saveOotd((editing ?: Ootd(date = date)).copy(date = date, itemIds = selected.toList(), note = note))
+-+                                editing = null; selected = emptySet(); note = ""
+-+                            }
+-+                        ) { Text("保存 OOTD") }
+-+                        if (editing != null) TextButton(onClick = { repo.deleteOotd(editing!!.id); editing = null; selected = emptySet() }) { Text("删除") }
+-+                    }
+-+                }
+-+            }
+-+        }
+-+    }
+-+}
+--- 
+-2.43.0
+-
+diff --git a/closie-product-import-outfit.patch b/closie-product-import-outfit.patch
+deleted file mode 100644
+index 26a82d8..0000000
+--- a/closie-product-import-outfit.patch
++++ /dev/null
+@@ -1,892 +0,0 @@
+-From fd27be3c8a95601c44bcb8602c3afc7851beb023 Mon Sep 17 00:00:00 2001
+-From: Codex <codex@openai.com>
+-Date: Tue, 22 Sep 2026 21:41:49 +0800
+-Subject: [PATCH] feat(android): add product link import and outfit studio MVP
+-
+-- Parse product pages via Jsoup (Open Graph + JSON-LD) to prefill name/price/image
+-- Add an async import button to the editor with failure fallback
+-- Add outfit list and a drag/scale/z-index canvas studio backed by Outfit/Placement
+-- Wire the studio into navigation and the home screen
+----
+- app/build.gradle.kts                          |   1 +
+- app/src/main/AndroidManifest.xml              |   1 +
+- .../com/xiaoming/closie/data/ImageStore.kt    |  24 ++
+- .../xiaoming/closie/data/ProductImporter.kt   | 231 ++++++++++++++++++
+- .../closie/navigation/ClosieNavigation.kt     |  74 +++++-
+- .../xiaoming/closie/ui/detail/DetailScreen.kt |  12 +
+- .../xiaoming/closie/ui/editor/EditorScreen.kt |  86 +++++++
+- .../com/xiaoming/closie/ui/home/HomeScreen.kt |   6 +
+- .../closie/ui/outfit/OutfitListScreen.kt      |  77 ++++++
+- .../closie/ui/outfit/OutfitStudioScreen.kt    | 193 +++++++++++++++
+- 10 files changed, 703 insertions(+), 2 deletions(-)
+- create mode 100644 app/src/main/java/com/xiaoming/closie/data/ProductImporter.kt
+- create mode 100644 app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt
+- create mode 100644 app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt
+-
+-diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+-index 8b49e8d..5c418fe 100644
+---- a/app/build.gradle.kts
+-+++ b/app/build.gradle.kts
+-@@ -42,5 +42,6 @@ dependencies {
+-     implementation("androidx.navigation:navigation-compose:2.8.5")
+-     implementation("io.coil-kt:coil-compose:2.7.0")
+-     implementation("com.google.code.gson:gson:2.11.0")
+-+    implementation("org.jsoup:jsoup:1.17.2")
+-     debugImplementation("androidx.compose.ui:ui-tooling")
+- }
+-diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+-index d68f8c9..85b3adf 100644
+---- a/app/src/main/AndroidManifest.xml
+-+++ b/app/src/main/AndroidManifest.xml
+-@@ -1,4 +1,5 @@
+- <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+-+    <uses-permission android:name="android.permission.INTERNET" />
+-     <application android:allowBackup="true" android:label="Closie 衣橱" android:theme="@style/Theme.Closie" android:supportsRtl="true">
+-         <activity android:name=".MainActivity" android:exported="true">
+-             <intent-filter>
+-diff --git a/app/src/main/java/com/xiaoming/closie/data/ImageStore.kt b/app/src/main/java/com/xiaoming/closie/data/ImageStore.kt
+-index bba0b25..de7b7bc 100644
+---- a/app/src/main/java/com/xiaoming/closie/data/ImageStore.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/data/ImageStore.kt
+-@@ -3,6 +3,8 @@ package com.xiaoming.closie.data
+- import android.content.Context
+- import android.net.Uri
+- import java.io.File
+-+import java.net.HttpURLConnection
+-+import java.net.URL
+- import java.util.UUID
+- 
+- /** Copies selected bytes to private storage, retaining PNG/WebP alpha and surviving URI permission loss/restarts. */
+-@@ -16,6 +18,28 @@ object ImageStore {
+-         if (!file.exists() || file.length() == 0L) { file.delete(); null } else file.absolutePath
+-     }.getOrNull()
+- 
+-+    /** Downloads a remote image URL into private storage so it survives restarts and offline edits. */
+-+    fun copyFromUrl(context: Context, url: String): String? = runCatching {
+-+        val dir = File(context.filesDir, "closie/images").apply { mkdirs() }
+-+        val ext = when {
+-+            url.contains(".png", ignoreCase = true) || url.contains("png", ignoreCase = true) -> "png"
+-+            url.contains(".webp", ignoreCase = true) || url.contains("webp", ignoreCase = true) -> "webp"
+-+            url.contains(".jpg", ignoreCase = true) || url.contains(".jpeg", ignoreCase = true) || url.contains("jpeg", ignoreCase = true) -> "jpg"
+-+            else -> "bin"
+-+        }
+-+        val file = File(dir, "${UUID.randomUUID()}.$ext")
+-+        val conn = URL(url).openConnection() as HttpURLConnection
+-+        conn.connectTimeout = 15_000
+-+        conn.readTimeout = 15_000
+-+        conn.instanceFollowRedirects = true
+-+        try {
+-+            conn.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
+-+        } finally {
+-+            conn.disconnect()
+-+        }
+-+        if (!file.exists() || file.length() == 0L) { file.delete(); null } else file.absolutePath
+-+    }.getOrNull()
+-+
+-     fun deletePrivatePath(context: Context, path: String?) {
+-         if (path == null) return
+-         val root = File(context.filesDir, "closie/images").canonicalFile
+-diff --git a/app/src/main/java/com/xiaoming/closie/data/ProductImporter.kt b/app/src/main/java/com/xiaoming/closie/data/ProductImporter.kt
+-new file mode 100644
+-index 0000000..e2adbd9
+---- /dev/null
+-+++ b/app/src/main/java/com/xiaoming/closie/data/ProductImporter.kt
+-@@ -0,0 +1,231 @@
+-+package com.xiaoming.closie.data
+-+
+-+import com.google.gson.JsonElement
+-+import com.google.gson.JsonObject
+-+import com.google.gson.JsonParser
+-+import kotlinx.coroutines.Dispatchers
+-+import kotlinx.coroutines.withContext
+-+import org.jsoup.Jsoup
+-+import org.jsoup.nodes.Document
+-+
+-+/** Best-effort parsed product metadata from a store page, ready to pre-fill the editor. */
+-+data class ProductPreview(
+-+    val title: String = "",
+-+    val price: Double? = null,
+-+    val originalPrice: Double? = null,
+-+    val brand: String = "",
+-+    val store: String = "",
+-+    val platform: String = "",
+-+    val imageUrl: String? = null
+-+) {
+-+    val isEmpty: Boolean
+-+        get() = title.isBlank() && price == null && originalPrice == null &&
+-+            brand.isBlank() && store.isBlank() && imageUrl == null
+-+}
+-+
+-+/**
+-+ * Fetches a product page and extracts metadata from JSON-LD (preferred) with Open Graph / meta
+-+ * tags as fallback. Runs on the IO dispatcher and never throws; failures surface via [Result].
+-+ */
+-+object ProductImporter {
+-+    suspend fun fetch(url: String): Result<ProductPreview> = withContext(Dispatchers.IO) {
+-+        runCatching {
+-+            val doc = Jsoup.connect(url)
+-+                .userAgent("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
+-+                .timeout(15_000)
+-+                .followRedirects(true)
+-+                .ignoreHttpErrors(true)
+-+                .get()
+-+
+-+            val platform = detectPlatform(url)
+-+
+-+            // Open Graph / meta fallbacks.
+-+            var title = meta(doc, "og:title")
+-+                .ifBlank { meta(doc, "twitter:title") }
+-+                .ifBlank { doc.title() }
+-+                .trim()
+-+
+-+            var price = priceOf(
+-+                meta(doc, "og:price:amount"),
+-+                meta(doc, "product:price:amount"),
+-+                meta(doc, "product:price"),
+-+                meta(doc, "og:price"),
+-+                itemprop(doc, "price")
+-+            )
+-+
+-+            var originalPrice = priceOf(
+-+                meta(doc, "og:price:standard_amount"),
+-+                meta(doc, "product:original_price:amount"),
+-+                meta(doc, "product:original_price")
+-+            )
+-+
+-+            var brand = meta(doc, "og:brand")
+-+                .ifBlank { meta(doc, "product:brand") }
+-+                .ifBlank { metaName(doc, "brand") }
+-+                .ifBlank { itemprop(doc, "brand") }
+-+
+-+            var store = meta(doc, "og:store")
+-+                .ifBlank { meta(doc, "product:retailer") }
+-+                .ifBlank { meta(doc, "og:site_name") }
+-+
+-+            var imageUrl = meta(doc, "og:image")
+-+                .ifBlank { meta(doc, "twitter:image") }
+-+                .ifBlank { itemprop(doc, "image") }
+-+                .takeIf { it.isNotBlank() }
+-+
+-+            // JSON-LD Product schema takes precedence when present.
+-+            val ld = parseJsonLd(doc)
+-+            if (ld.title.isNotBlank()) title = ld.title
+-+            ld.price?.let { price = it }
+-+            ld.originalPrice?.let { originalPrice = it }
+-+            if (ld.brand.isNotBlank()) brand = ld.brand
+-+            if (ld.store.isNotBlank()) store = ld.store
+-+            if (!ld.imageUrl.isNullOrBlank()) imageUrl = ld.imageUrl
+-+
+-+            if (title.isBlank() && price == null && originalPrice == null &&
+-+                brand.isBlank() && store.isBlank() && imageUrl == null
+-+            ) {
+-+                throw IllegalStateException("未能从该页面解析出商品信息")
+-+            }
+-+            ProductPreview(
+-+                title = title,
+-+                price = price,
+-+                originalPrice = originalPrice,
+-+                brand = brand,
+-+                store = store,
+-+                platform = platform,
+-+                imageUrl = imageUrl
+-+            )
+-+        }
+-+    }
+-+
+-+    private fun meta(doc: Document, property: String): String =
+-+        doc.select("meta[property=$property]").first()?.attr("content").orEmpty().trim()
+-+
+-+    private fun metaName(doc: Document, name: String): String =
+-+        doc.select("meta[name=$name]").first()?.attr("content").orEmpty().trim()
+-+
+-+    private fun itemprop(doc: Document, key: String): String =
+-+        doc.select("[itemprop=$key]").first()?.attr("content").orEmpty().trim()
+-+
+-+    private fun priceOf(vararg candidates: String): Double? =
+-+        candidates.firstOrNull { it.isNotBlank() }?.let { raw ->
+-+            raw.replace("¥", "").replace(",", "").trim().toDoubleOrNull()
+-+        }
+-+
+-+    private fun detectPlatform(url: String): String {
+-+        val host = runCatching { java.net.URI(url).host.orEmpty().lowercase() }.getOrDefault("")
+-+        return when {
+-+            "tmall.com" in host -> "天猫"
+-+            "taobao.com" in host -> "淘宝"
+-+            "jd.com" in host || "jd.hk" in host -> "京东"
+-+            "amazon." in host -> "Amazon"
+-+            "uniqlo." in host -> "Uniqlo"
+-+            "zara." in host -> "Zara"
+-+            host.isBlank() -> ""
+-+            else -> host.removePrefix("www.")
+-+        }
+-+    }
+-+
+-+    private fun parseJsonLd(doc: Document): ProductPreview {
+-+        for (script in doc.select("script[type=application/ld+json]")) {
+-+            val root = runCatching { JsonParser.parseString(script.data()) }.getOrNull() ?: continue
+-+            val objects = mutableListOf<JsonObject>()
+-+            collectObjects(root, objects)
+-+            val product = objects.firstOrNull { isProduct(it) }
+-+                ?: objects.firstOrNull {
+-+                    it.stringOf("name").isNotBlank() || it.get("offers") != null || it.get("image") != null
+-+                }
+-+                ?: continue
+-+
+-+            val name = product.stringOf("name")
+-+            val brand = brandOf(product.get("brand"))
+-+            val image = imageOf(product.get("image"))
+-+            val offers = product.get("offers").firstObject()
+-+            val price = moneyOf(offers?.get("price")) ?: moneyOf(offers?.get("lowPrice"))
+-+            val originalPrice = moneyOf(offers?.get("highPrice"))?.takeIf { price == null || it > price }
+-+            val store = sellerOf(offers?.get("seller"))
+-+
+-+            if (name.isNotBlank() || brand.isNotBlank() || image != null || price != null) {
+-+                return ProductPreview(
+-+                    title = name,
+-+                    price = price,
+-+                    originalPrice = originalPrice,
+-+                    brand = brand,
+-+                    store = store,
+-+                    imageUrl = image
+-+                )
+-+            }
+-+        }
+-+        return ProductPreview()
+-+    }
+-+
+-+    private fun collectObjects(element: JsonElement, out: MutableList<JsonObject>) {
+-+        when {
+-+            element.isJsonObject -> {
+-+                out += element.asJsonObject
+-+                element.asJsonObject.entrySet().forEach { (_, v) -> collectObjects(v, out) }
+-+            }
+-+            element.isJsonArray -> element.asJsonArray.forEach { collectObjects(it, out) }
+-+        }
+-+    }
+-+
+-+    private fun isProduct(obj: JsonObject): Boolean {
+-+        val type = obj.get("@type") ?: return false
+-+        val names = when {
+-+            type.isJsonArray -> type.asJsonArray.mapNotNull { it.stringOrNull() }
+-+            else -> listOfNotNull(type.stringOrNull())
+-+        }
+-+        return names.any { it.contains("Product", ignoreCase = true) }
+-+    }
+-+
+-+    private fun imageOf(element: JsonElement?): String? = when {
+-+        element == null || element.isJsonNull -> null
+-+        element.isJsonPrimitive -> element.asString.takeIf { it.isNotBlank() }
+-+        element.isJsonArray -> element.asJsonArray.firstNotNullOfOrNull { imageOf(it) }
+-+        element.isJsonObject -> element.asJsonObject.stringOf("url").ifBlank { null }
+-+        else -> null
+-+    }
+-+
+-+    private fun moneyOf(element: JsonElement?): Double? = when {
+-+        element == null || element.isJsonNull -> null
+-+        element.isJsonPrimitive -> {
+-+            val p = element.asJsonPrimitive
+-+            when {
+-+                p.isNumber -> p.asDouble
+-+                p.isString -> priceOf(p.asString)
+-+                else -> null
+-+            }
+-+        }
+-+        else -> null
+-+    }
+-+
+-+    private fun brandOf(element: JsonElement?): String = when {
+-+        element == null || element.isJsonNull -> ""
+-+        element.isJsonPrimitive -> element.asString.trim()
+-+        element.isJsonObject -> element.asJsonObject.stringOf("name")
+-+        element.isJsonArray -> element.asJsonArray.firstNotNullOfOrNull { brandOf(it).takeIf { b -> b.isNotBlank() } }.orEmpty()
+-+        else -> ""
+-+    }
+-+
+-+    private fun sellerOf(element: JsonElement?): String = when {
+-+        element == null || element.isJsonNull -> ""
+-+        element.isJsonPrimitive -> element.asString.trim()
+-+        element.isJsonObject -> element.asJsonObject.stringOf("name")
+-+        element.isJsonArray -> element.asJsonArray.firstNotNullOfOrNull { sellerOf(it).takeIf { s -> s.isNotBlank() } }.orEmpty()
+-+        else -> ""
+-+    }
+-+
+-+    private fun JsonObject.stringOf(key: String): String =
+-+        get(key)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
+-+
+-+    private fun JsonElement.stringOrNull(): String? =
+-+        if (isJsonPrimitive) asString else null
+-+
+-+    private fun JsonElement?.firstObject(): JsonObject? = when {
+-+        this == null || isJsonNull -> null
+-+        isJsonObject -> asJsonObject
+-+        isJsonArray -> asJsonArray.firstNotNullOfOrNull { it.firstObject() }
+-+        else -> null
+-+    }
+-+}
+-diff --git a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+-index 8b576a4..e0fe6a6 100644
+---- a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+-@@ -6,12 +6,82 @@ import androidx.navigation.compose.NavHost
+- import androidx.navigation.compose.composable
+- import androidx.navigation.compose.rememberNavController
+- import androidx.navigation.navArgument
+-+import com.xiaoming.closie.data.model.ItemStatus
+- import com.xiaoming.closie.data.repository.WardrobeRepository
+- import com.xiaoming.closie.ui.closet.ClosetScreen
+- import com.xiaoming.closie.ui.detail.DetailScreen
+- import com.xiaoming.closie.ui.editor.EditorScreen
+- import com.xiaoming.closie.ui.home.HomeScreen
+- import com.xiaoming.closie.ui.ootd.OotdScreen
+-+import com.xiaoming.closie.ui.outfit.OutfitListScreen
+-+import com.xiaoming.closie.ui.outfit.OutfitStudioScreen
+- 
+--sealed class Destination(val route:String){data object Home:Destination("home");data object Owned:Destination("owned");data object Returned:Destination("returned");data object Ootd:Destination("ootd");data object Add:Destination("add/{status}");data object Detail:Destination("detail/{id}");data object Edit:Destination("edit/{id}")}
+--@Composable fun ClosieNavHost(repository:WardrobeRepository){val nav=rememberNavController();NavHost(navController=nav,startDestination=Destination.Home.route){composable(Destination.Home.route){HomeScreen(repository,{nav.navigate(it)})};composable(Destination.Ootd.route){OotdScreen(repository,{nav.popBackStack()})};composable(Destination.Owned.route){ClosetScreen(repository,com.xiaoming.closie.data.model.ItemStatus.OWNED,{nav.navigate(Destination.Detail.route.replace("{id}",it))},{nav.navigate(Destination.Add.route.replace("{status}","OWNED"))},{nav.popBackStack()})};composable(Destination.Returned.route){ClosetScreen(repository,com.xiaoming.closie.data.model.ItemStatus.RETURNED,{nav.navigate(Destination.Detail.route.replace("{id}",it))},{nav.navigate(Destination.Add.route.replace("{status}","RETURNED"))},{nav.popBackStack()})};composable(Destination.Add.route,arguments=listOf(navArgument("status"){type=NavType.StringType})){entry->EditorScreen(repository,null,entry.arguments?.getString("status")?:"OWNED",{nav.popBackStack()})};composable(Destination.Detail.route,arguments=listOf(navArgument("id"){type=NavType.StringType})){entry->DetailScreen(repository,entry.arguments?.getString("id").orEmpty(),{nav.navigate(Destination.Edit.route.replace("{id}",it))},{nav.popBackStack()})};composable(Destination.Edit.route,arguments=listOf(navArgument("id"){type=NavType.StringType})){entry->EditorScreen(repository,entry.arguments?.getString("id"),null,{nav.popBackStack()})}}}
+-+sealed class Destination(val route: String) {
+-+    data object Home : Destination("home")
+-+    data object Owned : Destination("owned")
+-+    data object Returned : Destination("returned")
+-+    data object Ootd : Destination("ootd")
+-+    data object Add : Destination("add/{status}")
+-+    data object Detail : Destination("detail/{id}")
+-+    data object Edit : Destination("edit/{id}")
+-+    data object Outfits : Destination("outfits")
+-+    data object OutfitEdit : Destination("outfit_edit/{id}")
+-+}
+-+
+-+@Composable
+-+fun ClosieNavHost(repository: WardrobeRepository) {
+-+    val nav = rememberNavController()
+-+    NavHost(navController = nav, startDestination = Destination.Home.route) {
+-+        composable(Destination.Home.route) { HomeScreen(repository) { nav.navigate(it) } }
+-+
+-+        composable(Destination.Ootd.route) { OotdScreen(repository) { nav.popBackStack() } }
+-+
+-+        composable(Destination.Owned.route) {
+-+            ClosetScreen(
+-+                repository, ItemStatus.OWNED,
+-+                open = { nav.navigate(Destination.Detail.route.replace("{id}", it)) },
+-+                add = { nav.navigate(Destination.Add.route.replace("{status}", "OWNED")) },
+-+                back = { nav.popBackStack() }
+-+            )
+-+        }
+-+
+-+        composable(Destination.Returned.route) {
+-+            ClosetScreen(
+-+                repository, ItemStatus.RETURNED,
+-+                open = { nav.navigate(Destination.Detail.route.replace("{id}", it)) },
+-+                add = { nav.navigate(Destination.Add.route.replace("{status}", "RETURNED")) },
+-+                back = { nav.popBackStack() }
+-+            )
+-+        }
+-+
+-+        composable(Destination.Add.route, arguments = listOf(navArgument("status") { type = NavType.StringType })) { entry ->
+-+            EditorScreen(repository, null, entry.arguments?.getString("status") ?: "OWNED") { nav.popBackStack() }
+-+        }
+-+
+-+        composable(Destination.Detail.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+-+            DetailScreen(
+-+                repository, entry.arguments?.getString("id").orEmpty(),
+-+                edit = { nav.navigate(Destination.Edit.route.replace("{id}", it)) },
+-+                back = { nav.popBackStack() }
+-+            )
+-+        }
+-+
+-+        composable(Destination.Edit.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+-+            EditorScreen(repository, entry.arguments?.getString("id"), null) { nav.popBackStack() }
+-+        }
+-+
+-+        composable(Destination.Outfits.route) {
+-+            OutfitListScreen(
+-+                repository,
+-+                open = { nav.navigate(Destination.OutfitEdit.route.replace("{id}", it)) },
+-+                create = { nav.navigate(Destination.OutfitEdit.route.replace("{id}", "new")) },
+-+                back = { nav.popBackStack() }
+-+            )
+-+        }
+-+
+-+        composable(Destination.OutfitEdit.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+-+            val id = entry.arguments?.getString("id")
+-+            OutfitStudioScreen(repository, id?.takeIf { it != "new" }) { nav.popBackStack() }
+-+        }
+-+    }
+-+}
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+-index 99177e1..3c3770b 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+-@@ -1,5 +1,7 @@
+- package com.xiaoming.closie.ui.detail
+- 
+-+import android.content.Intent
+-+import android.net.Uri
+- import androidx.compose.foundation.layout.*
+- import androidx.compose.foundation.lazy.LazyColumn
+- import androidx.compose.material3.*
+-@@ -7,6 +9,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
+- import androidx.compose.runtime.*
+- import androidx.compose.ui.Modifier
+- import androidx.compose.ui.layout.ContentScale
+-+import androidx.compose.ui.platform.LocalContext
+- import androidx.compose.ui.unit.dp
+- import coil.compose.AsyncImage
+- import com.xiaoming.closie.data.model.*
+-@@ -22,6 +25,7 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+-     val ws by repo.wearEvents.collectAsState()
+-     val xs by repo.washEvents.collectAsState()
+-     val v = all.firstOrNull { it.id == id }
+-+    val context = LocalContext.current
+-     var deleting by remember { mutableStateOf(false) }
+-     if (v == null) { back(); return }
+- 
+-@@ -65,6 +69,14 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+-                     Text("购买日期：${v.purchaseDate} · 尺码：${v.sizeLabel}")
+-                     Text("安全类别：${v.safetyCategory}")
+-                     Text("评价：${v.comment}")
+-+                    if (v.productUrl.isNotBlank()) {
+-+                        Text("商品链接：${v.productUrl}")
+-+                        OutlinedButton(onClick = {
+-+                            runCatching {
+-+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl)))
+-+                            }
+-+                        }) { Text("打开商品链接") }
+-+                    }
+-                     if (v.status == ItemStatus.RETURNED) Text("退货原因：${v.returnReason}")
+-                 }
+-             }
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+-index 828b9f6..0e61322 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+-@@ -11,17 +11,23 @@ import androidx.compose.material3.*
+- import androidx.compose.material3.ExperimentalMaterial3Api
+- import androidx.compose.runtime.*
+- import androidx.compose.ui.Modifier
+-+import androidx.compose.ui.graphics.Color
+- import androidx.compose.ui.layout.ContentScale
+- import androidx.compose.ui.platform.LocalContext
+- import androidx.compose.ui.unit.dp
+- import coil.compose.AsyncImage
+- import com.xiaoming.closie.data.ImageStore
+-+import com.xiaoming.closie.data.ProductImporter
+-+import com.xiaoming.closie.data.ProductPreview
+- import com.xiaoming.closie.data.model.*
+- import com.xiaoming.closie.data.repository.WardrobeRepository
+- import com.xiaoming.closie.ui.BackButton
+- import com.xiaoming.closie.ui.Rose
+- import java.io.File
+- import java.time.LocalDate
+-+import kotlinx.coroutines.Dispatchers
+-+import kotlinx.coroutines.launch
+-+import kotlinx.coroutines.withContext
+- 
+- @OptIn(ExperimentalMaterial3Api::class)
+- @Composable
+-@@ -53,6 +59,33 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+-         }
+-     }
+- 
+-+    var importing by remember { mutableStateOf(false) }
+-+    var importError by remember { mutableStateOf<String?>(null) }
+-+    var preview by remember { mutableStateOf<ProductPreview?>(null) }
+-+    val scope = rememberCoroutineScope()
+-+
+-+    fun applyPreview(p: ProductPreview) {
+-+        var updated = item
+-+        if (item.name.isBlank() && p.title.isNotBlank()) updated = updated.copy(name = p.title)
+-+        if (item.price == null) p.price?.let { updated = updated.copy(price = it) }
+-+        if (item.originalPrice == null) p.originalPrice?.let { updated = updated.copy(originalPrice = it) }
+-+        if (item.brand.isBlank() && p.brand.isNotBlank()) updated = updated.copy(brand = p.brand)
+-+        if (item.store.isBlank() && p.store.isNotBlank()) updated = updated.copy(store = p.store)
+-+        if (item.purchasePlatform.isBlank() && p.platform.isNotBlank()) updated = updated.copy(purchasePlatform = p.platform)
+-+        item = updated
+-+        val imageUrl = p.imageUrl
+-+        preview = null
+-+        if (!imageUrl.isNullOrBlank()) {
+-+            scope.launch {
+-+                val path = withContext(Dispatchers.IO) { ImageStore.copyFromUrl(context, imageUrl) }
+-+                if (path != null) {
+-+                    pendingPaths += path
+-+                    item = item.copy(images = item.images + ClothingImage(kind = ImageKind.PRODUCT, localPath = path))
+-+                }
+-+            }
+-+        }
+-+    }
+-+
+-     Scaffold(
+-         topBar = {
+-             TopAppBar(
+-@@ -87,6 +120,31 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+-                 EditText("购买店铺", item.store) { item = item.copy(store = it) }
+-                 EditText("购买平台", item.purchasePlatform) { item = item.copy(purchasePlatform = it) }
+-                 EditText("商品链接", item.productUrl) { item = item.copy(productUrl = it) }
+-+                Button(
+-+                    onClick = {
+-+                        val url = item.productUrl.trim()
+-+                        if (url.isEmpty()) { importError = "请先填写商品链接"; return@Button }
+-+                        importing = true
+-+                        importError = null
+-+                        preview = null
+-+                        scope.launch {
+-+                            val result = ProductImporter.fetch(url)
+-+                            result.onSuccess { p -> preview = p }
+-+                                .onFailure { e -> importError = e.message ?: "解析失败，请检查链接或网络" }
+-+                            importing = false
+-+                        }
+-+                    },
+-+                    enabled = !importing,
+-+                    modifier = Modifier.fillMaxWidth()
+-+                ) { Text(if (importing) "解析中…" else "解析商品") }
+-+                preview?.let { p ->
+-+                    ProductPreviewCard(
+-+                        preview = p,
+-+                        onApply = { applyPreview(p) },
+-+                        onDismiss = { preview = null }
+-+                    )
+-+                }
+-+                importError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+-                 EditText("购买价", item.price?.toString().orEmpty()) { item = item.copy(price = it.toDoubleOrNull()) }
+-                 EditText("原价（可选）", item.originalPrice?.toString().orEmpty()) { item = item.copy(originalPrice = it.toDoubleOrNull()) }
+-                 OutlinedButton(onClick = {
+-@@ -178,3 +236,31 @@ private fun DynamicMeasures(values: List<Measurement>, set: (List<Measurement>)
+-     }
+-     OutlinedButton(onClick = { set(values + Measurement()) }) { Text("+ 添加尺寸") }
+- }
+-+
+-+@Composable
+-+private fun ProductPreviewCard(preview: ProductPreview, onApply: () -> Unit, onDismiss: () -> Unit) {
+-+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5E7))) {
+-+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-+            Text("识别结果", style = MaterialTheme.typography.titleMedium)
+-+            if (preview.title.isNotBlank()) Text("名称：${preview.title}", style = MaterialTheme.typography.bodySmall)
+-+            if (preview.price != null) Text("价格：¥${preview.price}", style = MaterialTheme.typography.bodySmall)
+-+            if (preview.originalPrice != null) Text("原价：¥${preview.originalPrice}", style = MaterialTheme.typography.bodySmall)
+-+            if (preview.brand.isNotBlank()) Text("品牌：${preview.brand}", style = MaterialTheme.typography.bodySmall)
+-+            if (preview.store.isNotBlank()) Text("店铺：${preview.store}", style = MaterialTheme.typography.bodySmall)
+-+            if (preview.platform.isNotBlank()) Text("平台：${preview.platform}", style = MaterialTheme.typography.bodySmall)
+-+            preview.imageUrl?.let { url ->
+-+                AsyncImage(
+-+                    model = url,
+-+                    contentDescription = "商品主图",
+-+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+-+                    contentScale = ContentScale.Fit
+-+                )
+-+            }
+-+            Text("仅填充当前为空的字段", color = Rose, style = MaterialTheme.typography.bodySmall)
+-+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-+                Button(onClick = onApply, modifier = Modifier.weight(1f)) { Text("应用识别结果") }
+-+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("放弃") }
+-+            }
+-+        }
+-+    }
+-+}
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+-index 90f587c..b8db5f2 100644
+---- a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+-@@ -16,6 +16,7 @@ import java.time.LocalDate
+- fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
+-     val items by repo.items.collectAsState()
+-     val ootds by repo.ootds.collectAsState()
+-+    val outfits by repo.outfits.collectAsState()
+-     val owned = items.filter { it.status == ItemStatus.OWNED }
+-     val today = LocalDate.now().toString()
+- 
+-@@ -50,6 +51,11 @@ fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
+-                 Text("OOTD 日历")
+-             }
+-         }
+-+        item {
+-+            Button(onClick = { go(Destination.Outfits.route) }, modifier = Modifier.fillMaxWidth()) {
+-+                Text("搭配室\n${outfits.size} 套搭配")
+-+            }
+-+        }
+-         item {
+-             Text(if (ootds.any { it.date == today }) "今天已记录 OOTD" else "今天还没有 OOTD", color = Rose)
+-         }
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt
+-new file mode 100644
+-index 0000000..9282c9b
+---- /dev/null
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt
+-@@ -0,0 +1,77 @@
+-+package com.xiaoming.closie.ui.outfit
+-+
+-+import androidx.compose.foundation.clickable
+-+import androidx.compose.foundation.layout.*
+-+import androidx.compose.foundation.lazy.LazyColumn
+-+import androidx.compose.foundation.lazy.items
+-+import androidx.compose.material3.*
+-+import androidx.compose.material3.ExperimentalMaterial3Api
+-+import androidx.compose.runtime.*
+-+import androidx.compose.ui.Alignment
+-+import androidx.compose.ui.Modifier
+-+import androidx.compose.ui.layout.ContentScale
+-+import androidx.compose.ui.unit.dp
+-+import coil.compose.AsyncImage
+-+import com.xiaoming.closie.data.model.ImageKind
+-+import com.xiaoming.closie.data.model.Outfit
+-+import com.xiaoming.closie.data.repository.WardrobeRepository
+-+import com.xiaoming.closie.ui.BackButton
+-+import com.xiaoming.closie.ui.Rose
+-+import java.io.File
+-+
+-+@OptIn(ExperimentalMaterial3Api::class)
+-+@Composable
+-+fun OutfitListScreen(repo: WardrobeRepository, open: (String) -> Unit, create: () -> Unit, back: () -> Unit) {
+-+    val outfits by repo.outfits.collectAsState()
+-+    val items by repo.items.collectAsState()
+-+    var pendingDelete by remember { mutableStateOf<Outfit?>(null) }
+-+
+-+    Scaffold(
+-+        topBar = { TopAppBar(title = { Text("搭配室") }, navigationIcon = { BackButton(back) }) },
+-+        floatingActionButton = { FloatingActionButton(onClick = create, containerColor = Rose) { Text("+") } }
+-+    ) { pad ->
+-+        if (outfits.isEmpty()) {
+-+            Column(
+-+                Modifier.padding(pad).fillMaxSize(),
+-+                verticalArrangement = Arrangement.Center,
+-+                horizontalAlignment = Alignment.CenterHorizontally
+-+            ) {
+-+                Text("还没有搭配", style = MaterialTheme.typography.titleMedium)
+-+                Text("点右下角 + 开始你的第一套搭配", color = Rose)
+-+            }
+-+        } else {
+-+            LazyColumn(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-+                items(outfits, key = { it.id }) { outfit ->
+-+                    val itemSet = items.filter { it.id in outfit.itemIds }
+-+                    Card(Modifier.fillMaxWidth()) {
+-+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+-+                            Column(Modifier.weight(1f).clickable { open(outfit.id) }) {
+-+                                Text(outfit.name.ifBlank { "未命名搭配" }, style = MaterialTheme.typography.titleMedium)
+-+                                Text("${outfit.itemIds.size} 件单品", color = Rose, style = MaterialTheme.typography.bodySmall)
+-+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-+                                    itemSet.take(5).forEach { itt ->
+-+                                        val thumb = itt.images.firstOrNull { it.kind == ImageKind.FLAT } ?: itt.images.firstOrNull()
+-+                                        thumb?.localPath?.let { p ->
+-+                                            AsyncImage(File(p), itt.name, Modifier.size(56.dp), contentScale = ContentScale.Crop)
+-+                                        }
+-+                                    }
+-+                                }
+-+                            }
+-+                            TextButton(onClick = { pendingDelete = outfit }) { Text("删除", color = Rose) }
+-+                        }
+-+                    }
+-+                }
+-+            }
+-+        }
+-+    }
+-+
+-+    pendingDelete?.let { target ->
+-+        AlertDialog(
+-+            onDismissRequest = { pendingDelete = null },
+-+            title = { Text("删除这套搭配？") },
+-+            text = { Text("删除后无法恢复。") },
+-+            confirmButton = { TextButton(onClick = { repo.deleteOutfit(target.id); pendingDelete = null }) { Text("删除") } },
+-+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }
+-+        )
+-+    }
+-+}
+-diff --git a/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt
+-new file mode 100644
+-index 0000000..e2d45af
+---- /dev/null
+-+++ b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt
+-@@ -0,0 +1,193 @@
+-+package com.xiaoming.closie.ui.outfit
+-+
+-+import androidx.compose.foundation.background
+-+import androidx.compose.foundation.border
+-+import androidx.compose.foundation.clickable
+-+import androidx.compose.foundation.gestures.detectTransformGestures
+-+import androidx.compose.foundation.layout.*
+-+import androidx.compose.foundation.lazy.LazyRow
+-+import androidx.compose.foundation.lazy.items
+-+import androidx.compose.foundation.shape.RoundedCornerShape
+-+import androidx.compose.material3.*
+-+import androidx.compose.material3.ExperimentalMaterial3Api
+-+import androidx.compose.runtime.*
+-+import androidx.compose.ui.Alignment
+-+import androidx.compose.ui.Modifier
+-+import androidx.compose.ui.draw.alpha
+-+import androidx.compose.ui.draw.clip
+-+import androidx.compose.ui.graphics.Color
+-+import androidx.compose.ui.input.pointer.pointerInput
+-+import androidx.compose.ui.layout.ContentScale
+-+import androidx.compose.ui.layout.onSizeChanged
+-+import androidx.compose.ui.platform.LocalDensity
+-+import androidx.compose.ui.text.style.TextOverflow
+-+import androidx.compose.ui.unit.IntOffset
+-+import androidx.compose.ui.unit.IntSize
+-+import androidx.compose.ui.unit.dp
+-+import androidx.compose.ui.zIndex
+-+import coil.compose.AsyncImage
+-+import com.xiaoming.closie.data.model.ImageKind
+-+import com.xiaoming.closie.data.model.ItemStatus
+-+import com.xiaoming.closie.data.model.Outfit
+-+import com.xiaoming.closie.data.model.Placement
+-+import com.xiaoming.closie.data.repository.WardrobeRepository
+-+import com.xiaoming.closie.ui.BackButton
+-+import com.xiaoming.closie.ui.Rose
+-+import java.io.File
+-+import kotlin.math.roundToInt
+-+
+-+@OptIn(ExperimentalMaterial3Api::class)
+-+@Composable
+-+fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () -> Unit) {
+-+    val items by repo.items.collectAsState()
+-+    val outfits by repo.outfits.collectAsState()
+-+    val original = outfits.firstOrNull { it.id == outfitId }
+-+
+-+    var name by remember(outfitId) { mutableStateOf(original?.name.orEmpty()) }
+-+    var note by remember(outfitId) { mutableStateOf(original?.note.orEmpty()) }
+-+    var placements by remember(outfitId) { mutableStateOf(original?.placements ?: emptyList()) }
+-+    var selectedId by remember { mutableStateOf<String?>(null) }
+-+
+-+    val owned = items.filter { it.status == ItemStatus.OWNED }
+-+    val itemById = items.associateBy { it.id }
+-+    val density = LocalDensity.current
+-+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+-+
+-+    fun save() {
+-+        val base = original ?: Outfit(name = name)
+-+        repo.saveOutfit(base.copy(name = name, note = note, itemIds = placements.map { it.itemId }, placements = placements))
+-+        back()
+-+    }
+-+
+-+    Scaffold(
+-+        topBar = {
+-+            TopAppBar(
+-+                title = { Text(if (original == null) "新建搭配" else "编辑搭配") },
+-+                navigationIcon = { BackButton(back) },
+-+                actions = { TextButton(onClick = { save() }) { Text("保存") } }
+-+            )
+-+        }
+-+    ) { pad ->
+-+        Column(Modifier.padding(pad).padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-+            OutlinedTextField(name, { name = it }, label = { Text("搭配名称") }, modifier = Modifier.fillMaxWidth())
+-+
+-+            // Canvas
+-+            Box(
+-+                Modifier
+-+                    .fillMaxWidth()
+-+                    .weight(1f)
+-+                    .clip(RoundedCornerShape(12.dp))
+-+                    .background(Color(0xFFF3E5E7))
+-+                    .onSizeChanged { canvasSize = it }
+-+            ) {
+-+                placements.forEach { p ->
+-+                    val item = itemById[p.itemId] ?: return@forEach
+-+                    val image = item.images.firstOrNull { it.kind == ImageKind.FLAT } ?: item.images.firstOrNull()
+-+                    val itemSizePx = with(density) { (140.dp * p.scale).roundToPx() }
+-+                    val px = (p.x * canvasSize.width - itemSizePx / 2f).roundToInt()
+-+                    val py = (p.y * canvasSize.height - itemSizePx / 2f).roundToInt()
+-+                    val selected = selectedId == p.itemId
+-+
+-+                    Box(
+-+                        Modifier
+-+                            .offset { IntOffset(px, py) }
+-+                            .size(140.dp * p.scale)
+-+                            .zIndex(p.zIndex.toFloat())
+-+                            .clip(RoundedCornerShape(8.dp))
+-+                            .background(Color.White)
+-+                            .border(if (selected) 2.dp else 1.dp, if (selected) Rose else Color(0xFFD9C7CB), RoundedCornerShape(8.dp))
+-+                            .pointerInput(p.itemId) {
+-+                                detectTransformGestures { _, pan, zoom, _ ->
+-+                                    selectedId = p.itemId
+-+                                    val w = canvasSize.width.coerceAtLeast(1)
+-+                                    val h = canvasSize.height.coerceAtLeast(1)
+-+                                    placements = placements.map {
+-+                                        if (it.itemId == p.itemId) it.copy(
+-+                                            x = (it.x + pan.x / w).coerceIn(0.02f, 0.98f),
+-+                                            y = (it.y + pan.y / h).coerceIn(0.02f, 0.98f),
+-+                                            scale = (it.scale * zoom).coerceIn(0.5f, 2.5f)
+-+                                        ) else it
+-+                                    }
+-+                                }
+-+                            }
+-+                            .clickable { selectedId = p.itemId }
+-+                    ) {
+-+                        if (image?.localPath != null) {
+-+                            AsyncImage(File(image.localPath), item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+-+                        } else {
+-+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-+                                Text(item.name, Modifier.padding(4.dp), style = MaterialTheme.typography.bodySmall)
+-+                            }
+-+                        }
+-+                    }
+-+                }
+-+                if (placements.isEmpty()) {
+-+                    Text("从下方衣橱选择单品添加到画布", Modifier.align(Alignment.Center), color = Rose)
+-+                }
+-+            }
+-+
+-+            // Selected placement controls
+-+            val selectedPlacement = placements.firstOrNull { it.itemId == selectedId }
+-+            if (selectedPlacement != null) {
+-+                Row(verticalAlignment = Alignment.CenterVertically) {
+-+                    Text("缩放", style = MaterialTheme.typography.bodySmall)
+-+                    Slider(
+-+                        value = selectedPlacement.scale,
+-+                        onValueChange = { s ->
+-+                            placements = placements.map { if (it.itemId == selectedPlacement.itemId) it.copy(scale = s) else it }
+-+                        },
+-+                        valueRange = 0.5f..2.5f,
+-+                        modifier = Modifier.weight(1f)
+-+                    )
+-+                }
+-+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-+                    OutlinedButton(onClick = {
+-+                        placements = placements.map { if (it.itemId == selectedPlacement.itemId) it.copy(zIndex = it.zIndex + 1) else it }
+-+                    }) { Text("前移") }
+-+                    OutlinedButton(onClick = {
+-+                        placements = placements.map { if (it.itemId == selectedPlacement.itemId) it.copy(zIndex = it.zIndex - 1) else it }
+-+                    }) { Text("后移") }
+-+                    TextButton(onClick = {
+-+                        placements = placements.filterNot { it.itemId == selectedPlacement.itemId }
+-+                        selectedId = null
+-+                    }) { Text("移除") }
+-+                }
+-+            }
+-+
+-+            // Item picker
+-+            Text("从衣橱添加单品", style = MaterialTheme.typography.titleMedium)
+-+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-+                items(owned, key = { it.id }) { item ->
+-+                    val added = placements.any { it.itemId == item.id }
+-+                    val image = item.images.firstOrNull { it.kind == ImageKind.FLAT } ?: item.images.firstOrNull()
+-+                    Column(
+-+                        Modifier
+-+                            .width(80.dp)
+-+                            .clip(RoundedCornerShape(8.dp))
+-+                            .clickable(enabled = !added) {
+-+                                val z = (placements.maxOfOrNull { it.zIndex } ?: 0) + 1
+-+                                placements = placements + Placement(item.id, zIndex = z)
+-+                                selectedId = item.id
+-+                            }
+-+                            .alpha(if (added) 0.4f else 1f)
+-+                    ) {
+-+                        Box(Modifier.size(80.dp).background(Color.White), contentAlignment = Alignment.Center) {
+-+                            if (image?.localPath != null) {
+-+                                AsyncImage(File(image.localPath), item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+-+                            } else {
+-+                                Text(item.name, Modifier.padding(4.dp), style = MaterialTheme.typography.bodySmall)
+-+                            }
+-+                        }
+-+                        Text(item.name, Modifier.padding(4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+-+                    }
+-+                }
+-+            }
+-+
+-+            Button(
+-+                onClick = { save() },
+-+                modifier = Modifier.fillMaxWidth(),
+-+                colors = ButtonDefaults.buttonColors(containerColor = Rose)
+-+            ) { Text("保存搭配") }
+-+        }
+-+    }
+-+}
+--- 
+-2.43.0
+-
+-- 
+2.43.0
+
