@@ -4,4 +4,7 @@ local.properties
 build/
 app/build/
 *.iml
-
+.env
+server/.env
+server/data/
+web/dist/

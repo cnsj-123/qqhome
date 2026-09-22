@@ -1,10 +1,10 @@
-name: Build Android APK
+name: Android CI
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [main]
+  pull_request:
 jobs:
-  apk:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,12 +12,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Download Gradle
-        run: curl -fsSL https://services.gradle.org/distributions/gradle-8.10.2-bin.zip -o gradle.zip && unzip -q gradle.zip
-      - name: Build debug APK
-        run: ./gradle-8.10.2/bin/gradle :app:assembleDebug
+      - run: ./gradlew :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: closie-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-
