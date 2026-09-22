@@ -30,6 +30,10 @@ data class ProductPreview(
 object ProductImporter {
     suspend fun fetch(url: String): Result<ProductPreview> = withContext(Dispatchers.IO) {
         runCatching {
+            val scheme = runCatching { java.net.URI(url).scheme?.lowercase() }.getOrNull()
+            if (scheme != "http" && scheme != "https") {
+                throw IllegalStateException("仅支持 http/https 链接")
+            }
             val doc = Jsoup.connect(url)
                 .userAgent("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
                 .timeout(15_000)
@@ -82,8 +86,11 @@ object ProductImporter {
             if (ld.store.isNotBlank()) store = ld.store
             if (!ld.imageUrl.isNullOrBlank()) imageUrl = ld.imageUrl
 
+            // Resolve protocol-relative / relative image URLs against the product page URL.
+            val resolvedImage = imageUrl?.let { resolveUrl(url, it) }
+
             if (title.isBlank() && price == null && originalPrice == null &&
-                brand.isBlank() && store.isBlank() && imageUrl == null
+                brand.isBlank() && store.isBlank() && resolvedImage == null
             ) {
                 throw IllegalStateException("未能从该页面解析出商品信息")
             }
@@ -94,9 +101,17 @@ object ProductImporter {
                 brand = brand,
                 store = store,
                 platform = platform,
-                imageUrl = imageUrl
+                imageUrl = resolvedImage
             )
         }
+    }
+
+    private fun resolveUrl(pageUrl: String, imageUrl: String): String {
+        val trimmed = imageUrl.trim()
+        if (trimmed.isEmpty()) return trimmed
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
+        if (trimmed.startsWith("//")) return "https:" + trimmed
+        return runCatching { java.net.URI(pageUrl).resolve(trimmed).toString() }.getOrDefault(trimmed)
     }
 
     private fun meta(doc: Document, property: String): String =

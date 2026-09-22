@@ -1,5 +1,6 @@
 package com.xiaoming.closie.ui.outfit
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +10,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -51,8 +53,17 @@ fun OutfitListScreen(repo: WardrobeRepository, open: (String) -> Unit, create: (
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     itemSet.take(5).forEach { itt ->
                                         val thumb = itt.images.firstOrNull { it.kind == ImageKind.FLAT } ?: itt.images.firstOrNull()
-                                        thumb?.localPath?.let { p ->
-                                            AsyncImage(File(p), itt.name, Modifier.size(56.dp), contentScale = ContentScale.Crop)
+                                        if (thumb?.localPath != null) {
+                                            AsyncImage(
+                                                File(thumb.localPath),
+                                                itt.name,
+                                                Modifier.size(56.dp),
+                                                contentScale = if (thumb.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(Modifier.size(56.dp).background(Color(0xFFF3E5E7)), contentAlignment = Alignment.Center) {
+                                                Text(itt.name.take(1), color = Rose, style = MaterialTheme.typography.bodySmall)
+                                            }
                                         }
                                     }
                                 }

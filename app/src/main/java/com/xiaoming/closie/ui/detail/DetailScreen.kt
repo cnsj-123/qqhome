@@ -1,5 +1,6 @@
 package com.xiaoming.closie.ui.detail
 
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
@@ -7,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -27,7 +29,13 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
     val v = all.firstOrNull { it.id == id }
     val context = LocalContext.current
     var deleting by remember { mutableStateOf(false) }
+    var showAllWears by remember { mutableStateOf(false) }
+    var showAllWash by remember { mutableStateOf(false) }
     if (v == null) { back(); return }
+
+    val itemWears = ws.filter { it.itemId == id }.sortedByDescending { it.date }
+    val itemWash = xs.filter { it.itemId == id }.sortedByDescending { it.date }
+    val wears = itemWears.size
 
     Scaffold(
         topBar = {
@@ -69,6 +77,7 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
                     Text("购买日期：${v.purchaseDate} · 尺码：${v.sizeLabel}")
                     Text("安全类别：${v.safetyCategory}")
                     Text("评价：${v.comment}")
+                    Text("评分：${ratingText(v.rating)}")
                     if (v.productUrl.isNotBlank()) {
                         Text("商品链接：${v.productUrl}")
                         OutlinedButton(onClick = {
@@ -88,12 +97,74 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
             }
             if (v.status == ItemStatus.OWNED) {
                 item {
-                    val wears = ws.count { it.itemId == id }
                     Section("使用记录") {
-                        Text("穿着 $wears 次 · 洗涤 ${xs.count { it.itemId == id }} 次")
+                        Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次")
                         Text("单次穿着成本：" + costPerWear(v.price, wears))
-                        Button(onClick = { repo.addWear(id, LocalDate.now().toString()) }) { Text("今天穿了 +1") }
-                        OutlinedButton(onClick = { repo.addWash(id, LocalDate.now().toString()) }) { Text("洗过 +1") }
+                        val lastWear = itemWears.firstOrNull()?.date
+                        val lastWash = itemWash.firstOrNull()?.date
+                        if (lastWear != null) Text("最近穿着：$lastWear")
+                        if (lastWash != null) Text("最近洗涤：$lastWash")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { repo.addWear(id, LocalDate.now().toString()) }) { Text("今天穿了 +1") }
+                            OutlinedButton(onClick = { repo.addWash(id, LocalDate.now().toString()) }) { Text("洗过 +1") }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                val d = LocalDate.now()
+                                DatePickerDialog(context, { _, y, m, day ->
+                                    repo.addWear(id, "%04d-%02d-%02d".format(y, m + 1, day), WearSource.MANUAL)
+                                }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+                            }) { Text("添加穿着记录") }
+                            OutlinedButton(onClick = {
+                                val d = LocalDate.now()
+                                DatePickerDialog(context, { _, y, m, day ->
+                                    repo.addWash(id, "%04d-%02d-%02d".format(y, m + 1, day))
+                                }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+                            }) { Text("添加洗涤记录") }
+                        }
+                    }
+                }
+                item {
+                    Section("穿着记录") {
+                        if (itemWears.isEmpty()) {
+                            Text("还没有穿着记录", color = Rose)
+                        } else {
+                            val visible = if (showAllWears) itemWears else itemWears.take(15)
+                            visible.forEach { w ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(w.date, Modifier.weight(1f))
+                                    Text(
+                                        if (w.source == WearSource.OOTD) "来自 OOTD" else "手动记录",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (w.source == WearSource.OOTD) Rose else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (w.source == WearSource.MANUAL) {
+                                        TextButton(onClick = { repo.deleteWearEvent(w.id) }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                                    }
+                                }
+                            }
+                            if (itemWears.size > 15) {
+                                TextButton(onClick = { showAllWears = !showAllWears }) { Text(if (showAllWears) "收起" else "查看全部（${itemWears.size}）") }
+                            }
+                        }
+                    }
+                }
+                item {
+                    Section("洗涤记录") {
+                        if (itemWash.isEmpty()) {
+                            Text("还没有洗涤记录", color = Rose)
+                        } else {
+                            val visible = if (showAllWash) itemWash else itemWash.take(15)
+                            visible.forEach { w ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(w.date, Modifier.weight(1f))
+                                    TextButton(onClick = { repo.deleteWashEvent(w.id) }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                                }
+                            }
+                            if (itemWash.size > 15) {
+                                TextButton(onClick = { showAllWash = !showAllWash }) { Text(if (showAllWash) "收起" else "查看全部（${itemWash.size}）") }
+                            }
+                        }
                     }
                 }
             }
@@ -116,3 +187,5 @@ private fun costPerWear(price: Double?, wears: Int): String = when {
     wears == 0 -> "尚未穿着"
     else -> "¥" + "%.2f".format(price / wears)
 }
+
+private fun ratingText(r: Int): String = if (r <= 0) "未评分" else "★".repeat(r) + "☆".repeat(5 - r)

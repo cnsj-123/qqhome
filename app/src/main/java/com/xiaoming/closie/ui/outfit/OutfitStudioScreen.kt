@@ -1,5 +1,8 @@
 package com.xiaoming.closie.ui.outfit
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -26,6 +30,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import com.xiaoming.closie.data.ImageStore
 import com.xiaoming.closie.data.model.ImageKind
 import com.xiaoming.closie.data.model.ItemStatus
 import com.xiaoming.closie.data.model.Outfit
@@ -39,6 +44,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () -> Unit) {
+    val context = LocalContext.current
     val items by repo.items.collectAsState()
     val outfits by repo.outfits.collectAsState()
     val original = outfits.firstOrNull { it.id == outfitId }
@@ -46,16 +52,61 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () -> 
     var name by remember(outfitId) { mutableStateOf(original?.name.orEmpty()) }
     var note by remember(outfitId) { mutableStateOf(original?.note.orEmpty()) }
     var placements by remember(outfitId) { mutableStateOf(original?.placements ?: emptyList()) }
+    var tryOnImages by remember(outfitId) { mutableStateOf(original?.tryOnImages ?: emptyList()) }
     var selectedId by remember { mutableStateOf<String?>(null) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    val pendingTryOn = remember { mutableStateListOf<String>() }
+    DisposableEffect(Unit) {
+        onDispose { pendingTryOn.forEach { ImageStore.deletePrivatePath(context, it) } }
+    }
+
+    val tryOnPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { selected ->
+            ImageStore.copyOutfitFromUri(context, selected)?.let { path ->
+                pendingTryOn += path
+                tryOnImages = tryOnImages + path
+            }
+        }
+    }
 
     val owned = items.filter { it.status == ItemStatus.OWNED }
     val itemById = items.associateBy { it.id }
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
+    val dirty = if (original == null) {
+        name.isNotBlank() || note.isNotBlank() || placements.isNotEmpty() || tryOnImages.isNotEmpty()
+    } else {
+        name != original.name || note != original.note || placements != original.placements || tryOnImages != original.tryOnImages
+    }
+
+    fun saveCleanup() {
+        // 保留仍在 tryOnImages 中的 pending 文件，删除添加后又被移除的
+        pendingTryOn.filterNot { it in tryOnImages }.forEach { ImageStore.deletePrivatePath(context, it) }
+        pendingTryOn.clear()
+    }
+
+    fun discardCleanup() {
+        // 放弃：删除本次会话新增的全部 pending 文件
+        pendingTryOn.forEach { ImageStore.deletePrivatePath(context, it) }
+        pendingTryOn.clear()
+    }
+
+    fun requestBack() {
+        if (dirty) showDiscardDialog = true else { discardCleanup(); back() }
+    }
+
+    BackHandler(enabled = dirty) { showDiscardDialog = true }
+
     fun save() {
         val base = original ?: Outfit(name = name)
-        repo.saveOutfit(base.copy(name = name, note = note, itemIds = placements.map { it.itemId }, placements = placements))
+        val normalized = placements
+            .map { it.copy(x = it.x.coerceIn(0f, 1f), y = it.y.coerceIn(0f, 1f)) }
+            .sortedBy { it.zIndex }
+            .mapIndexed { index, p -> p.copy(zIndex = index) }
+        repo.saveOutfit(base.copy(name = name, note = note, itemIds = normalized.map { it.itemId }, placements = normalized, tryOnImages = tryOnImages))
+        saveCleanup()
         back()
     }
 
@@ -63,7 +114,7 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () -> 
         topBar = {
             TopAppBar(
                 title = { Text(if (original == null) "新建搭配" else "编辑搭配") },
-                navigationIcon = { BackButton(back) },
+                navigationIcon = { BackButton { requestBack() } },
                 actions = { TextButton(onClick = { save() }) { Text("保存") } }
             )
         }
@@ -183,11 +234,35 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () -> 
                 }
             }
 
+            // Try-on photos
+            Text("试穿照片", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(tryOnImages, key = { it }) { path ->
+                    Column {
+                        AsyncImage(File(path), "试穿照片", Modifier.size(96.dp), contentScale = ContentScale.Crop)
+                        TextButton(onClick = { tryOnImages = tryOnImages.filterNot { it == path } }, modifier = Modifier.fillMaxWidth()) { Text("删除") }
+                    }
+                }
+                item { OutlinedButton(onClick = { tryOnPicker.launch(arrayOf("image/*")) }) { Text("+ 添加照片") } }
+            }
+
             Button(
                 onClick = { save() },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Rose)
             ) { Text("保存搭配") }
         }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("还有未保存的修改") },
+            text = { Text("确定离开吗？未保存的修改和刚添加的照片会被丢弃。") },
+            confirmButton = {
+                TextButton(onClick = { discardCleanup(); back() }) { Text("放弃修改") }
+            },
+            dismissButton = { TextButton(onClick = { showDiscardDialog = false }) { Text("继续编辑") } }
+        )
     }
 }

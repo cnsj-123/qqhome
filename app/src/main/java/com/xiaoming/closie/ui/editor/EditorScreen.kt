@@ -1,6 +1,7 @@
 package com.xiaoming.closie.ui.editor
 
 import android.app.DatePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -10,11 +11,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.xiaoming.closie.data.ImageStore
 import com.xiaoming.closie.data.ProductImporter
@@ -26,6 +29,7 @@ import com.xiaoming.closie.ui.Rose
 import java.io.File
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -35,13 +39,23 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
     val context = LocalContext.current
     val allItems by repo.items.collectAsState()
     val original = allItems.firstOrNull { it.id == itemId }
-    var item by remember(itemId) {
-        mutableStateOf(original ?: ClothingItem(
+    val initialItem = remember(itemId, initialStatus) {
+        original ?: ClothingItem(
             status = if (initialStatus == "RETURNED") ItemStatus.RETURNED else ItemStatus.OWNED,
             purchaseDate = LocalDate.now().toString()
-        ))
+        )
     }
+    var item by remember(itemId, initialStatus) { mutableStateOf(initialItem) }
     LaunchedEffect(original?.updatedAt) { if (original != null) item = original }
+
+    val dirty = item != initialItem
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    fun requestBack() {
+        if (dirty) showDiscardDialog = true else done()
+    }
+
+    BackHandler(enabled = dirty) { showDiscardDialog = true }
 
     val pendingPaths = remember(itemId) { mutableStateListOf<String>() }
     val pendingAtDispose by rememberUpdatedState(pendingPaths.toList())
@@ -62,6 +76,7 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
     var importing by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<ProductPreview?>(null) }
+    var productImageStatus by remember { mutableStateOf(ProductImageStatus.IDLE) }
     val scope = rememberCoroutineScope()
 
     fun applyPreview(p: ProductPreview) {
@@ -75,13 +90,30 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
         item = updated
         val imageUrl = p.imageUrl
         preview = null
-        if (!imageUrl.isNullOrBlank()) {
-            scope.launch {
-                val path = withContext(Dispatchers.IO) { ImageStore.copyFromUrl(context, imageUrl) }
-                if (path != null) {
-                    pendingPaths += path
-                    item = item.copy(images = item.images + ClothingImage(kind = ImageKind.PRODUCT, localPath = path))
+        if (imageUrl.isNullOrBlank()) {
+            productImageStatus = ProductImageStatus.IDLE
+            return
+        }
+        if (updated.images.any { it.remoteUrl == imageUrl }) {
+            productImageStatus = ProductImageStatus.DONE
+            return
+        }
+        productImageStatus = ProductImageStatus.DOWNLOADING
+        scope.launch {
+            var downloadedPath: String? = null
+            try {
+                downloadedPath = withContext(Dispatchers.IO) { ImageStore.copyFromUrl(context, imageUrl) }
+                ensureActive()
+                if (downloadedPath != null) {
+                    pendingPaths += downloadedPath
+                    item = item.copy(images = item.images + ClothingImage(kind = ImageKind.PRODUCT, localPath = downloadedPath, remoteUrl = imageUrl))
+                    productImageStatus = ProductImageStatus.DONE
+                    downloadedPath = null
+                } else {
+                    productImageStatus = ProductImageStatus.FAILED
                 }
+            } finally {
+                downloadedPath?.let { ImageStore.deletePrivatePath(context, it) }
             }
         }
     }
@@ -90,7 +122,7 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
         topBar = {
             TopAppBar(
                 title = { Text(if (original == null) "添加衣服" else "编辑衣服") },
-                navigationIcon = { BackButton(done) }
+                navigationIcon = { BackButton { requestBack() } }
             )
         }
     ) { padding ->
@@ -145,6 +177,12 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                     )
                 }
                 importError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                when (productImageStatus) {
+                    ProductImageStatus.DOWNLOADING -> Text("正在下载商品图片…", style = MaterialTheme.typography.bodySmall)
+                    ProductImageStatus.DONE -> Text("商品图片已保存", color = Rose, style = MaterialTheme.typography.bodySmall)
+                    ProductImageStatus.FAILED -> Text("商品信息已应用，但图片下载失败，可以手动添加", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    ProductImageStatus.IDLE -> {}
+                }
                 EditText("购买价", item.price?.toString().orEmpty()) { item = item.copy(price = it.toDoubleOrNull()) }
                 EditText("原价（可选）", item.originalPrice?.toString().orEmpty()) { item = item.copy(originalPrice = it.toDoubleOrNull()) }
                 OutlinedButton(onClick = {
@@ -158,6 +196,15 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                 EditText("尺码标签", item.sizeLabel) { item = item.copy(sizeLabel = it) }
                 EditText("安全类别", item.safetyCategory) { item = item.copy(safetyCategory = it) }
                 EditText("我的评价", item.comment) { item = item.copy(comment = it) }
+                Text("我的评分", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    (1..5).forEach { star ->
+                        TextButton(onClick = { item = item.copy(rating = if (item.rating == star) 0 else star) }) {
+                            Text(if (star <= item.rating) "★" else "☆", fontSize = 24.sp)
+                        }
+                    }
+                    if (item.rating > 0) Text("${item.rating} 分", Modifier.padding(start = 8.dp), color = Rose)
+                }
                 if (item.status == ItemStatus.RETURNED) EditText("退货原因", item.returnReason) { item = item.copy(returnReason = it) }
             }
             item {
@@ -166,7 +213,7 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
             }
             item {
                 Button(
-                    enabled = item.name.isNotBlank(),
+                    enabled = item.name.isNotBlank() && productImageStatus != ProductImageStatus.DOWNLOADING,
                     onClick = {
                         val retained = item.images.mapNotNull { it.localPath }.toSet()
                         pendingPaths.filterNot { it in retained }.forEach { ImageStore.deletePrivatePath(context, it) }
@@ -176,11 +223,29 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Rose)
-                ) { Text("保存") }
+                ) { Text(if (productImageStatus == ProductImageStatus.DOWNLOADING) "图片下载中…" else "保存") }
             }
         }
     }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("还有未保存的修改") },
+            text = { Text("确定离开吗？未保存的修改和刚添加的图片会被丢弃。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingPaths.forEach { ImageStore.deletePrivatePath(context, it) }
+                    pendingPaths.clear()
+                    done()
+                }) { Text("放弃修改") }
+            },
+            dismissButton = { TextButton(onClick = { showDiscardDialog = false }) { Text("继续编辑") } }
+        )
+    }
 }
+
+private enum class ProductImageStatus { IDLE, DOWNLOADING, DONE, FAILED }
 
 @Composable
 private fun EditText(label: String, value: String, set: (String) -> Unit) {
@@ -228,10 +293,15 @@ private fun DynamicMaterials(values: List<MaterialPart>, set: (List<MaterialPart
 private fun DynamicMeasures(values: List<Measurement>, set: (List<Measurement>) -> Unit) {
     Text("具体尺寸", style = MaterialTheme.typography.titleMedium)
     values.forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedTextField(row.name, { value -> set(values.map { if (it.id == row.id) it.copy(name = value) else it }) }, label = { Text("尺寸名") }, modifier = Modifier.weight(1f))
-            OutlinedTextField(row.value, { value -> set(values.map { if (it.id == row.id) it.copy(value = value) else it }) }, label = { Text("数值") }, modifier = Modifier.weight(1f))
-            TextButton(onClick = { set(values.filterNot { it.id == row.id }) }) { Text("删除") }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(row.name, { value -> set(values.map { if (it.id == row.id) it.copy(name = value) else it }) }, label = { Text("尺寸名") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(row.value, { value -> set(values.map { if (it.id == row.id) it.copy(value = value) else it }) }, label = { Text("数值") }, modifier = Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(row.unit, { value -> set(values.map { if (it.id == row.id) it.copy(unit = value) else it }) }, label = { Text("单位") }, modifier = Modifier.weight(1f))
+                TextButton(onClick = { set(values.filterNot { it.id == row.id }) }) { Text("删除") }
+            }
         }
     }
     OutlinedButton(onClick = { set(values + Measurement()) }) { Text("+ 添加尺寸") }
