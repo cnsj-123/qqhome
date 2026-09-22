@@ -1,5 +1,7 @@
 package com.xiaoming.closie.ui.detail
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
@@ -7,6 +9,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.xiaoming.closie.data.model.*
@@ -22,6 +25,7 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
     val ws by repo.wearEvents.collectAsState()
     val xs by repo.washEvents.collectAsState()
     val v = all.firstOrNull { it.id == id }
+    val context = LocalContext.current
     var deleting by remember { mutableStateOf(false) }
     if (v == null) { back(); return }
 
@@ -65,6 +69,14 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
                     Text("购买日期：${v.purchaseDate} · 尺码：${v.sizeLabel}")
                     Text("安全类别：${v.safetyCategory}")
                     Text("评价：${v.comment}")
+                    if (v.productUrl.isNotBlank()) {
+                        Text("商品链接：${v.productUrl}")
+                        OutlinedButton(onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl)))
+                            }
+                        }) { Text("打开商品链接") }
+                    }
                     if (v.status == ItemStatus.RETURNED) Text("退货原因：${v.returnReason}")
                 }
             }

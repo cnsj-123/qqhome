@@ -16,6 +16,7 @@ import java.time.LocalDate
 fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
     val items by repo.items.collectAsState()
     val ootds by repo.ootds.collectAsState()
+    val outfits by repo.outfits.collectAsState()
     val owned = items.filter { it.status == ItemStatus.OWNED }
     val today = LocalDate.now().toString()
 
@@ -48,6 +49,11 @@ fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
         item {
             Button(onClick = { go(Destination.Ootd.route) }, modifier = Modifier.fillMaxWidth()) {
                 Text("OOTD 日历")
+            }
+        }
+        item {
+            Button(onClick = { go(Destination.Outfits.route) }, modifier = Modifier.fillMaxWidth()) {
+                Text("搭配室\n${outfits.size} 套搭配")
             }
         }
         item {

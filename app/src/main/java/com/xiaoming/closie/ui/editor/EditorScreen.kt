@@ -11,17 +11,23 @@ import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.xiaoming.closie.data.ImageStore
+import com.xiaoming.closie.data.ProductImporter
+import com.xiaoming.closie.data.ProductPreview
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import com.xiaoming.closie.ui.BackButton
 import com.xiaoming.closie.ui.Rose
 import java.io.File
 import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +55,33 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
             ImageStore.copyFromUri(context, selected)?.let { path ->
                 pendingPaths += path
                 item = item.copy(images = item.images + ClothingImage(kind = currentKind, localPath = path))
+            }
+        }
+    }
+
+    var importing by remember { mutableStateOf(false) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    var preview by remember { mutableStateOf<ProductPreview?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun applyPreview(p: ProductPreview) {
+        var updated = item
+        if (item.name.isBlank() && p.title.isNotBlank()) updated = updated.copy(name = p.title)
+        if (item.price == null) p.price?.let { updated = updated.copy(price = it) }
+        if (item.originalPrice == null) p.originalPrice?.let { updated = updated.copy(originalPrice = it) }
+        if (item.brand.isBlank() && p.brand.isNotBlank()) updated = updated.copy(brand = p.brand)
+        if (item.store.isBlank() && p.store.isNotBlank()) updated = updated.copy(store = p.store)
+        if (item.purchasePlatform.isBlank() && p.platform.isNotBlank()) updated = updated.copy(purchasePlatform = p.platform)
+        item = updated
+        val imageUrl = p.imageUrl
+        preview = null
+        if (!imageUrl.isNullOrBlank()) {
+            scope.launch {
+                val path = withContext(Dispatchers.IO) { ImageStore.copyFromUrl(context, imageUrl) }
+                if (path != null) {
+                    pendingPaths += path
+                    item = item.copy(images = item.images + ClothingImage(kind = ImageKind.PRODUCT, localPath = path))
+                }
             }
         }
     }
@@ -87,6 +120,31 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                 EditText("购买店铺", item.store) { item = item.copy(store = it) }
                 EditText("购买平台", item.purchasePlatform) { item = item.copy(purchasePlatform = it) }
                 EditText("商品链接", item.productUrl) { item = item.copy(productUrl = it) }
+                Button(
+                    onClick = {
+                        val url = item.productUrl.trim()
+                        if (url.isEmpty()) { importError = "请先填写商品链接"; return@Button }
+                        importing = true
+                        importError = null
+                        preview = null
+                        scope.launch {
+                            val result = ProductImporter.fetch(url)
+                            result.onSuccess { p -> preview = p }
+                                .onFailure { e -> importError = e.message ?: "解析失败，请检查链接或网络" }
+                            importing = false
+                        }
+                    },
+                    enabled = !importing,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (importing) "解析中…" else "解析商品") }
+                preview?.let { p ->
+                    ProductPreviewCard(
+                        preview = p,
+                        onApply = { applyPreview(p) },
+                        onDismiss = { preview = null }
+                    )
+                }
+                importError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 EditText("购买价", item.price?.toString().orEmpty()) { item = item.copy(price = it.toDoubleOrNull()) }
                 EditText("原价（可选）", item.originalPrice?.toString().orEmpty()) { item = item.copy(originalPrice = it.toDoubleOrNull()) }
                 OutlinedButton(onClick = {
@@ -177,4 +235,32 @@ private fun DynamicMeasures(values: List<Measurement>, set: (List<Measurement>) 
         }
     }
     OutlinedButton(onClick = { set(values + Measurement()) }) { Text("+ 添加尺寸") }
+}
+
+@Composable
+private fun ProductPreviewCard(preview: ProductPreview, onApply: () -> Unit, onDismiss: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5E7))) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("识别结果", style = MaterialTheme.typography.titleMedium)
+            if (preview.title.isNotBlank()) Text("名称：${preview.title}", style = MaterialTheme.typography.bodySmall)
+            if (preview.price != null) Text("价格：¥${preview.price}", style = MaterialTheme.typography.bodySmall)
+            if (preview.originalPrice != null) Text("原价：¥${preview.originalPrice}", style = MaterialTheme.typography.bodySmall)
+            if (preview.brand.isNotBlank()) Text("品牌：${preview.brand}", style = MaterialTheme.typography.bodySmall)
+            if (preview.store.isNotBlank()) Text("店铺：${preview.store}", style = MaterialTheme.typography.bodySmall)
+            if (preview.platform.isNotBlank()) Text("平台：${preview.platform}", style = MaterialTheme.typography.bodySmall)
+            preview.imageUrl?.let { url ->
+                AsyncImage(
+                    model = url,
+                    contentDescription = "商品主图",
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            Text("仅填充当前为空的字段", color = Rose, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onApply, modifier = Modifier.weight(1f)) { Text("应用识别结果") }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("放弃") }
+            }
+        }
+    }
 }
