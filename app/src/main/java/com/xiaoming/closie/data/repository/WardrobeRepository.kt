@@ -17,4 +17,5 @@ interface WardrobeRepository {
     fun wearCount(itemId: String): Int; fun washCount(itemId: String): Int
     fun listOotds(): List<Ootd>; fun saveOotd(ootd: Ootd): Ootd; fun deleteOotd(id: String)
     fun listOutfits(): List<Outfit>; fun saveOutfit(outfit: Outfit): Outfit; fun deleteOutfit(id: String)
+    fun reloadFromDisk()
 }

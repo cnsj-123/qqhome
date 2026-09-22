@@ -86,6 +86,11 @@ fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
         item {
             Text(if (ootds.any { it.date == today }) "今天已记录 OOTD" else "今天还没有 OOTD", color = Rose)
         }
+        item {
+            OutlinedButton(onClick = { go(Destination.Settings.route) }, modifier = Modifier.fillMaxWidth()) {
+                Text("数据与备份")
+            }
+        }
     }
 }
 

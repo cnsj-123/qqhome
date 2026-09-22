@@ -15,6 +15,7 @@ import com.xiaoming.closie.ui.home.HomeScreen
 import com.xiaoming.closie.ui.ootd.OotdScreen
 import com.xiaoming.closie.ui.outfit.OutfitListScreen
 import com.xiaoming.closie.ui.outfit.OutfitStudioScreen
+import com.xiaoming.closie.ui.settings.DataSettingsScreen
 
 sealed class Destination(val route: String) {
     data object Home : Destination("home")
@@ -26,6 +27,7 @@ sealed class Destination(val route: String) {
     data object Edit : Destination("edit/{id}")
     data object Outfits : Destination("outfits")
     data object OutfitEdit : Destination("outfit_edit/{id}")
+    data object Settings : Destination("settings")
 }
 
 @Composable
@@ -83,5 +85,7 @@ fun ClosieNavHost(repository: WardrobeRepository) {
             val id = entry.arguments?.getString("id")
             OutfitStudioScreen(repository, id?.takeIf { it != "new" }) { nav.popBackStack() }
         }
+
+        composable(Destination.Settings.route) { DataSettingsScreen(repository) { nav.popBackStack() } }
     }
 }

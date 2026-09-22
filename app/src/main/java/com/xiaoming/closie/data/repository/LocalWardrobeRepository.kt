@@ -5,6 +5,7 @@ import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.xiaoming.closie.data.ImageStore
+import com.xiaoming.closie.data.backup.BackupManager
 import com.xiaoming.closie.data.model.*
 import java.io.File
 import java.util.UUID
@@ -14,12 +15,17 @@ import kotlinx.coroutines.flow.StateFlow
 /** JSON persistence with atomic replacement and observable in-memory snapshots. */
 class LocalWardrobeRepository(private val context: Context) : WardrobeRepository {
     private val gson = Gson()
-    private val folder = File(context.filesDir, "closie").apply { mkdirs() }
+    private val folder = File(context.filesDir, "closie")
     private val itemType = object : TypeToken<List<ClothingItem>>() {}.type
     private val wearType = object : TypeToken<List<WearEvent>>() {}.type
     private val washType = object : TypeToken<List<WashEvent>>() {}.type
     private val ootdType = object : TypeToken<List<Ootd>>() {}.type
     private val outfitType = object : TypeToken<List<Outfit>>() {}.type
+
+    init {
+        BackupManager.recoverInterruptedRestore(context)
+        folder.mkdirs()
+    }
 
     private fun <T> read(name: String, type: java.lang.reflect.Type): List<T> =
         runCatching { File(folder, name).takeIf { it.exists() }?.let { gson.fromJson<List<T>>(it.readText(), type) } ?: emptyList() }
@@ -146,6 +152,14 @@ class LocalWardrobeRepository(private val context: Context) : WardrobeRepository
         val old = outfits.value.firstOrNull { it.id == id }
         putOutfits(outfits.value.filterNot { it.id == id })
         old?.tryOnImages.orEmpty().forEach { ImageStore.deletePrivatePath(context, it) }
+    }
+
+    override fun reloadFromDisk() {
+        _items.value = read<ClothingItem>("items.json", itemType).sortedByDescending { it.updatedAt }
+        _wear.value = read<WearEvent>("wear.json", wearType)
+        _wash.value = read<WashEvent>("wash.json", washType)
+        _ootds.value = read<Ootd>("ootds.json", ootdType)
+        _outfits.value = read<Outfit>("outfits.json", outfitType)
     }
 }
 
