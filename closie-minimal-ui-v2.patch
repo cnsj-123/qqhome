@@ -1,0 +1,3423 @@
+From 461d7d9006565ceee75d6bd7d3a5772c4b75c687 Mon Sep 17 00:00:00 2001
+From: Closie <closie@example.com>
+Date: Wed, 23 Sep 2026 11:46:53 +0800
+Subject: [PATCH] style(android): introduce Closie minimal design system
+
+---
+ app/DESIGN.md                                 | 213 ++++++++++
+ .../java/com/xiaoming/closie/MainActivity.kt  |  19 +-
+ .../closie/navigation/ClosieNavigation.kt     | 230 ++++++++---
+ .../java/com/xiaoming/closie/ui/Common.kt     |  39 +-
+ .../xiaoming/closie/ui/closet/ClosetScreen.kt | 390 +++++++++++++-----
+ .../closie/ui/components/ClosieComponents.kt  | 380 +++++++++++++++++
+ .../xiaoming/closie/ui/detail/DetailScreen.kt | 356 +++++++++++-----
+ .../com/xiaoming/closie/ui/home/HomeScreen.kt | 215 +++++++---
+ .../com/xiaoming/closie/ui/ootd/OotdScreen.kt | 293 +++++++++----
+ .../closie/ui/outfit/OutfitListScreen.kt      | 140 +++++--
+ .../closie/ui/outfit/OutfitStudioScreen.kt    | 226 ++++++----
+ .../closie/ui/settings/DataSettingsScreen.kt  | 103 +++--
+ .../com/xiaoming/closie/ui/theme/Color.kt     |  24 ++
+ .../com/xiaoming/closie/ui/theme/Shape.kt     |  13 +
+ .../com/xiaoming/closie/ui/theme/Theme.kt     |  42 ++
+ .../java/com/xiaoming/closie/ui/theme/Type.kt | 103 +++++
+ 16 files changed, 2217 insertions(+), 569 deletions(-)
+ create mode 100644 app/DESIGN.md
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt
+
+diff --git a/app/DESIGN.md b/app/DESIGN.md
+new file mode 100644
+index 0000000..53f96d1
+--- /dev/null
++++ b/app/DESIGN.md
+@@ -0,0 +1,213 @@
++# Closie Android Design System
++
++> A local-first wardrobe companion. Clothes first, chrome second.
++
++## Brand personality
++
++- **minimal** — only what matters, nothing extra
++- **warm** — low-saturation rose, human tone
++- **personal** — it is *your* wardrobe, not a catalog
++- **image-first** — clothing and outfit photos are the heroes
++- **calm** — generous whitespace, quiet hierarchy
++- **lightweight** — fast to scan, fast to record
++
++Closie should feel like a private wardrobe journal, not a database admin tool.
++
++## Form philosophy
++
++> «Select when possible, type only when necessary.»
++>
++> «Show essentials first, details on demand.»
++>
++> «User-entered values become future suggestions.»
++
++Adding a piece of clothing is choosing, not filling a 20-field form.
++
++## Color tokens
++
++| Token            | Hex     | Usage                                      |
++|------------------|---------|--------------------------------------------|
++| Canvas           | #FAF9F7 | root background, behind everything         |
++| Surface          | #FFFFFF | cards, sheets, input backgrounds           |
++| SurfaceSoft      | #F4F2EF | flat-image background, subtle rows         |
++| SurfaceMuted     | #EFEBE7 | disabled, dragged placeholders             |
++| Ink              | #1C1C1E | primary text, icons                        |
++| InkSecondary     | #74716D | subtitles, metadata, hints                 |
++| InkTertiary      | #A39F9A | placeholders, disabled text                |
++| Hairline         | #E8E4DF | dividers, borders, chip outlines           |
++| HairlineStrong   | #DDD8D2 | stronger separators                        |
++| Rose             | #C9828C | primary action, active state, selected chip|
++| RosePressed      | #B66F7A | pressed / darker rose                      |
++| RoseSoft         | #F5E7E9 | tinted surface accents                     |
++| Error            | Material baseline error | errors, destructive actions |
++
++### Rose usage rules
++
++Rose is allowed for:
++- primary action
++- active state
++- selected chip
++- small emphasis
++- current navigation indicator
++
++Rose is **not** allowed for:
++- large pink backgrounds
++- every card
++- every button
++- all titles
++- gradients
++
++## Dark mode
++
++Dark mode is **planned but not implemented yet**. The current C4 theme intentionally
++uses the light palette only (`LightColorScheme`) so that screens and shared components
++never mix fixed light tokens with a dark scheme's white text/icons.
++
++When dark mode is introduced later, screens/components must be migrated to semantic
++`MaterialTheme.colorScheme.*` tokens instead of the raw `ClosieColor.*` constants.
++
++## Typography
++
++Use the Android system font (Roboto / Noto Sans CJK).
++
++- **Display / large titles**: SemiBold
++- **Body**: Regular
++- **Metadata / hints**: Regular, InkSecondary
++
++Avoid giant extra-bold headings, heavy ALL CAPS, and tiny low-contrast captions.
++
++## Spacing
++
++Base grid: 4 dp.
++
++| Token | Value |
++|-------|-------|
++| xxs   | 4 dp  |
++| xs    | 8 dp  |
++| sm    | 12 dp |
++| md    | 16 dp |
++| lg    | 20 dp |
++| xl    | 24 dp |
++| xxl   | 32 dp |
++
++- page horizontal padding: 16–20 dp
++- major section gap: 24–32 dp
++- element gap inside a section: 12–16 dp
++
++## Radius
++
++| Token | Value |
++|-------|-------|
++| Small  | 8 dp  |
++| Medium | 12 dp |
++| Large  | 16 dp |
++| XL     | 20 dp |
++| Pill   | 999 dp|
++
++## Surfaces
++
++- root: Canvas
++- cards/sheets: Surface with 1 dp Hairline stroke, **no elevation shadow**
++- image placeholders: SurfaceSoft
++- selection backdrop: RoseSoft
++
++Hierarchy comes from whitespace and surface color, not from shadows.
++
++## Image treatment
++
++### Flat images
++- SurfaceSoft background
++- ContentScale.Fit
++- padding so transparent PNGs feel like a catalog
++- 16 dp radius
++
++### Product / model / me photos
++- ContentScale.Crop allowed
++- 16 dp radius
++- in grids, crop to uniform aspect ratio
++
++Closet grid prioritizes: FLAT → PRODUCT → other.
++
++## Buttons
++
++- Primary: Rose fill, Surface text
++- Secondary: Surface fill, Ink text, Hairline stroke
++- Tertiary: plain text, Rose only when primary action
++- Avoid filling every action with Rose
++
++## Search
++
++- pill-shaped soft surface
++- Hairline stroke
++- clear action on the trailing side
++- hint in InkTertiary
++
++## Chips
++
++- unselected: Surface, Hairline stroke, Ink text
++- selected: Rose fill, Surface text
++- minimum touch target 44 dp
++
++## Picker
++
++- tap opens a ModalBottomSheet
++- sheet has search, recent/existing section, full list
++- custom value shown as "+ use “X”"
++- dismiss by swipe down or scrim tap
++
++Do **not** use DropdownMenu for long lists.
++
++## Navigation
++
++Single primary bottom navigation:
++
++- 首页
++- 衣橱
++- OOTD
++- 搭配
++
++Settings opens from the home top-right icon.
++Returned lives as a segment inside Closet, not as a top-level tab.
++
++Only one navigation enum / structure exists at a time.
++
++## Cards
++
++- one Card per logical surface is fine; do not nest cards inside cards
++- prefer whitespace over card borders
++- no shadow unless the platform forces one
++
++## Empty state
++
++Truly empty wardrobe:
++
++> 衣橱还是空的
++> 添加第一件真正喜欢的衣服。
++> [+ 添加衣服]
++
++Filtered empty:
++
++> 没有符合当前条件的衣服
++> [清除筛选]
++
++Never mix the two messages.
++
++## Do / Don't
++
++| Do                              | Don't                            |
++|---------------------------------|----------------------------------|
++| Put the photo first             | Bury photos inside heavy cards   |
++| Use whitespace                  | Fill every pixel with controls   |
++| One accent color (Rose)         | Pink everything                  |
++| Group advanced fields behind sections | Show 20 fields at once     |
++| Select before typing            | Force typing for every field     |
++| Hide empty labels               | Show "店铺：" when empty         |
++| Use Chinese labels in the UI    | Show enum names like OWNED/FLAT  |
++| Keep touch targets ≥ 44 dp      | Crowd small tappable areas       |
++
++## Accessibility
++
++- touch targets at least 44–48 dp
++- text contrast ≥ 4.5:1 for body text
++- contentDescription on images and icon-only buttons
++- selected state communicated by more than color alone
+diff --git a/app/src/main/java/com/xiaoming/closie/MainActivity.kt b/app/src/main/java/com/xiaoming/closie/MainActivity.kt
+index 07c5f3d..eeb8118 100644
+--- a/app/src/main/java/com/xiaoming/closie/MainActivity.kt
++++ b/app/src/main/java/com/xiaoming/closie/MainActivity.kt
+@@ -4,16 +4,23 @@ import android.os.Bundle
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
+-import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.Surface
+ import androidx.compose.runtime.remember
+-import androidx.compose.ui.graphics.Color
+ import com.xiaoming.closie.data.repository.LocalWardrobeRepository
+ import com.xiaoming.closie.navigation.ClosieNavHost
++import com.xiaoming.closie.ui.theme.ClosieTheme
+ 
+ class MainActivity : ComponentActivity() {
+-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); enableEdgeToEdge(); setContent {
+-        val repository = remember { LocalWardrobeRepository(applicationContext) }
+-        MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(primary = Color(0xFF765661), background = Color(0xFFFFF8F7), surface = Color(0xFFFFF8F7))) { Surface { ClosieNavHost(repository) } }
+-    } }
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        enableEdgeToEdge()
++        setContent {
++            val repository = remember { LocalWardrobeRepository(applicationContext) }
++            ClosieTheme {
++                Surface {
++                    ClosieNavHost(repository)
++                }
++            }
++        }
++    }
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+index 4e672ec..a26a602 100644
+--- a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
++++ b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+@@ -1,12 +1,28 @@
+ package com.xiaoming.closie.navigation
+ 
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.*
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.AutoAwesome
++import androidx.compose.material.icons.outlined.CalendarMonth
++import androidx.compose.material.icons.outlined.Checkroom
++import androidx.compose.material.icons.outlined.Home
++import androidx.compose.material3.*
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.vector.ImageVector
++import androidx.compose.ui.unit.dp
++import androidx.navigation.NavDestination.Companion.hasRoute
++import androidx.navigation.NavGraph.Companion.findStartDestination
++import androidx.navigation.NavHostController
+ import androidx.navigation.NavType
+ import androidx.navigation.compose.NavHost
+ import androidx.navigation.compose.composable
++import androidx.navigation.compose.currentBackStackEntryAsState
+ import androidx.navigation.compose.rememberNavController
+ import androidx.navigation.navArgument
+-import com.xiaoming.closie.data.model.ItemStatus
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+ import com.xiaoming.closie.ui.closet.ClosetScreen
+ import com.xiaoming.closie.ui.detail.DetailScreen
+@@ -16,76 +32,176 @@ import com.xiaoming.closie.ui.ootd.OotdScreen
+ import com.xiaoming.closie.ui.outfit.OutfitListScreen
+ import com.xiaoming.closie.ui.outfit.OutfitStudioScreen
+ import com.xiaoming.closie.ui.settings.DataSettingsScreen
++import com.xiaoming.closie.ui.theme.ClosieColor
+ 
+-sealed class Destination(val route: String) {
+-    data object Home : Destination("home")
+-    data object Owned : Destination("owned")
+-    data object Returned : Destination("returned")
+-    data object Ootd : Destination("ootd")
+-    data object Add : Destination("add/{status}")
+-    data object Detail : Destination("detail/{id}")
+-    data object Edit : Destination("edit/{id}")
+-    data object Outfits : Destination("outfits")
+-    data object OutfitEdit : Destination("outfit_edit/{id}")
+-    data object Settings : Destination("settings")
++sealed class TopLevel(
++    val route: String,
++    val label: String,
++    val icon: ImageVector
++) {
++    data object Home : TopLevel("home", "首页", Icons.Outlined.Home)
++    data object Closet : TopLevel("closet", "衣橱", Icons.Outlined.Checkroom)
++    data object Ootd : TopLevel("ootd", "OOTD", Icons.Outlined.CalendarMonth)
++    data object Outfits : TopLevel("outfits", "搭配", Icons.Outlined.AutoAwesome)
++
++    companion object {
++        val entries = listOf(Home, Closet, Ootd, Outfits)
++    }
++}
++
++sealed class Route(val route: String) {
++    data object Detail : Route("detail/{id}")
++    data object Edit : Route("edit/{id}")
++    data object Add : Route("add/{status}")
++    data object Settings : Route("settings")
++    data object OutfitEdit : Route("outfit_edit/{id}")
+ }
+ 
+ @Composable
+ fun ClosieNavHost(repository: WardrobeRepository) {
+     val nav = rememberNavController()
+-    NavHost(navController = nav, startDestination = Destination.Home.route) {
+-        composable(Destination.Home.route) { HomeScreen(repository) { nav.navigate(it) } }
+-
+-        composable(Destination.Ootd.route) { OotdScreen(repository) { nav.popBackStack() } }
+-
+-        composable(Destination.Owned.route) {
+-            ClosetScreen(
+-                repository, ItemStatus.OWNED,
+-                open = { nav.navigate(Destination.Detail.route.replace("{id}", it)) },
+-                add = { nav.navigate(Destination.Add.route.replace("{status}", "OWNED")) },
+-                back = { nav.popBackStack() }
+-            )
+-        }
++    val current by nav.currentBackStackEntryAsState()
++    val currentRoute = current?.destination?.route
++    val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
+ 
+-        composable(Destination.Returned.route) {
+-            ClosetScreen(
+-                repository, ItemStatus.RETURNED,
+-                open = { nav.navigate(Destination.Detail.route.replace("{id}", it)) },
+-                add = { nav.navigate(Destination.Add.route.replace("{status}", "RETURNED")) },
+-                back = { nav.popBackStack() }
+-            )
++    Scaffold(
++        containerColor = ClosieColor.Canvas,
++        bottomBar = {
++            if (showBottomBar) {
++                ClosieBottomNavigation(
++                    currentRoute = currentRoute,
++                    onSelect = { nav.navigateTopLevel(it) }
++                )
++            }
+         }
++    ) { padding ->
++        NavHost(
++            navController = nav,
++            startDestination = TopLevel.Home.route,
++            modifier = Modifier.padding(padding)
++        ) {
++            composable(TopLevel.Home.route) {
++                HomeScreen(
++                    repository,
++                    onSettings = { nav.navigate(Route.Settings.route) },
++                    onOpenCloset = { nav.navigateTopLevel(TopLevel.Closet) },
++                    onOpenOotd = { nav.navigateTopLevel(TopLevel.Ootd) }
++                )
++            }
+ 
+-        composable(Destination.Add.route, arguments = listOf(navArgument("status") { type = NavType.StringType })) { entry ->
+-            EditorScreen(repository, null, entry.arguments?.getString("status") ?: "OWNED") { nav.popBackStack() }
+-        }
++            composable(TopLevel.Closet.route) {
++                ClosetScreen(
++                    repository,
++                    open = { nav.navigate(Route.Detail.route.replace("{id}", it)) },
++                    add = { status -> nav.navigate(Route.Add.route.replace("{status}", status.name)) }
++                )
++            }
+ 
+-        composable(Destination.Detail.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+-            DetailScreen(
+-                repository, entry.arguments?.getString("id").orEmpty(),
+-                edit = { nav.navigate(Destination.Edit.route.replace("{id}", it)) },
+-                back = { nav.popBackStack() }
+-            )
+-        }
++            composable(TopLevel.Ootd.route) { OotdScreen(repository) { nav.popBackStack() } }
+ 
+-        composable(Destination.Edit.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+-            EditorScreen(repository, entry.arguments?.getString("id"), null) { nav.popBackStack() }
+-        }
++            composable(TopLevel.Outfits.route) {
++                OutfitListScreen(
++                    repository,
++                    open = { nav.navigate(Route.OutfitEdit.route.replace("{id}", it)) },
++                    create = { nav.navigate(Route.OutfitEdit.route.replace("{id}", "new")) },
++                    back = { nav.popBackStack() }
++                )
++            }
+ 
+-        composable(Destination.Outfits.route) {
+-            OutfitListScreen(
+-                repository,
+-                open = { nav.navigate(Destination.OutfitEdit.route.replace("{id}", it)) },
+-                create = { nav.navigate(Destination.OutfitEdit.route.replace("{id}", "new")) },
+-                back = { nav.popBackStack() }
+-            )
+-        }
++            composable(
++                Route.Add.route,
++                arguments = listOf(navArgument("status") { type = NavType.StringType })
++            ) { entry ->
++                EditorScreen(
++                    repository,
++                    null,
++                    entry.arguments?.getString("status") ?: "OWNED"
++                ) { nav.popBackStack() }
++            }
++
++            composable(
++                Route.Detail.route,
++                arguments = listOf(navArgument("id") { type = NavType.StringType })
++            ) { entry ->
++                DetailScreen(
++                    repository,
++                    entry.arguments?.getString("id").orEmpty(),
++                    edit = { nav.navigate(Route.Edit.route.replace("{id}", it)) },
++                    back = { nav.popBackStack() }
++                )
++            }
+ 
+-        composable(Destination.OutfitEdit.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+-            val id = entry.arguments?.getString("id")
+-            OutfitStudioScreen(repository, id?.takeIf { it != "new" }) { nav.popBackStack() }
++            composable(
++                Route.Edit.route,
++                arguments = listOf(navArgument("id") { type = NavType.StringType })
++            ) { entry ->
++                EditorScreen(
++                    repository,
++                    entry.arguments?.getString("id"),
++                    null
++                ) { nav.popBackStack() }
++            }
++
++            composable(
++                Route.OutfitEdit.route,
++                arguments = listOf(navArgument("id") { type = NavType.StringType })
++            ) { entry ->
++                val id = entry.arguments?.getString("id")
++                OutfitStudioScreen(repository, id?.takeIf { it != "new" }) { nav.popBackStack() }
++            }
++
++            composable(Route.Settings.route) { DataSettingsScreen(repository) { nav.popBackStack() } }
+         }
++    }
++}
+ 
+-        composable(Destination.Settings.route) { DataSettingsScreen(repository) { nav.popBackStack() } }
++private fun NavHostController.navigateTopLevel(tab: TopLevel) {
++    navigate(tab.route) {
++        popUpTo(graph.findStartDestination().id) { saveState = true }
++        launchSingleTop = true
++        restoreState = true
++    }
++}
++
++@Composable
++private fun ClosieBottomNavigation(
++    currentRoute: String?,
++    onSelect: (TopLevel) -> Unit,
++    modifier: Modifier = Modifier
++) {
++    Surface(
++        modifier = modifier.fillMaxWidth(),
++        color = ClosieColor.Surface,
++        tonalElevation = 0.dp,
++        shadowElevation = 0.dp
++    ) {
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .heightIn(min = 64.dp)
++                .padding(horizontal = 8.dp, vertical = 8.dp),
++            horizontalArrangement = Arrangement.SpaceEvenly,
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            TopLevel.entries.forEach { tab ->
++                val selected = tab.route == currentRoute
++                val color = if (selected) ClosieColor.Rose else ClosieColor.InkTertiary
++                Column(
++                    modifier = Modifier
++                        .widthIn(min = 48.dp)
++                        .clickable(onClick = { onSelect(tab) })
++                        .padding(horizontal = 8.dp, vertical = 4.dp),
++                    horizontalAlignment = Alignment.CenterHorizontally,
++                    verticalArrangement = Arrangement.spacedBy(2.dp)
++                ) {
++                    Icon(tab.icon, contentDescription = tab.label, tint = color)
++                    Text(
++                        tab.label,
++                        style = MaterialTheme.typography.labelSmall,
++                        color = color
++                    )
++                }
++            }
++        }
+     }
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/Common.kt b/app/src/main/java/com/xiaoming/closie/ui/Common.kt
+index 85ba83f..ebceb9c 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/Common.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/Common.kt
+@@ -1,11 +1,40 @@
+ package com.xiaoming.closie.ui
+ 
+-import androidx.compose.foundation.layout.*
+-import androidx.compose.material3.*
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.ColumnScope
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.Card
++import androidx.compose.material3.CardDefaults
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.unit.dp
+-val Rose=Color(0xFF765661);val CardWhite=Color.White
+-@Composable fun BackButton(back:()->Unit){IconButton(onClick=back){Text("‹",style=MaterialTheme.typography.headlineMedium)}}
+-@Composable fun Section(title:String,content:@Composable ColumnScope.()->Unit){Card(colors=CardDefaults.cardColors(containerColor=CardWhite)){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,style=MaterialTheme.typography.titleMedium);content()}}}
++import com.xiaoming.closie.ui.components.ClosieBackButton
++import com.xiaoming.closie.ui.theme.ClosieColor
++
++// Legacy compatibility aliases for screens not yet migrated in C4A.
++val Rose: Color = ClosieColor.Rose
++
++@Composable
++fun BackButton(modifier: Modifier = Modifier, back: () -> Unit) = ClosieBackButton(modifier = modifier, onClick = back)
++
++@Composable
++fun Section(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
++    Card(
++        modifier = modifier,
++        colors = CardDefaults.cardColors(containerColor = Color.White),
++        shape = RoundedCornerShape(16.dp)
++    ) {
++        Column(
++            modifier = Modifier.padding(16.dp),
++            verticalArrangement = Arrangement.spacedBy(10.dp)
++        ) {
++            Text(title, style = MaterialTheme.typography.titleMedium)
++            content()
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+index da5e2c6..e733cfc 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+@@ -1,189 +1,371 @@
+ package com.xiaoming.closie.ui.closet
+ 
+ import androidx.compose.foundation.background
++import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyRow
+-import androidx.compose.foundation.lazy.items as listItems
+ import androidx.compose.foundation.lazy.grid.GridCells
+ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+ import androidx.compose.foundation.lazy.grid.items
++import androidx.compose.foundation.lazy.items as lazyItems
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Add
++import androidx.compose.material.icons.outlined.FilterAlt
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+-import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+-import coil.compose.AsyncImage
+-import com.xiaoming.closie.data.model.*
++import com.xiaoming.closie.data.model.ClothingItem
++import com.xiaoming.closie.data.model.ImageKind
++import com.xiaoming.closie.data.model.ItemStatus
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.ui.*
++import com.xiaoming.closie.ui.components.*
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.io.File
+ 
+ private enum class SortOption(val label: String) {
+-    RECENT("最近编辑"), NAME("名称"), PURCHASE_DATE("最近购买"),
+-    PRICE_ASC("价格低→高"), PRICE_DESC("价格高→低"),
+-    WEAR_DESC("穿着多→少"), WEAR_ASC("穿着少→多")
++    RECENT("最近编辑"),
++    PURCHASE_DATE("最近购买"),
++    WEAR_DESC("穿着最多"),
++    PRICE_ASC("价格低到高"),
++    PRICE_DESC("价格高到低")
+ }
+ 
++private val categoryPresets = listOf(
++    "上衣", "下装", "外套", "裙装", "连体", "鞋", "包", "配饰", "运动", "家居服", "内衣", "其他"
++)
++
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ fun ClosetScreen(
+     repo: WardrobeRepository,
+-    status: ItemStatus,
+     open: (String) -> Unit,
+-    add: () -> Unit,
+-    back: () -> Unit
++    add: (ItemStatus) -> Unit
+ ) {
+     var query by remember { mutableStateOf("") }
+-    var category by remember { mutableStateOf("") }
++    var selectedCategory by remember { mutableStateOf("") }
+     var sort by remember { mutableStateOf(SortOption.RECENT) }
+     var onlyUnworn by remember { mutableStateOf(false) }
+-    var sortMenu by remember { mutableStateOf(false) }
++    var status by remember { mutableStateOf(ItemStatus.OWNED) }
++    var showFilterSheet by remember { mutableStateOf(false) }
++
+     val all by repo.items.collectAsState()
+     val wears by repo.wearEvents.collectAsState()
++    val wearCount = remember(wears) { wears.groupingBy { it.itemId }.eachCount() }
+ 
+     val statusItems = all.filter { it.status == status }
+-    val categories = statusItems.map { it.category }.filter { it.isNotBlank() }.distinct()
+-    val wearCount = remember(wears) { wears.groupingBy { it.itemId }.eachCount() }
++    val userCategories = statusItems.map { it.category }.filter { it.isNotBlank() }.distinct()
++    val categories = (categoryPresets + userCategories).distinct()
+ 
+     val q = query.trim()
+     val filtered = statusItems.filter { item ->
+         val matchesQuery = q.isEmpty() || listOf(
+             item.name, item.category, item.subcategory, item.brand, item.store, item.purchasePlatform
+         ).any { it.contains(q, ignoreCase = true) }
+-        val matchesCategory = category.isBlank() || item.category == category
++        val matchesCategory = selectedCategory.isBlank() || item.category == selectedCategory
+         val matchesUnworn = !onlyUnworn || (wearCount[item.id] ?: 0) == 0
+         matchesQuery && matchesCategory && matchesUnworn
+     }
+ 
+     val visibleItems = when (sort) {
+         SortOption.RECENT -> filtered.sortedByDescending { it.updatedAt }
+-        SortOption.NAME -> filtered.sortedBy { it.name }
+         SortOption.PURCHASE_DATE -> filtered.sortedByDescending { it.purchaseDate }
++        SortOption.WEAR_DESC -> filtered.sortedByDescending { wearCount[it.id] ?: 0 }
+         SortOption.PRICE_ASC -> filtered.sortedWith(compareBy({ it.price ?: Double.MAX_VALUE }, { it.name }))
+         SortOption.PRICE_DESC -> filtered.sortedWith(compareByDescending<ClothingItem> { it.price ?: -1.0 }.thenBy { it.name })
+-        SortOption.WEAR_DESC -> filtered.sortedByDescending { wearCount[it.id] ?: 0 }
+-        SortOption.WEAR_ASC -> filtered.sortedBy { wearCount[it.id] ?: 0 }
+     }
+ 
+     Scaffold(
++        containerColor = ClosieColor.Canvas,
+         topBar = {
+             TopAppBar(
+-                title = { Text(if (status == ItemStatus.OWNED) "我的衣橱" else "试过 / 退货") },
+-                navigationIcon = { BackButton(back) }
++                title = {
++                    Column {
++                        Text("我的衣橱", style = MaterialTheme.typography.titleLarge)
++                        Text("${statusItems.size} 件", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
++                    }
++                },
++                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+             )
+         },
+-        floatingActionButton = { FloatingActionButton(onClick = add, containerColor = Rose) { Text("+") } }
++        floatingActionButton = {
++            FloatingActionButton(
++                onClick = { add(status) },
++                containerColor = ClosieColor.Rose,
++                contentColor = ClosieColor.Surface,
++                shape = MaterialTheme.shapes.extraLarge
++            ) { Icon(Icons.Default.Add, contentDescription = "添加衣服") }
++        }
+     ) { padding ->
+-        Column(Modifier.padding(padding).fillMaxSize().padding(12.dp)) {
+-            OutlinedTextField(
++        Column(
++            modifier = Modifier
++                .padding(padding)
++                .fillMaxSize()
++                .padding(horizontal = 16.dp, vertical = 12.dp),
++            verticalArrangement = Arrangement.spacedBy(16.dp)
++        ) {
++            // Status segment
++            Row(
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .clip(MaterialTheme.shapes.large)
++                    .background(ClosieColor.Surface)
++                    .border(1.dp, ClosieColor.Hairline, MaterialTheme.shapes.large)
++                    .padding(4.dp),
++                horizontalArrangement = Arrangement.spacedBy(4.dp)
++            ) {
++                SegmentButton(
++                    label = "已拥有",
++                    selected = status == ItemStatus.OWNED,
++                    onClick = { status = ItemStatus.OWNED; selectedCategory = ""; onlyUnworn = false },
++                    modifier = Modifier.weight(1f)
++                )
++                SegmentButton(
++                    label = "试过 / 退货",
++                    selected = status == ItemStatus.RETURNED,
++                    onClick = { status = ItemStatus.RETURNED; selectedCategory = ""; onlyUnworn = false },
++                    modifier = Modifier.weight(1f)
++                )
++            }
++
++            ClosieSearchBar(
+                 value = query,
+                 onValueChange = { query = it },
+-                label = { Text("搜索名称 / 类别 / 品牌 / 店铺 / 平台") },
+-                modifier = Modifier.fillMaxWidth()
++                placeholder = "搜索衣服、品牌、类别"
+             )
+-            Spacer(Modifier.height(8.dp))
+-
+-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                Box {
+-                    OutlinedButton(onClick = { sortMenu = true }) { Text("排序：${sort.label}") }
+-                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+-                        SortOption.entries.forEach { option ->
+-                            DropdownMenuItem(
+-                                text = { Text(option.label) },
+-                                onClick = { sort = option; sortMenu = false }
+-                            )
+-                        }
+-                    }
+-                }
+-                if (status == ItemStatus.OWNED) {
+-                    FilterChip(
+-                        selected = onlyUnworn,
+-                        onClick = { onlyUnworn = !onlyUnworn },
+-                        label = { Text("只看未穿过") }
+-                    )
+-                }
+-            }
+-            Spacer(Modifier.height(8.dp))
+ 
+-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                item {
+-                    FilterChip(selected = category.isBlank(), onClick = { category = "" }, label = { Text("全部") })
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.SpaceBetween,
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    item {
++                        ClosieFilterChip(
++                            selected = selectedCategory.isBlank(),
++                            onClick = { selectedCategory = "" },
++                            label = "全部"
++                        )
++                    }
++                    lazyItems(categories) { c ->
++                        ClosieFilterChip(
++                            selected = selectedCategory == c,
++                            onClick = { selectedCategory = c },
++                            label = c
++                        )
++                    }
+                 }
+-                listItems(categories) { c ->
+-                    FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) })
++                IconButton(onClick = { showFilterSheet = true }) {
++                    Icon(Icons.Outlined.FilterAlt, contentDescription = "筛选", tint = ClosieColor.InkSecondary)
+                 }
+             }
+-            Spacer(Modifier.height(8.dp))
+ 
+             if (visibleItems.isEmpty()) {
+                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-                        if (statusItems.isEmpty()) {
+-                            Text(
+-                                if (status == ItemStatus.OWNED) "还没有衣服，点 + 添加第一件吧" else "还没有试过 / 退货记录",
+-                                color = Rose
+-                            )
+-                        } else {
+-                            Text("没有符合当前搜索或筛选条件的衣服", color = Rose)
+-                            OutlinedButton(onClick = {
++                    if (statusItems.isEmpty()) {
++                        ClosieEmptyState(
++                            title = "衣橱还是空的",
++                            subtitle = "添加第一件真正喜欢的衣服。",
++                            actionLabel = "+ 添加衣服",
++                            onAction = { add(status) }
++                        )
++                    } else {
++                        ClosieEmptyState(
++                            title = "没有符合当前条件的衣服",
++                            subtitle = "试试清除筛选。",
++                            actionLabel = "清除筛选",
++                            onAction = {
+                                 query = ""
+-                                category = ""
++                                selectedCategory = ""
+                                 onlyUnworn = false
+                                 sort = SortOption.RECENT
+-                            }) { Text("清除筛选") }
+-                        }
++                            }
++                        )
+                     }
+                 }
+             } else {
+                 LazyVerticalGrid(
+                     columns = GridCells.Fixed(2),
+-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
++                    verticalArrangement = Arrangement.spacedBy(16.dp),
++                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                     modifier = Modifier.fillMaxSize()
+                 ) {
+                     items(visibleItems, key = { it.id }) { item ->
+-                        val image = item.images.firstOrNull { it.kind == ImageKind.FLAT } ?: item.images.firstOrNull()
+-                        Card(modifier = Modifier.clickable { open(item.id) }) {
+-                            Column {
+-                                if (image?.localPath != null) {
+-                                    AsyncImage(
+-                                        model = File(image.localPath),
+-                                        contentDescription = item.name,
+-                                        modifier = Modifier.fillMaxWidth().height(150.dp),
+-                                        contentScale = if (image.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
+-                                    )
+-                                } else {
+-                                    Box(
+-                                        Modifier.fillMaxWidth().height(150.dp).background(Color(0xFFF3E5E7)),
+-                                        contentAlignment = Alignment.Center
+-                                    ) { Text(item.name, color = Rose, style = MaterialTheme.typography.bodySmall) }
+-                                }
+-                                Text(item.name, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), maxLines = 1)
+-                                Text(item.category, Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.bodySmall, color = Rose)
+-                                if (item.brand.isNotBlank()) {
+-                                    Text(item.brand, Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.bodySmall)
+-                                }
+-                                item.price?.let { Text(priceText(it), Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.bodySmall) }
+-                                if (status == ItemStatus.OWNED) {
+-                                    val wc = wearCount[item.id] ?: 0
+-                                    Text(
+-                                        if (wc > 0) "穿过 $wc 次" else "还没穿过",
+-                                        Modifier.padding(10.dp),
+-                                        style = MaterialTheme.typography.bodySmall
+-                                    )
+-                                }
+-                            }
+-                        }
++                        ClothingItemTile(item, wearCount[item.id] ?: 0, status == ItemStatus.OWNED) { open(item.id) }
+                     }
+                 }
+             }
+         }
+     }
++
++    if (showFilterSheet) {
++        ModalBottomSheet(
++            onDismissRequest = { showFilterSheet = false },
++            containerColor = ClosieColor.Surface,
++            shape = MaterialTheme.shapes.extraLarge
++        ) {
++            FilterSheetContent(
++                sort = sort,
++                onSort = { sort = it },
++                onlyUnworn = onlyUnworn,
++                onOnlyUnworn = { onlyUnworn = it },
++                showUnwornFilter = status == ItemStatus.OWNED,
++                onClear = {
++                    sort = SortOption.RECENT
++                    onlyUnworn = false
++                },
++                onApply = { showFilterSheet = false }
++            )
++        }
++    }
++}
++
++@Composable
++private fun SegmentButton(
++    label: String,
++    selected: Boolean,
++    onClick: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    val bg = if (selected) ClosieColor.Rose else ClosieColor.Surface
++    val content = if (selected) ClosieColor.Surface else ClosieColor.InkSecondary
++    Box(
++        modifier = modifier
++            .heightIn(min = 44.dp)
++            .clip(MaterialTheme.shapes.medium)
++            .background(bg)
++            .clickable(onClick = onClick)
++            .padding(vertical = 8.dp),
++        contentAlignment = Alignment.Center
++    ) {
++        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
++    }
++}
++
++@Composable
++private fun ClothingItemTile(
++    item: ClothingItem,
++    wears: Int,
++    showWearCount: Boolean,
++    onClick: () -> Unit
++) {
++    val image = item.images.firstOrNull { it.kind == ImageKind.FLAT }
++        ?: item.images.firstOrNull { it.kind == ImageKind.PRODUCT }
++        ?: item.images.firstOrNull()
++    Column(
++        modifier = Modifier.clickable(onClick = onClick),
++        verticalArrangement = Arrangement.spacedBy(8.dp)
++    ) {
++        ClosieImageTile(
++            model = image?.localPath?.let { File(it) },
++            contentDescription = item.name,
++            modifier = Modifier
++                .fillMaxWidth()
++                .aspectRatio(0.9f),
++            contentScale = if (image?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++            placeholder = {
++                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                    Text(item.name, color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
++                }
++            }
++        )
++        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
++            Text(item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1)
++            val meta = listOfNotNull(item.brand.takeIf { it.isNotBlank() }, item.sizeLabel.takeIf { it.isNotBlank() })
++                .joinToString(" · ")
++            if (meta.isNotBlank()) {
++                Text(meta, style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary, maxLines = 1)
++            }
++            if (showWearCount) {
++                Text(
++                    if (wears > 0) "穿过 $wears 次" else "还没穿过",
++                    style = MaterialTheme.typography.bodySmall,
++                    color = if (wears > 0) ClosieColor.InkSecondary else ClosieColor.InkTertiary
++                )
++            }
++        }
++    }
+ }
+ 
+-private fun priceText(p: Double): String =
+-    "¥" + if (p == p.toLong().toDouble()) p.toLong().toString() else p.toString()
++@Composable
++private fun FilterSheetContent(
++    sort: SortOption,
++    onSort: (SortOption) -> Unit,
++    onlyUnworn: Boolean,
++    onOnlyUnworn: (Boolean) -> Unit,
++    showUnwornFilter: Boolean,
++    onClear: () -> Unit,
++    onApply: () -> Unit
++) {
++    Column(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(horizontal = 20.dp)
++            .padding(bottom = 32.dp, top = 8.dp),
++        verticalArrangement = Arrangement.spacedBy(20.dp)
++    ) {
++        Text("筛选", style = MaterialTheme.typography.headlineSmall)
++
++        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++            Text("状态", style = MaterialTheme.typography.titleMedium)
++            Text("在衣橱页顶部切换“已拥有 / 试过·退货”", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++        }
++
++        if (showUnwornFilter) {
++            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                Text("只看未穿过", style = MaterialTheme.typography.titleMedium)
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .clip(MaterialTheme.shapes.large)
++                        .background(ClosieColor.SurfaceSoft)
++                        .clickable { onOnlyUnworn(!onlyUnworn) }
++                        .padding(16.dp),
++                    horizontalArrangement = Arrangement.SpaceBetween,
++                    verticalAlignment = Alignment.CenterVertically
++                ) {
++                    Text("只看未穿过的衣服")
++                    Switch(checked = onlyUnworn, onCheckedChange = onOnlyUnworn)
++                }
++            }
++        }
++
++        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++            Text("排序", style = MaterialTheme.typography.titleMedium)
++            SortOption.entries.forEach { option ->
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .clip(MaterialTheme.shapes.medium)
++                        .background(if (sort == option) ClosieColor.RoseSoft else ClosieColor.Surface)
++                        .clickable { onSort(option) }
++                        .padding(horizontal = 16.dp, vertical = 12.dp),
++                    horizontalArrangement = Arrangement.SpaceBetween,
++                    verticalAlignment = Alignment.CenterVertically
++                ) {
++                    Text(option.label, color = if (sort == option) ClosieColor.RosePressed else ClosieColor.Ink)
++                    if (sort == option) Text("●", color = ClosieColor.Rose)
++                }
++            }
++        }
++
++        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++            OutlinedButton(
++                onClick = onClear,
++                modifier = Modifier.weight(1f),
++                shape = MaterialTheme.shapes.large
++            ) { Text("清除") }
++            Button(
++                onClick = onApply,
++                modifier = Modifier.weight(1f),
++                shape = MaterialTheme.shapes.large,
++                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
++            ) { Text("应用") }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt b/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt
+new file mode 100644
+index 0000000..7c8fe47
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt
+@@ -0,0 +1,380 @@
++package com.xiaoming.closie.ui.components
++
++import androidx.compose.animation.AnimatedVisibility
++import androidx.compose.animation.expandVertically
++import androidx.compose.animation.shrinkVertically
++import androidx.compose.foundation.background
++import androidx.compose.foundation.border
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.interaction.MutableInteractionSource
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.shape.CircleShape
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.text.BasicTextField
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Close
++import androidx.compose.material.icons.filled.Search
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.semantics.contentDescription
++import androidx.compose.ui.semantics.role
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.semantics.selected
++import androidx.compose.ui.text.TextStyle
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.input.VisualTransformation
++import androidx.compose.ui.unit.dp
++import coil.compose.AsyncImage
++import com.xiaoming.closie.ui.theme.ClosieColor
++import java.io.File
++
++// ------------------------------------------------------------------------------------------------
++// Buttons
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieBackButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
++    IconButton(onClick = onClick, modifier = modifier.size(48.dp)) {
++        Text(
++            text = "‹",
++            style = MaterialTheme.typography.headlineMedium,
++            color = MaterialTheme.colorScheme.onSurface
++        )
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Search
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieSearchBar(
++    value: String,
++    onValueChange: (String) -> Unit,
++    placeholder: String,
++    modifier: Modifier = Modifier
++) {
++    val shape = RoundedCornerShape(999.dp)
++    BasicTextField(
++        value = value,
++        onValueChange = onValueChange,
++        modifier = modifier
++            .fillMaxWidth()
++            .heightIn(min = 48.dp)
++            .clip(shape)
++            .background(ClosieColor.Surface)
++            .border(1.dp, ClosieColor.Hairline, shape)
++            .padding(horizontal = 16.dp, vertical = 12.dp),
++        textStyle = MaterialTheme.typography.bodyLarge.copy(color = ClosieColor.Ink),
++        singleLine = true,
++        decorationBox = { innerTextField ->
++            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++                Icon(Icons.Default.Search, contentDescription = null, tint = ClosieColor.InkTertiary)
++                Box(Modifier.weight(1f)) {
++                    if (value.isBlank()) {
++                        Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
++                    }
++                    innerTextField()
++                }
++                if (value.isNotBlank()) {
++                    IconButton(onClick = { onValueChange("") }, modifier = Modifier.size(44.dp)) {
++                        Icon(Icons.Default.Close, contentDescription = "清除搜索", tint = ClosieColor.InkTertiary)
++                    }
++                }
++            }
++        }
++    )
++}
++
++// ------------------------------------------------------------------------------------------------
++// Chips
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieFilterChip(
++    selected: Boolean,
++    onClick: () -> Unit,
++    label: String,
++    modifier: Modifier = Modifier
++) {
++    val bg = if (selected) ClosieColor.Rose else ClosieColor.Surface
++    val content = if (selected) ClosieColor.Surface else ClosieColor.Ink
++    val borderColor = if (selected) ClosieColor.Rose else ClosieColor.Hairline
++    Box(
++        modifier = modifier
++            .heightIn(min = 44.dp)
++            .clip(RoundedCornerShape(999.dp))
++            .border(1.dp, borderColor, RoundedCornerShape(999.dp))
++            .background(bg)
++            .clickable(onClick = onClick)
++            .padding(horizontal = 16.dp, vertical = 8.dp)
++            .semantics {
++                role = Role.Checkbox
++                this.selected = selected
++                contentDescription = "$label ${if (selected) "已选中" else "未选中"}"
++            },
++        contentAlignment = Alignment.Center
++    ) {
++        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Section header
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieSectionHeader(
++    title: String,
++    actionLabel: String? = null,
++    onAction: (() -> Unit)? = null,
++    modifier: Modifier = Modifier
++) {
++    Row(
++        modifier = modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Text(title, style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++        if (actionLabel != null && onAction != null) {
++            TextButton(onClick = onAction) { Text(actionLabel, color = ClosieColor.Rose) }
++        }
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Collapsible section
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieCollapsibleSection(
++    title: String,
++    expanded: Boolean,
++    onToggle: () -> Unit,
++    modifier: Modifier = Modifier,
++    content: @Composable ColumnScope.() -> Unit
++) {
++    Column(
++        modifier = modifier
++            .fillMaxWidth()
++            .clip(RoundedCornerShape(16.dp))
++            .background(ClosieColor.Surface)
++            .border(1.dp, ClosieColor.Hairline, RoundedCornerShape(16.dp))
++    ) {
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .clickable(onClick = onToggle)
++                .padding(horizontal = 16.dp, vertical = 16.dp),
++            horizontalArrangement = Arrangement.SpaceBetween,
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            Text(title, style = MaterialTheme.typography.titleMedium)
++            Text(if (expanded) "收起" else "展开", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Rose)
++        }
++        AnimatedVisibility(
++            visible = expanded,
++            enter = expandVertically(),
++            exit = shrinkVertically()
++        ) {
++            Column(
++                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
++                verticalArrangement = Arrangement.spacedBy(12.dp),
++                content = content
++            )
++        }
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Picker field (visual primitive)
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosiePickerField(
++    label: String,
++    value: String,
++    placeholder: String,
++    onClick: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    val shape = RoundedCornerShape(12.dp)
++    Column(modifier = modifier.fillMaxWidth()) {
++        Text(label, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++        Spacer(Modifier.height(6.dp))
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .heightIn(min = 48.dp)
++                .clip(shape)
++                .background(ClosieColor.Surface)
++                .border(1.dp, ClosieColor.Hairline, shape)
++                .clickable(onClick = onClick)
++                .padding(horizontal = 16.dp, vertical = 12.dp),
++            verticalAlignment = Alignment.CenterVertically,
++            horizontalArrangement = Arrangement.SpaceBetween
++        ) {
++            Text(
++                text = value.ifBlank { placeholder },
++                style = MaterialTheme.typography.bodyLarge,
++                color = if (value.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink
++            )
++            Text("›", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
++        }
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Empty state
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieEmptyState(
++    title: String,
++    subtitle: String,
++    actionLabel: String? = null,
++    onAction: (() -> Unit)? = null,
++    modifier: Modifier = Modifier
++) {
++    Column(
++        modifier = modifier.fillMaxWidth(),
++        horizontalAlignment = Alignment.CenterHorizontally,
++        verticalArrangement = Arrangement.spacedBy(8.dp)
++    ) {
++        Text(title, style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++        if (actionLabel != null && onAction != null) {
++            Spacer(Modifier.height(8.dp))
++            Button(
++                onClick = onAction,
++                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
++            ) { Text(actionLabel) }
++        }
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Image tile
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieImageTile(
++    model: Any?,
++    contentDescription: String?,
++    modifier: Modifier = Modifier,
++    selected: Boolean = false,
++    onClick: (() -> Unit)? = null,
++    contentScale: ContentScale = ContentScale.Crop,
++    placeholder: @Composable (() -> Unit)? = null
++) {
++    val shape = RoundedCornerShape(16.dp)
++    Box(
++        modifier = modifier
++            .clip(shape)
++            .background(ClosieColor.SurfaceSoft)
++            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
++            .then(if (selected) Modifier.border(2.dp, ClosieColor.Rose, shape) else Modifier)
++    ) {
++        if (model != null) {
++            AsyncImage(
++                model = model,
++                contentDescription = contentDescription,
++                modifier = Modifier.fillMaxSize(),
++                contentScale = contentScale
++            )
++        } else if (placeholder != null) {
++            placeholder()
++        }
++        if (selected) {
++            Box(
++                modifier = Modifier
++                    .align(Alignment.TopEnd)
++                    .padding(8.dp)
++                    .size(24.dp)
++                    .clip(CircleShape)
++                    .background(ClosieColor.Rose),
++                contentAlignment = Alignment.Center
++            ) {
++                Text("✓", color = ClosieColor.Surface, style = MaterialTheme.typography.labelMedium)
++            }
++        }
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Info row
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieInfoRow(
++    label: String,
++    value: String?,
++    modifier: Modifier = Modifier
++) {
++    if (value.isNullOrBlank()) return
++    Row(
++        modifier = modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.SpaceBetween
++    ) {
++        Text(label, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++        Text(value, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Bottom action bar
++// ------------------------------------------------------------------------------------------------
++
++@Composable
++fun ClosieBottomActionBar(
++    primaryLabel: String,
++    onPrimary: () -> Unit,
++    modifier: Modifier = Modifier,
++    primaryEnabled: Boolean = true,
++    secondaryLabel: String? = null,
++    onSecondary: (() -> Unit)? = null
++) {
++    Surface(
++        modifier = modifier.fillMaxWidth(),
++        color = ClosieColor.Surface,
++        tonalElevation = 0.dp,
++        shadowElevation = 0.dp
++    ) {
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .padding(16.dp),
++            horizontalArrangement = Arrangement.spacedBy(12.dp),
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            if (secondaryLabel != null && onSecondary != null) {
++                OutlinedButton(
++                    onClick = onSecondary,
++                    modifier = Modifier.weight(1f),
++                    shape = RoundedCornerShape(12.dp)
++                ) { Text(secondaryLabel) }
++            }
++            Button(
++                onClick = onPrimary,
++                enabled = primaryEnabled,
++                modifier = Modifier.weight(1f),
++                shape = RoundedCornerShape(12.dp),
++                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
++            ) { Text(primaryLabel) }
++        }
++    }
++}
++
++// ------------------------------------------------------------------------------------------------
++// Helpers
++// ------------------------------------------------------------------------------------------------
++
++fun priceText(price: Double): String =
++    "¥" + if (price == price.toLong().toDouble()) price.toLong().toString() else price.toString()
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+index ad6df11..ced86bf 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+@@ -3,24 +3,38 @@ package com.xiaoming.closie.ui.detail
+ import android.app.DatePickerDialog
+ import android.content.Intent
+ import android.net.Uri
++import androidx.compose.foundation.background
++import androidx.compose.foundation.border
++import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.LazyRow
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Delete
++import androidx.compose.material.icons.outlined.Edit
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import coil.compose.AsyncImage
+ import com.xiaoming.closie.data.model.*
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.ui.*
++import com.xiaoming.closie.ui.components.ClosieBackButton
++import com.xiaoming.closie.ui.components.ClosieCollapsibleSection
++import com.xiaoming.closie.ui.components.ClosieImageTile
++import com.xiaoming.closie.ui.components.ClosieInfoRow
++import com.xiaoming.closie.ui.components.priceText
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.io.File
+ import java.time.LocalDate
+ 
+-@OptIn(ExperimentalMaterial3Api::class)
++@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+ @Composable
+ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, back: () -> Unit) {
+     val all by repo.items.collectAsState()
+@@ -31,138 +45,201 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+     var deleting by remember { mutableStateOf(false) }
+     var showAllWears by remember { mutableStateOf(false) }
+     var showAllWash by remember { mutableStateOf(false) }
++    var expandPurchase by remember { mutableStateOf(true) }
++    var expandDetails by remember { mutableStateOf(false) }
++    var expandRecords by remember { mutableStateOf(false) }
++    var expandReturn by remember { mutableStateOf(false) }
+     if (v == null) { back(); return }
+ 
+     val itemWears = ws.filter { it.itemId == id }.sortedByDescending { it.date }
+     val itemWash = xs.filter { it.itemId == id }.sortedByDescending { it.date }
+     val wears = itemWears.size
++    val mainImage = v.images.firstOrNull { it.kind == ImageKind.FLAT }
++        ?: v.images.firstOrNull { it.kind == ImageKind.PRODUCT }
++        ?: v.images.firstOrNull()
+ 
+     Scaffold(
++        containerColor = ClosieColor.Canvas,
+         topBar = {
+             TopAppBar(
+-                title = { Text(v.name) },
+-                navigationIcon = { BackButton(back) },
++                title = { Text(v.name, maxLines = 1) },
++                navigationIcon = { ClosieBackButton(onClick = back) },
+                 actions = {
+-                    TextButton(onClick = { edit(id) }) { Text("编辑") }
+-                    TextButton(onClick = { deleting = true }) { Text("删除") }
+-                }
++                    IconButton(onClick = { edit(id) }) {
++                        Icon(Icons.Outlined.Edit, contentDescription = "编辑", tint = ClosieColor.Ink)
++                    }
++                    IconButton(onClick = { deleting = true }) {
++                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = ClosieColor.Error)
++                    }
++                },
++                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+             )
+         }
+     ) { pad ->
+         LazyColumn(
+-            Modifier.padding(pad).padding(18.dp),
+-            verticalArrangement = Arrangement.spacedBy(12.dp)
++            modifier = Modifier
++                .padding(pad)
++                .padding(horizontal = 16.dp, vertical = 12.dp),
++            verticalArrangement = Arrangement.spacedBy(24.dp)
+         ) {
+             item {
+-                v.images.firstOrNull { it.kind == ImageKind.FLAT }?.localPath?.let {
+-                    AsyncImage(File(it), v.name, Modifier.fillMaxWidth().height(300.dp), contentScale = ContentScale.Fit)
++                ClosieImageTile(
++                    model = mainImage?.localPath?.let { File(it) },
++                    contentDescription = v.name,
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .aspectRatio(0.95f),
++                    contentScale = if (mainImage?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                    placeholder = {
++                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                            Text(v.name, color = ClosieColor.InkTertiary)
++                        }
++                    }
++                )
++            }
++
++            item {
++                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
++                    Text(v.name, style = MaterialTheme.typography.headlineSmall)
++                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                        if (v.brand.isNotBlank()) Text(v.brand, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
++                        Text("${v.category}${v.subcategory.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
++                    }
++                    if (v.price != null) {
++                        Text(priceText(v.price), style = MaterialTheme.typography.headlineMedium, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
++                    }
+                 }
+             }
++
+             item {
+-                Section("图片") {
+-                    ImageKind.entries.filter { it != ImageKind.FLAT }.forEach { k ->
+-                        v.images.filter { it.kind == k }.forEach {
+-                            it.localPath?.let { p ->
+-                                AsyncImage(File(p), k.name, Modifier.fillMaxWidth().height(180.dp), contentScale = ContentScale.Crop)
+-                            }
++                FlowRow(
++                    modifier = Modifier.fillMaxWidth(),
++                    horizontalArrangement = Arrangement.spacedBy(8.dp),
++                    verticalArrangement = Arrangement.spacedBy(8.dp)
++                ) {
++                    if (v.status == ItemStatus.OWNED) {
++                        DetailActionChip("今天穿了") { repo.addWear(id, LocalDate.now().toString()) }
++                        DetailActionChip("添加穿着") {
++                            val d = LocalDate.now()
++                            DatePickerDialog(context, { _, y, m, day ->
++                                repo.addWear(id, "%04d-%02d-%02d".format(y, m + 1, day), WearSource.MANUAL)
++                            }, d.year, d.monthValue - 1, d.dayOfMonth).show()
++                        }
++                        DetailActionChip("洗过") { repo.addWash(id, LocalDate.now().toString()) }
++                        DetailActionChip("补录洗涤") {
++                            val d = LocalDate.now()
++                            DatePickerDialog(context, { _, y, m, day ->
++                                repo.addWash(id, "%04d-%02d-%02d".format(y, m + 1, day))
++                            }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+                         }
+                     }
++                    DetailActionChip("编辑") { edit(id) }
+                 }
+             }
++
+             item {
+-                Section("购买信息") {
+-                    Text("类别：${v.category} ${v.subcategory}")
+-                    Text("品牌：${v.brand} · 店铺：${v.store} · 平台：${v.purchasePlatform}")
+-                    Text("购买价：${v.price ?: "未填写"} · 原价：${v.originalPrice ?: "未填写"}")
+-                    Text("购买日期：${v.purchaseDate} · 尺码：${v.sizeLabel}")
+-                    Text("安全类别：${v.safetyCategory}")
+-                    Text("评价：${v.comment}")
+-                    Text("评分：${ratingText(v.rating)}")
+-                    if (v.productUrl.isNotBlank()) {
+-                        Text("商品链接：${v.productUrl}")
+-                        OutlinedButton(onClick = {
+-                            runCatching {
+-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl)))
+-                            }
+-                        }) { Text("打开商品链接") }
++                ClosieCollapsibleSection(title = "购买信息", expanded = expandPurchase, onToggle = { expandPurchase = !expandPurchase }) {
++                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        ClosieInfoRow("店铺", v.store)
++                        ClosieInfoRow("平台", v.purchasePlatform)
++                        ClosieInfoRow("购买价", v.price?.let { priceText(it) })
++                        ClosieInfoRow("原价", v.originalPrice?.let { priceText(it) })
++                        ClosieInfoRow("购买日期", v.purchaseDate)
++                        if (v.productUrl.isNotBlank()) {
++                            Text(
++                                "打开商品链接",
++                                color = ClosieColor.Rose,
++                                style = MaterialTheme.typography.bodyMedium,
++                                modifier = Modifier.clickable {
++                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl))) }
++                                }
++                            )
++                        }
+                     }
+-                    if (v.status == ItemStatus.RETURNED) Text("退货原因：${v.returnReason}")
+                 }
+             }
++
+             item {
+-                Section("面料与尺寸") {
+-                    v.materials.forEach { Text("${it.name} ${it.percentage}") }
+-                    v.measurements.forEach { Text("${it.name} ${it.value}${it.unit}") }
++                ClosieCollapsibleSection(title = "衣物详情", expanded = expandDetails, onToggle = { expandDetails = !expandDetails }) {
++                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        ClosieInfoRow("尺码", v.sizeLabel)
++                        ClosieInfoRow("安全类别", v.safetyCategory)
++                        if (v.materials.isNotEmpty()) {
++                            Text("材质", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                            v.materials.forEach { Text("${it.name} ${it.percentage}", style = MaterialTheme.typography.bodyMedium) }
++                        }
++                        if (v.measurements.isNotEmpty()) {
++                            Text("尺寸", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                            v.measurements.forEach { Text("${it.name} ${it.value}${it.unit}", style = MaterialTheme.typography.bodyMedium) }
++                        }
++                    }
++                }
++            }
++
++            item {
++                ClosieCollapsibleSection(title = "我的记录", expanded = expandRecords, onToggle = { expandRecords = !expandRecords }) {
++                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        if (v.rating > 0) Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Rose)
++                        if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium)
++                    }
+                 }
+             }
++
++            if (v.status == ItemStatus.RETURNED && v.returnReason.isNotBlank()) {
++                item {
++                    ClosieCollapsibleSection(title = "退货信息", expanded = expandReturn, onToggle = { expandReturn = !expandReturn }) {
++                        Text(v.returnReason, style = MaterialTheme.typography.bodyMedium)
++                    }
++                }
++            }
++
+             if (v.status == ItemStatus.OWNED) {
+                 item {
+-                    Section("使用记录") {
+-                        Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次")
+-                        Text("单次穿着成本：" + costPerWear(v.price, wears))
++                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                        Text("使用记录", style = MaterialTheme.typography.titleMedium)
++                        Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次", style = MaterialTheme.typography.bodyLarge)
++                        if (v.price != null && wears > 0) {
++                            Text("单次穿着成本 ¥" + "%.2f".format(v.price / wears), style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                        }
+                         val lastWear = itemWears.firstOrNull()?.date
+                         val lastWash = itemWash.firstOrNull()?.date
+-                        if (lastWear != null) Text("最近穿着：$lastWear")
+-                        if (lastWash != null) Text("最近洗涤：$lastWash")
+-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                            Button(onClick = { repo.addWear(id, LocalDate.now().toString()) }) { Text("今天穿了 +1") }
+-                            OutlinedButton(onClick = { repo.addWash(id, LocalDate.now().toString()) }) { Text("洗过 +1") }
+-                        }
+-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                            OutlinedButton(onClick = {
+-                                val d = LocalDate.now()
+-                                DatePickerDialog(context, { _, y, m, day ->
+-                                    repo.addWear(id, "%04d-%02d-%02d".format(y, m + 1, day), WearSource.MANUAL)
+-                                }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+-                            }) { Text("添加穿着记录") }
+-                            OutlinedButton(onClick = {
+-                                val d = LocalDate.now()
+-                                DatePickerDialog(context, { _, y, m, day ->
+-                                    repo.addWash(id, "%04d-%02d-%02d".format(y, m + 1, day))
+-                                }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+-                            }) { Text("添加洗涤记录") }
+-                        }
++                        if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                        if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+                     }
+                 }
++
+                 item {
+-                    Section("穿着记录") {
+-                        if (itemWears.isEmpty()) {
+-                            Text("还没有穿着记录", color = Rose)
+-                        } else {
+-                            val visible = if (showAllWears) itemWears else itemWears.take(15)
+-                            visible.forEach { w ->
+-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+-                                    Text(w.date, Modifier.weight(1f))
+-                                    Text(
+-                                        if (w.source == WearSource.OOTD) "来自 OOTD" else "手动记录",
+-                                        style = MaterialTheme.typography.bodySmall,
+-                                        color = if (w.source == WearSource.OOTD) Rose else MaterialTheme.colorScheme.onSurface
+-                                    )
+-                                    if (w.source == WearSource.MANUAL) {
+-                                        TextButton(onClick = { repo.deleteWearEvent(w.id) }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+-                                    }
+-                                }
+-                            }
+-                            if (itemWears.size > 15) {
+-                                TextButton(onClick = { showAllWears = !showAllWears }) { Text(if (showAllWears) "收起" else "查看全部（${itemWears.size}）") }
+-                            }
+-                        }
+-                    }
++                    WearHistorySection(
++                        wears = itemWears,
++                        showAll = showAllWears,
++                        onToggle = { showAllWears = !showAllWears },
++                        onDelete = { repo.deleteWearEvent(it) }
++                    )
+                 }
++
+                 item {
+-                    Section("洗涤记录") {
+-                        if (itemWash.isEmpty()) {
+-                            Text("还没有洗涤记录", color = Rose)
+-                        } else {
+-                            val visible = if (showAllWash) itemWash else itemWash.take(15)
+-                            visible.forEach { w ->
+-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+-                                    Text(w.date, Modifier.weight(1f))
+-                                    TextButton(onClick = { repo.deleteWashEvent(w.id) }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+-                                }
+-                            }
+-                            if (itemWash.size > 15) {
+-                                TextButton(onClick = { showAllWash = !showAllWash }) { Text(if (showAllWash) "收起" else "查看全部（${itemWash.size}）") }
++                    WashHistorySection(
++                        washes = itemWash,
++                        showAll = showAllWash,
++                        onToggle = { showAllWash = !showAllWash },
++                        onDelete = { repo.deleteWashEvent(it) }
++                    )
++                }
++            }
++
++            val otherImages = v.images.filterNot { it.id == mainImage?.id }
++            if (otherImages.isNotEmpty()) {
++                item {
++                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                        Text("更多图片", style = MaterialTheme.typography.titleMedium)
++                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++                            items(otherImages) { img ->
++                                ClosieImageTile(
++                                    model = img.localPath?.let { File(it) },
++                                    contentDescription = v.name,
++                                    modifier = Modifier.size(120.dp),
++                                    contentScale = if (img.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
++                                )
+                             }
+                         }
+                     }
+@@ -176,16 +253,91 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+             onDismissRequest = { deleting = false },
+             title = { Text("删除这件衣服？") },
+             text = { Text("这会同时移除穿着、洗涤等使用记录。") },
+-            confirmButton = { TextButton(onClick = { repo.deleteItem(id); back() }) { Text("删除") } },
++            confirmButton = { TextButton(onClick = { repo.deleteItem(id); back() }) { Text("删除", color = ClosieColor.Error) } },
+             dismissButton = { TextButton(onClick = { deleting = false }) { Text("取消") } }
+         )
+     }
+ }
+ 
+-private fun costPerWear(price: Double?, wears: Int): String = when {
+-    price == null -> "未填写价格"
+-    wears == 0 -> "尚未穿着"
+-    else -> "¥" + "%.2f".format(price / wears)
++@Composable
++private fun DetailActionChip(label: String, onClick: () -> Unit) {
++    Surface(
++        modifier = Modifier.clickable(onClick = onClick),
++        shape = RoundedCornerShape(999.dp),
++        color = ClosieColor.Surface,
++        tonalElevation = 0.dp,
++        shadowElevation = 0.dp,
++        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++    ) {
++        Text(
++            label,
++            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
++            style = MaterialTheme.typography.labelLarge,
++            color = ClosieColor.Ink
++        )
++    }
++}
++
++@Composable
++private fun WearHistorySection(
++    wears: List<WearEvent>,
++    showAll: Boolean,
++    onToggle: () -> Unit,
++    onDelete: (String) -> Unit
++) {
++    if (wears.isEmpty()) return
++    val visible = if (showAll) wears else wears.take(8)
++    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++        Text("穿着记录", style = MaterialTheme.typography.titleMedium)
++        visible.forEach { w ->
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                verticalAlignment = Alignment.CenterVertically,
++                horizontalArrangement = Arrangement.SpaceBetween
++            ) {
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    Text(w.date, style = MaterialTheme.typography.bodyMedium)
++                    val label = if (w.source == WearSource.OOTD) "来自 OOTD" else "手动记录"
++                    Text(" · $label", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
++                }
++                if (w.source == WearSource.MANUAL) {
++                    TextButton(onClick = { onDelete(w.id) }) { Text("删除", color = ClosieColor.Error) }
++                }
++            }
++        }
++        if (wears.size > 8) {
++            TextButton(onClick = onToggle) {
++                Text(if (showAll) "收起" else "查看全部（${wears.size}）", color = ClosieColor.Rose)
++            }
++        }
++    }
+ }
+ 
+-private fun ratingText(r: Int): String = if (r <= 0) "未评分" else "★".repeat(r) + "☆".repeat(5 - r)
++@Composable
++private fun WashHistorySection(
++    washes: List<WashEvent>,
++    showAll: Boolean,
++    onToggle: () -> Unit,
++    onDelete: (String) -> Unit
++) {
++    if (washes.isEmpty()) return
++    val visible = if (showAll) washes else washes.take(8)
++    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++        Text("洗涤记录", style = MaterialTheme.typography.titleMedium)
++        visible.forEach { w ->
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                verticalAlignment = Alignment.CenterVertically,
++                horizontalArrangement = Arrangement.SpaceBetween
++            ) {
++                Text(w.date, style = MaterialTheme.typography.bodyMedium)
++                TextButton(onClick = { onDelete(w.id) }) { Text("删除", color = ClosieColor.Error) }
++            }
++        }
++        if (washes.size > 8) {
++            TextButton(onClick = onToggle) {
++                Text(if (showAll) "收起" else "查看全部（${washes.size}）", color = ClosieColor.Rose)
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+index ff90de7..a3b5fd6 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+@@ -2,100 +2,199 @@ package com.xiaoming.closie.ui.home
+ 
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.LazyRow
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.Settings
+ import androidx.compose.material3.*
+-import androidx.compose.runtime.*
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+-import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.data.model.ClothingImage
++import com.xiaoming.closie.data.model.ClothingItem
++import com.xiaoming.closie.data.model.ImageKind
+ import com.xiaoming.closie.data.model.ItemStatus
++import com.xiaoming.closie.data.model.Ootd
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.navigation.Destination
+-import com.xiaoming.closie.ui.Rose
++import com.xiaoming.closie.ui.components.ClosieImageTile
++import com.xiaoming.closie.ui.components.ClosieSectionHeader
++import com.xiaoming.closie.ui.theme.ClosieColor
++import java.io.File
+ import java.time.LocalDate
+ 
+ @Composable
+-fun HomeScreen(repo: WardrobeRepository, go: (String) -> Unit) {
++fun HomeScreen(
++    repo: WardrobeRepository,
++    onSettings: () -> Unit,
++    onOpenCloset: () -> Unit,
++    onOpenOotd: () -> Unit
++) {
+     val items by repo.items.collectAsState()
+     val ootds by repo.ootds.collectAsState()
+-    val outfits by repo.outfits.collectAsState()
+     val wears by repo.wearEvents.collectAsState()
++
+     val owned = items.filter { it.status == ItemStatus.OWNED }
+     val today = LocalDate.now().toString()
+     val thisMonth = today.substring(0, 7)
+-
+     val ownedIds = owned.map { it.id }.toSet()
+     val ownedWears = wears.filter { it.itemId in ownedIds }
+-    val neverWornCount = owned.count { it.id !in ownedWears.map { w -> w.itemId }.toSet() }
+     val monthWears = ownedWears.filter { it.date.startsWith(thisMonth) }
+-    val monthWearCount = monthWears.size
+-    val monthDistinctCount = monthWears.map { it.itemId }.distinct().size
+-    val topWorn = ownedWears.groupingBy { it.itemId }.eachCount().entries.sortedByDescending { it.value }.take(3)
+-    val nameById = owned.associateBy { it.id }
++    val todayOotd = ootds.filter { it.date == today }
++
++    val recentItemIds = ownedWears
++        .sortedByDescending { it.date }
++        .map { it.itemId }
++        .distinct()
++        .take(8)
++    val recentItems = recentItemIds.mapNotNull { id -> owned.find { it.id == id } }
+ 
+     LazyColumn(
+-        contentPadding = PaddingValues(20.dp),
+-        verticalArrangement = Arrangement.spacedBy(16.dp)
++        modifier = Modifier.fillMaxSize(),
++        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
++        verticalArrangement = Arrangement.spacedBy(28.dp)
+     ) {
+         item {
+-            Text("Closie", style = MaterialTheme.typography.displaySmall)
+-            Text("你的衣橱朋友今天也在。", color = Rose)
+-        }
+-        item {
+-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5E7))) {
+-                Column(Modifier.padding(18.dp)) {
+-                    Text("小柿的今日观察", style = MaterialTheme.typography.titleMedium)
+-                    Text(observation(owned.size, neverWornCount))
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.SpaceBetween,
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                Column {
++                    Text("Closie", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
++                    Text("今天想穿什么？", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
+                 }
+-            }
+-        }
+-        item {
+-            Card {
+-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+-                    Text("衣橱概览", style = MaterialTheme.typography.titleMedium)
+-                    Text("拥有 ${owned.size} 件 · 从未穿过 $neverWornCount 件")
+-                    Text("本月穿过 $monthWearCount 次 · 涉及 $monthDistinctCount 件")
+-                    if (topWorn.isNotEmpty()) {
+-                        Text("最近最常穿：", style = MaterialTheme.typography.bodySmall, color = Rose)
+-                        topWorn.forEach { (id, count) ->
+-                            Text("${nameById[id]?.name ?: "?"} · $count 次", style = MaterialTheme.typography.bodySmall)
+-                        }
+-                    }
++                IconButton(onClick = onSettings, modifier = Modifier.size(48.dp)) {
++                    Icon(Icons.Outlined.Settings, contentDescription = "设置", tint = ClosieColor.Ink)
+                 }
+             }
+         }
++
+         item {
+-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+-                Button(onClick = { go(Destination.Owned.route) }, modifier = Modifier.weight(1f)) {
+-                    Text("我的衣橱\n${owned.size} 件")
+-                }
+-                Button(onClick = { go(Destination.Returned.route) }, modifier = Modifier.weight(1f)) {
+-                    Text("试过 / 退货\n${items.count { it.status == ItemStatus.RETURNED }} 件")
+-                }
++            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
++                Text("我的衣橱", style = MaterialTheme.typography.titleMedium, color = ClosieColor.InkSecondary)
++                Text("${owned.size} 件", style = MaterialTheme.typography.headlineMedium)
++                Text(
++                    "这个月穿过 ${monthWears.size} 次 · ${monthWears.map { it.itemId }.distinct().size} 件不同衣服",
++                    style = MaterialTheme.typography.bodyMedium,
++                    color = ClosieColor.InkSecondary
++                )
+             }
+         }
++
+         item {
+-            Button(onClick = { go(Destination.Ootd.route) }, modifier = Modifier.fillMaxWidth()) {
+-                Text("OOTD 日历")
+-            }
++            TodaySection(
++                todayOotd = todayOotd,
++                owned = owned,
++                onRecordToday = onOpenOotd
++            )
+         }
++
+         item {
+-            Button(onClick = { go(Destination.Outfits.route) }, modifier = Modifier.fillMaxWidth()) {
+-                Text("搭配室\n${outfits.size} 套搭配")
++            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                ClosieSectionHeader(title = "最近穿过", actionLabel = "查看衣橱", onAction = onOpenCloset)
++                if (recentItems.isEmpty()) {
++                    Text("还没有穿着记录", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkTertiary)
++                } else {
++                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++                        items(recentItems.size) { index ->
++                            val item = recentItems[index]
++                            val image = item.bestImage()
++                            Column(
++                                modifier = Modifier.width(84.dp),
++                                horizontalAlignment = Alignment.CenterHorizontally,
++                                verticalArrangement = Arrangement.spacedBy(6.dp)
++                            ) {
++                                ClosieImageTile(
++                                    model = image?.localPath?.let { File(it) },
++                                    contentDescription = item.name,
++                                    modifier = Modifier.size(84.dp),
++                                    contentScale = if (image?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                                    placeholder = {
++                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                                            Text(item.name.take(1), color = ClosieColor.InkTertiary)
++                                        }
++                                    }
++                                )
++                                Text(item.name, style = MaterialTheme.typography.bodySmall, maxLines = 1)
++                            }
++                        }
++                    }
++                }
+             }
+         }
+-        item {
+-            Text(if (ootds.any { it.date == today }) "今天已记录 OOTD" else "今天还没有 OOTD", color = Rose)
+-        }
+-        item {
+-            OutlinedButton(onClick = { go(Destination.Settings.route) }, modifier = Modifier.fillMaxWidth()) {
+-                Text("数据与备份")
++    }
++}
++
++@Composable
++private fun TodaySection(
++    todayOotd: List<Ootd>,
++    owned: List<ClothingItem>,
++    onRecordToday: () -> Unit
++) {
++    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++        Text("今天", style = MaterialTheme.typography.titleMedium)
++        if (todayOotd.isEmpty()) {
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.SpaceBetween,
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                Text("还没有记录今天的穿搭", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
++                TextButton(onClick = onRecordToday) { Text("记录今天", color = ClosieColor.Rose) }
++            }
++        } else {
++            todayOotd.forEach { ootd ->
++                Surface(
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = MaterialTheme.shapes.large,
++                    color = ClosieColor.Surface,
++                    tonalElevation = 0.dp,
++                    shadowElevation = 0.dp,
++                    border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++                ) {
++                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                        if (ootd.images.isNotEmpty()) {
++                            ClosieImageTile(
++                                model = File(ootd.images.first()),
++                                contentDescription = "OOTD 照片",
++                                modifier = Modifier
++                                    .fillMaxWidth()
++                                    .height(200.dp)
++                            )
++                        }
++                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                            items(ootd.itemIds.size) { index ->
++                                val item = owned.find { it.id == ootd.itemIds[index] }
++                                val img = item?.bestImage()
++                                ClosieImageTile(
++                                    model = img?.localPath?.let { File(it) },
++                                    contentDescription = item?.name ?: "单品",
++                                    modifier = Modifier.size(56.dp),
++                                    contentScale = if (img?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                                    placeholder = {
++                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                                            Text(item?.name?.take(1) ?: "?", color = ClosieColor.InkTertiary)
++                                        }
++                                    }
++                                )
++                            }
++                        }
++                        if (ootd.note.isNotBlank()) {
++                            Text(ootd.note, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                        }
++                    }
++                }
+             }
+         }
+     }
+ }
+ 
+-private fun observation(ownedCount: Int, neverWornCount: Int) = when {
+-    ownedCount == 0 -> "我们先从第一件衣服开始吧，我会记得它的故事。"
+-    neverWornCount > 0 -> "衣橱里有 $neverWornCount 件还没有穿过，它们正等一个合适的日子。"
+-    else -> "你已经认真记录了 $ownedCount 件衣服。我们慢慢找出你真正最常穿、最自在的样子。"
++private fun ClothingItem.bestImage(): ClothingImage? {
++    return images.firstOrNull { it.kind == ImageKind.FLAT }
++        ?: images.firstOrNull { it.kind == ImageKind.PRODUCT }
++        ?: images.firstOrNull()
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt
+index 8598063..2722a0e 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt
+@@ -4,25 +4,32 @@ import android.app.DatePickerDialog
+ import androidx.activity.compose.BackHandler
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.background
++import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.LazyRow
+ import androidx.compose.foundation.lazy.items
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Add
++import androidx.compose.material.icons.filled.Close
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import coil.compose.AsyncImage
+ import com.xiaoming.closie.data.ImageStore
+ import com.xiaoming.closie.data.model.*
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.ui.BackButton
+-import com.xiaoming.closie.ui.Rose
++import com.xiaoming.closie.ui.components.ClosieBackButton
++import com.xiaoming.closie.ui.components.ClosieImageTile
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.io.File
+ import java.time.LocalDate
+ 
+@@ -56,7 +63,6 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+         }
+     }
+ 
+-    // Discard: delete every image created during this draft, regardless of current state.
+     fun cancelDraft() {
+         pendingImages.forEach { ImageStore.deletePrivatePath(context, it) }
+         pendingImages.clear()
+@@ -68,7 +74,6 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+         draftVisible = false
+     }
+ 
+-    // Save: keep pending images still referenced, drop ones removed before saving.
+     fun saveDraft() {
+         pendingImages.filterNot { it in images }.forEach { ImageStore.deletePrivatePath(context, it) }
+         pendingImages.clear()
+@@ -105,14 +110,8 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+     val dirty = draftVisible && initialSnapshot != null &&
+         OotdDraftSnapshot(date, note, selected, images) != initialSnapshot
+ 
+-    fun requestNew() {
+-        if (dirty) pendingAction = { doStartNew() } else doStartNew()
+-    }
+-
+-    fun requestEdit(o: Ootd) {
+-        if (dirty) pendingAction = { doStartEdit(o) } else doStartEdit(o)
+-    }
+-
++    fun requestNew() { if (dirty) pendingAction = { doStartNew() } else doStartNew() }
++    fun requestEdit(o: Ootd) { if (dirty) pendingAction = { doStartEdit(o) } else doStartEdit(o) }
+     fun requestBack() {
+         when {
+             dirty -> pendingAction = { back() }
+@@ -124,76 +123,55 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+     BackHandler(enabled = draftVisible) { requestBack() }
+ 
+     Scaffold(
+-        topBar = { TopAppBar(title = { Text("OOTD 日历") }, navigationIcon = { BackButton { requestBack() } }) },
+-        floatingActionButton = { FloatingActionButton(onClick = { requestNew() }) { Text("+") } }
++        containerColor = ClosieColor.Canvas,
++        topBar = { TopAppBar(title = { Text("OOTD") }, navigationIcon = { ClosieBackButton { requestBack() } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) },
++        floatingActionButton = {
++            FloatingActionButton(
++                onClick = { requestNew() },
++                containerColor = ClosieColor.Rose,
++                contentColor = ClosieColor.Surface,
++                shape = MaterialTheme.shapes.extraLarge
++            ) { Icon(Icons.Default.Add, contentDescription = "新建 OOTD") }
++        }
+     ) { pad ->
+-        LazyColumn(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++        LazyColumn(
++            modifier = Modifier
++                .padding(pad)
++                .padding(horizontal = 16.dp, vertical = 12.dp),
++            verticalArrangement = Arrangement.spacedBy(16.dp)
++        ) {
+             item {
+-                OutlinedButton(onClick = {
+-                    val d = LocalDate.parse(date)
+-                    DatePickerDialog(context, { _, y, m, day ->
+-                        date = "%04d-%02d-%02d".format(y, m + 1, day)
+-                    }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+-                }) { Text("选择日期：$date") }
++                OutlinedButton(
++                    onClick = {
++                        val d = runCatching { LocalDate.parse(date) }.getOrDefault(LocalDate.now())
++                        DatePickerDialog(context, { _, y, m, day ->
++                            date = "%04d-%02d-%02d".format(y, m + 1, day)
++                        }, d.year, d.monthValue - 1, d.dayOfMonth).show()
++                    },
++                    shape = MaterialTheme.shapes.large
++                ) { Text("选择日期：$date") }
+             }
+ 
+             val dayOotds = ootds.filter { it.date == date }
+             if (dayOotds.isEmpty() && !draftVisible) {
+                 item {
+-                    Text("这一天还没有 OOTD", color = Rose, modifier = Modifier.padding(8.dp))
++                    Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
++                        Text("这一天还没有 OOTD", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
++                    }
+                 }
+             } else {
+-                items(dayOotds) { o ->
+-                    Card(Modifier.fillMaxWidth().clickable { requestEdit(o) }) {
+-                        Column(Modifier.padding(12.dp)) {
+-                            Text(o.note.ifBlank { "OOTD" })
+-                            Text("${o.itemIds.size} 件单品")
+-                            if (o.images.isNotEmpty()) Text("含 ${o.images.size} 张照片", style = MaterialTheme.typography.bodySmall, color = Rose)
+-                        }
+-                    }
++                items(dayOotds, key = { it.id }) { o ->
++                    OotdCard(o, all, onClick = { requestEdit(o) })
+                 }
+             }
+ 
+             if (draftVisible) {
+-                item {
+-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-                        Text(if (editing == null) "新建 OOTD" else "编辑 OOTD", style = MaterialTheme.typography.titleMedium)
+-                        OutlinedTextField(note, { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
+-
+-                        Text("OOTD 照片", style = MaterialTheme.typography.labelLarge)
+-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                            items(images, key = { it }) { path ->
+-                                Column {
+-                                    AsyncImage(File(path), "OOTD 照片", Modifier.size(96.dp), contentScale = ContentScale.Crop)
+-                                    TextButton(onClick = { images = images.filterNot { it == path } }, modifier = Modifier.fillMaxWidth()) { Text("删除") }
+-                                }
+-                            }
+-                            item { OutlinedButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) { Text("+ 添加照片") } }
+-                        }
+-
+-                        Text("选择衣物", style = MaterialTheme.typography.labelLarge)
+-                        all.filter { it.status == ItemStatus.OWNED }.forEach { i ->
+-                            Row(
+-                                Modifier.fillMaxWidth().clickable { selected = if (i.id in selected) selected - i.id else selected + i.id }.padding(6.dp)
+-                            ) {
+-                                Checkbox(i.id in selected, onCheckedChange = { selected = if (it) selected + i.id else selected - i.id })
+-                                Text(i.name, Modifier.padding(start = 8.dp))
+-                            }
+-                        }
+-
+-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+-                            Button(
+-                                enabled = selected.isNotEmpty(),
+-                                onClick = {
+-                                    repo.saveOotd((editing ?: Ootd(date = date)).copy(date = date, itemIds = selected.toList(), note = note, images = images))
+-                                    saveDraft()
+-                                }
+-                            ) { Text("保存 OOTD") }
+-                            OutlinedButton(onClick = { cancelDraft() }) { Text("取消") }
+-                            if (editing != null) TextButton(onClick = { confirmingDelete = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+-                        }
++                item { OotdEditor(repo, editing, note, { note = it }, selected, { selected = it }, images, { images = it }, imagePicker, { cancelDraft() }, { save ->
++                    if (save) {
++                        repo.saveOotd((editing ?: Ootd(date = date)).copy(date = date, itemIds = selected.toList(), note = note, images = images))
+                     }
+-                }
++                    saveDraft()
++                }) }
+             }
+         }
+     }
+@@ -204,11 +182,7 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+             title = { Text("删除这条 OOTD？") },
+             text = { Text("会同时移除它关联的穿着记录和照片。") },
+             confirmButton = {
+-                TextButton(onClick = {
+-                    repo.deleteOotd(editing?.id.orEmpty())
+-                    cancelDraft()
+-                    confirmingDelete = false
+-                }) { Text("删除") }
++                TextButton(onClick = { repo.deleteOotd(editing?.id.orEmpty()); cancelDraft(); confirmingDelete = false }) { Text("删除", color = ClosieColor.Error) }
+             },
+             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("取消") } }
+         )
+@@ -224,13 +198,182 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
+                     val a = action
+                     pendingAction = null
+                     a()
+-                }) { Text("放弃") }
++                }) { Text("放弃", color = ClosieColor.Error) }
+             },
+             dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("继续编辑") } }
+         )
+     }
+ }
+ 
++@Composable
++private fun OotdCard(o: Ootd, all: List<ClothingItem>, onClick: () -> Unit) {
++    Surface(
++        modifier = Modifier
++            .fillMaxWidth()
++            .clickable(onClick = onClick),
++        shape = MaterialTheme.shapes.large,
++        color = ClosieColor.Surface,
++        tonalElevation = 0.dp,
++        shadowElevation = 0.dp,
++        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++    ) {
++        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++            if (o.images.isNotEmpty()) {
++                ClosieImageTile(
++                    model = File(o.images.first()),
++                    contentDescription = "OOTD 照片",
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .aspectRatio(1f)
++                )
++            }
++            Column(
++                modifier = Modifier.padding(16.dp),
++                verticalArrangement = Arrangement.spacedBy(8.dp)
++            ) {
++                Text(o.note.ifBlank { "OOTD" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
++                Text("${o.itemIds.size} 件单品", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                if (o.itemIds.isNotEmpty()) {
++                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                        items(o.itemIds) { id ->
++                            val item = all.find { it.id == id }
++                            val img = item?.let { it.images.firstOrNull { img -> img.kind == ImageKind.FLAT } ?: it.images.firstOrNull() }
++                            ClosieImageTile(
++                                model = img?.localPath?.let { File(it) },
++                                contentDescription = item?.name ?: "单品",
++                                modifier = Modifier.size(48.dp),
++                                contentScale = if (img?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                                placeholder = {
++                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                                        Text(item?.name?.take(1) ?: "?", color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
++                                    }
++                                }
++                            )
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++private fun OotdEditor(
++    repo: WardrobeRepository,
++    editing: Ootd?,
++    note: String,
++    onNoteChange: (String) -> Unit,
++    selected: Set<String>,
++    onSelectedChange: (Set<String>) -> Unit,
++    images: List<String>,
++    onImagesChange: (List<String>) -> Unit,
++    imagePicker: androidx.activity.compose.ManagedActivityResultLauncher<Array<String>, android.net.Uri?>,
++    onCancel: () -> Unit,
++    onDone: (save: Boolean) -> Unit
++) {
++    val all by repo.items.collectAsState()
++    val owned = all.filter { it.status == ItemStatus.OWNED }
++
++    Column(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(top = 8.dp),
++        verticalArrangement = Arrangement.spacedBy(16.dp)
++    ) {
++        Text(if (editing == null) "新建 OOTD" else "编辑 OOTD", style = MaterialTheme.typography.headlineSmall)
++
++        OutlinedTextField(
++            value = note,
++            onValueChange = onNoteChange,
++            label = { Text("备注") },
++            modifier = Modifier.fillMaxWidth(),
++            shape = MaterialTheme.shapes.large
++        )
++
++        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++            Text("OOTD 照片", style = MaterialTheme.typography.titleMedium)
++            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                items(images) { path ->
++                    Box(Modifier.size(96.dp)) {
++                        ClosieImageTile(
++                            model = File(path),
++                            contentDescription = "OOTD 照片",
++                            modifier = Modifier.fillMaxSize()
++                        )
++                        IconButton(
++                            onClick = { onImagesChange(images.filterNot { it == path }) },
++                            modifier = Modifier
++                                .align(Alignment.TopEnd)
++                                .size(24.dp)
++                        ) {
++                            Icon(Icons.Default.Close, contentDescription = "删除", tint = ClosieColor.Error)
++                        }
++                    }
++                }
++                item {
++                    Surface(
++                        modifier = Modifier
++                            .size(96.dp)
++                            .clickable { imagePicker.launch(arrayOf("image/*")) },
++                        shape = MaterialTheme.shapes.large,
++                        color = ClosieColor.SurfaceSoft,
++                        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++                    ) {
++                        Box(contentAlignment = Alignment.Center) {
++                            Text("+", style = MaterialTheme.typography.headlineMedium, color = ClosieColor.InkTertiary)
++                        }
++                    }
++                }
++            }
++        }
++
++        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++            Text("选择衣物", style = MaterialTheme.typography.titleMedium)
++            owned.forEach { i ->
++                val checked = i.id in selected
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .clip(MaterialTheme.shapes.large)
++                        .background(if (checked) ClosieColor.RoseSoft else ClosieColor.Surface)
++                        .border(1.dp, if (checked) ClosieColor.Rose else ClosieColor.Hairline, MaterialTheme.shapes.large)
++                        .clickable { onSelectedChange(if (checked) selected - i.id else selected + i.id) }
++                        .padding(horizontal = 12.dp, vertical = 10.dp),
++                    verticalAlignment = Alignment.CenterVertically,
++                    horizontalArrangement = Arrangement.spacedBy(12.dp)
++                ) {
++                    val img = i.images.firstOrNull { it.kind == ImageKind.FLAT } ?: i.images.firstOrNull()
++                    ClosieImageTile(
++                        model = img?.localPath?.let { File(it) },
++                        contentDescription = i.name,
++                        modifier = Modifier.size(40.dp),
++                        contentScale = if (img?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                        placeholder = {
++                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                                Text(i.name.take(1), color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
++                            }
++                        }
++                    )
++                    Text(i.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
++                    Checkbox(checked = checked, onCheckedChange = { onSelectedChange(if (it) selected + i.id else selected - i.id) })
++                }
++            }
++        }
++
++        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.large) { Text("取消") }
++            Button(
++                onClick = { onDone(true) },
++                enabled = selected.isNotEmpty(),
++                modifier = Modifier.weight(1f),
++                shape = MaterialTheme.shapes.large,
++                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
++            ) { Text("保存") }
++        }
++    }
++}
++
+ private data class OotdDraftSnapshot(
+     val date: String,
+     val note: String,
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt
+index 83b5e78..ecddbcf 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt
+@@ -1,24 +1,27 @@
+ package com.xiaoming.closie.ui.outfit
+ 
+-import androidx.compose.foundation.background
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.LazyRow
+ import androidx.compose.foundation.lazy.items
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Add
++import androidx.compose.material.icons.filled.Delete
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+-import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+-import coil.compose.AsyncImage
+ import com.xiaoming.closie.data.model.ImageKind
+ import com.xiaoming.closie.data.model.Outfit
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.ui.BackButton
+-import com.xiaoming.closie.ui.Rose
++import com.xiaoming.closie.ui.components.ClosieBackButton
++import com.xiaoming.closie.ui.components.ClosieEmptyState
++import com.xiaoming.closie.ui.components.ClosieImageTile
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.io.File
+ 
+ @OptIn(ExperimentalMaterial3Api::class)
+@@ -29,48 +32,38 @@ fun OutfitListScreen(repo: WardrobeRepository, open: (String) -> Unit, create: (
+     var pendingDelete by remember { mutableStateOf<Outfit?>(null) }
+ 
+     Scaffold(
+-        topBar = { TopAppBar(title = { Text("搭配室") }, navigationIcon = { BackButton(back) }) },
+-        floatingActionButton = { FloatingActionButton(onClick = create, containerColor = Rose) { Text("+") } }
++        containerColor = ClosieColor.Canvas,
++        topBar = { TopAppBar(title = { Text("搭配") }, navigationIcon = { ClosieBackButton(onClick = back) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) },
++        floatingActionButton = {
++            FloatingActionButton(
++                onClick = create,
++                containerColor = ClosieColor.Rose,
++                contentColor = ClosieColor.Surface,
++                shape = MaterialTheme.shapes.extraLarge
++            ) { Icon(Icons.Default.Add, contentDescription = "新建搭配") }
++        }
+     ) { pad ->
+         if (outfits.isEmpty()) {
+-            Column(
+-                Modifier.padding(pad).fillMaxSize(),
+-                verticalArrangement = Arrangement.Center,
+-                horizontalAlignment = Alignment.CenterHorizontally
+-            ) {
+-                Text("还没有搭配", style = MaterialTheme.typography.titleMedium)
+-                Text("点右下角 + 开始你的第一套搭配", color = Rose)
++            Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
++                ClosieEmptyState(
++                    title = "还没有搭配",
++                    subtitle = "点右下角 + 开始你的第一套搭配。",
++                    actionLabel = "新建搭配",
++                    onAction = create
++                )
+             }
+         } else {
+-            LazyColumn(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++            LazyColumn(
++                modifier = Modifier.padding(pad).padding(horizontal = 16.dp, vertical = 12.dp),
++                verticalArrangement = Arrangement.spacedBy(16.dp)
++            ) {
+                 items(outfits, key = { it.id }) { outfit ->
+-                    val itemSet = items.filter { it.id in outfit.itemIds }
+-                    Card(Modifier.fillMaxWidth()) {
+-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+-                            Column(Modifier.weight(1f).clickable { open(outfit.id) }) {
+-                                Text(outfit.name.ifBlank { "未命名搭配" }, style = MaterialTheme.typography.titleMedium)
+-                                Text("${outfit.itemIds.size} 件单品", color = Rose, style = MaterialTheme.typography.bodySmall)
+-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                                    itemSet.take(5).forEach { itt ->
+-                                        val thumb = itt.images.firstOrNull { it.kind == ImageKind.FLAT } ?: itt.images.firstOrNull()
+-                                        if (thumb?.localPath != null) {
+-                                            AsyncImage(
+-                                                File(thumb.localPath),
+-                                                itt.name,
+-                                                Modifier.size(56.dp),
+-                                                contentScale = if (thumb.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
+-                                            )
+-                                        } else {
+-                                            Box(Modifier.size(56.dp).background(Color(0xFFF3E5E7)), contentAlignment = Alignment.Center) {
+-                                                Text(itt.name.take(1), color = Rose, style = MaterialTheme.typography.bodySmall)
+-                                            }
+-                                        }
+-                                    }
+-                                }
+-                            }
+-                            TextButton(onClick = { pendingDelete = outfit }) { Text("删除", color = Rose) }
+-                        }
+-                    }
++                    OutfitCard(
++                        outfit = outfit,
++                        items = items,
++                        onOpen = { open(outfit.id) },
++                        onDelete = { pendingDelete = outfit }
++                    )
+                 }
+             }
+         }
+@@ -81,8 +74,67 @@ fun OutfitListScreen(repo: WardrobeRepository, open: (String) -> Unit, create: (
+             onDismissRequest = { pendingDelete = null },
+             title = { Text("删除这套搭配？") },
+             text = { Text("删除后无法恢复。") },
+-            confirmButton = { TextButton(onClick = { repo.deleteOutfit(target.id); pendingDelete = null }) { Text("删除") } },
++            confirmButton = { TextButton(onClick = { repo.deleteOutfit(target.id); pendingDelete = null }) { Text("删除", color = ClosieColor.Error) } },
+             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }
+         )
+     }
+ }
++
++@Composable
++private fun OutfitCard(outfit: Outfit, items: List<com.xiaoming.closie.data.model.ClothingItem>, onOpen: () -> Unit, onDelete: () -> Unit) {
++    val itemSet = items.filter { it.id in outfit.itemIds }
++    val cover = outfit.tryOnImages.firstOrNull()?.let { File(it) }
++        ?: itemSet.firstOrNull()?.let { it.images.firstOrNull { img -> img.kind == ImageKind.FLAT } ?: it.images.firstOrNull() }?.localPath?.let { File(it) }
++
++    Surface(
++        modifier = Modifier
++            .fillMaxWidth()
++            .clickable(onClick = onOpen),
++        shape = MaterialTheme.shapes.large,
++        color = ClosieColor.Surface,
++        tonalElevation = 0.dp,
++        shadowElevation = 0.dp,
++        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++    ) {
++        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++            if (cover != null) {
++                ClosieImageTile(
++                    model = cover,
++                    contentDescription = outfit.name,
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .aspectRatio(1.1f)
++                )
++            }
++            Row(
++                modifier = Modifier.padding(16.dp),
++                verticalAlignment = Alignment.CenterVertically,
++                horizontalArrangement = Arrangement.spacedBy(12.dp)
++            ) {
++                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                    Text(outfit.name.ifBlank { "未命名搭配" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
++                    Text("${outfit.itemIds.size} 件单品", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                        items(itemSet) { itt ->
++                            val thumb = itt.images.firstOrNull { it.kind == ImageKind.FLAT } ?: itt.images.firstOrNull()
++                            ClosieImageTile(
++                                model = thumb?.localPath?.let { File(it) },
++                                contentDescription = itt.name,
++                                modifier = Modifier.size(48.dp),
++                                contentScale = if (thumb?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                                placeholder = {
++                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                                        Text(itt.name.take(1), color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
++                                    }
++                                }
++                            )
++                        }
++                    }
++                }
++                IconButton(onClick = onDelete) {
++                    Icon(Icons.Default.Delete, contentDescription = "删除", tint = ClosieColor.Error)
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt
+index 662540f..8787e18 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt
+@@ -11,14 +11,15 @@ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyRow
+ import androidx.compose.foundation.lazy.items
+ import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Add
++import androidx.compose.material.icons.filled.Delete
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.alpha
+ import androidx.compose.ui.draw.clip
+-import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.layout.onSizeChanged
+@@ -36,8 +37,9 @@ import com.xiaoming.closie.data.model.ItemStatus
+ import com.xiaoming.closie.data.model.Outfit
+ import com.xiaoming.closie.data.model.Placement
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.ui.BackButton
+-import com.xiaoming.closie.ui.Rose
++import com.xiaoming.closie.ui.components.ClosieBackButton
++import com.xiaoming.closie.ui.components.ClosieImageTile
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.io.File
+ import kotlin.math.roundToInt
+ 
+@@ -82,53 +84,97 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () ->
+     }
+ 
+     fun saveCleanup() {
+-        // 保留仍在 tryOnImages 中的 pending 文件，删除添加后又被移除的
+         pendingTryOn.filterNot { it in tryOnImages }.forEach { ImageStore.deletePrivatePath(context, it) }
+         pendingTryOn.clear()
+     }
+ 
+     fun discardCleanup() {
+-        // 放弃：删除本次会话新增的全部 pending 文件
+         pendingTryOn.forEach { ImageStore.deletePrivatePath(context, it) }
+         pendingTryOn.clear()
+     }
+ 
+-    fun requestBack() {
+-        if (dirty) showDiscardDialog = true else { discardCleanup(); back() }
+-    }
+-
++    fun requestBack() { if (dirty) showDiscardDialog = true else { discardCleanup(); back() } }
+     BackHandler(enabled = dirty) { showDiscardDialog = true }
+ 
+     fun save() {
+-        val base = original ?: Outfit(name = name)
+         val normalized = placements
+             .map { it.copy(x = it.x.coerceIn(0f, 1f), y = it.y.coerceIn(0f, 1f)) }
+             .sortedBy { it.zIndex }
+             .mapIndexed { index, p -> p.copy(zIndex = index) }
+-        repo.saveOutfit(base.copy(name = name, note = note, itemIds = normalized.map { it.itemId }, placements = normalized, tryOnImages = tryOnImages))
++        repo.saveOutfit((original ?: Outfit(name = name)).copy(name = name, note = note, itemIds = normalized.map { it.itemId }, placements = normalized, tryOnImages = tryOnImages))
+         saveCleanup()
+         back()
+     }
+ 
+     Scaffold(
++        containerColor = ClosieColor.Canvas,
+         topBar = {
+             TopAppBar(
+                 title = { Text(if (original == null) "新建搭配" else "编辑搭配") },
+-                navigationIcon = { BackButton { requestBack() } },
+-                actions = { TextButton(onClick = { save() }) { Text("保存") } }
++                navigationIcon = { ClosieBackButton { requestBack() } },
++                actions = { TextButton(onClick = { save() }) { Text("保存", color = ClosieColor.Rose) } },
++                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+             )
++        },
++        bottomBar = {
++            if (selectedId != null) {
++                val selectedPlacement = placements.firstOrNull { it.itemId == selectedId }
++                selectedPlacement?.let { p ->
++                    Surface(
++                        modifier = Modifier.fillMaxWidth(),
++                        color = ClosieColor.Surface,
++                        tonalElevation = 0.dp,
++                        shadowElevation = 0.dp,
++                        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++                    ) {
++                        Column(
++                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
++                            verticalArrangement = Arrangement.spacedBy(8.dp)
++                        ) {
++                            Row(verticalAlignment = Alignment.CenterVertically) {
++                                Text("缩放", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(40.dp))
++                                Slider(
++                                    value = p.scale,
++                                    onValueChange = { s ->
++                                        placements = placements.map { if (it.itemId == p.itemId) it.copy(scale = s) else it }
++                                    },
++                                    valueRange = 0.5f..2.5f,
++                                    modifier = Modifier.weight(1f)
++                                )
++                            }
++                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                                OutlinedButton(onClick = { placements = placements.map { if (it.itemId == p.itemId) it.copy(zIndex = it.zIndex + 1) else it } }, modifier = Modifier.weight(1f)) { Text("前移") }
++                                OutlinedButton(onClick = { placements = placements.map { if (it.itemId == p.itemId) it.copy(zIndex = it.zIndex - 1) else it } }, modifier = Modifier.weight(1f)) { Text("后移") }
++                                OutlinedButton(onClick = { placements = placements.filterNot { it.itemId == p.itemId }; selectedId = null }, modifier = Modifier.weight(1f)) { Text("移除") }
++                            }
++                        }
++                    }
++                }
++            }
+         }
+     ) { pad ->
+-        Column(Modifier.padding(pad).padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-            OutlinedTextField(name, { name = it }, label = { Text("搭配名称") }, modifier = Modifier.fillMaxWidth())
++        Column(
++            modifier = Modifier
++                .padding(pad)
++                .padding(horizontal = 16.dp, vertical = 12.dp)
++                .fillMaxSize(),
++            verticalArrangement = Arrangement.spacedBy(12.dp)
++        ) {
++            OutlinedTextField(
++                value = name,
++                onValueChange = { name = it },
++                label = { Text("搭配名称") },
++                modifier = Modifier.fillMaxWidth(),
++                shape = MaterialTheme.shapes.large
++            )
+ 
+             // Canvas
+             Box(
+-                Modifier
++                modifier = Modifier
+                     .fillMaxWidth()
+                     .weight(1f)
+-                    .clip(RoundedCornerShape(12.dp))
+-                    .background(Color(0xFFF3E5E7))
++                    .clip(RoundedCornerShape(16.dp))
++                    .background(ClosieColor.SurfaceSoft)
+                     .onSizeChanged { canvasSize = it }
+             ) {
+                 placements.forEach { p ->
+@@ -140,13 +186,13 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () ->
+                     val selected = selectedId == p.itemId
+ 
+                     Box(
+-                        Modifier
++                        modifier = Modifier
+                             .offset { IntOffset(px, py) }
+                             .size(140.dp * p.scale)
+                             .zIndex(p.zIndex.toFloat())
+-                            .clip(RoundedCornerShape(8.dp))
+-                            .background(Color.White)
+-                            .border(if (selected) 2.dp else 1.dp, if (selected) Rose else Color(0xFFD9C7CB), RoundedCornerShape(8.dp))
++                            .clip(RoundedCornerShape(12.dp))
++                            .background(ClosieColor.Surface)
++                            .border(if (selected) 2.dp else 1.dp, if (selected) ClosieColor.Rose else ClosieColor.Hairline, RoundedCornerShape(12.dp))
+                             .pointerInput(p.itemId) {
+                                 detectTransformGestures { _, pan, zoom, _ ->
+                                     selectedId = p.itemId
+@@ -173,84 +219,84 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () ->
+                     }
+                 }
+                 if (placements.isEmpty()) {
+-                    Text("从下方衣橱选择单品添加到画布", Modifier.align(Alignment.Center), color = Rose)
+-                }
+-            }
+-
+-            // Selected placement controls
+-            val selectedPlacement = placements.firstOrNull { it.itemId == selectedId }
+-            if (selectedPlacement != null) {
+-                Row(verticalAlignment = Alignment.CenterVertically) {
+-                    Text("缩放", style = MaterialTheme.typography.bodySmall)
+-                    Slider(
+-                        value = selectedPlacement.scale,
+-                        onValueChange = { s ->
+-                            placements = placements.map { if (it.itemId == selectedPlacement.itemId) it.copy(scale = s) else it }
+-                        },
+-                        valueRange = 0.5f..2.5f,
+-                        modifier = Modifier.weight(1f)
+-                    )
+-                }
+-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                    OutlinedButton(onClick = {
+-                        placements = placements.map { if (it.itemId == selectedPlacement.itemId) it.copy(zIndex = it.zIndex + 1) else it }
+-                    }) { Text("前移") }
+-                    OutlinedButton(onClick = {
+-                        placements = placements.map { if (it.itemId == selectedPlacement.itemId) it.copy(zIndex = it.zIndex - 1) else it }
+-                    }) { Text("后移") }
+-                    TextButton(onClick = {
+-                        placements = placements.filterNot { it.itemId == selectedPlacement.itemId }
+-                        selectedId = null
+-                    }) { Text("移除") }
++                    Text("从下方衣橱选择单品添加到画布", Modifier.align(Alignment.Center), color = ClosieColor.InkTertiary)
+                 }
+             }
+ 
+             // Item picker
+-            Text("从衣橱添加单品", style = MaterialTheme.typography.titleMedium)
+-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                items(owned, key = { it.id }) { item ->
+-                    val added = placements.any { it.itemId == item.id }
+-                    val image = item.images.firstOrNull { it.kind == ImageKind.FLAT } ?: item.images.firstOrNull()
+-                    Column(
+-                        Modifier
+-                            .width(80.dp)
+-                            .clip(RoundedCornerShape(8.dp))
+-                            .clickable(enabled = !added) {
+-                                val z = (placements.maxOfOrNull { it.zIndex } ?: 0) + 1
+-                                placements = placements + Placement(item.id, zIndex = z)
+-                                selectedId = item.id
+-                            }
+-                            .alpha(if (added) 0.4f else 1f)
+-                    ) {
+-                        Box(Modifier.size(80.dp).background(Color.White), contentAlignment = Alignment.Center) {
+-                            if (image?.localPath != null) {
+-                                AsyncImage(File(image.localPath), item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+-                            } else {
+-                                Text(item.name, Modifier.padding(4.dp), style = MaterialTheme.typography.bodySmall)
+-                            }
++            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("从衣橱添加单品", style = MaterialTheme.typography.titleMedium)
++                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
++                    items(owned, key = { it.id }) { item ->
++                        val added = placements.any { it.itemId == item.id }
++                        val image = item.images.firstOrNull { it.kind == ImageKind.FLAT } ?: item.images.firstOrNull()
++                        Column(
++                            modifier = Modifier
++                                .width(72.dp)
++                                .clip(RoundedCornerShape(12.dp))
++                                .clickable(enabled = !added) {
++                                    val z = (placements.maxOfOrNull { it.zIndex } ?: 0) + 1
++                                    placements = placements + Placement(item.id, zIndex = z)
++                                    selectedId = item.id
++                                }
++                                .alpha(if (added) 0.4f else 1f),
++                            horizontalAlignment = Alignment.CenterHorizontally,
++                            verticalArrangement = Arrangement.spacedBy(4.dp)
++                        ) {
++                            ClosieImageTile(
++                                model = image?.localPath?.let { File(it) },
++                                contentDescription = item.name,
++                                modifier = Modifier.size(72.dp),
++                                contentScale = if (image?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++                                placeholder = {
++                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                                        Text(item.name, Modifier.padding(4.dp), style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkTertiary)
++                                    }
++                                }
++                            )
++                            Text(item.name, Modifier.padding(4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                         }
+-                        Text(item.name, Modifier.padding(4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                     }
+                 }
+             }
+ 
+             // Try-on photos
+-            Text("试穿照片", style = MaterialTheme.typography.titleMedium)
+-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                items(tryOnImages, key = { it }) { path ->
+-                    Column {
+-                        AsyncImage(File(path), "试穿照片", Modifier.size(96.dp), contentScale = ContentScale.Crop)
+-                        TextButton(onClick = { tryOnImages = tryOnImages.filterNot { it == path } }, modifier = Modifier.fillMaxWidth()) { Text("删除") }
++            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("试穿照片", style = MaterialTheme.typography.titleMedium)
++                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    items(tryOnImages, key = { it }) { path ->
++                        Box(Modifier.size(96.dp)) {
++                            ClosieImageTile(
++                                model = File(path),
++                                contentDescription = "试穿照片",
++                                modifier = Modifier.fillMaxSize()
++                            )
++                            IconButton(
++                                onClick = { tryOnImages = tryOnImages.filterNot { it == path } },
++                                modifier = Modifier
++                                    .align(Alignment.TopEnd)
++                                    .size(24.dp)
++                            ) {
++                                Icon(Icons.Default.Delete, contentDescription = "删除", tint = ClosieColor.Error)
++                            }
++                        }
++                    }
++                    item {
++                        Surface(
++                            modifier = Modifier
++                                .size(96.dp)
++                                .clickable { tryOnPicker.launch(arrayOf("image/*")) },
++                            shape = MaterialTheme.shapes.large,
++                            color = ClosieColor.SurfaceSoft,
++                            border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++                        ) {
++                            Box(contentAlignment = Alignment.Center) {
++                                Icon(Icons.Default.Add, contentDescription = "添加试穿照片", tint = ClosieColor.InkTertiary)
++                            }
++                        }
+                     }
+                 }
+-                item { OutlinedButton(onClick = { tryOnPicker.launch(arrayOf("image/*")) }) { Text("+ 添加照片") } }
+             }
+-
+-            Button(
+-                onClick = { save() },
+-                modifier = Modifier.fillMaxWidth(),
+-                colors = ButtonDefaults.buttonColors(containerColor = Rose)
+-            ) { Text("保存搭配") }
+         }
+     }
+ 
+@@ -259,9 +305,7 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () ->
+             onDismissRequest = { showDiscardDialog = false },
+             title = { Text("还有未保存的修改") },
+             text = { Text("确定离开吗？未保存的修改和刚添加的照片会被丢弃。") },
+-            confirmButton = {
+-                TextButton(onClick = { discardCleanup(); back() }) { Text("放弃修改") }
+-            },
++            confirmButton = { TextButton(onClick = { discardCleanup(); back() }) { Text("放弃修改", color = ClosieColor.Error) } },
+             dismissButton = { TextButton(onClick = { showDiscardDialog = false }) { Text("继续编辑") } }
+         )
+     }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt
+index a6b73b7..c276960 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt
+@@ -3,26 +3,31 @@ package com.xiaoming.closie.ui.settings
+ import android.net.Uri
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.verticalScroll
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
++import androidx.compose.material.icons.filled.CloudUpload
++import androidx.compose.material.icons.filled.Download
++import androidx.compose.material.icons.filled.Restore
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+-import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.unit.dp
+ import com.xiaoming.closie.data.backup.BackupManager
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+-import com.xiaoming.closie.ui.BackButton
+-import com.xiaoming.closie.ui.Rose
++import com.xiaoming.closie.ui.components.ClosieBackButton
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.time.LocalDate
+ import kotlinx.coroutines.launch
+ 
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
+-    val context = LocalContext.current
++    val context = androidx.compose.ui.platform.LocalContext.current
+     val scope = rememberCoroutineScope()
+ 
+     var busy by remember { mutableStateOf(false) }
+@@ -58,38 +63,50 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
+     }
+ 
+     Scaffold(
+-        topBar = { TopAppBar(title = { Text("数据与备份") }, navigationIcon = { BackButton(back) }) }
++        containerColor = ClosieColor.Canvas,
++        topBar = { TopAppBar(title = { Text("数据与备份") }, navigationIcon = { ClosieBackButton(onClick = back) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) }
+     ) { pad ->
+         Column(
+-            Modifier.padding(pad).padding(18.dp).verticalScroll(rememberScrollState()),
++            modifier = Modifier
++                .padding(pad)
++                .padding(horizontal = 16.dp, vertical = 12.dp)
++                .verticalScroll(rememberScrollState()),
+             verticalArrangement = Arrangement.spacedBy(12.dp)
+         ) {
+-            Text("数据与备份", style = MaterialTheme.typography.titleMedium)
+             Text(
+                 "所有衣橱数据都只保存在本机（JSON + 私有图片）。建议定期导出完整备份，以防卸载、清除数据或换机时丢失。恢复会替换当前本地数据。",
+-                style = MaterialTheme.typography.bodySmall
++                style = MaterialTheme.typography.bodyMedium,
++                color = ClosieColor.InkSecondary
+             )
+ 
+-            Button(
+-                onClick = { exportLauncher.launch("closie-backup-${LocalDate.now()}.zip") },
+-                enabled = !busy,
+-                modifier = Modifier.fillMaxWidth()
+-            ) { Text("导出完整备份") }
+-            OutlinedButton(
+-                onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) },
+-                enabled = !busy,
+-                modifier = Modifier.fillMaxWidth()
+-            ) { Text("恢复备份") }
+-            OutlinedButton(
+-                onClick = { csvLauncher.launch("closie-wardrobe-${LocalDate.now()}.csv") },
+-                enabled = !busy,
+-                modifier = Modifier.fillMaxWidth()
+-            ) { Text("导出衣橱 CSV") }
++            SettingsRow(
++                icon = Icons.Default.CloudUpload,
++                title = "导出完整备份",
++                subtitle = "将衣橱数据和图片打包为 ZIP",
++                onClick = { exportLauncher.launch("closie-backup-${LocalDate.now()}.zip") }
++            )
++            SettingsRow(
++                icon = Icons.Default.Restore,
++                title = "恢复备份",
++                subtitle = "从 ZIP 恢复数据和图片",
++                onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
++            )
++            SettingsRow(
++                icon = Icons.Default.Download,
++                title = "导出衣橱 CSV",
++                subtitle = "导出衣物清单为表格",
++                onClick = { csvLauncher.launch("closie-wardrobe-${LocalDate.now()}.csv") }
++            )
+ 
+-            if (busy) Text("处理中…", color = Rose)
++            if (busy) {
++                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = ClosieColor.Rose)
++                    Text("处理中…", color = ClosieColor.InkSecondary)
++                }
++            }
+             message?.let {
+                 val isError = it.startsWith("导出失败") || it.startsWith("恢复失败")
+-                Text(it, color = if (isError) MaterialTheme.colorScheme.error else Rose)
++                Text(it, color = if (isError) ClosieColor.Error else ClosieColor.RosePressed)
+             }
+         }
+     }
+@@ -109,9 +126,41 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
+                         message = result.fold({ "恢复成功" }, { "恢复失败：${it.message ?: "未知错误"}" })
+                         busy = false
+                     }
+-                }) { Text("确认恢复") }
++                }) { Text("确认恢复", color = ClosieColor.Rose) }
+             },
+             dismissButton = { TextButton(onClick = { confirmRestore = null }) { Text("取消") } }
+         )
+     }
+ }
++
++@Composable
++private fun SettingsRow(
++    icon: androidx.compose.ui.graphics.vector.ImageVector,
++    title: String,
++    subtitle: String,
++    onClick: () -> Unit
++) {
++    Surface(
++        modifier = Modifier
++            .fillMaxWidth()
++            .clickable(onClick = onClick),
++        shape = MaterialTheme.shapes.large,
++        color = ClosieColor.Surface,
++        tonalElevation = 0.dp,
++        shadowElevation = 0.dp,
++        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++    ) {
++        Row(
++            modifier = Modifier.padding(16.dp),
++            verticalAlignment = Alignment.CenterVertically,
++            horizontalArrangement = Arrangement.spacedBy(16.dp)
++        ) {
++            Icon(icon, contentDescription = null, tint = ClosieColor.InkSecondary)
++            Column(modifier = Modifier.weight(1f)) {
++                Text(title, style = MaterialTheme.typography.bodyLarge)
++                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
++            }
++            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = ClosieColor.InkTertiary)
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt
+new file mode 100644
+index 0000000..711482d
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt
+@@ -0,0 +1,24 @@
++package com.xiaoming.closie.ui.theme
++
++import androidx.compose.ui.graphics.Color
++
++object ClosieColor {
++    val Canvas = Color(0xFFFAF9F7)
++    val Surface = Color(0xFFFFFFFF)
++    val SurfaceSoft = Color(0xFFF4F2EF)
++    val SurfaceMuted = Color(0xFFEFEBE7)
++
++    val Ink = Color(0xFF1C1C1E)
++    val InkSecondary = Color(0xFF74716D)
++    val InkTertiary = Color(0xFFA39F9A)
++
++    val Hairline = Color(0xFFE8E4DF)
++    val HairlineStrong = Color(0xFFDDD8D2)
++
++    val Rose = Color(0xFFC9828C)
++    val RosePressed = Color(0xFFB66F7A)
++    val RoseSoft = Color(0xFFF5E7E9)
++
++    // Error uses Material baseline; keep a stable semantic alias.
++    val Error = Color(0xFFB3261E)
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt
+new file mode 100644
+index 0000000..318a773
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt
+@@ -0,0 +1,13 @@
++package com.xiaoming.closie.ui.theme
++
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.Shapes
++import androidx.compose.ui.unit.dp
++
++val ClosieShapes = Shapes(
++    extraSmall = RoundedCornerShape(8.dp),
++    small = RoundedCornerShape(8.dp),
++    medium = RoundedCornerShape(12.dp),
++    large = RoundedCornerShape(16.dp),
++    extraLarge = RoundedCornerShape(20.dp)
++)
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt
+new file mode 100644
+index 0000000..c01d12c
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt
+@@ -0,0 +1,42 @@
++package com.xiaoming.closie.ui.theme
++
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.lightColorScheme
++import androidx.compose.runtime.Composable
++
++private val LightColorScheme = lightColorScheme(
++    primary = ClosieColor.Rose,
++    onPrimary = ClosieColor.Surface,
++    primaryContainer = ClosieColor.RoseSoft,
++    onPrimaryContainer = ClosieColor.RosePressed,
++    secondary = ClosieColor.SurfaceSoft,
++    onSecondary = ClosieColor.Ink,
++    secondaryContainer = ClosieColor.SurfaceSoft,
++    onSecondaryContainer = ClosieColor.Ink,
++    tertiary = ClosieColor.RoseSoft,
++    onTertiary = ClosieColor.Ink,
++    background = ClosieColor.Canvas,
++    onBackground = ClosieColor.Ink,
++    surface = ClosieColor.Surface,
++    onSurface = ClosieColor.Ink,
++    surfaceVariant = ClosieColor.SurfaceSoft,
++    onSurfaceVariant = ClosieColor.InkSecondary,
++    surfaceTint = ClosieColor.Rose,
++    inverseSurface = ClosieColor.Ink,
++    inverseOnSurface = ClosieColor.Surface,
++    error = ClosieColor.Error,
++    onError = ClosieColor.Surface,
++    outline = ClosieColor.Hairline,
++    outlineVariant = ClosieColor.HairlineStrong,
++    scrim = ClosieColor.Ink.copy(alpha = 0.32f)
++)
++
++@Composable
++fun ClosieTheme(content: @Composable () -> Unit) {
++    MaterialTheme(
++        colorScheme = LightColorScheme,
++        typography = ClosieTypography,
++        shapes = ClosieShapes,
++        content = content
++    )
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt
+new file mode 100644
+index 0000000..4d94ff8
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt
+@@ -0,0 +1,103 @@
++package com.xiaoming.closie.ui.theme
++
++import androidx.compose.material3.Typography
++import androidx.compose.ui.text.TextStyle
++import androidx.compose.ui.text.font.FontFamily
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.sp
++
++val ClosieTypography = Typography(
++    displayLarge = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 36.sp,
++        lineHeight = 44.sp,
++        letterSpacing = (-0.5).sp
++    ),
++    displayMedium = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 32.sp,
++        lineHeight = 40.sp,
++        letterSpacing = (-0.5).sp
++    ),
++    displaySmall = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 28.sp,
++        lineHeight = 36.sp,
++        letterSpacing = (-0.5).sp
++    ),
++    headlineLarge = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 24.sp,
++        lineHeight = 32.sp
++    ),
++    headlineMedium = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 20.sp,
++        lineHeight = 28.sp
++    ),
++    headlineSmall = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 18.sp,
++        lineHeight = 26.sp
++    ),
++    titleLarge = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 18.sp,
++        lineHeight = 26.sp
++    ),
++    titleMedium = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.SemiBold,
++        fontSize = 16.sp,
++        lineHeight = 24.sp
++    ),
++    titleSmall = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Medium,
++        fontSize = 14.sp,
++        lineHeight = 20.sp
++    ),
++    bodyLarge = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Normal,
++        fontSize = 16.sp,
++        lineHeight = 24.sp
++    ),
++    bodyMedium = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Normal,
++        fontSize = 14.sp,
++        lineHeight = 20.sp
++    ),
++    bodySmall = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Normal,
++        fontSize = 12.sp,
++        lineHeight = 16.sp
++    ),
++    labelLarge = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Medium,
++        fontSize = 14.sp,
++        lineHeight = 20.sp
++    ),
++    labelMedium = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Medium,
++        fontSize = 12.sp,
++        lineHeight = 16.sp
++    ),
++    labelSmall = TextStyle(
++        fontFamily = FontFamily.Default,
++        fontWeight = FontWeight.Medium,
++        fontSize = 11.sp,
++        lineHeight = 16.sp
++    )
++)
+-- 
+2.43.0
+
