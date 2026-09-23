@@ -3,8 +3,6 @@ package com.xiaoming.closie.ui.detail
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,16 +19,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import com.xiaoming.closie.ui.components.ClosieBackButton
-import com.xiaoming.closie.ui.components.ClosieCollapsibleSection
 import com.xiaoming.closie.ui.components.ClosieImageTile
-import com.xiaoming.closie.ui.components.ClosieInfoRow
 import com.xiaoming.closie.ui.components.priceText
 import com.xiaoming.closie.ui.theme.ClosieColor
+import com.xiaoming.closie.ui.theme.rememberClosieDimensions
 import java.io.File
 import java.time.LocalDate
 
@@ -42,13 +40,10 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
     val xs by repo.washEvents.collectAsState()
     val v = all.firstOrNull { it.id == id }
     val context = LocalContext.current
+    val dims = rememberClosieDimensions()
     var deleting by remember { mutableStateOf(false) }
     var showAllWears by remember { mutableStateOf(false) }
     var showAllWash by remember { mutableStateOf(false) }
-    var expandPurchase by remember { mutableStateOf(true) }
-    var expandDetails by remember { mutableStateOf(false) }
-    var expandRecords by remember { mutableStateOf(false) }
-    var expandReturn by remember { mutableStateOf(false) }
     if (v == null) { back(); return }
 
     val itemWears = ws.filter { it.itemId == id }.sortedByDescending { it.date }
@@ -57,12 +52,18 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
     val mainImage = v.images.firstOrNull { it.kind == ImageKind.FLAT }
         ?: v.images.firstOrNull { it.kind == ImageKind.PRODUCT }
         ?: v.images.firstOrNull()
+    val otherImages = v.images.filterNot { it.id == mainImage?.id }
+
+    val hasAbout = v.materials.isNotEmpty() || v.measurements.isNotEmpty() || v.safetyCategory.isNotBlank()
+    val hasPurchase = v.store.isNotBlank() || v.purchasePlatform.isNotBlank() ||
+        v.price != null || v.originalPrice != null || v.purchaseDate.isNotBlank() || v.productUrl.isNotBlank()
+    val hasRecords = v.rating > 0 || v.comment.isNotBlank()
 
     Scaffold(
         containerColor = ClosieColor.Canvas,
         topBar = {
             TopAppBar(
-                title = { Text(v.name, maxLines = 1) },
+                title = { Text("", maxLines = 1) },
                 navigationIcon = { ClosieBackButton(onClick = back) },
                 actions = {
                     IconButton(onClick = { edit(id) }) {
@@ -79,8 +80,8 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
         LazyColumn(
             modifier = Modifier
                 .padding(pad)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .padding(horizontal = dims.pageHorizontal, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
                 ClosieImageTile(
@@ -88,23 +89,28 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
                     contentDescription = v.name,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(0.95f),
+                        .aspectRatio(0.85f),
                     contentScale = if (mainImage?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
                     placeholder = {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(v.name, color = ClosieColor.InkTertiary)
+                            Text(v.name, color = ClosieColor.Stone)
                         }
                     }
                 )
             }
 
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(v.name, style = MaterialTheme.typography.headlineSmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (v.brand.isNotBlank()) Text(v.brand, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
-                        Text("${v.category}${v.subcategory.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (v.brand.isNotBlank()) {
+                        Text(v.brand, style = MaterialTheme.typography.labelLarge, color = ClosieColor.Graphite)
                     }
+                    Text(v.name, style = MaterialTheme.typography.headlineLarge, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
+                    val cat = listOfNotNull(
+                        v.category.takeIf { it.isNotBlank() && it != "未分类" },
+                        v.subcategory.takeIf { it.isNotBlank() }
+                    ).joinToString(" · ")
+                    if (cat.isNotBlank()) Text(cat, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                    if (v.sizeLabel.isNotBlank()) Text(v.sizeLabel, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
                     if (v.price != null) {
                         Text(priceText(v.price), style = MaterialTheme.typography.headlineMedium, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
                     }
@@ -137,107 +143,120 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
                 }
             }
 
-            item {
-                ClosieCollapsibleSection(title = "购买信息", expanded = expandPurchase, onToggle = { expandPurchase = !expandPurchase }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ClosieInfoRow("店铺", v.store)
-                        ClosieInfoRow("平台", v.purchasePlatform)
-                        ClosieInfoRow("购买价", v.price?.let { priceText(it) })
-                        ClosieInfoRow("原价", v.originalPrice?.let { priceText(it) })
-                        ClosieInfoRow("购买日期", v.purchaseDate)
-                        if (v.productUrl.isNotBlank()) {
-                            Text(
-                                "打开商品链接",
-                                color = ClosieColor.Rose,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.clickable {
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl))) }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
-                ClosieCollapsibleSection(title = "衣物详情", expanded = expandDetails, onToggle = { expandDetails = !expandDetails }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ClosieInfoRow("尺码", v.sizeLabel)
-                        ClosieInfoRow("安全类别", v.safetyCategory)
-                        if (v.materials.isNotEmpty()) {
-                            Text("材质", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
-                            v.materials.forEach { Text("${it.name} ${it.percentage}", style = MaterialTheme.typography.bodyMedium) }
-                        }
-                        if (v.measurements.isNotEmpty()) {
-                            Text("尺寸", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
-                            v.measurements.forEach { Text("${it.name} ${it.value}${it.unit}", style = MaterialTheme.typography.bodyMedium) }
-                        }
-                    }
-                }
-            }
-
-            item {
-                ClosieCollapsibleSection(title = "我的记录", expanded = expandRecords, onToggle = { expandRecords = !expandRecords }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (v.rating > 0) Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Rose)
-                        if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-
-            if (v.status == ItemStatus.RETURNED && v.returnReason.isNotBlank()) {
+            if (hasAbout) {
                 item {
-                    ClosieCollapsibleSection(title = "退货信息", expanded = expandReturn, onToggle = { expandReturn = !expandReturn }) {
-                        Text(v.returnReason, style = MaterialTheme.typography.bodyMedium)
+                    DetailSection("关于这件衣服") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            v.materials.forEach { m ->
+                                Text(
+                                    listOfNotNull(m.name.takeIf { it.isNotBlank() }, m.percentage.takeIf { it.isNotBlank() }).joinToString(" "),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = ClosieColor.Ink
+                                )
+                            }
+                            if (v.measurements.isNotEmpty()) {
+                                Text(
+                                    v.measurements.mapNotNull { m ->
+                                        val name = m.name.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                        "$name ${m.value}${m.unit}"
+                                    }.joinToString(" · "),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = ClosieColor.Ink
+                                )
+                            }
+                            if (v.safetyCategory.isNotBlank()) {
+                                Text("安全类别 · ${v.safetyCategory}", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (hasPurchase) {
+                item {
+                    DetailSection("购买信息") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (v.store.isNotBlank()) InfoLine("店铺", v.store)
+                            if (v.purchasePlatform.isNotBlank()) InfoLine("平台", v.purchasePlatform)
+                            v.price?.let { InfoLine("购买价", priceText(it)) }
+                            v.originalPrice?.let { InfoLine("原价", priceText(it)) }
+                            if (v.purchaseDate.isNotBlank()) InfoLine("购买日期", v.purchaseDate)
+                            if (v.productUrl.isNotBlank()) {
+                                Text(
+                                    "打开商品链接",
+                                    color = ClosieColor.Fig,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.clickable {
+                                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl))) }
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
 
             if (v.status == ItemStatus.OWNED) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("使用记录", style = MaterialTheme.typography.titleMedium)
-                        Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次", style = MaterialTheme.typography.bodyLarge)
-                        if (v.price != null && wears > 0) {
-                            Text("单次穿着成本 ¥" + "%.2f".format(v.price / wears), style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+                    DetailSection("使用记录") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
+                            if (v.price != null && wears > 0) {
+                                Text("单次穿着成本 ¥" + "%.2f".format(v.price / wears), style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                            }
+                            val lastWear = itemWears.firstOrNull()?.date
+                            val lastWash = itemWash.firstOrNull()?.date
+                            if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                            if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                            Spacer(Modifier.height(4.dp))
+                            WearHistorySection(
+                                wears = itemWears,
+                                showAll = showAllWears,
+                                onToggle = { showAllWears = !showAllWears },
+                                onDelete = { repo.deleteWearEvent(it) }
+                            )
+                            WashHistorySection(
+                                washes = itemWash,
+                                showAll = showAllWash,
+                                onToggle = { showAllWash = !showAllWash },
+                                onDelete = { repo.deleteWashEvent(it) }
+                            )
                         }
-                        val lastWear = itemWears.firstOrNull()?.date
-                        val lastWash = itemWash.firstOrNull()?.date
-                        if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
-                        if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
                     }
-                }
-
-                item {
-                    WearHistorySection(
-                        wears = itemWears,
-                        showAll = showAllWears,
-                        onToggle = { showAllWears = !showAllWears },
-                        onDelete = { repo.deleteWearEvent(it) }
-                    )
-                }
-
-                item {
-                    WashHistorySection(
-                        washes = itemWash,
-                        showAll = showAllWash,
-                        onToggle = { showAllWash = !showAllWash },
-                        onDelete = { repo.deleteWashEvent(it) }
-                    )
                 }
             }
 
-            val otherImages = v.images.filterNot { it.id == mainImage?.id }
+            if (hasRecords) {
+                item {
+                    DetailSection("我的记录") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (v.rating > 0) {
+                                Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Fig)
+                            }
+                            if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                        }
+                    }
+                }
+            }
+
+            if (v.status == ItemStatus.RETURNED && v.returnReason.isNotBlank()) {
+                item {
+                    DetailSection("退货信息") {
+                        Text(v.returnReason, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                    }
+                }
+            }
+
             if (otherImages.isNotEmpty()) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("更多图片", style = MaterialTheme.typography.titleMedium)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("更多图片", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(otherImages) { img ->
                                 ClosieImageTile(
                                     model = img.localPath?.let { File(it) },
                                     contentDescription = v.name,
-                                    modifier = Modifier.size(120.dp),
+                                    modifier = Modifier.size(104.dp),
                                     contentScale = if (img.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
                                 )
                             }
@@ -260,18 +279,49 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
 }
 
 @Composable
+private fun DetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        HorizontalDivider(color = ClosieColor.Hairline, modifier = Modifier.padding(bottom = 14.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+        Spacer(Modifier.height(8.dp))
+        content()
+    }
+}
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = ClosieColor.Ink,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.End,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 private fun DetailActionChip(label: String, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(999.dp),
-        color = ClosieColor.Surface,
+        color = ClosieColor.Mist,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
+        shadowElevation = 0.dp
     ) {
         Text(
             label,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
             style = MaterialTheme.typography.labelLarge,
             color = ClosieColor.Ink
         )
@@ -287,8 +337,8 @@ private fun WearHistorySection(
 ) {
     if (wears.isEmpty()) return
     val visible = if (showAll) wears else wears.take(8)
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("穿着记录", style = MaterialTheme.typography.titleMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("穿着记录", style = MaterialTheme.typography.titleSmall, color = ClosieColor.Ink)
         visible.forEach { w ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -296,9 +346,9 @@ private fun WearHistorySection(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(w.date, style = MaterialTheme.typography.bodyMedium)
+                    Text(w.date, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
                     val label = if (w.source == WearSource.OOTD) "来自 OOTD" else "手动记录"
-                    Text(" · $label", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
+                    Text(" · $label", style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
                 }
                 if (w.source == WearSource.MANUAL) {
                     TextButton(onClick = { onDelete(w.id) }) { Text("删除", color = ClosieColor.Error) }
@@ -307,7 +357,7 @@ private fun WearHistorySection(
         }
         if (wears.size > 8) {
             TextButton(onClick = onToggle) {
-                Text(if (showAll) "收起" else "查看全部（${wears.size}）", color = ClosieColor.Rose)
+                Text(if (showAll) "收起" else "查看全部（${wears.size}）", color = ClosieColor.Fig)
             }
         }
     }
@@ -322,21 +372,21 @@ private fun WashHistorySection(
 ) {
     if (washes.isEmpty()) return
     val visible = if (showAll) washes else washes.take(8)
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("洗涤记录", style = MaterialTheme.typography.titleMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("洗涤记录", style = MaterialTheme.typography.titleSmall, color = ClosieColor.Ink)
         visible.forEach { w ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(w.date, style = MaterialTheme.typography.bodyMedium)
+                Text(w.date, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
                 TextButton(onClick = { onDelete(w.id) }) { Text("删除", color = ClosieColor.Error) }
             }
         }
         if (washes.size > 8) {
             TextButton(onClick = onToggle) {
-                Text(if (showAll) "收起" else "查看全部（${washes.size}）", color = ClosieColor.Rose)
+                Text(if (showAll) "收起" else "查看全部（${washes.size}）", color = ClosieColor.Fig)
             }
         }
     }

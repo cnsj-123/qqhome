@@ -1,11 +1,16 @@
 # Closie Android Design System
 
 > A local-first wardrobe companion. Clothes first, chrome second.
+>
+> **«The wardrobe supplies the color; Closie supplies the frame.»**
+>
+> The clothes are the richest color on screen. Closie stays restrained — ~90% neutral — so
+> it reads like a personal fashion journal, not a Material database app.
 
 ## Brand personality
 
 - **minimal** — only what matters, nothing extra
-- **warm** — low-saturation rose, human tone
+- **warm** — low-saturation fig, human tone
 - **personal** — it is *your* wardrobe, not a catalog
 - **image-first** — clothing and outfit photos are the heroes
 - **calm** — generous whitespace, quiet hierarchy
@@ -27,35 +32,40 @@ Adding a piece of clothing is choosing, not filling a 20-field form.
 
 | Token            | Hex     | Usage                                      |
 |------------------|---------|--------------------------------------------|
-| Canvas           | #FAF9F7 | root background, behind everything         |
-| Surface          | #FFFFFF | cards, sheets, input backgrounds           |
-| SurfaceSoft      | #F4F2EF | flat-image background, subtle rows         |
-| SurfaceMuted     | #EFEBE7 | disabled, dragged placeholders             |
-| Ink              | #1C1C1E | primary text, icons                        |
-| InkSecondary     | #74716D | subtitles, metadata, hints                 |
-| InkTertiary      | #A39F9A | placeholders, disabled text                |
-| Hairline         | #E8E4DF | dividers, borders, chip outlines           |
-| HairlineStrong   | #DDD8D2 | stronger separators                        |
-| Rose             | #C9828C | primary action, active state, selected chip|
-| RosePressed      | #B66F7A | pressed / darker rose                      |
-| RoseSoft         | #F5E7E9 | tinted surface accents                     |
+| Porcelain        | #F7F6F2 | root background, behind everything         |
+| Paper            | #FFFFFF | sheets, cards, input backgrounds           |
+| Mist             | #EFEEE9 | flat-image background, search, subtle fills|
+| Fog              | #E7E5DF | disabled, dragged placeholders             |
+| Ink              | #171717 | primary text, selected chip                |
+| Graphite         | #55524E | subtitles, metadata, hints                 |
+| Stone            | #96918A | placeholders, disabled, unselected tab     |
+| Hairline         | #DDDAD3 | dividers, borders                          |
+| Fig              | #713D4B | brand accent: save, +add, indicator, icon  |
+| FigPressed       | #5E303D | pressed / darker fig                       |
+| FigSoft          | #EFE3E6 | tinted surface accents                     |
+| Moss             | #747B61 | subtle success / rare secondary accent     |
+| MossSoft         | #EBEDE5 | moss tint surface                          |
 | Error            | Material baseline error | errors, destructive actions |
 
-### Rose usage rules
+### Fig usage rules
 
-Rose is allowed for:
-- primary action
-- active state
-- selected chip
-- small emphasis
-- current navigation indicator
+Fig is the brand color, **not** the page color. It is allowed for:
+- primary save action
+- "+ add"
+- a very small selected indicator (dot / underline)
+- current state / rating
+- app icon
+- small brand recognition
 
-Rose is **not** allowed for:
-- large pink backgrounds
-- every card
+Fig is **not** allowed for:
+- large fig backgrounds
+- every chip fill
 - every button
 - all titles
-- gradients
+- a big fig navigation pill
+
+Moss is used even more sparingly — at most a subtle success or rare secondary accent.
+Never place Fig and Moss next to each other as a pair.
 
 ## Dark mode
 
@@ -100,52 +110,52 @@ Base grid: 4 dp.
 |-------|-------|
 | Small  | 8 dp  |
 | Medium | 12 dp |
-| Large  | 16 dp |
-| XL     | 20 dp |
+| Large  | 14 dp |
+| XL     | 16 dp |
 | Pill   | 999 dp|
 
 ## Surfaces
 
-- root: Canvas
-- cards/sheets: Surface with 1 dp Hairline stroke, **no elevation shadow**
-- image placeholders: SurfaceSoft
-- selection backdrop: RoseSoft
+- root: Porcelain
+- cards/sheets: Paper with 1 dp Hairline stroke, **no elevation shadow**
+- image placeholders: Mist
+- selection backdrop: FigSoft
 
 Hierarchy comes from whitespace and surface color, not from shadows.
 
 ## Image treatment
 
 ### Flat images
-- SurfaceSoft background
+- Mist background
 - ContentScale.Fit
 - padding so transparent PNGs feel like a catalog
-- 16 dp radius
+- 14 dp radius
 
 ### Product / model / me photos
 - ContentScale.Crop allowed
-- 16 dp radius
-- in grids, crop to uniform aspect ratio
+- 14 dp radius
+- in grids, crop to a ~4:5 aspect ratio
 
 Closet grid prioritizes: FLAT → PRODUCT → other.
 
 ## Buttons
 
-- Primary: Rose fill, Surface text
-- Secondary: Surface fill, Ink text, Hairline stroke
-- Tertiary: plain text, Rose only when primary action
-- Avoid filling every action with Rose
+- Primary: Fig fill, Paper text
+- Secondary: Paper fill, Ink text, Hairline stroke
+- Tertiary: plain text, Fig only when primary action
+- Avoid filling every action with Fig
 
 ## Search
 
-- pill-shaped soft surface
-- Hairline stroke
+- Mist surface, no outline
 - clear action on the trailing side
-- hint in InkTertiary
+- hint in Stone
+- 44–46 dp tall
 
 ## Chips
 
-- unselected: Surface, Hairline stroke, Ink text
-- selected: Rose fill, Surface text
+- unselected: Paper, Hairline stroke, Graphite text
+- selected: Ink fill, Paper text
 - minimum touch target 44 dp
 
 ## Picker
@@ -209,6 +219,20 @@ Filtered empty:
 > [清除筛选]
 
 Never mix the two messages.
+
+## App Icon
+
+- **Mark** — a geometric open "C" with a 45° folded lower arm ("Closie C / wardrobe fold").
+  It reads as a letter, a folded garment and an opening closet door at once. No hanger, no
+  shopping bag, no text.
+- **Palette** — Fig `#713D4B` background, Porcelain `#F7F6F2` mark. Distinct on the launcher,
+  quiet once inside the app.
+- **Monochrome** — outline-only layer (single-color) so Android 13+ themed icons work; it must
+  not rely on Fig.
+- **Safe area** — the mark is centered inside the 66 dp safe zone so circular / squircle /
+  rounded-square masks (incl. OriginOS) never crop it.
+- Implemented as an adaptive icon (`mipmap-anydpi-v26`), with foreground / background /
+  monochrome layers, plus `roundIcon`.
 
 ## Do / Don't
 

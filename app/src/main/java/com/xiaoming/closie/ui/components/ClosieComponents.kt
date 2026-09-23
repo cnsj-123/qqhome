@@ -30,9 +30,11 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.xiaoming.closie.ui.theme.ClosieColor
+import com.xiaoming.closie.ui.theme.ClosieTheme
 import java.io.File
 
 // ------------------------------------------------------------------------------------------------
@@ -61,16 +63,15 @@ fun ClosieSearchBar(
     placeholder: String,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(999.dp)
+    val shape = RoundedCornerShape(14.dp)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = 46.dp)
             .clip(shape)
-            .background(ClosieColor.Surface)
-            .border(1.dp, ClosieColor.Hairline, shape)
+            .background(ClosieColor.Mist)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = ClosieColor.Ink),
         singleLine = true,
@@ -104,9 +105,9 @@ fun ClosieFilterChip(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (selected) ClosieColor.Rose else ClosieColor.Surface
-    val content = if (selected) ClosieColor.Surface else ClosieColor.Ink
-    val borderColor = if (selected) ClosieColor.Rose else ClosieColor.Hairline
+    val bg = if (selected) ClosieColor.Ink else ClosieColor.Paper
+    val content = if (selected) ClosieColor.Paper else ClosieColor.Graphite
+    val borderColor = if (selected) ClosieColor.Ink else ClosieColor.Hairline
     Box(
         modifier = modifier
             .heightIn(min = 44.dp)
@@ -274,7 +275,7 @@ fun ClosieImageTile(
     contentScale: ContentScale = ContentScale.Crop,
     placeholder: @Composable (() -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(14.dp)
     Box(
         modifier = modifier
             .clip(shape)
@@ -378,3 +379,18 @@ fun ClosieBottomActionBar(
 
 fun priceText(price: Double): String =
     "¥" + if (price == price.toLong().toDouble()) price.toLong().toString() else price.toString()
+
+@Preview(widthDp = 393, heightDp = 852, showBackground = true)
+@Composable
+private fun ClosieFilterChipPreview() {
+    ClosieTheme {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ClosieFilterChip(selected = false, onClick = {}, label = "全部")
+            ClosieFilterChip(selected = true, onClick = {}, label = "上衣")
+            ClosieSearchBar(value = "", onValueChange = {}, placeholder = "搜索衣服、品牌、类别")
+        }
+    }
+}

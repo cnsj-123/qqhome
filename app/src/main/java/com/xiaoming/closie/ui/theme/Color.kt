@@ -2,23 +2,44 @@ package com.xiaoming.closie.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+/**
+ * Closie v2 palette — "The wardrobe supplies the color; Closie supplies the frame."
+ *
+ * The UI stays ~90% neutral (Porcelain / Paper / Mist / Ink / Graphite) so the clothes
+ * themselves are the richest color on screen. Fig is the brand accent, used sparingly.
+ */
 object ClosieColor {
-    val Canvas = Color(0xFFFAF9F7)
-    val Surface = Color(0xFFFFFFFF)
-    val SurfaceSoft = Color(0xFFF4F2EF)
-    val SurfaceMuted = Color(0xFFEFEBE7)
+    // Neutral base
+    val Porcelain = Color(0xFFF7F6F2)
+    val Paper = Color(0xFFFFFFFF)
+    val Mist = Color(0xFFEFEEE9)
+    val Fog = Color(0xFFE7E5DF)
 
-    val Ink = Color(0xFF1C1C1E)
-    val InkSecondary = Color(0xFF74716D)
-    val InkTertiary = Color(0xFFA39F9A)
+    val Ink = Color(0xFF171717)
+    val Graphite = Color(0xFF55524E)
+    val Stone = Color(0xFF96918A)
+    val Hairline = Color(0xFFDDDAD3)
 
-    val Hairline = Color(0xFFE8E4DF)
-    val HairlineStrong = Color(0xFFDDD8D2)
+    // Brand accent
+    val Fig = Color(0xFF713D4B)
+    val FigPressed = Color(0xFF5E303D)
+    val FigSoft = Color(0xFFEFE3E6)
 
-    val Rose = Color(0xFFC9828C)
-    val RosePressed = Color(0xFFB66F7A)
-    val RoseSoft = Color(0xFFF5E7E9)
+    // Secondary, used very sparingly
+    val Moss = Color(0xFF747B61)
+    val MossSoft = Color(0xFFEBEDE5)
 
-    // Error uses Material baseline; keep a stable semantic alias.
     val Error = Color(0xFFB3261E)
+
+    // Backward-compatible aliases so pre-existing screens keep compiling.
+    val Canvas = Porcelain
+    val Surface = Paper
+    val SurfaceSoft = Mist
+    val SurfaceMuted = Fog
+    val InkSecondary = Graphite
+    val InkTertiary = Stone
+    val HairlineStrong = Fog
+    val Rose = Fig
+    val RosePressed = FigPressed
+    val RoseSoft = FigSoft
 }

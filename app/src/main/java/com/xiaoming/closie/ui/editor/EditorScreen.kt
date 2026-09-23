@@ -26,6 +26,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -163,7 +164,10 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
         }
     }
 
-    val canSave = item.name.isNotBlank() && productImageStatus != ProductImageStatus.DOWNLOADING
+    val priceValid = isValidPrice(priceField)
+    val originalPriceValid = isValidPrice(originalPriceField)
+    val materialsValid = item.materials.all { isValidPercentage(it.percentage) }
+    val canSave = item.name.isNotBlank() && priceValid && originalPriceValid && materialsValid && productImageStatus != ProductImageStatus.DOWNLOADING
 
     fun save() {
         val final = item.copy(
@@ -241,11 +245,12 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
             }
 
             item {
-                SmartPickerField(
+                InlineChoiceChips(
                     label = "类别",
-                    value = item.category,
-                    placeholder = "选择类别",
-                    onClick = { activeSheet = EditorSheet.CATEGORY }
+                    options = listOf("上衣", "下装", "外套", "鞋"),
+                    selected = item.category,
+                    onSelect = { item = item.copy(category = it) },
+                    onMore = { activeSheet = EditorSheet.CATEGORY }
                 )
             }
             item {
@@ -265,21 +270,36 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                 )
             }
             item {
-                SmartPickerField(
-                    label = "尺码",
-                    value = item.sizeLabel,
-                    placeholder = "选择尺码",
-                    onClick = { activeSheet = EditorSheet.SIZE }
-                )
+                if (item.category in setOf("上衣", "外套", "裙装", "连体", "运动", "家居服", "内衣")) {
+                    InlineChoiceChips(
+                        label = "尺码",
+                        options = listOf("XS", "S", "M", "L", "XL"),
+                        selected = item.sizeLabel,
+                        onSelect = { item = item.copy(sizeLabel = it) },
+                        onMore = { activeSheet = EditorSheet.SIZE }
+                    )
+                } else {
+                    SmartPickerField(
+                        label = "尺码",
+                        value = item.sizeLabel,
+                        placeholder = "选择尺码",
+                        onClick = { activeSheet = EditorSheet.SIZE }
+                    )
+                }
             }
             item {
-                EditorTextField(
-                    value = priceField,
-                    onValueChange = { priceField = it },
-                    placeholder = "购买价",
-                    keyboardType = KeyboardType.Decimal,
-                    imeAction = ImeAction.Next
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    EditorTextField(
+                        value = priceField,
+                        onValueChange = { priceField = it },
+                        placeholder = "购买价",
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Next
+                    )
+                    if (!priceValid) {
+                        Text("请输入有效价格", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
 
             item {
@@ -302,6 +322,9 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Next
                     )
+                    if (!originalPriceValid) {
+                        Text("请输入有效价格", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
+                    }
                     SmartPickerField(
                         label = "店铺",
                         value = item.store,
@@ -648,6 +671,20 @@ private fun normalizePercentage(raw: String): String {
     return if (num != null && num in 0.0..100.0) "$t%" else t
 }
 
+private fun isValidPercentage(raw: String): Boolean {
+    val t = raw.trim()
+    if (t.isEmpty()) return true
+    val num = t.removeSuffix("%").trim().toDoubleOrNull()
+    return num != null && num in 0.0..100.0
+}
+
+private fun isValidPrice(raw: String): Boolean {
+    val t = raw.trim()
+    if (t.isEmpty()) return true
+    val value = t.toDoubleOrNull() ?: return false
+    return value.isFinite() && value >= 0.0
+}
+
 private fun kindLabel(kind: ImageKind): String = when (kind) {
     ImageKind.FLAT -> "平铺"
     ImageKind.ME -> "我的上身"
@@ -712,6 +749,46 @@ private fun SegmentOption(label: String, selected: Boolean, modifier: Modifier =
         contentAlignment = Alignment.Center
     ) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = content)
+    }
+}
+
+@Composable
+private fun InlineChoiceChips(
+    label: String,
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    onMore: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { option ->
+                InlineChip(label = option, selected = selected == option) { onSelect(option) }
+            }
+            if (selected.isNotBlank() && selected !in options) {
+                InlineChip(label = selected, selected = true, onClick = onMore)
+            }
+            InlineChip(label = "更多", selected = false, onClick = onMore)
+        }
+    }
+}
+
+@Composable
+private fun InlineChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) ClosieColor.Ink else ClosieColor.Mist)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) ClosieColor.Paper else ClosieColor.Graphite)
     }
 }
 
@@ -785,19 +862,25 @@ private fun ImageSection(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .padding(2.dp)
-                                .size(22.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(ClosieColor.Ink.copy(alpha = 0.55f))
+                                .size(44.dp)
                                 .clickable { onRemove(img.id) },
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.TopEnd
                         ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "删除图片",
-                                tint = ClosieColor.Surface,
-                                modifier = Modifier.size(14.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(2.dp)
+                                    .size(22.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(ClosieColor.Ink.copy(alpha = 0.55f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "删除图片",
+                                    tint = ClosieColor.Surface,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -815,39 +898,45 @@ private fun MaterialRow(
     onPercentage: (String) -> Unit,
     onRemove: () -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 44.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(ClosieColor.SurfaceSoft)
-                .clickable(onClick = onNameClick)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            Text(
-                if (part.name.isBlank()) "选择材质" else part.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (part.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
-                maxLines = 1
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(ClosieColor.SurfaceSoft)
+                    .clickable(onClick = onNameClick)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    if (part.name.isBlank()) "选择材质" else part.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (part.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            OutlinedTextField(
+                value = part.percentage,
+                onValueChange = onPercentage,
+                modifier = Modifier.width(92.dp),
+                placeholder = { Text("占比", fontSize = 13.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = ClosieColor.Rose,
+                    unfocusedBorderColor = ClosieColor.Hairline
+                )
             )
+            IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "删除材质", tint = ClosieColor.InkTertiary)
+            }
         }
-        OutlinedTextField(
-            value = part.percentage,
-            onValueChange = onPercentage,
-            modifier = Modifier.width(92.dp),
-            placeholder = { Text("占比", fontSize = 13.sp) },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = ClosieColor.Rose,
-                unfocusedBorderColor = ClosieColor.Hairline
-            )
-        )
-        IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "删除材质", tint = ClosieColor.InkTertiary)
+        if (!isValidPercentage(part.percentage)) {
+            Text("请输入 0–100", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -875,7 +964,8 @@ private fun MeasurementRow(
                 if (m.name.isBlank()) "选择尺寸名" else m.name,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (m.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         OutlinedTextField(

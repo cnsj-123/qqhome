@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.xiaoming.closie.ui.theme.ClosieColor
+import com.xiaoming.closie.ui.theme.rememberClosieDimensions
 
 /**
  * The generic smart-entry choice sheet. Searchable, scrollable, with existing values first,
@@ -55,6 +57,8 @@ fun SearchableChoiceSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf("") }
+    val dims = rememberClosieDimensions()
+    val listMaxHeight = (dims.screenHeightDp * 0.56f).dp
 
     val full = remember(suggestions, currentValue) {
         val merged = dedupeCaseInsensitive(suggestions)
@@ -82,7 +86,7 @@ fun SearchableChoiceSheet(
         sheetState = sheetState,
         containerColor = ClosieColor.Surface
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -126,7 +130,7 @@ fun SearchableChoiceSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    filteredPreferred.forEach { option ->
+                    filteredPreferred.take(8).forEach { option ->
                         ClosieFilterChip(
                             selected = option.equals(currentValue, ignoreCase = true),
                             onClick = { select(option) },
@@ -145,11 +149,14 @@ fun SearchableChoiceSheet(
             Spacer(Modifier.height(4.dp))
 
             if (filtered.isEmpty() && !showCustom) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text("没有匹配的选项", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkTertiary)
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = listMaxHeight)) {
                     items(filtered, key = { it }) { option ->
                         OptionRow(
                             label = option,

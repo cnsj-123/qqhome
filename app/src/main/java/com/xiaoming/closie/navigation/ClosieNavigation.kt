@@ -1,7 +1,9 @@
 package com.xiaoming.closie.navigation
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -12,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -171,34 +174,42 @@ private fun ClosieBottomNavigation(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = ClosieColor.Surface,
+        color = ClosieColor.Paper,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 64.dp)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+                .navigationBarsPadding()
+                .heightIn(min = 60.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TopLevel.entries.forEach { tab ->
                 val selected = tab.route == currentRoute
-                val color = if (selected) ClosieColor.Rose else ClosieColor.InkTertiary
+                val tint = if (selected) ClosieColor.Ink else ClosieColor.Stone
                 Column(
                     modifier = Modifier
-                        .widthIn(min = 48.dp)
+                        .weight(1f)
                         .clickable(onClick = { onSelect(tab) })
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Icon(tab.icon, contentDescription = tab.label, tint = color)
-                    Text(
-                        tab.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = color
+                    Icon(
+                        tab.icon,
+                        contentDescription = tab.label,
+                        tint = tint,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(tab.label, style = MaterialTheme.typography.labelSmall, color = tint)
+                    Box(
+                        modifier = Modifier
+                            .width(if (selected) 16.dp else 0.dp)
+                            .height(2.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(ClosieColor.Fig)
                     )
                 }
             }

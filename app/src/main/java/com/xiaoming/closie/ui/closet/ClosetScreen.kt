@@ -1,7 +1,6 @@
 package com.xiaoming.closie.ui.closet
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -9,6 +8,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.FilterAlt
@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xiaoming.closie.data.model.ClothingItem
 import com.xiaoming.closie.data.model.ImageKind
@@ -26,6 +27,7 @@ import com.xiaoming.closie.data.model.ItemStatus
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import com.xiaoming.closie.ui.components.*
 import com.xiaoming.closie.ui.theme.ClosieColor
+import com.xiaoming.closie.ui.theme.rememberClosieDimensions
 import java.io.File
 
 private enum class SortOption(val label: String) {
@@ -53,6 +55,7 @@ fun ClosetScreen(
     var onlyUnworn by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf(ItemStatus.OWNED) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    val dims = rememberClosieDimensions()
 
     val all by repo.items.collectAsState()
     val wears by repo.wearEvents.collectAsState()
@@ -93,51 +96,36 @@ fun ClosetScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("我的衣橱", style = MaterialTheme.typography.titleLarge)
-                        Text("${statusItems.size} 件", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
+                        Text("我的衣橱", style = MaterialTheme.typography.titleLarge, color = ClosieColor.Ink)
+                        Text("${statusItems.size} 件", style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { add(status) }) {
+                        Icon(Icons.Default.Add, contentDescription = "添加衣服", tint = ClosieColor.Fig)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { add(status) },
-                containerColor = ClosieColor.Rose,
-                contentColor = ClosieColor.Surface,
-                shape = MaterialTheme.shapes.extraLarge
-            ) { Icon(Icons.Default.Add, contentDescription = "添加衣服") }
         }
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = dims.pageHorizontal, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Status segment
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.large)
-                    .background(ClosieColor.Surface)
-                    .border(1.dp, ClosieColor.Hairline, MaterialTheme.shapes.large)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SegmentButton(
-                    label = "已拥有",
-                    selected = status == ItemStatus.OWNED,
-                    onClick = { status = ItemStatus.OWNED; selectedCategory = ""; onlyUnworn = false },
-                    modifier = Modifier.weight(1f)
-                )
-                SegmentButton(
-                    label = "试过 / 退货",
-                    selected = status == ItemStatus.RETURNED,
-                    onClick = { status = ItemStatus.RETURNED; selectedCategory = ""; onlyUnworn = false },
-                    modifier = Modifier.weight(1f)
-                )
+                StatusTab("已拥有", status == ItemStatus.OWNED) {
+                    status = ItemStatus.OWNED; selectedCategory = ""; onlyUnworn = false
+                }
+                StatusTab("试过 / 退货", status == ItemStatus.RETURNED) {
+                    status = ItemStatus.RETURNED; selectedCategory = ""; onlyUnworn = false
+                }
             }
 
             ClosieSearchBar(
@@ -151,7 +139,7 @@ fun ClosetScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                     item {
                         ClosieFilterChip(
                             selected = selectedCategory.isBlank(),
@@ -168,7 +156,7 @@ fun ClosetScreen(
                     }
                 }
                 IconButton(onClick = { showFilterSheet = true }) {
-                    Icon(Icons.Outlined.FilterAlt, contentDescription = "筛选", tint = ClosieColor.InkSecondary)
+                    Icon(Icons.Outlined.FilterAlt, contentDescription = "筛选", tint = ClosieColor.Graphite)
                 }
             }
 
@@ -202,12 +190,17 @@ fun ClosetScreen(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(dims.gridGutter),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(visibleItems, key = { it.id }) { item ->
-                        ClothingItemTile(item, wearCount[item.id] ?: 0, status == ItemStatus.OWNED) { open(item.id) }
+                        ClothingItemTile(
+                            item = item,
+                            wears = wearCount[item.id] ?: 0,
+                            showWearCount = status == ItemStatus.OWNED,
+                            aspectRatio = dims.gridAspectRatio
+                        ) { open(item.id) }
                     }
                 }
             }
@@ -234,24 +227,22 @@ fun ClosetScreen(
 }
 
 @Composable
-private fun SegmentButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val bg = if (selected) ClosieColor.Rose else ClosieColor.Surface
-    val content = if (selected) ClosieColor.Surface else ClosieColor.InkSecondary
-    Box(
-        modifier = modifier
+private fun StatusTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
             .heightIn(min = 44.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .background(bg)
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        contentAlignment = Alignment.Center
+            .padding(end = 24.dp, top = 2.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
+        Text(label, style = MaterialTheme.typography.titleMedium, color = if (selected) ClosieColor.Ink else ClosieColor.Stone)
+        Box(
+            modifier = Modifier
+                .height(2.dp)
+                .width(if (selected) 22.dp else 0.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(ClosieColor.Fig)
+        )
     }
 }
 
@@ -260,6 +251,7 @@ private fun ClothingItemTile(
     item: ClothingItem,
     wears: Int,
     showWearCount: Boolean,
+    aspectRatio: Float,
     onClick: () -> Unit
 ) {
     val image = item.images.firstOrNull { it.kind == ImageKind.FLAT }
@@ -274,26 +266,26 @@ private fun ClothingItemTile(
             contentDescription = item.name,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.9f),
+                .aspectRatio(aspectRatio),
             contentScale = if (image?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
             placeholder = {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(item.name, color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
+                    Text(item.name, color = ClosieColor.Stone, style = MaterialTheme.typography.bodySmall)
                 }
             }
         )
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = ClosieColor.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val meta = listOfNotNull(item.brand.takeIf { it.isNotBlank() }, item.sizeLabel.takeIf { it.isNotBlank() })
                 .joinToString(" · ")
             if (meta.isNotBlank()) {
-                Text(meta, style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary, maxLines = 1)
+                Text(meta, style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite, maxLines = 1)
             }
             if (showWearCount) {
                 Text(
                     if (wears > 0) "穿过 $wears 次" else "还没穿过",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (wears > 0) ClosieColor.InkSecondary else ClosieColor.InkTertiary
+                    color = if (wears > 0) ClosieColor.Graphite else ClosieColor.Stone
                 )
             }
         }
@@ -317,16 +309,16 @@ private fun FilterSheetContent(
             .padding(bottom = 32.dp, top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text("筛选", style = MaterialTheme.typography.headlineSmall)
+        Text("筛选", style = MaterialTheme.typography.headlineSmall, color = ClosieColor.Ink)
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("状态", style = MaterialTheme.typography.titleMedium)
-            Text("在衣橱页顶部切换“已拥有 / 试过·退货”", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+            Text("状态", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+            Text("在衣橱页顶部切换“已拥有 / 试过·退货”", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
         }
 
         if (showUnwornFilter) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("只看未穿过", style = MaterialTheme.typography.titleMedium)
+                Text("只看未穿过", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -337,27 +329,27 @@ private fun FilterSheetContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("只看未穿过的衣服")
+                    Text("只看未穿过的衣服", color = ClosieColor.Ink)
                     Switch(checked = onlyUnworn, onCheckedChange = onOnlyUnworn)
                 }
             }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("排序", style = MaterialTheme.typography.titleMedium)
+            Text("排序", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
             SortOption.entries.forEach { option ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(MaterialTheme.shapes.medium)
-                        .background(if (sort == option) ClosieColor.RoseSoft else ClosieColor.Surface)
+                        .background(if (sort == option) ClosieColor.FigSoft else ClosieColor.Paper)
                         .clickable { onSort(option) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(option.label, color = if (sort == option) ClosieColor.RosePressed else ClosieColor.Ink)
-                    if (sort == option) Text("●", color = ClosieColor.Rose)
+                    Text(option.label, color = if (sort == option) ClosieColor.FigPressed else ClosieColor.Ink)
+                    if (sort == option) Text("●", color = ClosieColor.Fig)
                 }
             }
         }
@@ -372,7 +364,7 @@ private fun FilterSheetContent(
                 onClick = onApply,
                 modifier = Modifier.weight(1f),
                 shape = MaterialTheme.shapes.large,
-                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
+                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Fig, contentColor = ClosieColor.Paper)
             ) { Text("应用") }
         }
     }

@@ -1,7 +1,7 @@
 <resources>
     <style name="Theme.Closie" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#765661</item>
-        <item name="android:navigationBarColor">#FFF8F7</item>
+        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#713D4B</item>
+        <item name="android:navigationBarColor">#F7F6F2</item>
     </style>
 </resources>
 
