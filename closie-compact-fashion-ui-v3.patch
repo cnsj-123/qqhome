@@ -1,0 +1,2186 @@
+From b47dcfd569a0d66525055bf474f79b2d054cb993 Mon Sep 17 00:00:00 2001
+From: Closie <closie@example.com>
+Date: Wed, 23 Sep 2026 13:59:35 +0800
+Subject: [PATCH] style(android): refine compact fashion identity
+
+---
+ app/DESIGN.md                                 | 110 +++++---
+ app/src/main/AndroidManifest.xml              |   4 +-
+ .../java/com/xiaoming/closie/MainActivity.kt  |  15 +-
+ .../closie/navigation/ClosieNavigation.kt     |  37 ++-
+ .../xiaoming/closie/ui/closet/ClosetScreen.kt | 128 ++++-----
+ .../closie/ui/components/ClosieComponents.kt  |  32 ++-
+ .../ui/components/SearchableChoiceSheet.kt    |  15 +-
+ .../closie/ui/components/SmartPickerField.kt  |  47 +++-
+ .../xiaoming/closie/ui/detail/DetailScreen.kt | 258 +++++++++++-------
+ .../xiaoming/closie/ui/editor/EditorScreen.kt | 212 +++++++++-----
+ .../com/xiaoming/closie/ui/home/HomeScreen.kt | 200 ++++++++------
+ .../com/xiaoming/closie/ui/theme/Color.kt     |  47 +++-
+ .../xiaoming/closie/ui/theme/Dimensions.kt    |  38 +++
+ .../com/xiaoming/closie/ui/theme/Shape.kt     |   7 +-
+ .../com/xiaoming/closie/ui/theme/Theme.kt     |  34 +--
+ .../java/com/xiaoming/closie/ui/theme/Type.kt |   8 +-
+ .../res/drawable/ic_launcher_foreground.xml   |  14 +
+ .../res/drawable/ic_launcher_monochrome.xml   |  14 +
+ .../res/mipmap-anydpi-v26/ic_launcher.xml     |   5 +
+ .../mipmap-anydpi-v26/ic_launcher_round.xml   |   5 +
+ app/src/main/res/values-v27/styles.xml        |   4 +-
+ .../main/res/values/ic_launcher_colors.xml    |   3 +
+ app/src/main/res/values/styles.xml            |   4 +-
+ 23 files changed, 798 insertions(+), 443 deletions(-)
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/theme/Dimensions.kt
+ create mode 100644 app/src/main/res/drawable/ic_launcher_foreground.xml
+ create mode 100644 app/src/main/res/drawable/ic_launcher_monochrome.xml
+ create mode 100644 app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+ create mode 100644 app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+ create mode 100644 app/src/main/res/values/ic_launcher_colors.xml
+
+diff --git a/app/DESIGN.md b/app/DESIGN.md
+index faf687b..18dce12 100644
+--- a/app/DESIGN.md
++++ b/app/DESIGN.md
+@@ -1,11 +1,16 @@
+ # Closie Android Design System
+ 
+ > A local-first wardrobe companion. Clothes first, chrome second.
++>
++> **«The wardrobe supplies the color; Closie supplies the frame.»**
++>
++> The clothes are the richest color on screen. Closie stays restrained — ~90% neutral — so
++> it reads like a personal fashion journal, not a Material database app.
+ 
+ ## Brand personality
+ 
+ - **minimal** — only what matters, nothing extra
+-- **warm** — low-saturation rose, human tone
++- **warm** — low-saturation fig, human tone
+ - **personal** — it is *your* wardrobe, not a catalog
+ - **image-first** — clothing and outfit photos are the heroes
+ - **calm** — generous whitespace, quiet hierarchy
+@@ -27,35 +32,40 @@ Adding a piece of clothing is choosing, not filling a 20-field form.
+ 
+ | Token            | Hex     | Usage                                      |
+ |------------------|---------|--------------------------------------------|
+-| Canvas           | #FAF9F7 | root background, behind everything         |
+-| Surface          | #FFFFFF | cards, sheets, input backgrounds           |
+-| SurfaceSoft      | #F4F2EF | flat-image background, subtle rows         |
+-| SurfaceMuted     | #EFEBE7 | disabled, dragged placeholders             |
+-| Ink              | #1C1C1E | primary text, icons                        |
+-| InkSecondary     | #74716D | subtitles, metadata, hints                 |
+-| InkTertiary      | #A39F9A | placeholders, disabled text                |
+-| Hairline         | #E8E4DF | dividers, borders, chip outlines           |
+-| HairlineStrong   | #DDD8D2 | stronger separators                        |
+-| Rose             | #C9828C | primary action, active state, selected chip|
+-| RosePressed      | #B66F7A | pressed / darker rose                      |
+-| RoseSoft         | #F5E7E9 | tinted surface accents                     |
++| Porcelain        | #F7F6F2 | root background, behind everything         |
++| Paper            | #FFFFFF | sheets, cards, input backgrounds           |
++| Mist             | #EFEEE9 | flat-image background, search, subtle fills|
++| Fog              | #E7E5DF | disabled, dragged placeholders             |
++| Ink              | #171717 | primary text, selected chip                |
++| Graphite         | #55524E | subtitles, metadata, hints                 |
++| Stone            | #96918A | placeholders, disabled, unselected tab     |
++| Hairline         | #DDDAD3 | dividers, borders                          |
++| Fig              | #713D4B | brand accent: save, +add, indicator, icon  |
++| FigPressed       | #5E303D | pressed / darker fig                       |
++| FigSoft          | #EFE3E6 | tinted surface accents                     |
++| Moss             | #747B61 | subtle success / rare secondary accent     |
++| MossSoft         | #EBEDE5 | moss tint surface                          |
+ | Error            | Material baseline error | errors, destructive actions |
+ 
+-### Rose usage rules
++### Fig usage rules
+ 
+-Rose is allowed for:
+-- primary action
+-- active state
+-- selected chip
+-- small emphasis
+-- current navigation indicator
++Fig is the brand color, **not** the page color. It is allowed for:
++- primary save action
++- "+ add"
++- a very small selected indicator (dot / underline)
++- current state / rating
++- app icon
++- small brand recognition
+ 
+-Rose is **not** allowed for:
+-- large pink backgrounds
+-- every card
++Fig is **not** allowed for:
++- large fig backgrounds
++- every chip fill
+ - every button
+ - all titles
+-- gradients
++- a big fig navigation pill
++
++Moss is used even more sparingly — at most a subtle success or rare secondary accent.
++Never place Fig and Moss next to each other as a pair.
+ 
+ ## Dark mode
+ 
+@@ -100,52 +110,52 @@ Base grid: 4 dp.
+ |-------|-------|
+ | Small  | 8 dp  |
+ | Medium | 12 dp |
+-| Large  | 16 dp |
+-| XL     | 20 dp |
++| Large  | 14 dp |
++| XL     | 16 dp |
+ | Pill   | 999 dp|
+ 
+ ## Surfaces
+ 
+-- root: Canvas
+-- cards/sheets: Surface with 1 dp Hairline stroke, **no elevation shadow**
+-- image placeholders: SurfaceSoft
+-- selection backdrop: RoseSoft
++- root: Porcelain
++- cards/sheets: Paper with 1 dp Hairline stroke, **no elevation shadow**
++- image placeholders: Mist
++- selection backdrop: FigSoft
+ 
+ Hierarchy comes from whitespace and surface color, not from shadows.
+ 
+ ## Image treatment
+ 
+ ### Flat images
+-- SurfaceSoft background
++- Mist background
+ - ContentScale.Fit
+ - padding so transparent PNGs feel like a catalog
+-- 16 dp radius
++- 14 dp radius
+ 
+ ### Product / model / me photos
+ - ContentScale.Crop allowed
+-- 16 dp radius
+-- in grids, crop to uniform aspect ratio
++- 14 dp radius
++- in grids, crop to a ~4:5 aspect ratio
+ 
+ Closet grid prioritizes: FLAT → PRODUCT → other.
+ 
+ ## Buttons
+ 
+-- Primary: Rose fill, Surface text
+-- Secondary: Surface fill, Ink text, Hairline stroke
+-- Tertiary: plain text, Rose only when primary action
+-- Avoid filling every action with Rose
++- Primary: Fig fill, Paper text
++- Secondary: Paper fill, Ink text, Hairline stroke
++- Tertiary: plain text, Fig only when primary action
++- Avoid filling every action with Fig
+ 
+ ## Search
+ 
+-- pill-shaped soft surface
+-- Hairline stroke
++- Mist surface, no outline
+ - clear action on the trailing side
+-- hint in InkTertiary
++- hint in Stone
++- 44–46 dp tall
+ 
+ ## Chips
+ 
+-- unselected: Surface, Hairline stroke, Ink text
+-- selected: Rose fill, Surface text
++- unselected: Paper, Hairline stroke, Graphite text
++- selected: Ink fill, Paper text
+ - minimum touch target 44 dp
+ 
+ ## Picker
+@@ -210,6 +220,20 @@ Filtered empty:
+ 
+ Never mix the two messages.
+ 
++## App Icon
++
++- **Mark** — a geometric open "C" with a 45° folded lower arm ("Closie C / wardrobe fold").
++  It reads as a letter, a folded garment and an opening closet door at once. No hanger, no
++  shopping bag, no text.
++- **Palette** — Fig `#713D4B` background, Porcelain `#F7F6F2` mark. Distinct on the launcher,
++  quiet once inside the app.
++- **Monochrome** — outline-only layer (single-color) so Android 13+ themed icons work; it must
++  not rely on Fig.
++- **Safe area** — the mark is centered inside the 66 dp safe zone so circular / squircle /
++  rounded-square masks (incl. OriginOS) never crop it.
++- Implemented as an adaptive icon (`mipmap-anydpi-v26`), with foreground / background /
++  monochrome layers, plus `roundIcon`.
++
+ ## Do / Don't
+ 
+ | Do                              | Don't                            |
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 85b3adf..5b4c0ea 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -1,7 +1,7 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <uses-permission android:name="android.permission.INTERNET" />
+-    <application android:allowBackup="true" android:label="Closie 衣橱" android:theme="@style/Theme.Closie" android:supportsRtl="true">
+-        <activity android:name=".MainActivity" android:exported="true">
++    <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:label="Closie" android:theme="@style/Theme.Closie" android:supportsRtl="true">
++        <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+                 <category android:name="android.intent.category.LAUNCHER" />
+diff --git a/app/src/main/java/com/xiaoming/closie/MainActivity.kt b/app/src/main/java/com/xiaoming/closie/MainActivity.kt
+index eeb8118..5a031f3 100644
+--- a/app/src/main/java/com/xiaoming/closie/MainActivity.kt
++++ b/app/src/main/java/com/xiaoming/closie/MainActivity.kt
+@@ -1,7 +1,10 @@
+ package com.xiaoming.closie
+ 
++import android.graphics.Color
++import android.os.Build
+ import android.os.Bundle
+ import androidx.activity.ComponentActivity
++import androidx.activity.SystemBarStyle
+ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
+ import androidx.compose.material3.Surface
+@@ -13,7 +16,17 @@ import com.xiaoming.closie.ui.theme.ClosieTheme
+ class MainActivity : ComponentActivity() {
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+-        enableEdgeToEdge()
++        // Closie is intentionally light-only. Keep dark system-bar icons on the light
++        // Porcelain background regardless of the device's system dark/light setting.
++        enableEdgeToEdge(
++            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
++            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
++        )
++        // Android 10+ three-button nav draws a translucent scrim over the nav bar by default;
++        // Closie extends its bottom bar with navigationBarsPadding(), so disable that scrim.
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
++            window.isNavigationBarContrastEnforced = false
++        }
+         setContent {
+             val repository = remember { LocalWardrobeRepository(applicationContext) }
+             ClosieTheme {
+diff --git a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+index a26a602..13e346a 100644
+--- a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
++++ b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+@@ -1,7 +1,9 @@
+ package com.xiaoming.closie.navigation
+ 
++import androidx.compose.foundation.background
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.outlined.AutoAwesome
+ import androidx.compose.material.icons.outlined.CalendarMonth
+@@ -12,6 +14,7 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.getValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.graphics.vector.ImageVector
+ import androidx.compose.ui.unit.dp
+ import androidx.navigation.NavDestination.Companion.hasRoute
+@@ -171,34 +174,42 @@ private fun ClosieBottomNavigation(
+ ) {
+     Surface(
+         modifier = modifier.fillMaxWidth(),
+-        color = ClosieColor.Surface,
++        color = ClosieColor.Paper,
+         tonalElevation = 0.dp,
+         shadowElevation = 0.dp
+     ) {
+         Row(
+             modifier = Modifier
+                 .fillMaxWidth()
+-                .heightIn(min = 64.dp)
+-                .padding(horizontal = 8.dp, vertical = 8.dp),
+-            horizontalArrangement = Arrangement.SpaceEvenly,
++                .navigationBarsPadding()
++                .heightIn(min = 60.dp)
++                .padding(horizontal = 8.dp),
+             verticalAlignment = Alignment.CenterVertically
+         ) {
+             TopLevel.entries.forEach { tab ->
+                 val selected = tab.route == currentRoute
+-                val color = if (selected) ClosieColor.Rose else ClosieColor.InkTertiary
++                val tint = if (selected) ClosieColor.Ink else ClosieColor.Stone
+                 Column(
+                     modifier = Modifier
+-                        .widthIn(min = 48.dp)
++                        .weight(1f)
+                         .clickable(onClick = { onSelect(tab) })
+-                        .padding(horizontal = 8.dp, vertical = 4.dp),
++                        .padding(vertical = 6.dp),
+                     horizontalAlignment = Alignment.CenterHorizontally,
+-                    verticalArrangement = Arrangement.spacedBy(2.dp)
++                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                 ) {
+-                    Icon(tab.icon, contentDescription = tab.label, tint = color)
+-                    Text(
+-                        tab.label,
+-                        style = MaterialTheme.typography.labelSmall,
+-                        color = color
++                    Icon(
++                        tab.icon,
++                        contentDescription = tab.label,
++                        tint = tint,
++                        modifier = Modifier.size(22.dp)
++                    )
++                    Text(tab.label, style = MaterialTheme.typography.labelSmall, color = tint)
++                    Box(
++                        modifier = Modifier
++                            .width(if (selected) 16.dp else 0.dp)
++                            .height(2.dp)
++                            .clip(RoundedCornerShape(999.dp))
++                            .background(ClosieColor.Fig)
+                     )
+                 }
+             }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+index 2b652e6..ccbc065 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+@@ -1,7 +1,6 @@
+ package com.xiaoming.closie.ui.closet
+ 
+ import androidx.compose.foundation.background
+-import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyRow
+@@ -9,6 +8,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
+ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+ import androidx.compose.foundation.lazy.grid.items
+ import androidx.compose.foundation.lazy.items as lazyItems
++import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.filled.Add
+ import androidx.compose.material.icons.outlined.FilterAlt
+@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import com.xiaoming.closie.data.model.ClothingItem
+ import com.xiaoming.closie.data.model.ImageKind
+@@ -26,6 +27,7 @@ import com.xiaoming.closie.data.model.ItemStatus
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+ import com.xiaoming.closie.ui.components.*
+ import com.xiaoming.closie.ui.theme.ClosieColor
++import com.xiaoming.closie.ui.theme.rememberClosieDimensions
+ import java.io.File
+ 
+ private enum class SortOption(val label: String) {
+@@ -53,6 +55,7 @@ fun ClosetScreen(
+     var onlyUnworn by remember { mutableStateOf(false) }
+     var status by remember { mutableStateOf(ItemStatus.OWNED) }
+     var showFilterSheet by remember { mutableStateOf(false) }
++    val dims = rememberClosieDimensions()
+ 
+     val all by repo.items.collectAsState()
+     val wears by repo.wearEvents.collectAsState()
+@@ -93,51 +96,36 @@ fun ClosetScreen(
+             TopAppBar(
+                 title = {
+                     Column {
+-                        Text("我的衣橱", style = MaterialTheme.typography.titleLarge)
+-                        Text("${statusItems.size} 件", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
++                        Text("我的衣橱", style = MaterialTheme.typography.titleLarge, color = ClosieColor.Ink)
++                        Text("${statusItems.size} 件", style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
++                    }
++                },
++                actions = {
++                    IconButton(onClick = { add(status) }) {
++                        Icon(Icons.Default.Add, contentDescription = "添加衣服", tint = ClosieColor.Fig)
+                     }
+                 },
+                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+             )
+-        },
+-        floatingActionButton = {
+-            FloatingActionButton(
+-                onClick = { add(status) },
+-                containerColor = ClosieColor.Rose,
+-                contentColor = ClosieColor.Surface,
+-                shape = MaterialTheme.shapes.extraLarge
+-            ) { Icon(Icons.Default.Add, contentDescription = "添加衣服") }
+         }
+     ) { padding ->
+         Column(
+             modifier = Modifier
+                 .padding(padding)
+                 .fillMaxSize()
+-                .padding(horizontal = 16.dp, vertical = 12.dp),
+-            verticalArrangement = Arrangement.spacedBy(16.dp)
++                .padding(horizontal = dims.pageHorizontal, vertical = 8.dp),
++            verticalArrangement = Arrangement.spacedBy(12.dp)
+         ) {
+-            // Status segment
+             Row(
+-                modifier = Modifier
+-                    .fillMaxWidth()
+-                    .clip(MaterialTheme.shapes.large)
+-                    .background(ClosieColor.Surface)
+-                    .border(1.dp, ClosieColor.Hairline, MaterialTheme.shapes.large)
+-                    .padding(4.dp),
+-                horizontalArrangement = Arrangement.spacedBy(4.dp)
++                modifier = Modifier.fillMaxWidth(),
++                verticalAlignment = Alignment.CenterVertically
+             ) {
+-                SegmentButton(
+-                    label = "已拥有",
+-                    selected = status == ItemStatus.OWNED,
+-                    onClick = { status = ItemStatus.OWNED; selectedCategory = ""; onlyUnworn = false },
+-                    modifier = Modifier.weight(1f)
+-                )
+-                SegmentButton(
+-                    label = "试过 / 退货",
+-                    selected = status == ItemStatus.RETURNED,
+-                    onClick = { status = ItemStatus.RETURNED; selectedCategory = ""; onlyUnworn = false },
+-                    modifier = Modifier.weight(1f)
+-                )
++                StatusTab("已拥有", status == ItemStatus.OWNED) {
++                    status = ItemStatus.OWNED; selectedCategory = ""; onlyUnworn = false
++                }
++                StatusTab("试过 / 退货", status == ItemStatus.RETURNED) {
++                    status = ItemStatus.RETURNED; selectedCategory = ""; onlyUnworn = false
++                }
+             }
+ 
+             ClosieSearchBar(
+@@ -151,7 +139,7 @@ fun ClosetScreen(
+                 horizontalArrangement = Arrangement.SpaceBetween,
+                 verticalAlignment = Alignment.CenterVertically
+             ) {
+-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                     item {
+                         ClosieFilterChip(
+                             selected = selectedCategory.isBlank(),
+@@ -168,7 +156,7 @@ fun ClosetScreen(
+                     }
+                 }
+                 IconButton(onClick = { showFilterSheet = true }) {
+-                    Icon(Icons.Outlined.FilterAlt, contentDescription = "筛选", tint = ClosieColor.InkSecondary)
++                    Icon(Icons.Outlined.FilterAlt, contentDescription = "筛选", tint = ClosieColor.Graphite)
+                 }
+             }
+ 
+@@ -202,12 +190,17 @@ fun ClosetScreen(
+             } else {
+                 LazyVerticalGrid(
+                     columns = GridCells.Fixed(2),
+-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
++                    verticalArrangement = Arrangement.spacedBy(20.dp),
++                    horizontalArrangement = Arrangement.spacedBy(dims.gridGutter),
+                     modifier = Modifier.fillMaxSize()
+                 ) {
+                     items(visibleItems, key = { it.id }) { item ->
+-                        ClothingItemTile(item, wearCount[item.id] ?: 0, status == ItemStatus.OWNED) { open(item.id) }
++                        ClothingItemTile(
++                            item = item,
++                            wears = wearCount[item.id] ?: 0,
++                            showWearCount = status == ItemStatus.OWNED,
++                            aspectRatio = dims.gridAspectRatio
++                        ) { open(item.id) }
+                     }
+                 }
+             }
+@@ -234,24 +227,22 @@ fun ClosetScreen(
+ }
+ 
+ @Composable
+-private fun SegmentButton(
+-    label: String,
+-    selected: Boolean,
+-    onClick: () -> Unit,
+-    modifier: Modifier = Modifier
+-) {
+-    val bg = if (selected) ClosieColor.Rose else ClosieColor.Surface
+-    val content = if (selected) ClosieColor.Surface else ClosieColor.InkSecondary
+-    Box(
+-        modifier = modifier
++private fun StatusTab(label: String, selected: Boolean, onClick: () -> Unit) {
++    Column(
++        modifier = Modifier
+             .heightIn(min = 44.dp)
+-            .clip(MaterialTheme.shapes.medium)
+-            .background(bg)
+             .clickable(onClick = onClick)
+-            .padding(vertical = 8.dp),
+-        contentAlignment = Alignment.Center
++            .padding(end = 24.dp, top = 2.dp, bottom = 8.dp),
++        verticalArrangement = Arrangement.spacedBy(4.dp)
+     ) {
+-        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
++        Text(label, style = MaterialTheme.typography.titleMedium, color = if (selected) ClosieColor.Ink else ClosieColor.Stone)
++        Box(
++            modifier = Modifier
++                .height(2.dp)
++                .width(if (selected) 22.dp else 0.dp)
++                .clip(RoundedCornerShape(999.dp))
++                .background(ClosieColor.Fig)
++        )
+     }
+ }
+ 
+@@ -260,6 +251,7 @@ private fun ClothingItemTile(
+     item: ClothingItem,
+     wears: Int,
+     showWearCount: Boolean,
++    aspectRatio: Float,
+     onClick: () -> Unit
+ ) {
+     val image = item.images.firstOrNull { it.kind == ImageKind.FLAT }
+@@ -274,26 +266,26 @@ private fun ClothingItemTile(
+             contentDescription = item.name,
+             modifier = Modifier
+                 .fillMaxWidth()
+-                .aspectRatio(0.9f),
++                .aspectRatio(aspectRatio),
+             contentScale = if (image?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
+             placeholder = {
+                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                    Text(item.name, color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
++                    Text(item.name, color = ClosieColor.Stone, style = MaterialTheme.typography.bodySmall)
+                 }
+             }
+         )
+         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+-            Text(item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1)
++            Text(item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = ClosieColor.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+             val meta = listOfNotNull(item.brand.takeIf { it.isNotBlank() }, item.sizeLabel.takeIf { it.isNotBlank() })
+                 .joinToString(" · ")
+             if (meta.isNotBlank()) {
+-                Text(meta, style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary, maxLines = 1)
++                Text(meta, style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite, maxLines = 1)
+             }
+             if (showWearCount) {
+                 Text(
+                     if (wears > 0) "穿过 $wears 次" else "还没穿过",
+                     style = MaterialTheme.typography.bodySmall,
+-                    color = if (wears > 0) ClosieColor.InkSecondary else ClosieColor.InkTertiary
++                    color = if (wears > 0) ClosieColor.Graphite else ClosieColor.Stone
+                 )
+             }
+         }
+@@ -317,16 +309,16 @@ private fun FilterSheetContent(
+             .padding(bottom = 32.dp, top = 8.dp),
+         verticalArrangement = Arrangement.spacedBy(20.dp)
+     ) {
+-        Text("筛选", style = MaterialTheme.typography.headlineSmall)
++        Text("筛选", style = MaterialTheme.typography.headlineSmall, color = ClosieColor.Ink)
+ 
+         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-            Text("状态", style = MaterialTheme.typography.titleMedium)
+-            Text("在衣橱页顶部切换“已拥有 / 试过·退货”", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++            Text("状态", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++            Text("在衣橱页顶部切换“已拥有 / 试过·退货”", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+         }
+ 
+         if (showUnwornFilter) {
+             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-                Text("只看未穿过", style = MaterialTheme.typography.titleMedium)
++                Text("只看未穿过", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+                 Row(
+                     modifier = Modifier
+                         .fillMaxWidth()
+@@ -337,27 +329,27 @@ private fun FilterSheetContent(
+                     horizontalArrangement = Arrangement.SpaceBetween,
+                     verticalAlignment = Alignment.CenterVertically
+                 ) {
+-                    Text("只看未穿过的衣服")
++                    Text("只看未穿过的衣服", color = ClosieColor.Ink)
+                     Switch(checked = onlyUnworn, onCheckedChange = onOnlyUnworn)
+                 }
+             }
+         }
+ 
+         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-            Text("排序", style = MaterialTheme.typography.titleMedium)
++            Text("排序", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+             SortOption.entries.forEach { option ->
+                 Row(
+                     modifier = Modifier
+                         .fillMaxWidth()
+                         .clip(MaterialTheme.shapes.medium)
+-                        .background(if (sort == option) ClosieColor.RoseSoft else ClosieColor.Surface)
++                        .background(if (sort == option) ClosieColor.FigSoft else ClosieColor.Paper)
+                         .clickable { onSort(option) }
+                         .padding(horizontal = 16.dp, vertical = 12.dp),
+                     horizontalArrangement = Arrangement.SpaceBetween,
+                     verticalAlignment = Alignment.CenterVertically
+                 ) {
+-                    Text(option.label, color = if (sort == option) ClosieColor.RosePressed else ClosieColor.Ink)
+-                    if (sort == option) Text("●", color = ClosieColor.Rose)
++                    Text(option.label, color = if (sort == option) ClosieColor.FigPressed else ClosieColor.Ink)
++                    if (sort == option) Text("●", color = ClosieColor.Fig)
+                 }
+             }
+         }
+@@ -372,7 +364,7 @@ private fun FilterSheetContent(
+                 onClick = onApply,
+                 modifier = Modifier.weight(1f),
+                 shape = MaterialTheme.shapes.large,
+-                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
++                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Fig, contentColor = ClosieColor.Paper)
+             ) { Text("应用") }
+         }
+     }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt b/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt
+index 7c8fe47..a7aa9aa 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt
+@@ -30,9 +30,11 @@ import androidx.compose.ui.semantics.selected
+ import androidx.compose.ui.text.TextStyle
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.text.input.VisualTransformation
++import androidx.compose.ui.tooling.preview.Preview
+ import androidx.compose.ui.unit.dp
+ import coil.compose.AsyncImage
+ import com.xiaoming.closie.ui.theme.ClosieColor
++import com.xiaoming.closie.ui.theme.ClosieTheme
+ import java.io.File
+ 
+ // ------------------------------------------------------------------------------------------------
+@@ -61,16 +63,15 @@ fun ClosieSearchBar(
+     placeholder: String,
+     modifier: Modifier = Modifier
+ ) {
+-    val shape = RoundedCornerShape(999.dp)
++    val shape = RoundedCornerShape(14.dp)
+     BasicTextField(
+         value = value,
+         onValueChange = onValueChange,
+         modifier = modifier
+             .fillMaxWidth()
+-            .heightIn(min = 48.dp)
++            .heightIn(min = 46.dp)
+             .clip(shape)
+-            .background(ClosieColor.Surface)
+-            .border(1.dp, ClosieColor.Hairline, shape)
++            .background(ClosieColor.Mist)
+             .padding(horizontal = 16.dp, vertical = 12.dp),
+         textStyle = MaterialTheme.typography.bodyLarge.copy(color = ClosieColor.Ink),
+         singleLine = true,
+@@ -104,9 +105,9 @@ fun ClosieFilterChip(
+     label: String,
+     modifier: Modifier = Modifier
+ ) {
+-    val bg = if (selected) ClosieColor.Rose else ClosieColor.Surface
+-    val content = if (selected) ClosieColor.Surface else ClosieColor.Ink
+-    val borderColor = if (selected) ClosieColor.Rose else ClosieColor.Hairline
++    val bg = if (selected) ClosieColor.Ink else ClosieColor.Paper
++    val content = if (selected) ClosieColor.Paper else ClosieColor.Graphite
++    val borderColor = if (selected) ClosieColor.Ink else ClosieColor.Hairline
+     Box(
+         modifier = modifier
+             .heightIn(min = 44.dp)
+@@ -274,7 +275,7 @@ fun ClosieImageTile(
+     contentScale: ContentScale = ContentScale.Crop,
+     placeholder: @Composable (() -> Unit)? = null
+ ) {
+-    val shape = RoundedCornerShape(16.dp)
++    val shape = RoundedCornerShape(14.dp)
+     Box(
+         modifier = modifier
+             .clip(shape)
+@@ -378,3 +379,18 @@ fun ClosieBottomActionBar(
+ 
+ fun priceText(price: Double): String =
+     "¥" + if (price == price.toLong().toDouble()) price.toLong().toString() else price.toString()
++
++@Preview(widthDp = 393, heightDp = 852, showBackground = true)
++@Composable
++private fun ClosieFilterChipPreview() {
++    ClosieTheme {
++        Column(
++            Modifier.padding(16.dp),
++            verticalArrangement = Arrangement.spacedBy(8.dp)
++        ) {
++            ClosieFilterChip(selected = false, onClick = {}, label = "全部")
++            ClosieFilterChip(selected = true, onClick = {}, label = "上衣")
++            ClosieSearchBar(value = "", onValueChange = {}, placeholder = "搜索衣服、品牌、类别")
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt b/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt
+index 1e24c54..a404c29 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt
+@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.imePadding
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.items
+@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
+ import androidx.compose.ui.text.input.KeyboardType
+ import androidx.compose.ui.unit.dp
+ import com.xiaoming.closie.ui.theme.ClosieColor
++import com.xiaoming.closie.ui.theme.rememberClosieDimensions
+ 
+ /**
+  * The generic smart-entry choice sheet. Searchable, scrollable, with existing values first,
+@@ -55,6 +57,8 @@ fun SearchableChoiceSheet(
+ ) {
+     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+     var query by remember { mutableStateOf("") }
++    val dims = rememberClosieDimensions()
++    val listMaxHeight = (dims.screenHeightDp * 0.56f).dp
+ 
+     val full = remember(suggestions, currentValue) {
+         val merged = dedupeCaseInsensitive(suggestions)
+@@ -82,7 +86,7 @@ fun SearchableChoiceSheet(
+         sheetState = sheetState,
+         containerColor = ClosieColor.Surface
+     ) {
+-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
++        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp)) {
+             Row(
+                 modifier = Modifier.fillMaxWidth(),
+                 horizontalArrangement = Arrangement.SpaceBetween,
+@@ -126,7 +130,7 @@ fun SearchableChoiceSheet(
+                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                     verticalArrangement = Arrangement.spacedBy(8.dp)
+                 ) {
+-                    filteredPreferred.forEach { option ->
++                    filteredPreferred.take(8).forEach { option ->
+                         ClosieFilterChip(
+                             selected = option.equals(currentValue, ignoreCase = true),
+                             onClick = { select(option) },
+@@ -145,11 +149,14 @@ fun SearchableChoiceSheet(
+             Spacer(Modifier.height(4.dp))
+ 
+             if (filtered.isEmpty() && !showCustom) {
+-                Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
++                Box(
++                    Modifier.fillMaxWidth().heightIn(min = 96.dp),
++                    contentAlignment = Alignment.Center
++                ) {
+                     Text("没有匹配的选项", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkTertiary)
+                 }
+             } else {
+-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
++                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = listMaxHeight)) {
+                     items(filtered, key = { it }) { option ->
+                         OptionRow(
+                             label = option,
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt b/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt
+index 31fcc52..4050ef6 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt
+@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.ColumnScope
+ import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.heightIn
+ import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+@@ -19,8 +21,12 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.semantics.Role
+ import androidx.compose.ui.semantics.role
+ import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.tooling.preview.Preview
+ import androidx.compose.ui.unit.dp
+ import com.xiaoming.closie.ui.theme.ClosieColor
++import com.xiaoming.closie.ui.theme.ClosieTheme
+ 
+ /** A one-line, tap-to-choose field: label on the left, value (or placeholder) on the right. */
+ @Composable
+@@ -38,22 +44,21 @@ fun SmartPickerField(
+             .clickable(onClick = onClick)
+             .semantics { role = Role.Button }
+             .padding(vertical = 4.dp),
+-        horizontalArrangement = Arrangement.SpaceBetween,
+         verticalAlignment = Alignment.CenterVertically
+     ) {
+         Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
+-        Row(
+-            verticalAlignment = Alignment.CenterVertically,
+-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+-        ) {
+-            Text(
+-                text = if (value.isBlank()) placeholder else value,
+-                style = MaterialTheme.typography.bodyLarge,
+-                color = if (value.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
+-                maxLines = 1
+-            )
+-            Text("›", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
+-        }
++        Spacer(Modifier.width(12.dp))
++        Text(
++            text = if (value.isBlank()) placeholder else value,
++            style = MaterialTheme.typography.bodyLarge,
++            color = if (value.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
++            modifier = Modifier.weight(1f),
++            textAlign = TextAlign.End,
++            maxLines = 1,
++            overflow = TextOverflow.Ellipsis
++        )
++        Spacer(Modifier.width(4.dp))
++        Text("›", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
+     }
+ }
+ 
+@@ -83,7 +88,8 @@ fun EditorSection(
+                         summary,
+                         style = MaterialTheme.typography.bodySmall,
+                         color = ClosieColor.InkSecondary,
+-                        maxLines = 1
++                        maxLines = 1,
++                        overflow = TextOverflow.Ellipsis
+                     )
+                 }
+             }
+@@ -102,3 +108,16 @@ fun EditorSection(
+         }
+     }
+ }
++
++@Preview(widthDp = 393, heightDp = 852, showBackground = true)
++@Composable
++private fun SmartPickerFieldPreview() {
++    ClosieTheme {
++        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++            SmartPickerField(label = "品牌", value = "AURALEE", placeholder = "选择品牌", onClick = {})
++            SmartPickerField(label = "尺码", value = "", placeholder = "选择尺码", onClick = {})
++            EditorSection(title = "购买信息", expanded = false, onToggle = {}, summary = "淘宝 · ¥599") {}
++            EditorSection(title = "衣物详情", expanded = true, onToggle = {}) {}
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+index ced86bf..73e2aea 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt
+@@ -3,8 +3,6 @@ package com.xiaoming.closie.ui.detail
+ import android.app.DatePickerDialog
+ import android.content.Intent
+ import android.net.Uri
+-import androidx.compose.foundation.background
+-import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
+@@ -21,16 +19,16 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+-import coil.compose.AsyncImage
+ import com.xiaoming.closie.data.model.*
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+ import com.xiaoming.closie.ui.components.ClosieBackButton
+-import com.xiaoming.closie.ui.components.ClosieCollapsibleSection
+ import com.xiaoming.closie.ui.components.ClosieImageTile
+-import com.xiaoming.closie.ui.components.ClosieInfoRow
+ import com.xiaoming.closie.ui.components.priceText
+ import com.xiaoming.closie.ui.theme.ClosieColor
++import com.xiaoming.closie.ui.theme.rememberClosieDimensions
+ import java.io.File
+ import java.time.LocalDate
+ 
+@@ -42,13 +40,10 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+     val xs by repo.washEvents.collectAsState()
+     val v = all.firstOrNull { it.id == id }
+     val context = LocalContext.current
++    val dims = rememberClosieDimensions()
+     var deleting by remember { mutableStateOf(false) }
+     var showAllWears by remember { mutableStateOf(false) }
+     var showAllWash by remember { mutableStateOf(false) }
+-    var expandPurchase by remember { mutableStateOf(true) }
+-    var expandDetails by remember { mutableStateOf(false) }
+-    var expandRecords by remember { mutableStateOf(false) }
+-    var expandReturn by remember { mutableStateOf(false) }
+     if (v == null) { back(); return }
+ 
+     val itemWears = ws.filter { it.itemId == id }.sortedByDescending { it.date }
+@@ -57,12 +52,18 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+     val mainImage = v.images.firstOrNull { it.kind == ImageKind.FLAT }
+         ?: v.images.firstOrNull { it.kind == ImageKind.PRODUCT }
+         ?: v.images.firstOrNull()
++    val otherImages = v.images.filterNot { it.id == mainImage?.id }
++
++    val hasAbout = v.materials.isNotEmpty() || v.measurements.isNotEmpty() || v.safetyCategory.isNotBlank()
++    val hasPurchase = v.store.isNotBlank() || v.purchasePlatform.isNotBlank() ||
++        v.price != null || v.originalPrice != null || v.purchaseDate.isNotBlank() || v.productUrl.isNotBlank()
++    val hasRecords = v.rating > 0 || v.comment.isNotBlank()
+ 
+     Scaffold(
+         containerColor = ClosieColor.Canvas,
+         topBar = {
+             TopAppBar(
+-                title = { Text(v.name, maxLines = 1) },
++                title = { Text("", maxLines = 1) },
+                 navigationIcon = { ClosieBackButton(onClick = back) },
+                 actions = {
+                     IconButton(onClick = { edit(id) }) {
+@@ -79,8 +80,8 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+         LazyColumn(
+             modifier = Modifier
+                 .padding(pad)
+-                .padding(horizontal = 16.dp, vertical = 12.dp),
+-            verticalArrangement = Arrangement.spacedBy(24.dp)
++                .padding(horizontal = dims.pageHorizontal, vertical = 4.dp),
++            verticalArrangement = Arrangement.spacedBy(14.dp)
+         ) {
+             item {
+                 ClosieImageTile(
+@@ -88,23 +89,28 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+                     contentDescription = v.name,
+                     modifier = Modifier
+                         .fillMaxWidth()
+-                        .aspectRatio(0.95f),
++                        .aspectRatio(0.85f),
+                     contentScale = if (mainImage?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
+                     placeholder = {
+                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                            Text(v.name, color = ClosieColor.InkTertiary)
++                            Text(v.name, color = ClosieColor.Stone)
+                         }
+                     }
+                 )
+             }
+ 
+             item {
+-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+-                    Text(v.name, style = MaterialTheme.typography.headlineSmall)
+-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                        if (v.brand.isNotBlank()) Text(v.brand, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
+-                        Text("${v.category}${v.subcategory.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
++                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
++                    if (v.brand.isNotBlank()) {
++                        Text(v.brand, style = MaterialTheme.typography.labelLarge, color = ClosieColor.Graphite)
+                     }
++                    Text(v.name, style = MaterialTheme.typography.headlineLarge, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
++                    val cat = listOfNotNull(
++                        v.category.takeIf { it.isNotBlank() && it != "未分类" },
++                        v.subcategory.takeIf { it.isNotBlank() }
++                    ).joinToString(" · ")
++                    if (cat.isNotBlank()) Text(cat, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++                    if (v.sizeLabel.isNotBlank()) Text(v.sizeLabel, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                     if (v.price != null) {
+                         Text(priceText(v.price), style = MaterialTheme.typography.headlineMedium, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
+                     }
+@@ -137,107 +143,120 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+                 }
+             }
+ 
+-            item {
+-                ClosieCollapsibleSection(title = "购买信息", expanded = expandPurchase, onToggle = { expandPurchase = !expandPurchase }) {
+-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-                        ClosieInfoRow("店铺", v.store)
+-                        ClosieInfoRow("平台", v.purchasePlatform)
+-                        ClosieInfoRow("购买价", v.price?.let { priceText(it) })
+-                        ClosieInfoRow("原价", v.originalPrice?.let { priceText(it) })
+-                        ClosieInfoRow("购买日期", v.purchaseDate)
+-                        if (v.productUrl.isNotBlank()) {
+-                            Text(
+-                                "打开商品链接",
+-                                color = ClosieColor.Rose,
+-                                style = MaterialTheme.typography.bodyMedium,
+-                                modifier = Modifier.clickable {
+-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl))) }
+-                                }
+-                            )
++            if (hasAbout) {
++                item {
++                    DetailSection("关于这件衣服") {
++                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
++                            v.materials.forEach { m ->
++                                Text(
++                                    listOfNotNull(m.name.takeIf { it.isNotBlank() }, m.percentage.takeIf { it.isNotBlank() }).joinToString(" "),
++                                    style = MaterialTheme.typography.bodyLarge,
++                                    color = ClosieColor.Ink
++                                )
++                            }
++                            if (v.measurements.isNotEmpty()) {
++                                Text(
++                                    v.measurements.mapNotNull { m ->
++                                        val name = m.name.takeIf { it.isNotBlank() } ?: return@mapNotNull null
++                                        "$name ${m.value}${m.unit}"
++                                    }.joinToString(" · "),
++                                    style = MaterialTheme.typography.bodyLarge,
++                                    color = ClosieColor.Ink
++                                )
++                            }
++                            if (v.safetyCategory.isNotBlank()) {
++                                Text("安全类别 · ${v.safetyCategory}", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++                            }
+                         }
+                     }
+                 }
+             }
+ 
+-            item {
+-                ClosieCollapsibleSection(title = "衣物详情", expanded = expandDetails, onToggle = { expandDetails = !expandDetails }) {
+-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-                        ClosieInfoRow("尺码", v.sizeLabel)
+-                        ClosieInfoRow("安全类别", v.safetyCategory)
+-                        if (v.materials.isNotEmpty()) {
+-                            Text("材质", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+-                            v.materials.forEach { Text("${it.name} ${it.percentage}", style = MaterialTheme.typography.bodyMedium) }
+-                        }
+-                        if (v.measurements.isNotEmpty()) {
+-                            Text("尺寸", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+-                            v.measurements.forEach { Text("${it.name} ${it.value}${it.unit}", style = MaterialTheme.typography.bodyMedium) }
++            if (hasPurchase) {
++                item {
++                    DetailSection("购买信息") {
++                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
++                            if (v.store.isNotBlank()) InfoLine("店铺", v.store)
++                            if (v.purchasePlatform.isNotBlank()) InfoLine("平台", v.purchasePlatform)
++                            v.price?.let { InfoLine("购买价", priceText(it)) }
++                            v.originalPrice?.let { InfoLine("原价", priceText(it)) }
++                            if (v.purchaseDate.isNotBlank()) InfoLine("购买日期", v.purchaseDate)
++                            if (v.productUrl.isNotBlank()) {
++                                Text(
++                                    "打开商品链接",
++                                    color = ClosieColor.Fig,
++                                    style = MaterialTheme.typography.bodyMedium,
++                                    modifier = Modifier.clickable {
++                                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl))) }
++                                    }
++                                )
++                            }
+                         }
+                     }
+                 }
+             }
+ 
+-            item {
+-                ClosieCollapsibleSection(title = "我的记录", expanded = expandRecords, onToggle = { expandRecords = !expandRecords }) {
+-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-                        if (v.rating > 0) Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Rose)
+-                        if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium)
+-                    }
+-                }
+-            }
+-
+-            if (v.status == ItemStatus.RETURNED && v.returnReason.isNotBlank()) {
++            if (v.status == ItemStatus.OWNED) {
+                 item {
+-                    ClosieCollapsibleSection(title = "退货信息", expanded = expandReturn, onToggle = { expandReturn = !expandReturn }) {
+-                        Text(v.returnReason, style = MaterialTheme.typography.bodyMedium)
++                    DetailSection("使用记录") {
++                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
++                            Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
++                            if (v.price != null && wears > 0) {
++                                Text("单次穿着成本 ¥" + "%.2f".format(v.price / wears), style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++                            }
++                            val lastWear = itemWears.firstOrNull()?.date
++                            val lastWash = itemWash.firstOrNull()?.date
++                            if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++                            if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++                            Spacer(Modifier.height(4.dp))
++                            WearHistorySection(
++                                wears = itemWears,
++                                showAll = showAllWears,
++                                onToggle = { showAllWears = !showAllWears },
++                                onDelete = { repo.deleteWearEvent(it) }
++                            )
++                            WashHistorySection(
++                                washes = itemWash,
++                                showAll = showAllWash,
++                                onToggle = { showAllWash = !showAllWash },
++                                onDelete = { repo.deleteWashEvent(it) }
++                            )
++                        }
+                     }
+                 }
+             }
+ 
+-            if (v.status == ItemStatus.OWNED) {
++            if (hasRecords) {
+                 item {
+-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-                        Text("使用记录", style = MaterialTheme.typography.titleMedium)
+-                        Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次", style = MaterialTheme.typography.bodyLarge)
+-                        if (v.price != null && wears > 0) {
+-                            Text("单次穿着成本 ¥" + "%.2f".format(v.price / wears), style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                    DetailSection("我的记录") {
++                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
++                            if (v.rating > 0) {
++                                Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Fig)
++                            }
++                            if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                         }
+-                        val lastWear = itemWears.firstOrNull()?.date
+-                        val lastWash = itemWash.firstOrNull()?.date
+-                        if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+-                        if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+                     }
+                 }
++            }
+ 
++            if (v.status == ItemStatus.RETURNED && v.returnReason.isNotBlank()) {
+                 item {
+-                    WearHistorySection(
+-                        wears = itemWears,
+-                        showAll = showAllWears,
+-                        onToggle = { showAllWears = !showAllWears },
+-                        onDelete = { repo.deleteWearEvent(it) }
+-                    )
+-                }
+-
+-                item {
+-                    WashHistorySection(
+-                        washes = itemWash,
+-                        showAll = showAllWash,
+-                        onToggle = { showAllWash = !showAllWash },
+-                        onDelete = { repo.deleteWashEvent(it) }
+-                    )
++                    DetailSection("退货信息") {
++                        Text(v.returnReason, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
++                    }
+                 }
+             }
+ 
+-            val otherImages = v.images.filterNot { it.id == mainImage?.id }
+             if (otherImages.isNotEmpty()) {
+                 item {
+-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-                        Text("更多图片", style = MaterialTheme.typography.titleMedium)
+-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        Text("更多图片", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                             items(otherImages) { img ->
+                                 ClosieImageTile(
+                                     model = img.localPath?.let { File(it) },
+                                     contentDescription = v.name,
+-                                    modifier = Modifier.size(120.dp),
++                                    modifier = Modifier.size(104.dp),
+                                     contentScale = if (img.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
+                                 )
+                             }
+@@ -259,19 +278,50 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
+     }
+ }
+ 
++@Composable
++private fun DetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
++    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
++        HorizontalDivider(color = ClosieColor.Hairline, modifier = Modifier.padding(bottom = 14.dp))
++        Text(title, style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++        Spacer(Modifier.height(8.dp))
++        content()
++    }
++}
++
++@Composable
++private fun InfoLine(label: String, value: String) {
++    Row(
++        modifier = Modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.spacedBy(12.dp),
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Text(label, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++        Text(
++            value,
++            style = MaterialTheme.typography.bodyMedium,
++            color = ClosieColor.Ink,
++            modifier = Modifier.weight(1f),
++            textAlign = TextAlign.End,
++            maxLines = 2,
++            overflow = TextOverflow.Ellipsis
++        )
++    }
++}
++
+ @Composable
+ private fun DetailActionChip(label: String, onClick: () -> Unit) {
+     Surface(
+-        modifier = Modifier.clickable(onClick = onClick),
++        modifier = Modifier
++            .heightIn(min = 44.dp)
++            .clickable(onClick = onClick),
+         shape = RoundedCornerShape(999.dp),
+-        color = ClosieColor.Surface,
++        color = ClosieColor.Mist,
+         tonalElevation = 0.dp,
+-        shadowElevation = 0.dp,
+-        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++        shadowElevation = 0.dp
+     ) {
+         Text(
+             label,
+-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
++            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+             style = MaterialTheme.typography.labelLarge,
+             color = ClosieColor.Ink
+         )
+@@ -287,8 +337,8 @@ private fun WearHistorySection(
+ ) {
+     if (wears.isEmpty()) return
+     val visible = if (showAll) wears else wears.take(8)
+-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-        Text("穿着记录", style = MaterialTheme.typography.titleMedium)
++    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
++        Text("穿着记录", style = MaterialTheme.typography.titleSmall, color = ClosieColor.Ink)
+         visible.forEach { w ->
+             Row(
+                 modifier = Modifier.fillMaxWidth(),
+@@ -296,9 +346,9 @@ private fun WearHistorySection(
+                 horizontalArrangement = Arrangement.SpaceBetween
+             ) {
+                 Row(verticalAlignment = Alignment.CenterVertically) {
+-                    Text(w.date, style = MaterialTheme.typography.bodyMedium)
++                    Text(w.date, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                     val label = if (w.source == WearSource.OOTD) "来自 OOTD" else "手动记录"
+-                    Text(" · $label", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
++                    Text(" · $label", style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
+                 }
+                 if (w.source == WearSource.MANUAL) {
+                     TextButton(onClick = { onDelete(w.id) }) { Text("删除", color = ClosieColor.Error) }
+@@ -307,7 +357,7 @@ private fun WearHistorySection(
+         }
+         if (wears.size > 8) {
+             TextButton(onClick = onToggle) {
+-                Text(if (showAll) "收起" else "查看全部（${wears.size}）", color = ClosieColor.Rose)
++                Text(if (showAll) "收起" else "查看全部（${wears.size}）", color = ClosieColor.Fig)
+             }
+         }
+     }
+@@ -322,21 +372,21 @@ private fun WashHistorySection(
+ ) {
+     if (washes.isEmpty()) return
+     val visible = if (showAll) washes else washes.take(8)
+-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-        Text("洗涤记录", style = MaterialTheme.typography.titleMedium)
++    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
++        Text("洗涤记录", style = MaterialTheme.typography.titleSmall, color = ClosieColor.Ink)
+         visible.forEach { w ->
+             Row(
+                 modifier = Modifier.fillMaxWidth(),
+                 verticalAlignment = Alignment.CenterVertically,
+                 horizontalArrangement = Arrangement.SpaceBetween
+             ) {
+-                Text(w.date, style = MaterialTheme.typography.bodyMedium)
++                Text(w.date, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                 TextButton(onClick = { onDelete(w.id) }) { Text("删除", color = ClosieColor.Error) }
+             }
+         }
+         if (washes.size > 8) {
+             TextButton(onClick = onToggle) {
+-                Text(if (showAll) "收起" else "查看全部（${washes.size}）", color = ClosieColor.Rose)
++                Text(if (showAll) "收起" else "查看全部（${washes.size}）", color = ClosieColor.Fig)
+             }
+         }
+     }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+index 232464c..167cb3b 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+@@ -26,6 +26,7 @@ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.input.ImeAction
+ import androidx.compose.ui.text.input.KeyboardType
++import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import coil.compose.AsyncImage
+@@ -163,7 +164,10 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+         }
+     }
+ 
+-    val canSave = item.name.isNotBlank() && productImageStatus != ProductImageStatus.DOWNLOADING
++    val priceValid = isValidPrice(priceField)
++    val originalPriceValid = isValidPrice(originalPriceField)
++    val materialsValid = item.materials.all { isValidPercentage(it.percentage) }
++    val canSave = item.name.isNotBlank() && priceValid && originalPriceValid && materialsValid && productImageStatus != ProductImageStatus.DOWNLOADING
+ 
+     fun save() {
+         val final = item.copy(
+@@ -241,11 +245,12 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+             }
+ 
+             item {
+-                SmartPickerField(
++                InlineChoiceChips(
+                     label = "类别",
+-                    value = item.category,
+-                    placeholder = "选择类别",
+-                    onClick = { activeSheet = EditorSheet.CATEGORY }
++                    options = listOf("上衣", "下装", "外套", "鞋"),
++                    selected = item.category,
++                    onSelect = { item = item.copy(category = it) },
++                    onMore = { activeSheet = EditorSheet.CATEGORY }
+                 )
+             }
+             item {
+@@ -265,21 +270,36 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+                 )
+             }
+             item {
+-                SmartPickerField(
+-                    label = "尺码",
+-                    value = item.sizeLabel,
+-                    placeholder = "选择尺码",
+-                    onClick = { activeSheet = EditorSheet.SIZE }
+-                )
++                if (item.category in setOf("上衣", "外套", "裙装", "连体", "运动", "家居服", "内衣")) {
++                    InlineChoiceChips(
++                        label = "尺码",
++                        options = listOf("XS", "S", "M", "L", "XL"),
++                        selected = item.sizeLabel,
++                        onSelect = { item = item.copy(sizeLabel = it) },
++                        onMore = { activeSheet = EditorSheet.SIZE }
++                    )
++                } else {
++                    SmartPickerField(
++                        label = "尺码",
++                        value = item.sizeLabel,
++                        placeholder = "选择尺码",
++                        onClick = { activeSheet = EditorSheet.SIZE }
++                    )
++                }
+             }
+             item {
+-                EditorTextField(
+-                    value = priceField,
+-                    onValueChange = { priceField = it },
+-                    placeholder = "购买价",
+-                    keyboardType = KeyboardType.Decimal,
+-                    imeAction = ImeAction.Next
+-                )
++                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
++                    EditorTextField(
++                        value = priceField,
++                        onValueChange = { priceField = it },
++                        placeholder = "购买价",
++                        keyboardType = KeyboardType.Decimal,
++                        imeAction = ImeAction.Next
++                    )
++                    if (!priceValid) {
++                        Text("请输入有效价格", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
++                    }
++                }
+             }
+ 
+             item {
+@@ -302,6 +322,9 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+                         keyboardType = KeyboardType.Decimal,
+                         imeAction = ImeAction.Next
+                     )
++                    if (!originalPriceValid) {
++                        Text("请输入有效价格", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
++                    }
+                     SmartPickerField(
+                         label = "店铺",
+                         value = item.store,
+@@ -648,6 +671,20 @@ private fun normalizePercentage(raw: String): String {
+     return if (num != null && num in 0.0..100.0) "$t%" else t
+ }
+ 
++private fun isValidPercentage(raw: String): Boolean {
++    val t = raw.trim()
++    if (t.isEmpty()) return true
++    val num = t.removeSuffix("%").trim().toDoubleOrNull()
++    return num != null && num in 0.0..100.0
++}
++
++private fun isValidPrice(raw: String): Boolean {
++    val t = raw.trim()
++    if (t.isEmpty()) return true
++    val value = t.toDoubleOrNull() ?: return false
++    return value.isFinite() && value >= 0.0
++}
++
+ private fun kindLabel(kind: ImageKind): String = when (kind) {
+     ImageKind.FLAT -> "平铺"
+     ImageKind.ME -> "我的上身"
+@@ -715,6 +752,46 @@ private fun SegmentOption(label: String, selected: Boolean, modifier: Modifier =
+     }
+ }
+ 
++@Composable
++private fun InlineChoiceChips(
++    label: String,
++    options: List<String>,
++    selected: String,
++    onSelect: (String) -> Unit,
++    onMore: () -> Unit
++) {
++    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++        Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
++        Row(
++            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
++            horizontalArrangement = Arrangement.spacedBy(8.dp)
++        ) {
++            options.forEach { option ->
++                InlineChip(label = option, selected = selected == option) { onSelect(option) }
++            }
++            if (selected.isNotBlank() && selected !in options) {
++                InlineChip(label = selected, selected = true, onClick = onMore)
++            }
++            InlineChip(label = "更多", selected = false, onClick = onMore)
++        }
++    }
++}
++
++@Composable
++private fun InlineChip(label: String, selected: Boolean, onClick: () -> Unit) {
++    Box(
++        modifier = Modifier
++            .heightIn(min = 44.dp)
++            .clip(RoundedCornerShape(10.dp))
++            .background(if (selected) ClosieColor.Ink else ClosieColor.Mist)
++            .clickable(onClick = onClick)
++            .padding(horizontal = 14.dp, vertical = 10.dp),
++        contentAlignment = Alignment.Center
++    ) {
++        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) ClosieColor.Paper else ClosieColor.Graphite)
++    }
++}
++
+ @Composable
+ private fun RatingRow(rating: Int, onRating: (Int) -> Unit) {
+     Row(verticalAlignment = Alignment.CenterVertically) {
+@@ -785,19 +862,25 @@ private fun ImageSection(
+                         Box(
+                             modifier = Modifier
+                                 .align(Alignment.TopEnd)
+-                                .padding(2.dp)
+-                                .size(22.dp)
+-                                .clip(RoundedCornerShape(999.dp))
+-                                .background(ClosieColor.Ink.copy(alpha = 0.55f))
++                                .size(44.dp)
+                                 .clickable { onRemove(img.id) },
+-                            contentAlignment = Alignment.Center
++                            contentAlignment = Alignment.TopEnd
+                         ) {
+-                            Icon(
+-                                Icons.Default.Close,
+-                                contentDescription = "删除图片",
+-                                tint = ClosieColor.Surface,
+-                                modifier = Modifier.size(14.dp)
+-                            )
++                            Box(
++                                modifier = Modifier
++                                    .padding(2.dp)
++                                    .size(22.dp)
++                                    .clip(RoundedCornerShape(999.dp))
++                                    .background(ClosieColor.Ink.copy(alpha = 0.55f)),
++                                contentAlignment = Alignment.Center
++                            ) {
++                                Icon(
++                                    Icons.Default.Close,
++                                    contentDescription = "删除图片",
++                                    tint = ClosieColor.Surface,
++                                    modifier = Modifier.size(14.dp)
++                                )
++                            }
+                         }
+                     }
+                 }
+@@ -815,39 +898,45 @@ private fun MaterialRow(
+     onPercentage: (String) -> Unit,
+     onRemove: () -> Unit
+ ) {
+-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-        Box(
+-            modifier = Modifier
+-                .weight(1f)
+-                .heightIn(min = 44.dp)
+-                .clip(RoundedCornerShape(999.dp))
+-                .background(ClosieColor.SurfaceSoft)
+-                .clickable(onClick = onNameClick)
+-                .padding(horizontal = 16.dp, vertical = 10.dp),
+-            contentAlignment = Alignment.CenterStart
+-        ) {
+-            Text(
+-                if (part.name.isBlank()) "选择材质" else part.name,
+-                style = MaterialTheme.typography.bodyMedium,
+-                color = if (part.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
+-                maxLines = 1
++    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
++        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++            Box(
++                modifier = Modifier
++                    .weight(1f)
++                    .heightIn(min = 44.dp)
++                    .clip(RoundedCornerShape(999.dp))
++                    .background(ClosieColor.SurfaceSoft)
++                    .clickable(onClick = onNameClick)
++                    .padding(horizontal = 16.dp, vertical = 10.dp),
++                contentAlignment = Alignment.CenterStart
++            ) {
++                Text(
++                    if (part.name.isBlank()) "选择材质" else part.name,
++                    style = MaterialTheme.typography.bodyMedium,
++                    color = if (part.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
++                    maxLines = 1,
++                    overflow = TextOverflow.Ellipsis
++                )
++            }
++            OutlinedTextField(
++                value = part.percentage,
++                onValueChange = onPercentage,
++                modifier = Modifier.width(92.dp),
++                placeholder = { Text("占比", fontSize = 13.sp) },
++                singleLine = true,
++                shape = RoundedCornerShape(12.dp),
++                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
++                colors = OutlinedTextFieldDefaults.colors(
++                    focusedBorderColor = ClosieColor.Rose,
++                    unfocusedBorderColor = ClosieColor.Hairline
++                )
+             )
++            IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
++                Icon(Icons.Default.Close, contentDescription = "删除材质", tint = ClosieColor.InkTertiary)
++            }
+         }
+-        OutlinedTextField(
+-            value = part.percentage,
+-            onValueChange = onPercentage,
+-            modifier = Modifier.width(92.dp),
+-            placeholder = { Text("占比", fontSize = 13.sp) },
+-            singleLine = true,
+-            shape = RoundedCornerShape(12.dp),
+-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+-            colors = OutlinedTextFieldDefaults.colors(
+-                focusedBorderColor = ClosieColor.Rose,
+-                unfocusedBorderColor = ClosieColor.Hairline
+-            )
+-        )
+-        IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
+-            Icon(Icons.Default.Close, contentDescription = "删除材质", tint = ClosieColor.InkTertiary)
++        if (!isValidPercentage(part.percentage)) {
++            Text("请输入 0–100", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
+         }
+     }
+ }
+@@ -875,7 +964,8 @@ private fun MeasurementRow(
+                 if (m.name.isBlank()) "选择尺寸名" else m.name,
+                 style = MaterialTheme.typography.bodyMedium,
+                 color = if (m.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
+-                maxLines = 1
++                maxLines = 1,
++                overflow = TextOverflow.Ellipsis
+             )
+         }
+         OutlinedTextField(
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+index a3b5fd6..089a348 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt
+@@ -1,8 +1,11 @@
+ package com.xiaoming.closie.ui.home
+ 
++import androidx.compose.foundation.background
++import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.LazyRow
++import androidx.compose.foundation.lazy.items
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.outlined.Settings
+ import androidx.compose.material3.*
+@@ -23,8 +26,12 @@ import com.xiaoming.closie.data.repository.WardrobeRepository
+ import com.xiaoming.closie.ui.components.ClosieImageTile
+ import com.xiaoming.closie.ui.components.ClosieSectionHeader
+ import com.xiaoming.closie.ui.theme.ClosieColor
++import com.xiaoming.closie.ui.theme.rememberClosieDimensions
+ import java.io.File
+ import java.time.LocalDate
++import java.time.format.DateTimeFormatter
++
++private fun todayDateFormatter() = DateTimeFormatter.ofPattern("EEEE · MMM d")
+ 
+ @Composable
+ fun HomeScreen(
+@@ -36,26 +43,27 @@ fun HomeScreen(
+     val items by repo.items.collectAsState()
+     val ootds by repo.ootds.collectAsState()
+     val wears by repo.wearEvents.collectAsState()
++    val dims = rememberClosieDimensions()
+ 
+     val owned = items.filter { it.status == ItemStatus.OWNED }
+-    val today = LocalDate.now().toString()
+-    val thisMonth = today.substring(0, 7)
++    val today = LocalDate.now()
++    val thisMonth = today.toString().substring(0, 7)
+     val ownedIds = owned.map { it.id }.toSet()
+     val ownedWears = wears.filter { it.itemId in ownedIds }
+     val monthWears = ownedWears.filter { it.date.startsWith(thisMonth) }
+-    val todayOotd = ootds.filter { it.date == today }
++    val todayOotd = ootds.filter { it.date == today.toString() }
+ 
+-    val recentItemIds = ownedWears
++    val recentItems = ownedWears
+         .sortedByDescending { it.date }
+         .map { it.itemId }
+         .distinct()
+         .take(8)
+-    val recentItems = recentItemIds.mapNotNull { id -> owned.find { it.id == id } }
++        .mapNotNull { id -> owned.find { it.id == id } }
+ 
+     LazyColumn(
+         modifier = Modifier.fillMaxSize(),
+-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+-        verticalArrangement = Arrangement.spacedBy(28.dp)
++        contentPadding = PaddingValues(horizontal = dims.pageHorizontal, vertical = 20.dp),
++        verticalArrangement = Arrangement.spacedBy(dims.sectionGap)
+     ) {
+         item {
+             Row(
+@@ -64,68 +72,72 @@ fun HomeScreen(
+                 verticalAlignment = Alignment.CenterVertically
+             ) {
+                 Column {
+-                    Text("Closie", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+-                    Text("今天想穿什么？", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
++                    Text("Closie", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold, color = ClosieColor.Ink)
++                    Text("今天想穿什么？", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Graphite)
+                 }
+-                IconButton(onClick = onSettings, modifier = Modifier.size(48.dp)) {
++                IconButton(onClick = onSettings, modifier = Modifier.size(44.dp)) {
+                     Icon(Icons.Outlined.Settings, contentDescription = "设置", tint = ClosieColor.Ink)
+                 }
+             }
+         }
+ 
+         item {
+-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+-                Text("我的衣橱", style = MaterialTheme.typography.titleMedium, color = ClosieColor.InkSecondary)
+-                Text("${owned.size} 件", style = MaterialTheme.typography.headlineMedium)
+-                Text(
+-                    "这个月穿过 ${monthWears.size} 次 · ${monthWears.map { it.itemId }.distinct().size} 件不同衣服",
+-                    style = MaterialTheme.typography.bodyMedium,
+-                    color = ClosieColor.InkSecondary
+-                )
+-            }
+-        }
+-
+-        item {
+-            TodaySection(
+-                todayOotd = todayOotd,
+-                owned = owned,
+-                onRecordToday = onOpenOotd
+-            )
++            TodaySection(todayOotd = todayOotd, owned = owned, onOpenOotd = onOpenOotd)
+         }
+ 
+         item {
+             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                 ClosieSectionHeader(title = "最近穿过", actionLabel = "查看衣橱", onAction = onOpenCloset)
+                 if (recentItems.isEmpty()) {
+-                    Text("还没有穿着记录", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkTertiary)
++                    Text("还没有穿着记录", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Stone)
+                 } else {
+-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+-                        items(recentItems.size) { index ->
+-                            val item = recentItems[index]
++                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
++                        items(recentItems, key = { it.id }) { item ->
+                             val image = item.bestImage()
+                             Column(
+-                                modifier = Modifier.width(84.dp),
++                                modifier = Modifier.width(76.dp),
+                                 horizontalAlignment = Alignment.CenterHorizontally,
+                                 verticalArrangement = Arrangement.spacedBy(6.dp)
+                             ) {
+                                 ClosieImageTile(
+                                     model = image?.localPath?.let { File(it) },
+                                     contentDescription = item.name,
+-                                    modifier = Modifier.size(84.dp),
++                                    modifier = Modifier.size(76.dp),
+                                     contentScale = if (image?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
+                                     placeholder = {
+                                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                                            Text(item.name.take(1), color = ClosieColor.InkTertiary)
++                                            Text(item.name.take(1), color = ClosieColor.Stone)
+                                         }
+                                     }
+                                 )
+-                                Text(item.name, style = MaterialTheme.typography.bodySmall, maxLines = 1)
++                                Text(item.name, style = MaterialTheme.typography.bodySmall, color = ClosieColor.Ink, maxLines = 1)
+                             }
+                         }
+                     }
+                 }
+             }
+         }
++
++        item {
++            Row(
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .clickable(onClick = onOpenCloset)
++                    .padding(vertical = 4.dp),
++                horizontalArrangement = Arrangement.SpaceBetween,
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
++                    Text("衣橱", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++                    Text(
++                        "${owned.size} 件 · 本月穿过 ${monthWears.size} 次",
++                        style = MaterialTheme.typography.bodyMedium,
++                        color = ClosieColor.Graphite
++                    )
++                }
++                Text("›", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Stone)
++            }
++        }
+     }
+ }
+ 
+@@ -133,60 +145,80 @@ fun HomeScreen(
+ private fun TodaySection(
+     todayOotd: List<Ootd>,
+     owned: List<ClothingItem>,
+-    onRecordToday: () -> Unit
++    onOpenOotd: () -> Unit
+ ) {
+-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-        Text("今天", style = MaterialTheme.typography.titleMedium)
+-        if (todayOotd.isEmpty()) {
+-            Row(
+-                modifier = Modifier.fillMaxWidth(),
+-                horizontalArrangement = Arrangement.SpaceBetween,
+-                verticalAlignment = Alignment.CenterVertically
++    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
++        Text("今天", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++
++        val ootd = todayOotd.firstOrNull()
++        if (ootd == null) {
++            Box(
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .aspectRatio(1.5f)
++                    .background(ClosieColor.Mist, MaterialTheme.shapes.large),
++                contentAlignment = Alignment.Center
+             ) {
+-                Text("还没有记录今天的穿搭", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkSecondary)
+-                TextButton(onClick = onRecordToday) { Text("记录今天", color = ClosieColor.Rose) }
++                Column(
++                    horizontalAlignment = Alignment.CenterHorizontally,
++                    verticalArrangement = Arrangement.spacedBy(8.dp)
++                ) {
++                    Text("还没有记录今天的穿搭", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Graphite)
++                    TextButton(onClick = onOpenOotd) { Text("记录今天", color = ClosieColor.Fig) }
++                }
+             }
+         } else {
+-            todayOotd.forEach { ootd ->
+-                Surface(
+-                    modifier = Modifier.fillMaxWidth(),
+-                    shape = MaterialTheme.shapes.large,
+-                    color = ClosieColor.Surface,
+-                    tonalElevation = 0.dp,
+-                    shadowElevation = 0.dp,
+-                    border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
++            val firstItemImage = ootd.itemIds.mapNotNull { id -> owned.find { it.id == id }?.bestImage() }.firstOrNull()
++            val heroImagePath = ootd.images.firstOrNull() ?: firstItemImage?.localPath
++            if (heroImagePath != null) {
++                val heroScale = if (ootd.images.isEmpty() && firstItemImage?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
++                ClosieImageTile(
++                    model = File(heroImagePath),
++                    contentDescription = "今日 OOTD",
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .aspectRatio(0.85f),
++                    contentScale = heroScale
++                )
++            } else {
++                Box(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .aspectRatio(0.85f)
++                        .background(ClosieColor.Mist, MaterialTheme.shapes.large),
++                    contentAlignment = Alignment.Center
+                 ) {
+-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-                        if (ootd.images.isNotEmpty()) {
+-                            ClosieImageTile(
+-                                model = File(ootd.images.first()),
+-                                contentDescription = "OOTD 照片",
+-                                modifier = Modifier
+-                                    .fillMaxWidth()
+-                                    .height(200.dp)
+-                            )
+-                        }
+-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                            items(ootd.itemIds.size) { index ->
+-                                val item = owned.find { it.id == ootd.itemIds[index] }
+-                                val img = item?.bestImage()
+-                                ClosieImageTile(
+-                                    model = img?.localPath?.let { File(it) },
+-                                    contentDescription = item?.name ?: "单品",
+-                                    modifier = Modifier.size(56.dp),
+-                                    contentScale = if (img?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
+-                                    placeholder = {
+-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                                            Text(item?.name?.take(1) ?: "?", color = ClosieColor.InkTertiary)
+-                                        }
+-                                    }
+-                                )
+-                            }
+-                        }
+-                        if (ootd.note.isNotBlank()) {
+-                            Text(ootd.note, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+-                        }
+-                    }
++                    Text("今天穿了什么？", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Stone)
++                }
++            }
++            Text(
++                LocalDate.now().format(todayDateFormatter()),
++                style = MaterialTheme.typography.bodyMedium,
++                color = ClosieColor.Graphite
++            )
++            val names = ootd.itemIds.mapNotNull { id -> owned.find { it.id == id }?.name }
++            if (names.isNotEmpty()) {
++                Text(
++                    names.joinToString(" / "),
++                    style = MaterialTheme.typography.bodyLarge,
++                    color = ClosieColor.Ink,
++                    maxLines = 2
++                )
++            }
++            if (ootd.note.isNotBlank()) {
++                Text(ootd.note, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
++            }
++            if (todayOotd.size > 1) {
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .clickable(onClick = onOpenOotd)
++                        .heightIn(min = 44.dp),
++                    horizontalArrangement = Arrangement.SpaceBetween,
++                    verticalAlignment = Alignment.CenterVertically
++                ) {
++                    Text("今天还有 ${todayOotd.size - 1} 套穿搭", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Fig)
++                    Text("›", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Stone)
+                 }
+             }
+         }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt
+index 711482d..0b9359e 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt
+@@ -2,23 +2,44 @@ package com.xiaoming.closie.ui.theme
+ 
+ import androidx.compose.ui.graphics.Color
+ 
++/**
++ * Closie v2 palette — "The wardrobe supplies the color; Closie supplies the frame."
++ *
++ * The UI stays ~90% neutral (Porcelain / Paper / Mist / Ink / Graphite) so the clothes
++ * themselves are the richest color on screen. Fig is the brand accent, used sparingly.
++ */
+ object ClosieColor {
+-    val Canvas = Color(0xFFFAF9F7)
+-    val Surface = Color(0xFFFFFFFF)
+-    val SurfaceSoft = Color(0xFFF4F2EF)
+-    val SurfaceMuted = Color(0xFFEFEBE7)
++    // Neutral base
++    val Porcelain = Color(0xFFF7F6F2)
++    val Paper = Color(0xFFFFFFFF)
++    val Mist = Color(0xFFEFEEE9)
++    val Fog = Color(0xFFE7E5DF)
+ 
+-    val Ink = Color(0xFF1C1C1E)
+-    val InkSecondary = Color(0xFF74716D)
+-    val InkTertiary = Color(0xFFA39F9A)
++    val Ink = Color(0xFF171717)
++    val Graphite = Color(0xFF55524E)
++    val Stone = Color(0xFF96918A)
++    val Hairline = Color(0xFFDDDAD3)
+ 
+-    val Hairline = Color(0xFFE8E4DF)
+-    val HairlineStrong = Color(0xFFDDD8D2)
++    // Brand accent
++    val Fig = Color(0xFF713D4B)
++    val FigPressed = Color(0xFF5E303D)
++    val FigSoft = Color(0xFFEFE3E6)
+ 
+-    val Rose = Color(0xFFC9828C)
+-    val RosePressed = Color(0xFFB66F7A)
+-    val RoseSoft = Color(0xFFF5E7E9)
++    // Secondary, used very sparingly
++    val Moss = Color(0xFF747B61)
++    val MossSoft = Color(0xFFEBEDE5)
+ 
+-    // Error uses Material baseline; keep a stable semantic alias.
+     val Error = Color(0xFFB3261E)
++
++    // Backward-compatible aliases so pre-existing screens keep compiling.
++    val Canvas = Porcelain
++    val Surface = Paper
++    val SurfaceSoft = Mist
++    val SurfaceMuted = Fog
++    val InkSecondary = Graphite
++    val InkTertiary = Stone
++    val HairlineStrong = Fog
++    val Rose = Fig
++    val RosePressed = FigPressed
++    val RoseSoft = FigSoft
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Dimensions.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Dimensions.kt
+new file mode 100644
+index 0000000..95abbaa
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Dimensions.kt
+@@ -0,0 +1,38 @@
++package com.xiaoming.closie.ui.theme
++
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.Immutable
++import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.unit.Dp
++import androidx.compose.ui.unit.dp
++
++/**
++ * Compact-first sizing helper. Primary target is the vivo X200 Pro mini (~393dp wide,
++ * narrow and tall); large phones still work because nothing is hardcoded in pixels.
++ */
++@Immutable
++data class ClosieDimensions(
++    val screenWidthDp: Int,
++    val screenHeightDp: Int
++) {
++    /** Narrow compact flagship (360-399dp). */
++    val isCompact: Boolean get() = screenWidthDp < 400
++
++    val pageHorizontal: Dp get() = 16.dp
++
++    val gridGutter: Dp get() = if (isCompact) 10.dp else 12.dp
++
++    /** 4:5 catalog-like aspect for clothing thumbnails. */
++    val gridAspectRatio: Float get() = 0.8f
++
++    val sectionGap: Dp get() = if (isCompact) 20.dp else 24.dp
++}
++
++@Composable
++fun rememberClosieDimensions(): ClosieDimensions {
++    val cfg = LocalConfiguration.current
++    return ClosieDimensions(
++        screenWidthDp = cfg.screenWidthDp,
++        screenHeightDp = cfg.screenHeightDp
++    )
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt
+index 318a773..38f3250 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt
+@@ -4,10 +4,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.Shapes
+ import androidx.compose.ui.unit.dp
+ 
++// C4C: restrained radius — images ~14-16, search ~14-18, buttons ~12-14.
+ val ClosieShapes = Shapes(
+     extraSmall = RoundedCornerShape(8.dp),
+-    small = RoundedCornerShape(8.dp),
++    small = RoundedCornerShape(10.dp),
+     medium = RoundedCornerShape(12.dp),
+-    large = RoundedCornerShape(16.dp),
+-    extraLarge = RoundedCornerShape(20.dp)
++    large = RoundedCornerShape(14.dp),
++    extraLarge = RoundedCornerShape(16.dp)
+ )
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt
+index c01d12c..c0cfd41 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt
+@@ -5,29 +5,29 @@ import androidx.compose.material3.lightColorScheme
+ import androidx.compose.runtime.Composable
+ 
+ private val LightColorScheme = lightColorScheme(
+-    primary = ClosieColor.Rose,
+-    onPrimary = ClosieColor.Surface,
+-    primaryContainer = ClosieColor.RoseSoft,
+-    onPrimaryContainer = ClosieColor.RosePressed,
+-    secondary = ClosieColor.SurfaceSoft,
+-    onSecondary = ClosieColor.Ink,
+-    secondaryContainer = ClosieColor.SurfaceSoft,
+-    onSecondaryContainer = ClosieColor.Ink,
+-    tertiary = ClosieColor.RoseSoft,
++    primary = ClosieColor.Fig,
++    onPrimary = ClosieColor.Paper,
++    primaryContainer = ClosieColor.FigSoft,
++    onPrimaryContainer = ClosieColor.FigPressed,
++    secondary = ClosieColor.Moss,
++    onSecondary = ClosieColor.Paper,
++    secondaryContainer = ClosieColor.MossSoft,
++    onSecondaryContainer = ClosieColor.Moss,
++    tertiary = ClosieColor.FigSoft,
+     onTertiary = ClosieColor.Ink,
+-    background = ClosieColor.Canvas,
++    background = ClosieColor.Porcelain,
+     onBackground = ClosieColor.Ink,
+-    surface = ClosieColor.Surface,
++    surface = ClosieColor.Paper,
+     onSurface = ClosieColor.Ink,
+-    surfaceVariant = ClosieColor.SurfaceSoft,
+-    onSurfaceVariant = ClosieColor.InkSecondary,
+-    surfaceTint = ClosieColor.Rose,
++    surfaceVariant = ClosieColor.Mist,
++    onSurfaceVariant = ClosieColor.Graphite,
++    surfaceTint = ClosieColor.Fig,
+     inverseSurface = ClosieColor.Ink,
+-    inverseOnSurface = ClosieColor.Surface,
++    inverseOnSurface = ClosieColor.Paper,
+     error = ClosieColor.Error,
+-    onError = ClosieColor.Surface,
++    onError = ClosieColor.Paper,
+     outline = ClosieColor.Hairline,
+-    outlineVariant = ClosieColor.HairlineStrong,
++    outlineVariant = ClosieColor.Fog,
+     scrim = ClosieColor.Ink.copy(alpha = 0.32f)
+ )
+ 
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt b/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt
+index 4d94ff8..7a2b611 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt
+@@ -55,7 +55,7 @@ val ClosieTypography = Typography(
+     titleMedium = TextStyle(
+         fontFamily = FontFamily.Default,
+         fontWeight = FontWeight.SemiBold,
+-        fontSize = 16.sp,
++        fontSize = 17.sp,
+         lineHeight = 24.sp
+     ),
+     titleSmall = TextStyle(
+@@ -79,8 +79,8 @@ val ClosieTypography = Typography(
+     bodySmall = TextStyle(
+         fontFamily = FontFamily.Default,
+         fontWeight = FontWeight.Normal,
+-        fontSize = 12.sp,
+-        lineHeight = 16.sp
++        fontSize = 13.sp,
++        lineHeight = 18.sp
+     ),
+     labelLarge = TextStyle(
+         fontFamily = FontFamily.Default,
+@@ -97,7 +97,7 @@ val ClosieTypography = Typography(
+     labelSmall = TextStyle(
+         fontFamily = FontFamily.Default,
+         fontWeight = FontWeight.Medium,
+-        fontSize = 11.sp,
++        fontSize = 12.sp,
+         lineHeight = 16.sp
+     )
+ )
+diff --git a/app/src/main/res/drawable/ic_launcher_foreground.xml b/app/src/main/res/drawable/ic_launcher_foreground.xml
+new file mode 100644
+index 0000000..ec6910b
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_launcher_foreground.xml
+@@ -0,0 +1,14 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <!-- Closie "C / wardrobe fold" mark — a thick open C with a 45° folded lower arm. -->
++    <path
++        android:pathData="M78,30 H34 V62 H58 L76,44"
++        android:strokeColor="#F7F6F2"
++        android:strokeWidth="16"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:fillColor="#00000000" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_launcher_monochrome.xml b/app/src/main/res/drawable/ic_launcher_monochrome.xml
+new file mode 100644
+index 0000000..abb4a2e
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_launcher_monochrome.xml
+@@ -0,0 +1,14 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <!-- Monochrome themed-icon layer: outline only, system applies tint. -->
++    <path
++        android:pathData="M78,30 H34 V62 H58 L76,44"
++        android:strokeColor="#000000"
++        android:strokeWidth="16"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:fillColor="#00000000" />
++</vector>
+diff --git a/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml b/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+new file mode 100644
+index 0000000..3c493da
+--- /dev/null
++++ b/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+@@ -0,0 +1,5 @@
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@color/ic_launcher_background" />
++    <foreground android:drawable="@drawable/ic_launcher_foreground" />
++    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
++</adaptive-icon>
+diff --git a/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml b/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+new file mode 100644
+index 0000000..3c493da
+--- /dev/null
++++ b/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+@@ -0,0 +1,5 @@
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@color/ic_launcher_background" />
++    <foreground android:drawable="@drawable/ic_launcher_foreground" />
++    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
++</adaptive-icon>
+diff --git a/app/src/main/res/values-v27/styles.xml b/app/src/main/res/values-v27/styles.xml
+index a1fca3b..6be4cfc 100644
+--- a/app/src/main/res/values-v27/styles.xml
++++ b/app/src/main/res/values-v27/styles.xml
+@@ -1,6 +1,6 @@
+ <resources>
+     <style name="Theme.Closie" parent="android:style/Theme.Material.Light.NoActionBar">
+-        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#765661</item>
+-        <item name="android:navigationBarColor">#FFF8F7</item><item name="android:windowLightNavigationBar">true</item>
++        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#713D4B</item>
++        <item name="android:navigationBarColor">#F7F6F2</item><item name="android:windowLightNavigationBar">true</item>
+     </style>
+ </resources>
+diff --git a/app/src/main/res/values/ic_launcher_colors.xml b/app/src/main/res/values/ic_launcher_colors.xml
+new file mode 100644
+index 0000000..4cfa3f2
+--- /dev/null
++++ b/app/src/main/res/values/ic_launcher_colors.xml
+@@ -0,0 +1,3 @@
++<resources>
++    <color name="ic_launcher_background">#713D4B</color>
++</resources>
+diff --git a/app/src/main/res/values/styles.xml b/app/src/main/res/values/styles.xml
+index 54c76f8..186e300 100644
+--- a/app/src/main/res/values/styles.xml
++++ b/app/src/main/res/values/styles.xml
+@@ -1,7 +1,7 @@
+ <resources>
+     <style name="Theme.Closie" parent="android:style/Theme.Material.Light.NoActionBar">
+-        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#765661</item>
+-        <item name="android:navigationBarColor">#FFF8F7</item>
++        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#713D4B</item>
++        <item name="android:navigationBarColor">#F7F6F2</item>
+     </style>
+ </resources>
+ 
+-- 
+2.43.0
+
