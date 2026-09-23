@@ -4,25 +4,32 @@ import android.app.DatePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.xiaoming.closie.data.ImageStore
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.BackButton
-import com.xiaoming.closie.ui.Rose
+import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.components.ClosieImageTile
+import com.xiaoming.closie.ui.theme.ClosieColor
 import java.io.File
 import java.time.LocalDate
 
@@ -56,7 +63,6 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
         }
     }
 
-    // Discard: delete every image created during this draft, regardless of current state.
     fun cancelDraft() {
         pendingImages.forEach { ImageStore.deletePrivatePath(context, it) }
         pendingImages.clear()
@@ -68,7 +74,6 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
         draftVisible = false
     }
 
-    // Save: keep pending images still referenced, drop ones removed before saving.
     fun saveDraft() {
         pendingImages.filterNot { it in images }.forEach { ImageStore.deletePrivatePath(context, it) }
         pendingImages.clear()
@@ -105,14 +110,8 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
     val dirty = draftVisible && initialSnapshot != null &&
         OotdDraftSnapshot(date, note, selected, images) != initialSnapshot
 
-    fun requestNew() {
-        if (dirty) pendingAction = { doStartNew() } else doStartNew()
-    }
-
-    fun requestEdit(o: Ootd) {
-        if (dirty) pendingAction = { doStartEdit(o) } else doStartEdit(o)
-    }
-
+    fun requestNew() { if (dirty) pendingAction = { doStartNew() } else doStartNew() }
+    fun requestEdit(o: Ootd) { if (dirty) pendingAction = { doStartEdit(o) } else doStartEdit(o) }
     fun requestBack() {
         when {
             dirty -> pendingAction = { back() }
@@ -124,76 +123,55 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
     BackHandler(enabled = draftVisible) { requestBack() }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("OOTD 日历") }, navigationIcon = { BackButton { requestBack() } }) },
-        floatingActionButton = { FloatingActionButton(onClick = { requestNew() }) { Text("+") } }
+        containerColor = ClosieColor.Canvas,
+        topBar = { TopAppBar(title = { Text("OOTD") }, navigationIcon = { ClosieBackButton { requestBack() } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { requestNew() },
+                containerColor = ClosieColor.Rose,
+                contentColor = ClosieColor.Surface,
+                shape = MaterialTheme.shapes.extraLarge
+            ) { Icon(Icons.Default.Add, contentDescription = "新建 OOTD") }
+        }
     ) { pad ->
-        LazyColumn(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(
+            modifier = Modifier
+                .padding(pad)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
-                OutlinedButton(onClick = {
-                    val d = LocalDate.parse(date)
-                    DatePickerDialog(context, { _, y, m, day ->
-                        date = "%04d-%02d-%02d".format(y, m + 1, day)
-                    }, d.year, d.monthValue - 1, d.dayOfMonth).show()
-                }) { Text("选择日期：$date") }
+                OutlinedButton(
+                    onClick = {
+                        val d = runCatching { LocalDate.parse(date) }.getOrDefault(LocalDate.now())
+                        DatePickerDialog(context, { _, y, m, day ->
+                            date = "%04d-%02d-%02d".format(y, m + 1, day)
+                        }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+                    },
+                    shape = MaterialTheme.shapes.large
+                ) { Text("选择日期：$date") }
             }
 
             val dayOotds = ootds.filter { it.date == date }
             if (dayOotds.isEmpty() && !draftVisible) {
                 item {
-                    Text("这一天还没有 OOTD", color = Rose, modifier = Modifier.padding(8.dp))
+                    Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                        Text("这一天还没有 OOTD", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
+                    }
                 }
             } else {
-                items(dayOotds) { o ->
-                    Card(Modifier.fillMaxWidth().clickable { requestEdit(o) }) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(o.note.ifBlank { "OOTD" })
-                            Text("${o.itemIds.size} 件单品")
-                            if (o.images.isNotEmpty()) Text("含 ${o.images.size} 张照片", style = MaterialTheme.typography.bodySmall, color = Rose)
-                        }
-                    }
+                items(dayOotds, key = { it.id }) { o ->
+                    OotdCard(o, all, onClick = { requestEdit(o) })
                 }
             }
 
             if (draftVisible) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(if (editing == null) "新建 OOTD" else "编辑 OOTD", style = MaterialTheme.typography.titleMedium)
-                        OutlinedTextField(note, { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
-
-                        Text("OOTD 照片", style = MaterialTheme.typography.labelLarge)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(images, key = { it }) { path ->
-                                Column {
-                                    AsyncImage(File(path), "OOTD 照片", Modifier.size(96.dp), contentScale = ContentScale.Crop)
-                                    TextButton(onClick = { images = images.filterNot { it == path } }, modifier = Modifier.fillMaxWidth()) { Text("删除") }
-                                }
-                            }
-                            item { OutlinedButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) { Text("+ 添加照片") } }
-                        }
-
-                        Text("选择衣物", style = MaterialTheme.typography.labelLarge)
-                        all.filter { it.status == ItemStatus.OWNED }.forEach { i ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { selected = if (i.id in selected) selected - i.id else selected + i.id }.padding(6.dp)
-                            ) {
-                                Checkbox(i.id in selected, onCheckedChange = { selected = if (it) selected + i.id else selected - i.id })
-                                Text(i.name, Modifier.padding(start = 8.dp))
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                enabled = selected.isNotEmpty(),
-                                onClick = {
-                                    repo.saveOotd((editing ?: Ootd(date = date)).copy(date = date, itemIds = selected.toList(), note = note, images = images))
-                                    saveDraft()
-                                }
-                            ) { Text("保存 OOTD") }
-                            OutlinedButton(onClick = { cancelDraft() }) { Text("取消") }
-                            if (editing != null) TextButton(onClick = { confirmingDelete = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
-                        }
+                item { OotdEditor(repo, editing, note, { note = it }, selected, { selected = it }, images, { images = it }, imagePicker, { cancelDraft() }, { save ->
+                    if (save) {
+                        repo.saveOotd((editing ?: Ootd(date = date)).copy(date = date, itemIds = selected.toList(), note = note, images = images))
                     }
-                }
+                    saveDraft()
+                }) }
             }
         }
     }
@@ -204,11 +182,7 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
             title = { Text("删除这条 OOTD？") },
             text = { Text("会同时移除它关联的穿着记录和照片。") },
             confirmButton = {
-                TextButton(onClick = {
-                    repo.deleteOotd(editing?.id.orEmpty())
-                    cancelDraft()
-                    confirmingDelete = false
-                }) { Text("删除") }
+                TextButton(onClick = { repo.deleteOotd(editing?.id.orEmpty()); cancelDraft(); confirmingDelete = false }) { Text("删除", color = ClosieColor.Error) }
             },
             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("取消") } }
         )
@@ -224,10 +198,179 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
                     val a = action
                     pendingAction = null
                     a()
-                }) { Text("放弃") }
+                }) { Text("放弃", color = ClosieColor.Error) }
             },
             dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("继续编辑") } }
         )
+    }
+}
+
+@Composable
+private fun OotdCard(o: Ootd, all: List<ClothingItem>, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        color = ClosieColor.Surface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (o.images.isNotEmpty()) {
+                ClosieImageTile(
+                    model = File(o.images.first()),
+                    contentDescription = "OOTD 照片",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                )
+            }
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(o.note.ifBlank { "OOTD" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("${o.itemIds.size} 件单品", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+                if (o.itemIds.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(o.itemIds) { id ->
+                            val item = all.find { it.id == id }
+                            val img = item?.let { it.images.firstOrNull { img -> img.kind == ImageKind.FLAT } ?: it.images.firstOrNull() }
+                            ClosieImageTile(
+                                model = img?.localPath?.let { File(it) },
+                                contentDescription = item?.name ?: "单品",
+                                modifier = Modifier.size(48.dp),
+                                contentScale = if (img?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
+                                placeholder = {
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text(item?.name?.take(1) ?: "?", color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OotdEditor(
+    repo: WardrobeRepository,
+    editing: Ootd?,
+    note: String,
+    onNoteChange: (String) -> Unit,
+    selected: Set<String>,
+    onSelectedChange: (Set<String>) -> Unit,
+    images: List<String>,
+    onImagesChange: (List<String>) -> Unit,
+    imagePicker: androidx.activity.compose.ManagedActivityResultLauncher<Array<String>, android.net.Uri?>,
+    onCancel: () -> Unit,
+    onDone: (save: Boolean) -> Unit
+) {
+    val all by repo.items.collectAsState()
+    val owned = all.filter { it.status == ItemStatus.OWNED }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(if (editing == null) "新建 OOTD" else "编辑 OOTD", style = MaterialTheme.typography.headlineSmall)
+
+        OutlinedTextField(
+            value = note,
+            onValueChange = onNoteChange,
+            label = { Text("备注") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("OOTD 照片", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(images) { path ->
+                    Box(Modifier.size(96.dp)) {
+                        ClosieImageTile(
+                            model = File(path),
+                            contentDescription = "OOTD 照片",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        IconButton(
+                            onClick = { onImagesChange(images.filterNot { it == path }) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "删除", tint = ClosieColor.Error)
+                        }
+                    }
+                }
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clickable { imagePicker.launch(arrayOf("image/*")) },
+                        shape = MaterialTheme.shapes.large,
+                        color = ClosieColor.SurfaceSoft,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("+", style = MaterialTheme.typography.headlineMedium, color = ClosieColor.InkTertiary)
+                        }
+                    }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("选择衣物", style = MaterialTheme.typography.titleMedium)
+            owned.forEach { i ->
+                val checked = i.id in selected
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.large)
+                        .background(if (checked) ClosieColor.RoseSoft else ClosieColor.Surface)
+                        .border(1.dp, if (checked) ClosieColor.Rose else ClosieColor.Hairline, MaterialTheme.shapes.large)
+                        .clickable { onSelectedChange(if (checked) selected - i.id else selected + i.id) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val img = i.images.firstOrNull { it.kind == ImageKind.FLAT } ?: i.images.firstOrNull()
+                    ClosieImageTile(
+                        model = img?.localPath?.let { File(it) },
+                        contentDescription = i.name,
+                        modifier = Modifier.size(40.dp),
+                        contentScale = if (img?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
+                        placeholder = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(i.name.take(1), color = ClosieColor.InkTertiary, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    )
+                    Text(i.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Checkbox(checked = checked, onCheckedChange = { onSelectedChange(if (it) selected + i.id else selected - i.id) })
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.large) { Text("取消") }
+            Button(
+                onClick = { onDone(true) },
+                enabled = selected.isNotEmpty(),
+                modifier = Modifier.weight(1f),
+                shape = MaterialTheme.shapes.large,
+                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
+            ) { Text("保存") }
+        }
     }
 }
 
