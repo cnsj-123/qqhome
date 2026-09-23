@@ -80,6 +80,13 @@ fun ClosetScreen(
         SortOption.PRICE_DESC -> filtered.sortedWith(compareByDescending<ClothingItem> { it.price ?: -1.0 }.thenBy { it.name })
     }
 
+    fun clearAll() {
+        query = ""
+        selectedCategory = ""
+        onlyUnworn = false
+        sort = SortOption.RECENT
+    }
+
     Scaffold(
         containerColor = ClosieColor.Canvas,
         topBar = {
@@ -168,23 +175,27 @@ fun ClosetScreen(
             if (visibleItems.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     if (statusItems.isEmpty()) {
-                        ClosieEmptyState(
-                            title = "衣橱还是空的",
-                            subtitle = "添加第一件真正喜欢的衣服。",
-                            actionLabel = "+ 添加衣服",
-                            onAction = { add(status) }
-                        )
+                        if (status == ItemStatus.RETURNED) {
+                            ClosieEmptyState(
+                                title = "还没有试过 / 退货记录",
+                                subtitle = "以后试过但没留下的衣服，也可以记在这里。",
+                                actionLabel = "+ 添加衣服",
+                                onAction = { add(status) }
+                            )
+                        } else {
+                            ClosieEmptyState(
+                                title = "衣橱还是空的",
+                                subtitle = "添加第一件真正喜欢的衣服。",
+                                actionLabel = "+ 添加衣服",
+                                onAction = { add(status) }
+                            )
+                        }
                     } else {
                         ClosieEmptyState(
                             title = "没有符合当前条件的衣服",
                             subtitle = "试试清除筛选。",
                             actionLabel = "清除筛选",
-                            onAction = {
-                                query = ""
-                                selectedCategory = ""
-                                onlyUnworn = false
-                                sort = SortOption.RECENT
-                            }
+                            onAction = ::clearAll
                         )
                     }
                 }
@@ -215,10 +226,7 @@ fun ClosetScreen(
                 onlyUnworn = onlyUnworn,
                 onOnlyUnworn = { onlyUnworn = it },
                 showUnwornFilter = status == ItemStatus.OWNED,
-                onClear = {
-                    sort = SortOption.RECENT
-                    onlyUnworn = false
-                },
+                onClear = ::clearAll,
                 onApply = { showFilterSheet = false }
             )
         }

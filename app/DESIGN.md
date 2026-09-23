@@ -157,6 +157,24 @@ Closet grid prioritizes: FLAT → PRODUCT → other.
 
 Do **not** use DropdownMenu for long lists.
 
+## Smart entry
+
+Adding/editing clothes is *choosing*, not filling a 20-field form.
+
+- **Select when possible, type only when necessary** — category, subcategory, brand, store,
+  platform, size, safety, return reason, material name, measurement name and unit are all
+  searchable pickers.
+- **Show essentials first, details on demand** — only image, name, category, subcategory,
+  brand, size and purchase price are visible up front. Purchase info, garment details and
+  personal notes stay collapsed behind progressive sections.
+- **User-entered values become future suggestions** — suggestions are aggregated live from
+  `repo.items` (frequency-ordered, case-insensitively deduped, original spelling kept),
+  with static presets appended after. A brand typed once appears next time automatically.
+- **Custom values** — any picker accepts a free value via `＋ 使用"X"`; saved values are
+  trimmed and become future suggestions. No extra suggestion database.
+- **Prefer short rows over text fields** — materials/measurements are compact
+  `name · value · unit · ×` rows, not stacked OutlinedTextFields.
+
 ## Navigation
 
 Single primary bottom navigation:
