@@ -2,6 +2,8 @@ package com.xiaoming.closie.ui.editor
 
 import android.app.DatePickerDialog
 import android.content.ClipboardManager
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,12 +40,16 @@ import com.xiaoming.closie.data.ProductImporter
 import com.xiaoming.closie.data.ProductLinkExtractor
 import com.xiaoming.closie.data.ProductPreview
 import com.xiaoming.closie.data.model.*
+import com.xiaoming.closie.data.ocr.MeasurementParser
+import com.xiaoming.closie.data.ocr.OcrEngine
+import com.xiaoming.closie.data.ocr.ParsedMeasurement
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.components.ClosieFilterChip
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.components.EditorSection
 import com.xiaoming.closie.ui.components.LinkImportSheet
+import com.xiaoming.closie.ui.components.MeasurementOcrSheet
 import com.xiaoming.closie.ui.components.SearchableChoiceSheet
 import com.xiaoming.closie.ui.components.SmartPickerField
 import com.xiaoming.closie.ui.theme.ClosieColor
@@ -148,6 +154,27 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
     }
 
     val existing = remember(allItems) { collectExistingValues(allItems) }
+
+    // Size-chart OCR import with confirmation.
+    var showMeasureSheet by remember { mutableStateOf(false) }
+    var measureParsed by remember { mutableStateOf<List<ParsedMeasurement>>(emptyList()) }
+    var measureRawText by remember { mutableStateOf("") }
+    val measurePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val bitmap = withContext(Dispatchers.IO) { loadDownsampledBitmap(context, uri) }
+                if (bitmap == null) {
+                    measureRawText = ""
+                    measureParsed = emptyList()
+                } else {
+                    val result = OcrEngine.recognizeText(bitmap)
+                    measureRawText = result.getOrDefault("")
+                    measureParsed = MeasurementParser.parse(measureRawText, preferredSize = item.sizeLabel)
+                }
+                showMeasureSheet = true
+            }
+        }
+    }
 
     var activeSheet by remember { mutableStateOf<EditorSheet?>(null) }
     var editingMaterialId by remember { mutableStateOf<String?>(null) }
@@ -517,8 +544,13 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                             onRemove = { item = item.copy(measurements = item.measurements.filterNot { it.id == m.id }) }
                         )
                     }
-                    TextButton(onClick = { item = item.copy(measurements = item.measurements + Measurement()) }) {
-                        Text("＋ 添加尺寸", color = ClosieColor.Rose)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { item = item.copy(measurements = item.measurements + Measurement()) }) {
+                            Text("＋ 添加尺寸", color = ClosieColor.Rose)
+                        }
+                        TextButton(onClick = { measurePicker.launch(arrayOf("image/*")) }) {
+                            Text("从尺码图识别", color = ClosieColor.Rose)
+                        }
                     }
                 }
             }
@@ -703,6 +735,20 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                 showImportSheet = false
                 applyPreview(p)
             }
+        )
+    }
+
+    if (showMeasureSheet) {
+        MeasurementOcrSheet(
+            parsed = measureParsed,
+            rawText = measureRawText,
+            onApply = { measurements ->
+                showMeasureSheet = false
+                val existingNames = item.measurements.map { it.name }.toSet()
+                val additions = measurements.filter { it.name.isNotBlank() && it.name !in existingNames }
+                item = item.copy(measurements = item.measurements + additions)
+            },
+            onDismiss = { showMeasureSheet = false }
         )
     }
 
@@ -1183,3 +1229,14 @@ private fun ProductPreviewCard(preview: ProductPreview, onApply: () -> Unit, onD
         }
     }
 }
+
+/** Decodes [uri] into a downsampled bitmap (max ~2048px) to keep OCR fast and memory bounded. */
+private fun loadDownsampledBitmap(context: android.content.Context, uri: Uri): android.graphics.Bitmap? = runCatching {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    val maxDim = 2048
+    while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) sample *= 2
+    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+    context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+}.getOrNull()

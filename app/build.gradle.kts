@@ -46,4 +46,5 @@ dependencies {
     implementation("org.jsoup:jsoup:1.17.2")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }

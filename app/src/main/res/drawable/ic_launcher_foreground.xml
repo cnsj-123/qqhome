@@ -3,12 +3,11 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Closie "C / wardrobe fold" mark — a thick open C with a 45° folded lower arm. -->
+    <!-- Closie mark v3: a wardrobe doorway + fabric fold. Two slightly offset solid vertical
+         panels read as half-open closet doors; the negative space between them forms a subtle
+         V-fold / collar. Solid geometric blocks (no thin strokes) so it stays legible at 24dp. -->
     <path
-        android:pathData="M78,30 H34 V62 H58 L76,44"
-        android:strokeColor="#F7F6F2"
-        android:strokeWidth="16"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000" />
+        android:fillColor="#F7F6F2"
+        android:fillType="evenOdd"
+        android:pathData="M27,30 L51,30 L45,79 L27,79 Z M81,30 L57,30 L63,79 L81,79 Z" />
 </vector>

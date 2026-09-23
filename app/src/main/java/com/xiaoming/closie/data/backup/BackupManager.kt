@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.xiaoming.closie.data.draft.DraftStore
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import java.io.File
@@ -73,7 +74,10 @@ object BackupManager {
     private fun listDirs(parent: File, prefix: String): List<File> =
         parent.listFiles()?.filter { it.name.startsWith(prefix) }?.sortedByDescending { it.lastModified() }.orEmpty()
 
-    /** Returns true when a data directory contains all five JSON files and they all parse. */
+    /**
+     * Returns true when a data directory contains all five core JSON files and they all parse.
+     * Draft files are optional (older backups have none); when present they must also parse.
+     */
     fun validateDataDirectory(dir: File): Boolean {
         val files = listOf(
             "items.json" to itemType,
@@ -82,9 +86,20 @@ object BackupManager {
             "ootds.json" to ootdType,
             "outfits.json" to outfitType
         )
-        return files.all { (name, type) ->
+        val coreValid = files.all { (name, type) ->
             val f = File(dir, name)
             f.isFile && runCatching { gson.fromJson<Any>(f.readText(), type) }.getOrNull() != null
+        }
+        if (!coreValid) return false
+        val draftsDir = File(dir, "drafts")
+        val draftFiles = listOf(
+            "ootd_drafts.json" to ootdType,
+            "outfit_drafts.json" to outfitType
+        )
+        return draftFiles.all { (name, type) ->
+            val f = File(draftsDir, name)
+            if (!f.exists()) true // draft-less directories (old data) remain valid
+            else runCatching { gson.fromJson<Any>(f.readText(), type) }.getOrNull() != null
         }
     }
 
@@ -105,6 +120,13 @@ object BackupManager {
                 items.forEach { it.images.forEach { img -> img.localPath?.let { p -> allPaths += p } } }
                 ootds.forEach { it.images.forEach { p -> if (p.isNotBlank()) allPaths += p } }
                 outfits.forEach { it.tryOnImages.forEach { p -> if (p.isNotBlank()) allPaths += p } }
+
+                // Drafts are user data too: a complete backup must include them and their images.
+                val draftStore = DraftStore(context)
+                val ootdDrafts = draftStore.listOotdDrafts()
+                val outfitDrafts = draftStore.listOutfitDrafts()
+                ootdDrafts.forEach { it.images.forEach { p -> if (p.isNotBlank()) allPaths += p } }
+                outfitDrafts.forEach { it.tryOnImages.forEach { p -> if (p.isNotBlank()) allPaths += p } }
 
                 // Never silently drop referenced images: fail if a local file is missing.
                 val missing = allPaths.distinct().filter { path ->
@@ -132,6 +154,8 @@ object BackupManager {
                 }
                 val mappedOotds = ootds.map { o -> o.copy(images = o.images.mapNotNull { mappedPath(it) }) }
                 val mappedOutfits = outfits.map { o -> o.copy(tryOnImages = o.tryOnImages.mapNotNull { mappedPath(it) }) }
+                val mappedOotdDrafts = ootdDrafts.map { o -> o.copy(images = o.images.mapNotNull { mappedPath(it) }) }
+                val mappedOutfitDrafts = outfitDrafts.map { o -> o.copy(tryOnImages = o.tryOnImages.mapNotNull { mappedPath(it) }) }
 
                 val manifest = BackupManifest(
                     formatVersion = FORMAT_VERSION,
@@ -152,6 +176,8 @@ object BackupManager {
                         writeEntry("data/wash.json", gson.toJson(washes))
                         writeEntry("data/ootds.json", gson.toJson(mappedOotds))
                         writeEntry("data/outfits.json", gson.toJson(mappedOutfits))
+                        writeEntry("data/ootd_drafts.json", gson.toJson(mappedOotdDrafts))
+                        writeEntry("data/outfit_drafts.json", gson.toJson(mappedOutfitDrafts))
                         imagesDir.listFiles().orEmpty().forEach { f ->
                             zip.putNextEntry(ZipEntry("images/${f.name}"))
                             f.inputStream().use { it.copyTo(zip) }
@@ -192,6 +218,11 @@ object BackupManager {
                     val outfits = parseFile<Outfit>(File(extractDir, "data/outfits.json"), outfitType)
                     validateReferences(items, wears, washes, ootds, outfits)
 
+                    // Drafts are optional: older backups without draft files still restore cleanly
+                    // and are interpreted as an empty draft list.
+                    val ootdDrafts = parseOptionalFile<Ootd>(File(extractDir, "data/ootd_drafts.json"), ootdType)
+                    val outfitDrafts = parseOptionalFile<Outfit>(File(extractDir, "data/outfit_drafts.json"), outfitType)
+
                     // 3. Build the full future "closie/" inside staging.
                     stageDir.mkdirs()
                     val restoredItems = items.map { item ->
@@ -209,6 +240,16 @@ object BackupManager {
                             if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "outfit")
                         })
                     }
+                    val restoredOotdDrafts = ootdDrafts.map { o ->
+                        o.copy(images = o.images.mapNotNull { p ->
+                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "ootd")
+                        })
+                    }
+                    val restoredOutfitDrafts = outfitDrafts.map { o ->
+                        o.copy(tryOnImages = o.tryOnImages.mapNotNull { p ->
+                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "outfit")
+                        })
+                    }
 
                     // 4. Write the staged JSON.
                     writeAtomic(stageDir, "items.json", gson.toJson(restoredItems))
@@ -216,6 +257,12 @@ object BackupManager {
                     writeAtomic(stageDir, "wash.json", gson.toJson(washes))
                     writeAtomic(stageDir, "ootds.json", gson.toJson(restoredOotds))
                     writeAtomic(stageDir, "outfits.json", gson.toJson(restoredOutfits))
+
+                    // Restored drafts live in the same closie/drafts folder the app reads, so the
+                    // store picks them up immediately after the swap — nothing is deleted here.
+                    val draftsDir = File(stageDir, "drafts").apply { mkdirs() }
+                    writeAtomic(draftsDir, "ootd_drafts.json", gson.toJson(restoredOotdDrafts))
+                    writeAtomic(draftsDir, "outfit_drafts.json", gson.toJson(restoredOutfitDrafts))
 
                     // 5. Re-validate the fully assembled staging directory before committing.
                     if (!validateDataDirectory(stageDir)) throw IllegalStateException("备份数据校验失败")
@@ -295,6 +342,14 @@ object BackupManager {
             .getOrElse { throw IllegalStateException("备份数据无法解析（${file.name}）") }
         if (result == null) throw IllegalStateException("备份数据无效（${file.name}）")
         return result
+    }
+
+    /** Like [parseFile] but a missing file means an empty list — for optional draft entries. */
+    private fun <T> parseOptionalFile(file: File, type: java.lang.reflect.Type): List<T> {
+        if (!file.exists()) return emptyList()
+        val result = runCatching { gson.fromJson<List<T>>(file.readText(), type) }
+            .getOrElse { throw IllegalStateException("备份数据无法解析（${file.name}）") }
+        return result ?: emptyList()
     }
 
     /** Basic referential integrity checks; inconsistent backups must fail, not be silently fixed. */
