@@ -62,6 +62,7 @@ sealed class Route(val route: String) {
     data object Add : Route("add/{status}")
     data object Settings : Route("settings")
     data object OutfitEdit : Route("outfit_edit/{id}")
+    data object OutfitDraftEdit : Route("outfit_draft_edit/{draftId}")
 }
 
 @Composable
@@ -135,6 +136,7 @@ fun ClosieNavHost(
                 OutfitListScreen(
                     repository,
                     open = { nav.navigate(Route.OutfitEdit.route.replace("{id}", it)) },
+                    openDraft = { nav.navigate(Route.OutfitDraftEdit.route.replace("{draftId}", it)) },
                     create = { nav.navigate(Route.OutfitEdit.route.replace("{id}", "new")) },
                     back = { nav.popBackStack() }
                 )
@@ -180,6 +182,14 @@ fun ClosieNavHost(
             ) { entry ->
                 val id = entry.arguments?.getString("id")
                 OutfitStudioScreen(repository, id?.takeIf { it != "new" }) { nav.popBackStack() }
+            }
+
+            composable(
+                Route.OutfitDraftEdit.route,
+                arguments = listOf(navArgument("draftId") { type = NavType.StringType })
+            ) { entry ->
+                val draftId = entry.arguments?.getString("draftId")
+                OutfitStudioScreen(repository, outfitId = null, draftId = draftId) { nav.popBackStack() }
             }
 
             composable(Route.Settings.route) { DataSettingsScreen(repository) { nav.popBackStack() } }
