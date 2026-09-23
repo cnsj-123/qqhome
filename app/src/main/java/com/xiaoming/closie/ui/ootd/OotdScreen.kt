@@ -27,7 +27,7 @@ import coil.compose.AsyncImage
 import com.xiaoming.closie.data.ImageStore
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.theme.ClosieColor
 import java.io.File
@@ -124,7 +124,7 @@ fun OotdScreen(repo: WardrobeRepository, back: () -> Unit) {
 
     Scaffold(
         containerColor = ClosieColor.Canvas,
-        topBar = { TopAppBar(title = { Text("OOTD") }, navigationIcon = { ClosieBackButton { requestBack() } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) },
+        topBar = { ClosieCompactTopBar(title = "OOTD", onBack = { requestBack() }) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { requestNew() },

@@ -1,8 +1,9 @@
 package com.xiaoming.closie.ui.detail
 
 import android.app.DatePickerDialog
-import android.content.Intent
-import android.net.Uri
+import android.content.ClipData
+import android.content.ClipboardManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -24,15 +26,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.components.priceText
 import com.xiaoming.closie.ui.theme.ClosieColor
 import com.xiaoming.closie.ui.theme.rememberClosieDimensions
 import java.io.File
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, back: () -> Unit) {
     val all by repo.items.collectAsState()
@@ -41,7 +44,10 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
     val v = all.firstOrNull { it.id == id }
     val context = LocalContext.current
     val dims = rememberClosieDimensions()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var deleting by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
     var showAllWears by remember { mutableStateOf(false) }
     var showAllWash by remember { mutableStateOf(false) }
     if (v == null) { back(); return }
@@ -49,6 +55,8 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
     val itemWears = ws.filter { it.itemId == id }.sortedByDescending { it.date }
     val itemWash = xs.filter { it.itemId == id }.sortedByDescending { it.date }
     val wears = itemWears.size
+    val washes = itemWash.size
+    val costPerWear = v.price?.takeIf { wears > 0 }?.let { it / wears }
     val mainImage = v.images.firstOrNull { it.kind == ImageKind.FLAT }
         ?: v.images.firstOrNull { it.kind == ImageKind.PRODUCT }
         ?: v.images.firstOrNull()
@@ -59,12 +67,33 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
         v.price != null || v.originalPrice != null || v.purchaseDate.isNotBlank() || v.productUrl.isNotBlank()
     val hasRecords = v.rating > 0 || v.comment.isNotBlank()
 
+    fun copyLink() {
+        val cm = context.getSystemService(ClipboardManager::class.java)
+        cm?.setPrimaryClip(ClipData.newPlainText("商品链接", v.productUrl))
+        scope.launch { snackbarHostState.showSnackbar("商品链接已复制") }
+    }
+
+    fun pickWearDate() {
+        val d = LocalDate.now()
+        DatePickerDialog(context, { _, y, m, day ->
+            repo.addWear(id, "%04d-%02d-%02d".format(y, m + 1, day), WearSource.MANUAL)
+        }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+    }
+
+    fun pickWashDate() {
+        val d = LocalDate.now()
+        DatePickerDialog(context, { _, y, m, day ->
+            repo.addWash(id, "%04d-%02d-%02d".format(y, m + 1, day))
+        }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+    }
+
     Scaffold(
         containerColor = ClosieColor.Canvas,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text("", maxLines = 1) },
-                navigationIcon = { ClosieBackButton(onClick = back) },
+            ClosieCompactTopBar(
+                title = "",
+                onBack = back,
                 actions = {
                     IconButton(onClick = { edit(id) }) {
                         Icon(Icons.Outlined.Edit, contentDescription = "编辑", tint = ClosieColor.Ink)
@@ -72,8 +101,7 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
                     IconButton(onClick = { deleting = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "删除", tint = ClosieColor.Error)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+                }
             )
         }
     ) { pad ->
@@ -81,7 +109,7 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
             modifier = Modifier
                 .padding(pad)
                 .padding(horizontal = dims.pageHorizontal, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
                 ClosieImageTile(
@@ -105,68 +133,56 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
                         Text(v.brand, style = MaterialTheme.typography.labelLarge, color = ClosieColor.Graphite)
                     }
                     Text(v.name, style = MaterialTheme.typography.headlineLarge, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
-                    val cat = listOfNotNull(
-                        v.category.takeIf { it.isNotBlank() && it != "未分类" },
-                        v.subcategory.takeIf { it.isNotBlank() }
-                    ).joinToString(" · ")
-                    if (cat.isNotBlank()) Text(cat, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
-                    if (v.sizeLabel.isNotBlank()) Text(v.sizeLabel, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val cat = listOfNotNull(
+                            v.category.takeIf { it.isNotBlank() && it != "未分类" },
+                            v.subcategory.takeIf { it.isNotBlank() }
+                        ).joinToString(" · ")
+                        if (cat.isNotBlank()) {
+                            Text(cat, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (v.sizeLabel.isNotBlank()) {
+                            Text(v.sizeLabel, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                        }
+                    }
                     if (v.price != null) {
                         Text(priceText(v.price), style = MaterialTheme.typography.headlineMedium, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
-            item {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (v.status == ItemStatus.OWNED) {
-                        DetailActionChip("今天穿了") { repo.addWear(id, LocalDate.now().toString()) }
-                        DetailActionChip("添加穿着") {
-                            val d = LocalDate.now()
-                            DatePickerDialog(context, { _, y, m, day ->
-                                repo.addWear(id, "%04d-%02d-%02d".format(y, m + 1, day), WearSource.MANUAL)
-                            }, d.year, d.monthValue - 1, d.dayOfMonth).show()
-                        }
-                        DetailActionChip("洗过") { repo.addWash(id, LocalDate.now().toString()) }
-                        DetailActionChip("补录洗涤") {
-                            val d = LocalDate.now()
-                            DatePickerDialog(context, { _, y, m, day ->
-                                repo.addWash(id, "%04d-%02d-%02d".format(y, m + 1, day))
-                            }, d.year, d.monthValue - 1, d.dayOfMonth).show()
-                        }
+            if (v.status == ItemStatus.OWNED) {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DetailActionButton("穿了", Modifier.weight(1f)) { repo.addWear(id, LocalDate.now().toString()) }
+                        DetailActionButton("洗了", Modifier.weight(1f)) { repo.addWash(id, LocalDate.now().toString()) }
+                        DetailActionButton("更多", Modifier.weight(1f)) { showMore = true }
                     }
-                    DetailActionChip("编辑") { edit(id) }
                 }
             }
 
             if (hasAbout) {
                 item {
-                    DetailSection("关于这件衣服") {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DetailSection("衣物详情") {
+                        if (v.materials.isNotEmpty()) {
+                            Text("材质", style = MaterialTheme.typography.titleSmall, color = ClosieColor.Ink)
                             v.materials.forEach { m ->
-                                Text(
-                                    listOfNotNull(m.name.takeIf { it.isNotBlank() }, m.percentage.takeIf { it.isNotBlank() }).joinToString(" "),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = ClosieColor.Ink
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(m.name.takeIf { it.isNotBlank() } ?: "材质", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                                    Text(m.percentage, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
+                                }
                             }
-                            if (v.measurements.isNotEmpty()) {
-                                Text(
-                                    v.measurements.mapNotNull { m ->
-                                        val name = m.name.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                                        "$name ${m.value}${m.unit}"
-                                    }.joinToString(" · "),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = ClosieColor.Ink
-                                )
-                            }
-                            if (v.safetyCategory.isNotBlank()) {
-                                Text("安全类别 · ${v.safetyCategory}", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
-                            }
+                        }
+                        if (v.measurements.isNotEmpty()) {
+                            Text("详细尺寸", style = MaterialTheme.typography.titleSmall, color = ClosieColor.Ink)
+                            MeasurementGrid(v.measurements)
+                        }
+                        if (v.safetyCategory.isNotBlank()) {
+                            Text("安全类别 · ${v.safetyCategory}", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
                         }
                     }
                 }
@@ -175,22 +191,18 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
             if (hasPurchase) {
                 item {
                     DetailSection("购买信息") {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (v.store.isNotBlank()) InfoLine("店铺", v.store)
-                            if (v.purchasePlatform.isNotBlank()) InfoLine("平台", v.purchasePlatform)
-                            v.price?.let { InfoLine("购买价", priceText(it)) }
-                            v.originalPrice?.let { InfoLine("原价", priceText(it)) }
-                            if (v.purchaseDate.isNotBlank()) InfoLine("购买日期", v.purchaseDate)
-                            if (v.productUrl.isNotBlank()) {
-                                Text(
-                                    "打开商品链接",
-                                    color = ClosieColor.Fig,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.clickable {
-                                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(v.productUrl))) }
-                                    }
-                                )
-                            }
+                        if (v.store.isNotBlank()) InfoLine("店铺", v.store)
+                        if (v.purchasePlatform.isNotBlank()) InfoLine("平台", v.purchasePlatform)
+                        v.price?.let { InfoLine("价格", priceText(it)) }
+                        v.originalPrice?.let { InfoLine("原价", priceText(it)) }
+                        if (v.purchaseDate.isNotBlank()) InfoLine("日期", v.purchaseDate)
+                        if (v.productUrl.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = ::copyLink,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("复制商品链接") }
                         }
                     }
                 }
@@ -199,29 +211,24 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
             if (v.status == ItemStatus.OWNED) {
                 item {
                     DetailSection("使用记录") {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("穿着 $wears 次 · 洗涤 ${itemWash.size} 次", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
-                            if (v.price != null && wears > 0) {
-                                Text("单次穿着成本 ¥" + "%.2f".format(v.price / wears), style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
-                            }
-                            val lastWear = itemWears.firstOrNull()?.date
-                            val lastWash = itemWash.firstOrNull()?.date
-                            if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
-                            if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
-                            Spacer(Modifier.height(4.dp))
-                            WearHistorySection(
-                                wears = itemWears,
-                                showAll = showAllWears,
-                                onToggle = { showAllWears = !showAllWears },
-                                onDelete = { repo.deleteWearEvent(it) }
-                            )
-                            WashHistorySection(
-                                washes = itemWash,
-                                showAll = showAllWash,
-                                onToggle = { showAllWash = !showAllWash },
-                                onDelete = { repo.deleteWashEvent(it) }
-                            )
-                        }
+                        UsageStats(wears = wears, washes = washes, costPerWear = costPerWear)
+                        val lastWear = itemWears.firstOrNull()?.date
+                        val lastWash = itemWash.firstOrNull()?.date
+                        if (lastWear != null) Text("最近穿着：$lastWear", style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
+                        if (lastWash != null) Text("最近洗涤：$lastWash", style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
+                        Spacer(Modifier.height(4.dp))
+                        WearHistorySection(
+                            wears = itemWears,
+                            showAll = showAllWears,
+                            onToggle = { showAllWears = !showAllWears },
+                            onDelete = { repo.deleteWearEvent(it) }
+                        )
+                        WashHistorySection(
+                            washes = itemWash,
+                            showAll = showAllWash,
+                            onToggle = { showAllWash = !showAllWash },
+                            onDelete = { repo.deleteWashEvent(it) }
+                        )
                     }
                 }
             }
@@ -229,12 +236,10 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
             if (hasRecords) {
                 item {
                     DetailSection("我的记录") {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (v.rating > 0) {
-                                Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Fig)
-                            }
-                            if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+                        if (v.rating > 0) {
+                            Text("${"★".repeat(v.rating)}${"☆".repeat(5 - v.rating)}", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Fig)
                         }
+                        if (v.comment.isNotBlank()) Text(v.comment, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
                     }
                 }
             }
@@ -267,6 +272,17 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
         }
     }
 
+    if (showMore) {
+        ModalBottomSheet(onDismissRequest = { showMore = false }, containerColor = ClosieColor.Surface) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+                Text("更多操作", style = MaterialTheme.typography.titleLarge, color = ClosieColor.Ink)
+                Spacer(Modifier.height(8.dp))
+                SheetAction("补录穿着") { showMore = false; pickWearDate() }
+                SheetAction("补录洗涤") { showMore = false; pickWashDate() }
+            }
+        }
+    }
+
     if (deleting) {
         AlertDialog(
             onDismissRequest = { deleting = false },
@@ -275,6 +291,33 @@ fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, b
             confirmButton = { TextButton(onClick = { repo.deleteItem(id); back() }) { Text("删除", color = ClosieColor.Error) } },
             dismissButton = { TextButton(onClick = { deleting = false }) { Text("取消") } }
         )
+    }
+}
+
+@Composable
+private fun SheetAction(label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
+    }
+}
+
+@Composable
+private fun DetailActionButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(ClosieColor.Mist)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = ClosieColor.Ink)
     }
 }
 
@@ -289,9 +332,62 @@ private fun DetailSection(title: String, content: @Composable ColumnScope.() -> 
 }
 
 @Composable
-private fun InfoLine(label: String, value: String) {
+private fun MeasurementGrid(measurements: List<Measurement>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        measurements.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { m ->
+                    InfoCell(m.name, "${m.value} ${m.unit.ifBlank { "cm" }}", Modifier.weight(1f))
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(ClosieColor.SurfaceSoft)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
+        Text(value, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
+    }
+}
+
+@Composable
+private fun UsageStats(wears: Int, washes: Int, costPerWear: Double?) {
     Row(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        StatCell(wears.toString(), "穿着", Modifier.weight(1f))
+        StatCell(washes.toString(), "洗涤", Modifier.weight(1f))
+        StatCell(if (costPerWear != null) priceText(costPerWear) else "—", "单次成本", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(ClosieColor.SurfaceSoft)
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, style = MaterialTheme.typography.titleLarge, color = ClosieColor.Ink, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = ClosieColor.Graphite)
+    }
+}
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -304,26 +400,6 @@ private fun InfoLine(label: String, value: String) {
             textAlign = TextAlign.End,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun DetailActionChip(label: String, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .heightIn(min = 44.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(999.dp),
-        color = ClosieColor.Mist,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-            style = MaterialTheme.typography.labelLarge,
-            color = ClosieColor.Ink
         )
     }
 }

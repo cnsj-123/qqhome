@@ -39,7 +39,7 @@ import com.xiaoming.closie.data.ProductLinkExtractor
 import com.xiaoming.closie.data.ProductPreview
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.BackButton
+import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.components.ClosieFilterChip
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.components.EditorSection
@@ -225,10 +225,9 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
     Scaffold(
         containerColor = ClosieColor.Canvas,
         topBar = {
-            TopAppBar(
-                title = { Text(if (original == null) "添加衣服" else "编辑衣服") },
-                navigationIcon = { BackButton { requestBack() } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+            ClosieCompactTopBar(
+                title = if (original == null) "添加衣服" else "编辑衣服",
+                onBack = { requestBack() }
             )
         },
         bottomBar = {

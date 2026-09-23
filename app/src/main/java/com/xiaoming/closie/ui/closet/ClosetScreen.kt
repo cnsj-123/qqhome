@@ -1,23 +1,23 @@
 package com.xiaoming.closie.ui.closet
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,17 +25,22 @@ import com.xiaoming.closie.data.model.ClothingItem
 import com.xiaoming.closie.data.model.ImageKind
 import com.xiaoming.closie.data.model.ItemStatus
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.components.*
+import com.xiaoming.closie.ui.components.ClosieEmptyState
+import com.xiaoming.closie.ui.components.ClosieImageTile
+import com.xiaoming.closie.ui.components.ClosieSearchBar
 import com.xiaoming.closie.ui.theme.ClosieColor
 import com.xiaoming.closie.ui.theme.rememberClosieDimensions
 import java.io.File
+import kotlin.math.roundToInt
 
-private enum class SortOption(val label: String) {
-    RECENT("最近编辑"),
-    PURCHASE_DATE("最近购买"),
-    WEAR_DESC("穿着最多"),
-    PRICE_ASC("价格低到高"),
-    PRICE_DESC("价格高到低")
+enum class SortField(val label: String) {
+    RECENT_EDIT("最近编辑"),
+    PURCHASE_DATE("购买日期"),
+    WEAR_COUNT("穿着次数"),
+    WASH_COUNT("洗涤次数"),
+    PRICE("价格"),
+    COST_PER_WEAR("单次穿着成本"),
+    NAME("名称")
 }
 
 private val categoryPresets = listOf(
@@ -49,17 +54,24 @@ fun ClosetScreen(
     open: (String) -> Unit,
     add: (ItemStatus) -> Unit
 ) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("") }
-    var sort by remember { mutableStateOf(SortOption.RECENT) }
+    var sortField by remember { mutableStateOf(runCatching { SortField.valueOf(ClosetPrefs.sortField(context)) }.getOrDefault(SortField.RECENT_EDIT)) }
+    var ascending by remember { mutableStateOf(ClosetPrefs.ascending(context)) }
+    var gridColumns by remember { mutableStateOf(ClosetPrefs.gridColumns(context).coerceIn(1, 3)) }
     var onlyUnworn by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf(ItemStatus.OWNED) }
-    var showFilterSheet by remember { mutableStateOf(false) }
+    var showCategorySheet by remember { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    var showDisplaySheet by remember { mutableStateOf(false) }
     val dims = rememberClosieDimensions()
 
     val all by repo.items.collectAsState()
     val wears by repo.wearEvents.collectAsState()
+    val washes by repo.washEvents.collectAsState()
     val wearCount = remember(wears) { wears.groupingBy { it.itemId }.eachCount() }
+    val washCount = remember(washes) { washes.groupingBy { it.itemId }.eachCount() }
 
     val statusItems = all.filter { it.status == status }
     val userCategories = statusItems.map { it.category }.filter { it.isNotBlank() }.distinct()
@@ -75,19 +87,17 @@ fun ClosetScreen(
         matchesQuery && matchesCategory && matchesUnworn
     }
 
-    val visibleItems = when (sort) {
-        SortOption.RECENT -> filtered.sortedByDescending { it.updatedAt }
-        SortOption.PURCHASE_DATE -> filtered.sortedByDescending { it.purchaseDate }
-        SortOption.WEAR_DESC -> filtered.sortedByDescending { wearCount[it.id] ?: 0 }
-        SortOption.PRICE_ASC -> filtered.sortedWith(compareBy({ it.price ?: Double.MAX_VALUE }, { it.name }))
-        SortOption.PRICE_DESC -> filtered.sortedWith(compareByDescending<ClothingItem> { it.price ?: -1.0 }.thenBy { it.name })
-    }
+    val visibleItems = sortItems(filtered, sortField, ascending, wearCount, washCount)
 
     fun clearAll() {
         query = ""
         selectedCategory = ""
         onlyUnworn = false
-        sort = SortOption.RECENT
+        sortField = SortField.RECENT_EDIT
+        ascending = false
+        // Persist the reset so re-entering the closet cannot resurrect the just-cleared sort.
+        ClosetPrefs.saveSortField(context, SortField.RECENT_EDIT)
+        ClosetPrefs.saveAscending(context, false)
     }
 
     Scaffold(
@@ -136,28 +146,16 @@ fun ClosetScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                    item {
-                        ClosieFilterChip(
-                            selected = selectedCategory.isBlank(),
-                            onClick = { selectedCategory = "" },
-                            label = "全部"
-                        )
-                    }
-                    lazyItems(categories) { c ->
-                        ClosieFilterChip(
-                            selected = selectedCategory == c,
-                            onClick = { selectedCategory = c },
-                            label = c
-                        )
-                    }
-                }
-                IconButton(onClick = { showFilterSheet = true }) {
-                    Icon(Icons.Outlined.FilterAlt, contentDescription = "筛选", tint = ClosieColor.Graphite)
-                }
+                FilterButton(
+                    label = selectedCategory.ifBlank { "全部类别" },
+                    active = selectedCategory.isNotBlank(),
+                    onClick = { showCategorySheet = true }
+                )
+                FilterButton(label = "排序", active = sortField != SortField.RECENT_EDIT || ascending, onClick = { showSortSheet = true })
+                FilterButton(label = "显示", active = onlyUnworn || gridColumns != 2, onClick = { showDisplaySheet = true })
             }
 
             if (visibleItems.isEmpty()) {
@@ -189,7 +187,7 @@ fun ClosetScreen(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(gridColumns),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                     horizontalArrangement = Arrangement.spacedBy(dims.gridGutter),
                     modifier = Modifier.fillMaxSize()
@@ -207,22 +205,99 @@ fun ClosetScreen(
         }
     }
 
-    if (showFilterSheet) {
+    if (showCategorySheet) {
         ModalBottomSheet(
-            onDismissRequest = { showFilterSheet = false },
+            onDismissRequest = { showCategorySheet = false },
             containerColor = ClosieColor.Surface,
             shape = MaterialTheme.shapes.extraLarge
         ) {
-            FilterSheetContent(
-                sort = sort,
-                onSort = { sort = it },
-                onlyUnworn = onlyUnworn,
-                onOnlyUnworn = { onlyUnworn = it },
-                showUnwornFilter = status == ItemStatus.OWNED,
-                onClear = ::clearAll,
-                onApply = { showFilterSheet = false }
+            CategorySheetContent(
+                categories = categories,
+                selected = selectedCategory,
+                onSelect = { c -> selectedCategory = c; showCategorySheet = false }
             )
         }
+    }
+
+    if (showSortSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSortSheet = false },
+            containerColor = ClosieColor.Surface,
+            shape = MaterialTheme.shapes.extraLarge
+        ) {
+            SortSheetContent(
+                field = sortField,
+                ascending = ascending,
+                onField = { sortField = it; ClosetPrefs.saveSortField(context, it) },
+                onAscending = { ascending = it; ClosetPrefs.saveAscending(context, it) }
+            )
+        }
+    }
+
+    if (showDisplaySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showDisplaySheet = false },
+            containerColor = ClosieColor.Surface,
+            shape = MaterialTheme.shapes.extraLarge
+        ) {
+            DisplaySheetContent(
+                columns = gridColumns,
+                onColumns = { gridColumns = it; ClosetPrefs.saveGridColumns(context, it) },
+                onlyUnworn = onlyUnworn,
+                onOnlyUnworn = { onlyUnworn = it },
+                showUnworn = status == ItemStatus.OWNED
+            )
+        }
+    }
+}
+
+private fun sortItems(
+    list: List<ClothingItem>,
+    field: SortField,
+    ascending: Boolean,
+    wearCount: Map<String, Int>,
+    washCount: Map<String, Int>
+): List<ClothingItem> {
+    val direction = { cmp: Comparator<ClothingItem> -> if (ascending) cmp else cmp.reversed() }
+
+    // Items whose sort key is undefined (null price, no cost-per-wear) always go last in both
+    // directions — a descending sort must never surface nulls on top.
+    fun <K : Comparable<K>> byKey(key: (ClothingItem) -> K?): List<ClothingItem> {
+        val (valid, rest) = list.partition { key(it) != null }
+        val cmp = compareBy<ClothingItem> { key(it)!! }
+        return valid.sortedWith(direction(cmp)) + rest.sortedBy { it.name }
+    }
+
+    return when (field) {
+        SortField.RECENT_EDIT -> list.sortedWith(direction(compareBy { it.updatedAt }))
+        SortField.PURCHASE_DATE -> list.sortedWith(direction(compareBy { it.purchaseDate }))
+        SortField.WEAR_COUNT -> list.sortedWith(direction(compareBy { wearCount[it.id] ?: 0 }))
+        SortField.WASH_COUNT -> list.sortedWith(direction(compareBy { washCount[it.id] ?: 0 }))
+        SortField.PRICE -> byKey { it.price }
+        SortField.NAME -> list.sortedWith(direction(compareBy { it.name.lowercase() }))
+        SortField.COST_PER_WEAR -> byKey { item ->
+            val wears = wearCount[item.id] ?: 0
+            item.price?.takeIf { wears > 0 }?.let { p -> p / wears }
+        }
+    }
+}
+
+@Composable
+private fun FilterButton(label: String, active: Boolean, onClick: () -> Unit) {
+    val bg = if (active) ClosieColor.Ink else ClosieColor.Mist
+    val content = if (active) ClosieColor.Paper else ClosieColor.Graphite
+    Row(
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+        Text("▾", style = MaterialTheme.typography.labelMedium, color = content)
     }
 }
 
@@ -293,14 +368,117 @@ private fun ClothingItemTile(
 }
 
 @Composable
-private fun FilterSheetContent(
-    sort: SortOption,
-    onSort: (SortOption) -> Unit,
+private fun CategorySheetContent(
+    categories: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    val all = listOf("") + categories
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp, top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("选择类别", style = MaterialTheme.typography.headlineSmall, color = ClosieColor.Ink)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(all, key = { it.ifBlank { "__all__" } }) { category ->
+                val label = category.ifBlank { "全部" }
+                val isSelected = category == selected
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) ClosieColor.Ink else ClosieColor.Mist)
+                        .clickable { onSelect(category) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (isSelected) ClosieColor.Paper else ClosieColor.Graphite,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SortSheetContent(
+    field: SortField,
+    ascending: Boolean,
+    onField: (SortField) -> Unit,
+    onAscending: (Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp, top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("排序", style = MaterialTheme.typography.headlineSmall, color = ClosieColor.Ink)
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("排序依据", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+            SortField.entries.forEach { option ->
+                val selected = option == field
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) ClosieColor.FigSoft else Color.Transparent)
+                        .clickable { onField(option) }
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(option.label, color = if (selected) ClosieColor.FigPressed else ClosieColor.Ink)
+                    if (selected) Text("●", color = ClosieColor.Fig)
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("顺序", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OrderChip("↑ 升序", ascending, Modifier.weight(1f)) { onAscending(true) }
+                OrderChip("↓ 降序", !ascending, Modifier.weight(1f)) { onAscending(false) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) ClosieColor.Ink else ClosieColor.Mist)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) ClosieColor.Paper else ClosieColor.Graphite)
+    }
+}
+
+@Composable
+private fun DisplaySheetContent(
+    columns: Int,
+    onColumns: (Int) -> Unit,
     onlyUnworn: Boolean,
     onOnlyUnworn: (Boolean) -> Unit,
-    showUnwornFilter: Boolean,
-    onClear: () -> Unit,
-    onApply: () -> Unit
+    showUnworn: Boolean
 ) {
     Column(
         modifier = Modifier
@@ -309,63 +487,37 @@ private fun FilterSheetContent(
             .padding(bottom = 32.dp, top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text("筛选", style = MaterialTheme.typography.headlineSmall, color = ClosieColor.Ink)
+        Text("显示", style = MaterialTheme.typography.headlineSmall, color = ClosieColor.Ink)
 
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("状态", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
-            Text("在衣橱页顶部切换“已拥有 / 试过·退货”", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Graphite)
-        }
-
-        if (showUnwornFilter) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("只看未穿过", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.large)
-                        .background(ClosieColor.SurfaceSoft)
-                        .clickable { onOnlyUnworn(!onlyUnworn) }
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("只看未穿过的衣服", color = ClosieColor.Ink)
-                    Switch(checked = onlyUnworn, onCheckedChange = onOnlyUnworn)
-                }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("显示大小", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("小", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+                Slider(
+                    value = (3 - columns).toFloat(),
+                    onValueChange = { v -> onColumns(3 - v.roundToInt().coerceIn(0, 2)) },
+                    valueRange = 0f..2f,
+                    steps = 1,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                )
+                Text("大", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("排序", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
-            SortOption.entries.forEach { option ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(if (sort == option) ClosieColor.FigSoft else ClosieColor.Paper)
-                        .clickable { onSort(option) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(option.label, color = if (sort == option) ClosieColor.FigPressed else ClosieColor.Ink)
-                    if (sort == option) Text("●", color = ClosieColor.Fig)
-                }
+        if (showUnworn) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.large)
+                    .background(ClosieColor.SurfaceSoft)
+                    .clickable { onOnlyUnworn(!onlyUnworn) }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("只看未穿过的衣服", color = ClosieColor.Ink)
+                Switch(checked = onlyUnworn, onCheckedChange = onOnlyUnworn)
             }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(
-                onClick = onClear,
-                modifier = Modifier.weight(1f),
-                shape = MaterialTheme.shapes.large
-            ) { Text("清除") }
-            Button(
-                onClick = onApply,
-                modifier = Modifier.weight(1f),
-                shape = MaterialTheme.shapes.large,
-                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Fig, contentColor = ClosieColor.Paper)
-            ) { Text("应用") }
         }
     }
 }

@@ -69,10 +69,10 @@ fun ClosieSearchBar(
         onValueChange = onValueChange,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 46.dp)
+            .heightIn(min = 44.dp)
             .clip(shape)
             .background(ClosieColor.Mist)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = ClosieColor.Ink),
         singleLine = true,
         decorationBox = { innerTextField ->

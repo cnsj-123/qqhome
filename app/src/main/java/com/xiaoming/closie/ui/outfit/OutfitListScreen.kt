@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.xiaoming.closie.data.model.ImageKind
 import com.xiaoming.closie.data.model.Outfit
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.components.ClosieEmptyState
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.theme.ClosieColor
@@ -33,7 +33,7 @@ fun OutfitListScreen(repo: WardrobeRepository, open: (String) -> Unit, create: (
 
     Scaffold(
         containerColor = ClosieColor.Canvas,
-        topBar = { TopAppBar(title = { Text("搭配") }, navigationIcon = { ClosieBackButton(onClick = back) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) },
+        topBar = { ClosieCompactTopBar(title = "搭配", onBack = back) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = create,

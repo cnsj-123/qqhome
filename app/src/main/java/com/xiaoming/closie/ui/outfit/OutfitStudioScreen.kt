@@ -37,7 +37,7 @@ import com.xiaoming.closie.data.model.ItemStatus
 import com.xiaoming.closie.data.model.Outfit
 import com.xiaoming.closie.data.model.Placement
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.theme.ClosieColor
 import java.io.File
@@ -109,11 +109,10 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, back: () -> 
     Scaffold(
         containerColor = ClosieColor.Canvas,
         topBar = {
-            TopAppBar(
-                title = { Text(if (original == null) "新建搭配" else "编辑搭配") },
-                navigationIcon = { ClosieBackButton { requestBack() } },
-                actions = { TextButton(onClick = { save() }) { Text("保存", color = ClosieColor.Rose) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+            ClosieCompactTopBar(
+                title = if (original == null) "新建搭配" else "编辑搭配",
+                onBack = { requestBack() },
+                actions = { TextButton(onClick = { save() }) { Text("保存", color = ClosieColor.Rose) } }
             )
         },
         bottomBar = {

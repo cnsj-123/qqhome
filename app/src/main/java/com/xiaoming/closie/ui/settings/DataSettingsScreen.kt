@@ -23,7 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.xiaoming.closie.data.backup.BackupManager
 import com.xiaoming.closie.data.repository.WardrobeRepository
-import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.components.ClosieCompactTopBar
 import com.xiaoming.closie.ui.quickcapture.QuickCaptureActivity
 import com.xiaoming.closie.ui.quickcapture.QuickCaptureService
 import com.xiaoming.closie.ui.theme.ClosieColor
@@ -94,7 +94,7 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
 
     Scaffold(
         containerColor = ClosieColor.Canvas,
-        topBar = { TopAppBar(title = { Text("数据与备份") }, navigationIcon = { ClosieBackButton(onClick = back) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)) }
+        topBar = { ClosieCompactTopBar(title = "数据与备份", onBack = back) }
     ) { pad ->
         Column(
             modifier = Modifier
