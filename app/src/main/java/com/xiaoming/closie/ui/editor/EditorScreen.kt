@@ -1,6 +1,7 @@
 package com.xiaoming.closie.ui.editor
 
 import android.app.DatePickerDialog
+import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,7 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.xiaoming.closie.data.ImageStore
+import com.xiaoming.closie.data.PendingImport
+import com.xiaoming.closie.data.PendingProduct
 import com.xiaoming.closie.data.ProductImporter
+import com.xiaoming.closie.data.ProductLinkExtractor
 import com.xiaoming.closie.data.ProductPreview
 import com.xiaoming.closie.data.model.*
 import com.xiaoming.closie.data.repository.WardrobeRepository
@@ -39,6 +43,7 @@ import com.xiaoming.closie.ui.BackButton
 import com.xiaoming.closie.ui.components.ClosieFilterChip
 import com.xiaoming.closie.ui.components.ClosieImageTile
 import com.xiaoming.closie.ui.components.EditorSection
+import com.xiaoming.closie.ui.components.LinkImportSheet
 import com.xiaoming.closie.ui.components.SearchableChoiceSheet
 import com.xiaoming.closie.ui.components.SmartPickerField
 import com.xiaoming.closie.ui.theme.ClosieColor
@@ -108,6 +113,40 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
     var productImageStatus by remember { mutableStateOf(ProductImageStatus.IDLE) }
     val scope = rememberCoroutineScope()
 
+    var showImportSheet by remember { mutableStateOf(false) }
+    var importSheetText by remember { mutableStateOf("") }
+    var clipboardSuggestion by remember { mutableStateOf<String?>(null) }
+
+    // "分享至 Closie" deep link + quick-capture "保存并继续编辑" draft + clipboard suggestion.
+    LaunchedEffect(Unit) {
+        PendingImport.text?.let { t ->
+            PendingImport.text = null
+            importSheetText = t
+            showImportSheet = true
+        }
+        PendingProduct.draft?.let { d ->
+            PendingProduct.draft = null
+            if (item.name.isBlank() && d.name.isNotBlank()) item = item.copy(name = d.name)
+            if (item.price == null) d.price?.let { item = item.copy(price = it); priceField = priceString(it) }
+            if (item.purchasePlatform.isBlank() && d.platform.isNotBlank()) item = item.copy(purchasePlatform = d.platform)
+            d.screenshotPath?.let { path ->
+                val file = File(path)
+                ImageStore.copyFromFile(context, file)?.let { copied ->
+                    pendingPaths += copied
+                    item = item.copy(images = item.images + ClothingImage(kind = ImageKind.PRODUCT, localPath = copied))
+                }
+                runCatching { file.delete() }
+            }
+        }
+        val clip = runCatching {
+            val cm = context.getSystemService(ClipboardManager::class.java)
+            cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
+        }.getOrNull()
+        if (!clip.isNullOrBlank() && ProductLinkExtractor.extractFirstHttpUrl(clip) != null) {
+            clipboardSuggestion = clip
+        }
+    }
+
     val existing = remember(allItems) { collectExistingValues(allItems) }
 
     var activeSheet by remember { mutableStateOf<EditorSheet?>(null) }
@@ -133,6 +172,7 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
         if (item.brand.isBlank() && p.brand.isNotBlank()) updated = updated.copy(brand = p.brand)
         if (item.store.isBlank() && p.store.isNotBlank()) updated = updated.copy(store = p.store)
         if (item.purchasePlatform.isBlank() && p.platform.isNotBlank()) updated = updated.copy(purchasePlatform = p.platform)
+        if (item.productUrl.isBlank() && p.url.isNotBlank()) updated = updated.copy(productUrl = p.url)
         item = updated
         val imageUrl = p.imageUrl
         preview = null
@@ -221,6 +261,38 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("快速添加", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
+                    TextButton(onClick = { importSheetText = ""; showImportSheet = true }) {
+                        Text("从链接导入", color = ClosieColor.Rose)
+                    }
+                }
+            }
+
+            if (clipboardSuggestion != null) {
+                val clip = clipboardSuggestion.orEmpty()
+                val url = ProductLinkExtractor.extractFirstHttpUrl(clip)
+                if (url != null) {
+                    item {
+                        ClipboardSuggestionBanner(
+                            platform = ProductImporter.detectPlatform(url),
+                            host = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault(""),
+                            onImport = {
+                                importSheetText = clip
+                                showImportSheet = true
+                                clipboardSuggestion = null
+                            },
+                            onDismiss = { clipboardSuggestion = null }
+                        )
+                    }
+                }
+            }
+
             item { StatusSegment(status = item.status, onSelect = ::setStatus) }
 
             item {
@@ -359,7 +431,11 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
                     }
                     EditorTextField(
                         value = item.productUrl,
-                        onValueChange = { item = item.copy(productUrl = it) },
+                        onValueChange = { raw ->
+                            // Auto-extract a URL from a pasted share message, but never break
+                            // normal character-by-character typing.
+                            item = item.copy(productUrl = ProductLinkExtractor.extractFirstHttpUrl(raw) ?: raw)
+                        },
                         placeholder = "商品链接",
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Done
@@ -617,6 +693,17 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
             onSelect = cfg.onSelect,
             onClear = cfg.onClear,
             onDismiss = { activeSheet = null }
+        )
+    }
+
+    if (showImportSheet) {
+        LinkImportSheet(
+            initialText = importSheetText,
+            onDismiss = { showImportSheet = false },
+            onApply = { p ->
+                showImportSheet = false
+                applyPreview(p)
+            }
         )
     }
 
@@ -1021,6 +1108,37 @@ private fun AddImageSheet(onPick: (ImageKind) -> Unit, onDismiss: () -> Unit) {
                     Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ClipboardSuggestionBanner(
+    platform: String,
+    host: String,
+    onImport: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(ClosieColor.Mist)
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("检测到商品链接", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink)
+            Text(
+                listOfNotNull(platform.takeIf { it.isNotBlank() }, host.takeIf { it.isNotBlank() })
+                    .joinToString(" · ").ifBlank { "剪贴板" },
+                style = MaterialTheme.typography.bodySmall,
+                color = ClosieColor.InkSecondary
+            )
+        }
+        TextButton(onClick = onImport) { Text("从剪贴板导入", color = ClosieColor.Rose) }
+        IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "关闭", tint = ClosieColor.InkTertiary)
         }
     }
 }

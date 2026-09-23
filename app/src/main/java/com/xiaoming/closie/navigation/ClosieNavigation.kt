@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +27,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.xiaoming.closie.ExternalNavCommand
+import com.xiaoming.closie.data.PendingImport
+import com.xiaoming.closie.data.model.ItemStatus
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import com.xiaoming.closie.ui.closet.ClosetScreen
 import com.xiaoming.closie.ui.detail.DetailScreen
@@ -61,11 +65,36 @@ sealed class Route(val route: String) {
 }
 
 @Composable
-fun ClosieNavHost(repository: WardrobeRepository) {
+fun ClosieNavHost(
+    repository: WardrobeRepository,
+    externalCommand: ExternalNavCommand? = null,
+    onExternalCommandConsumed: () -> Unit = {}
+) {
     val nav = rememberNavController()
     val current by nav.currentBackStackEntryAsState()
     val currentRoute = current?.destination?.route
     val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
+
+    // Handle "分享至 Closie" and quick-capture "保存并继续编辑" deep links. The command is a
+    // one-shot: once navigated it is consumed and cleared by the host activity.
+    LaunchedEffect(externalCommand) {
+        when (val cmd = externalCommand) {
+            null -> Unit
+            is ExternalNavCommand.Import -> {
+                PendingImport.text = cmd.text
+                nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
+                onExternalCommandConsumed()
+            }
+            is ExternalNavCommand.Edit -> {
+                nav.navigate(Route.Edit.route.replace("{id}", cmd.itemId))
+                onExternalCommandConsumed()
+            }
+            is ExternalNavCommand.Add -> {
+                nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
+                onExternalCommandConsumed()
+            }
+        }
+    }
 
     Scaffold(
         containerColor = ClosieColor.Canvas,

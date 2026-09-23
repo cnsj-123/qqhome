@@ -1,8 +1,12 @@
 package com.xiaoming.closie.ui.settings
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import com.xiaoming.closie.data.backup.BackupManager
 import com.xiaoming.closie.data.repository.WardrobeRepository
 import com.xiaoming.closie.ui.components.ClosieBackButton
+import com.xiaoming.closie.ui.quickcapture.QuickCaptureActivity
+import com.xiaoming.closie.ui.quickcapture.QuickCaptureService
 import com.xiaoming.closie.ui.theme.ClosieColor
 import java.time.LocalDate
 import kotlinx.coroutines.launch
@@ -33,6 +39,30 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmRestore by remember { mutableStateOf<Uri?>(null) }
+    var quickCapture by remember { mutableStateOf(QuickCaptureService.isEnabled(context)) }
+
+    fun launchConsent() {
+        runCatching { context.startActivity(Intent(context, QuickCaptureActivity::class.java)) }
+    }
+
+    // Resync the toggle against the real in-process session state (not just persisted prefs). A
+    // stale enabled=true with no active session and no pending consent is cleared.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val pending = QuickCaptureService.hasPendingConsent(context)
+        val starting = QuickCaptureService.isSessionStarting()
+        val active = QuickCaptureService.isSessionActive()
+        quickCapture = pending || starting || active
+
+        if (QuickCaptureService.isEnabled(context) && !pending && !starting && !active) {
+            QuickCaptureService.setEnabled(context, false)
+            QuickCaptureService.setRunning(context, false)
+        }
+
+        if (pending && Settings.canDrawOverlays(context)) {
+            QuickCaptureService.setPendingConsent(context, false)
+            launchConsent()
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
@@ -77,6 +107,33 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
                 "所有衣橱数据都只保存在本机（JSON + 私有图片）。建议定期导出完整备份，以防卸载、清除数据或换机时丢失。恢复会替换当前本地数据。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = ClosieColor.InkSecondary
+            )
+
+            SettingsToggleRow(
+                title = "快速采集",
+                subtitle = "通过悬浮球从其他 App 的商品页快速录入",
+                checked = quickCapture,
+                onCheckedChange = { enable ->
+                    quickCapture = enable
+                    QuickCaptureService.setEnabled(context, enable)
+                    if (enable) {
+                        if (Settings.canDrawOverlays(context)) {
+                            launchConsent()
+                        } else {
+                            QuickCaptureService.setPendingConsent(context, true)
+                            runCatching {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        QuickCaptureService.endSession(context)
+                    }
+                }
             )
 
             SettingsRow(
@@ -130,6 +187,35 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { confirmRestore = null }) { Text("取消") } }
         )
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = ClosieColor.Surface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, ClosieColor.Hairline)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
+            }
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
     }
 }
 

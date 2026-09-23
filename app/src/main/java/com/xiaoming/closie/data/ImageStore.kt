@@ -48,6 +48,15 @@ object ImageStore {
     fun copyOotdFromUri(context: Context, uri: Uri): String? = copyFromUriTo(context, uri, ootdDir(context))
     fun copyOutfitFromUri(context: Context, uri: Uri): String? = copyFromUriTo(context, uri, outfitDir(context))
 
+    /** Copies an existing local file (e.g. a just-captured screenshot) into private item storage. */
+    fun copyFromFile(context: Context, file: File): String? {
+        if (!file.exists() || !file.isFile || file.length() == 0L) return null
+        val dir = itemsDir(context).apply { mkdirs() }
+        val ext = file.extension.ifBlank { "bin" }
+        val final = File(dir, "${UUID.randomUUID()}.$ext")
+        return runCatching { file.copyTo(final, overwrite = true); final.absolutePath }.getOrNull()
+    }
+
     /** Downloads a remote image URL into private storage so it survives restarts and offline edits. */
     fun copyFromUrl(context: Context, url: String): String? = runCatching {
         val dir = itemsDir(context).apply { mkdirs() }
