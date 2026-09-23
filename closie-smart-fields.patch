@@ -1,0 +1,1639 @@
+From 0fbf2b79c5e916c6d3362faeba1a24014f9b9d99 Mon Sep 17 00:00:00 2001
+From: Closie <closie@example.com>
+Date: Wed, 23 Sep 2026 12:22:12 +0800
+Subject: [PATCH] feat(android): add searchable smart wardrobe fields
+
+---
+ app/DESIGN.md                                 |  18 +
+ .../xiaoming/closie/ui/closet/ClosetScreen.kt |  40 +-
+ .../ui/components/SearchableChoiceSheet.kt    | 208 ++++
+ .../closie/ui/components/SmartPickerField.kt  | 104 ++
+ .../xiaoming/closie/ui/editor/EditorScreen.kt | 932 +++++++++++++++---
+ .../xiaoming/closie/ui/editor/FieldCatalog.kt | 140 +++
+ 6 files changed, 1281 insertions(+), 161 deletions(-)
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/editor/FieldCatalog.kt
+
+diff --git a/app/DESIGN.md b/app/DESIGN.md
+index 53f96d1..faf687b 100644
+--- a/app/DESIGN.md
++++ b/app/DESIGN.md
+@@ -157,6 +157,24 @@ Closet grid prioritizes: FLAT → PRODUCT → other.
+ 
+ Do **not** use DropdownMenu for long lists.
+ 
++## Smart entry
++
++Adding/editing clothes is *choosing*, not filling a 20-field form.
++
++- **Select when possible, type only when necessary** — category, subcategory, brand, store,
++  platform, size, safety, return reason, material name, measurement name and unit are all
++  searchable pickers.
++- **Show essentials first, details on demand** — only image, name, category, subcategory,
++  brand, size and purchase price are visible up front. Purchase info, garment details and
++  personal notes stay collapsed behind progressive sections.
++- **User-entered values become future suggestions** — suggestions are aggregated live from
++  `repo.items` (frequency-ordered, case-insensitively deduped, original spelling kept),
++  with static presets appended after. A brand typed once appears next time automatically.
++- **Custom values** — any picker accepts a free value via `＋ 使用"X"`; saved values are
++  trimmed and become future suggestions. No extra suggestion database.
++- **Prefer short rows over text fields** — materials/measurements are compact
++  `name · value · unit · ×` rows, not stacked OutlinedTextFields.
++
+ ## Navigation
+ 
+ Single primary bottom navigation:
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+index e733cfc..2b652e6 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt
+@@ -80,6 +80,13 @@ fun ClosetScreen(
+         SortOption.PRICE_DESC -> filtered.sortedWith(compareByDescending<ClothingItem> { it.price ?: -1.0 }.thenBy { it.name })
+     }
+ 
++    fun clearAll() {
++        query = ""
++        selectedCategory = ""
++        onlyUnworn = false
++        sort = SortOption.RECENT
++    }
++
+     Scaffold(
+         containerColor = ClosieColor.Canvas,
+         topBar = {
+@@ -168,23 +175,27 @@ fun ClosetScreen(
+             if (visibleItems.isEmpty()) {
+                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                     if (statusItems.isEmpty()) {
+-                        ClosieEmptyState(
+-                            title = "衣橱还是空的",
+-                            subtitle = "添加第一件真正喜欢的衣服。",
+-                            actionLabel = "+ 添加衣服",
+-                            onAction = { add(status) }
+-                        )
++                        if (status == ItemStatus.RETURNED) {
++                            ClosieEmptyState(
++                                title = "还没有试过 / 退货记录",
++                                subtitle = "以后试过但没留下的衣服，也可以记在这里。",
++                                actionLabel = "+ 添加衣服",
++                                onAction = { add(status) }
++                            )
++                        } else {
++                            ClosieEmptyState(
++                                title = "衣橱还是空的",
++                                subtitle = "添加第一件真正喜欢的衣服。",
++                                actionLabel = "+ 添加衣服",
++                                onAction = { add(status) }
++                            )
++                        }
+                     } else {
+                         ClosieEmptyState(
+                             title = "没有符合当前条件的衣服",
+                             subtitle = "试试清除筛选。",
+                             actionLabel = "清除筛选",
+-                            onAction = {
+-                                query = ""
+-                                selectedCategory = ""
+-                                onlyUnworn = false
+-                                sort = SortOption.RECENT
+-                            }
++                            onAction = ::clearAll
+                         )
+                     }
+                 }
+@@ -215,10 +226,7 @@ fun ClosetScreen(
+                 onlyUnworn = onlyUnworn,
+                 onOnlyUnworn = { onlyUnworn = it },
+                 showUnwornFilter = status == ItemStatus.OWNED,
+-                onClear = {
+-                    sort = SortOption.RECENT
+-                    onlyUnworn = false
+-                },
++                onClear = ::clearAll,
+                 onApply = { showFilterSheet = false }
+             )
+         }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt b/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt
+new file mode 100644
+index 0000000..1e24c54
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt
+@@ -0,0 +1,208 @@
++package com.xiaoming.closie.ui.components
++
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.FlowRow
++import androidx.compose.foundation.layout.ExperimentalLayoutApi
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.text.KeyboardActions
++import androidx.compose.foundation.text.KeyboardOptions
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.ModalBottomSheet
++import androidx.compose.material3.OutlinedTextField
++import androidx.compose.material3.OutlinedTextFieldDefaults
++import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
++import androidx.compose.material3.rememberModalBottomSheetState
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.text.input.ImeAction
++import androidx.compose.ui.text.input.KeyboardType
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.theme.ClosieColor
++
++/**
++ * The generic smart-entry choice sheet. Searchable, scrollable, with existing values first,
++ * optional presets, custom values and clear.
++ */
++@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
++@Composable
++fun SearchableChoiceSheet(
++    title: String,
++    currentValue: String,
++    suggestions: List<String>,
++    preferredSuggestions: List<String> = emptyList(),
++    allowCustom: Boolean = true,
++    onSelect: (String) -> Unit,
++    onClear: (() -> Unit)? = null,
++    onDismiss: () -> Unit
++) {
++    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
++    var query by remember { mutableStateOf("") }
++
++    val full = remember(suggestions, currentValue) {
++        val merged = dedupeCaseInsensitive(suggestions)
++        if (currentValue.isNotBlank() && merged.none { it.equals(currentValue, ignoreCase = true) }) {
++            listOf(currentValue) + merged
++        } else {
++            merged
++        }
++    }
++    val preferred = remember(preferredSuggestions) { dedupeCaseInsensitive(preferredSuggestions) }
++
++    val trimmed = query.trim()
++    val filtered = full.filter { it.contains(trimmed, ignoreCase = true) }
++    val filteredPreferred = preferred.filter { it.contains(trimmed, ignoreCase = true) }
++    val exactMatch = full.any { it.equals(trimmed, ignoreCase = true) }
++    val showCustom = allowCustom && trimmed.isNotEmpty() && !exactMatch
++
++    fun select(value: String) {
++        onSelect(value)
++        onDismiss()
++    }
++
++    ModalBottomSheet(
++        onDismissRequest = onDismiss,
++        sheetState = sheetState,
++        containerColor = ClosieColor.Surface
++    ) {
++        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.SpaceBetween,
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                Text(title, style = MaterialTheme.typography.titleLarge, color = ClosieColor.Ink)
++                if (onClear != null && currentValue.isNotBlank()) {
++                    TextButton(onClick = { onClear(); onDismiss() }) {
++                        Text("清除", color = ClosieColor.InkTertiary)
++                    }
++                }
++            }
++            Spacer(Modifier.height(8.dp))
++            OutlinedTextField(
++                value = query,
++                onValueChange = { query = it },
++                modifier = Modifier.fillMaxWidth(),
++                placeholder = { Text("搜索$title", color = ClosieColor.InkTertiary) },
++                singleLine = true,
++                shape = RoundedCornerShape(12.dp),
++                colors = OutlinedTextFieldDefaults.colors(
++                    focusedBorderColor = ClosieColor.Rose,
++                    unfocusedBorderColor = ClosieColor.Hairline
++                ),
++                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
++                keyboardActions = KeyboardActions(
++                    onDone = {
++                        when {
++                            exactMatch -> full.first { it.equals(trimmed, ignoreCase = true) }.let { select(it) }
++                            showCustom -> select(trimmed)
++                        }
++                    }
++                )
++            )
++            Spacer(Modifier.height(12.dp))
++
++            if (trimmed.isEmpty() && filteredPreferred.isNotEmpty()) {
++                Text("最近 / 已使用", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                Spacer(Modifier.height(8.dp))
++                FlowRow(
++                    horizontalArrangement = Arrangement.spacedBy(8.dp),
++                    verticalArrangement = Arrangement.spacedBy(8.dp)
++                ) {
++                    filteredPreferred.forEach { option ->
++                        ClosieFilterChip(
++                            selected = option.equals(currentValue, ignoreCase = true),
++                            onClick = { select(option) },
++                            label = option
++                        )
++                    }
++                }
++                Spacer(Modifier.height(16.dp))
++            }
++
++            Text(
++                if (trimmed.isEmpty()) "全部" else "搜索结果",
++                style = MaterialTheme.typography.bodyMedium,
++                color = ClosieColor.InkSecondary
++            )
++            Spacer(Modifier.height(4.dp))
++
++            if (filtered.isEmpty() && !showCustom) {
++                Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
++                    Text("没有匹配的选项", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkTertiary)
++                }
++            } else {
++                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
++                    items(filtered, key = { it }) { option ->
++                        OptionRow(
++                            label = option,
++                            selected = option.equals(currentValue, ignoreCase = true),
++                            onClick = { select(option) }
++                        )
++                    }
++                    if (showCustom) {
++                        item(key = "__custom__") {
++                            Row(
++                                modifier = Modifier
++                                    .fillMaxWidth()
++                                    .clickable { select(trimmed) }
++                                    .heightIn(min = 48.dp),
++                                verticalAlignment = Alignment.CenterVertically
++                            ) {
++                                Text(
++                                    "＋ 使用“$trimmed”",
++                                    color = ClosieColor.Rose,
++                                    style = MaterialTheme.typography.bodyLarge
++                                )
++                            }
++                        }
++                    }
++                }
++            }
++            Spacer(Modifier.height(24.dp))
++        }
++    }
++}
++
++@Composable
++private fun OptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
++    Row(
++        modifier = Modifier
++            .fillMaxWidth()
++            .clickable(onClick = onClick)
++            .heightIn(min = 48.dp),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Text(
++            label,
++            style = MaterialTheme.typography.bodyLarge,
++            color = if (selected) ClosieColor.RosePressed else ClosieColor.Ink
++        )
++        if (selected) Text("✓", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Rose)
++    }
++}
++
++private fun dedupeCaseInsensitive(values: List<String>): List<String> {
++    val result = mutableListOf<String>()
++    val seen = HashSet<String>()
++    values.forEach { if (it.isNotBlank() && seen.add(it.lowercase())) result.add(it) }
++    return result
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt b/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt
+new file mode 100644
+index 0000000..31fcc52
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt
+@@ -0,0 +1,104 @@
++package com.xiaoming.closie.ui.components
++
++import androidx.compose.animation.AnimatedVisibility
++import androidx.compose.animation.expandVertically
++import androidx.compose.animation.shrinkVertically
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.ColumnScope
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.padding
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.semantics.role
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.theme.ClosieColor
++
++/** A one-line, tap-to-choose field: label on the left, value (or placeholder) on the right. */
++@Composable
++fun SmartPickerField(
++    label: String,
++    value: String,
++    placeholder: String,
++    onClick: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    Row(
++        modifier = modifier
++            .fillMaxWidth()
++            .heightIn(min = 48.dp)
++            .clickable(onClick = onClick)
++            .semantics { role = Role.Button }
++            .padding(vertical = 4.dp),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
++        Row(
++            verticalAlignment = Alignment.CenterVertically,
++            horizontalArrangement = Arrangement.spacedBy(4.dp)
++        ) {
++            Text(
++                text = if (value.isBlank()) placeholder else value,
++                style = MaterialTheme.typography.bodyLarge,
++                color = if (value.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
++                maxLines = 1
++            )
++            Text("›", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.InkTertiary)
++        }
++    }
++}
++
++/** Lightweight progressive-disclosure section: title + optional summary + chevron. */
++@Composable
++fun EditorSection(
++    title: String,
++    expanded: Boolean,
++    onToggle: () -> Unit,
++    modifier: Modifier = Modifier,
++    summary: String? = null,
++    content: @Composable ColumnScope.() -> Unit
++) {
++    Column(modifier = modifier.fillMaxWidth()) {
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .clickable(onClick = onToggle)
++                .heightIn(min = 48.dp),
++            horizontalArrangement = Arrangement.SpaceBetween,
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            Column(Modifier.weight(1f)) {
++                Text(title, style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++                if (!expanded && summary != null) {
++                    Text(
++                        summary,
++                        style = MaterialTheme.typography.bodySmall,
++                        color = ClosieColor.InkSecondary,
++                        maxLines = 1
++                    )
++                }
++            }
++            Text(
++                if (expanded) "˅" else "›",
++                style = MaterialTheme.typography.titleMedium,
++                color = ClosieColor.InkTertiary
++            )
++        }
++        AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
++            Column(
++                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
++                verticalArrangement = Arrangement.spacedBy(12.dp),
++                content = content
++            )
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+index 53ba9ec..232464c 100644
+--- a/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
++++ b/app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt
+@@ -4,18 +4,28 @@ import android.app.DatePickerDialog
+ import androidx.activity.compose.BackHandler
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.background
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.horizontalScroll
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.LazyRow
+ import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.text.KeyboardOptions
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Close
+ import androidx.compose.material3.*
+-import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.text.input.ImeAction
++import androidx.compose.ui.text.input.KeyboardType
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import coil.compose.AsyncImage
+@@ -25,7 +35,12 @@ import com.xiaoming.closie.data.ProductPreview
+ import com.xiaoming.closie.data.model.*
+ import com.xiaoming.closie.data.repository.WardrobeRepository
+ import com.xiaoming.closie.ui.BackButton
+-import com.xiaoming.closie.ui.Rose
++import com.xiaoming.closie.ui.components.ClosieFilterChip
++import com.xiaoming.closie.ui.components.ClosieImageTile
++import com.xiaoming.closie.ui.components.EditorSection
++import com.xiaoming.closie.ui.components.SearchableChoiceSheet
++import com.xiaoming.closie.ui.components.SmartPickerField
++import com.xiaoming.closie.ui.theme.ClosieColor
+ import java.io.File
+ import java.time.LocalDate
+ import kotlinx.coroutines.Dispatchers
+@@ -42,13 +57,26 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+     val initialItem = remember(itemId, initialStatus) {
+         original ?: ClothingItem(
+             status = if (initialStatus == "RETURNED") ItemStatus.RETURNED else ItemStatus.OWNED,
++            category = "",
+             purchaseDate = LocalDate.now().toString()
+         )
+     }
+     var item by remember(itemId, initialStatus) { mutableStateOf(initialItem) }
+-    LaunchedEffect(original?.updatedAt) { if (original != null) item = original }
+ 
+-    val dirty = item != initialItem
++    val initialPrice = initialItem.price?.let { priceString(it) } ?: ""
++    val initialOriginalPrice = initialItem.originalPrice?.let { priceString(it) } ?: ""
++    var priceField by remember(itemId, initialStatus) { mutableStateOf(initialPrice) }
++    var originalPriceField by remember(itemId, initialStatus) { mutableStateOf(initialOriginalPrice) }
++
++    LaunchedEffect(original?.updatedAt) {
++        if (original != null) {
++            item = original
++            priceField = priceString(original.price)
++            originalPriceField = priceString(original.originalPrice)
++        }
++    }
++
++    val dirty = item != initialItem || priceField != initialPrice || originalPriceField != initialOriginalPrice
+     var showDiscardDialog by remember { mutableStateOf(false) }
+ 
+     fun requestBack() {
+@@ -79,11 +107,28 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+     var productImageStatus by remember { mutableStateOf(ProductImageStatus.IDLE) }
+     val scope = rememberCoroutineScope()
+ 
++    val existing = remember(allItems) { collectExistingValues(allItems) }
++
++    var activeSheet by remember { mutableStateOf<EditorSheet?>(null) }
++    var editingMaterialId by remember { mutableStateOf<String?>(null) }
++    var editingMeasurementId by remember { mutableStateOf<String?>(null) }
++    var showAddImageSheet by remember { mutableStateOf(false) }
++
++    var expandPurchase by remember { mutableStateOf(false) }
++    var expandDetails by remember { mutableStateOf(false) }
++    var expandRecords by remember { mutableStateOf(false) }
++    var expandReturn by remember(itemId, initialStatus) { mutableStateOf(item.status == ItemStatus.RETURNED) }
++
++    fun setStatus(status: ItemStatus) {
++        item = item.copy(status = status)
++        if (status == ItemStatus.RETURNED) expandReturn = true
++    }
++
+     fun applyPreview(p: ProductPreview) {
+         var updated = item
+         if (item.name.isBlank() && p.title.isNotBlank()) updated = updated.copy(name = p.title)
+-        if (item.price == null) p.price?.let { updated = updated.copy(price = it) }
+-        if (item.originalPrice == null) p.originalPrice?.let { updated = updated.copy(originalPrice = it) }
++        if (item.price == null) p.price?.let { updated = updated.copy(price = it); priceField = priceString(it) }
++        if (item.originalPrice == null) p.originalPrice?.let { updated = updated.copy(originalPrice = it); originalPriceField = priceString(it) }
+         if (item.brand.isBlank() && p.brand.isNotBlank()) updated = updated.copy(brand = p.brand)
+         if (item.store.isBlank() && p.store.isNotBlank()) updated = updated.copy(store = p.store)
+         if (item.purchasePlatform.isBlank() && p.platform.isNotBlank()) updated = updated.copy(purchasePlatform = p.platform)
+@@ -118,114 +163,449 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+         }
+     }
+ 
++    val canSave = item.name.isNotBlank() && productImageStatus != ProductImageStatus.DOWNLOADING
++
++    fun save() {
++        val final = item.copy(
++            price = priceField.trim().toDoubleOrNull(),
++            originalPrice = originalPriceField.trim().toDoubleOrNull(),
++            materials = item.materials.map { it.copy(percentage = normalizePercentage(it.percentage)) }
++        )
++        val retained = final.images.mapNotNull { it.localPath }.toSet()
++        pendingPaths.filterNot { it in retained }.forEach { ImageStore.deletePrivatePath(context, it) }
++        if (original == null) repo.createItem(final) else repo.updateItem(final)
++        pendingPaths.clear()
++        done()
++    }
++
+     Scaffold(
++        containerColor = ClosieColor.Canvas,
+         topBar = {
+             TopAppBar(
+                 title = { Text(if (original == null) "添加衣服" else "编辑衣服") },
+-                navigationIcon = { BackButton { requestBack() } }
++                navigationIcon = { BackButton { requestBack() } },
++                colors = TopAppBarDefaults.topAppBarColors(containerColor = ClosieColor.Canvas)
+             )
++        },
++        bottomBar = {
++            Surface(color = ClosieColor.Surface, tonalElevation = 0.dp, shadowElevation = 0.dp) {
++                Box(
++                    Modifier
++                        .fillMaxWidth()
++                        .imePadding()
++                        .navigationBarsPadding()
++                        .padding(horizontal = 20.dp, vertical = 12.dp)
++                ) {
++                    Button(
++                        onClick = { save() },
++                        enabled = canSave,
++                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
++                        shape = RoundedCornerShape(12.dp),
++                        colors = ButtonDefaults.buttonColors(
++                            containerColor = ClosieColor.Rose,
++                            contentColor = ClosieColor.Surface
++                        )
++                    ) {
++                        Text(if (productImageStatus == ProductImageStatus.DOWNLOADING) "图片下载中…" else "保存")
++                    }
++                }
++            }
+         }
+     ) { padding ->
+         LazyColumn(
+-            modifier = Modifier.padding(padding).padding(18.dp),
+-            verticalArrangement = Arrangement.spacedBy(10.dp)
++            modifier = Modifier.padding(padding).fillMaxSize(),
++            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
++            verticalArrangement = Arrangement.spacedBy(4.dp)
+         ) {
++            item { StatusSegment(status = item.status, onSelect = ::setStatus) }
++
+             item {
+-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                    FilterChip(selected = item.status == ItemStatus.OWNED, onClick = { item = item.copy(status = ItemStatus.OWNED) }, label = { Text("OWNED") })
+-                    FilterChip(selected = item.status == ItemStatus.RETURNED, onClick = { item = item.copy(status = ItemStatus.RETURNED) }, label = { Text("RETURNED") })
+-                }
+-                EditText("名称 *", item.name) { item = item.copy(name = it) }
+-                EditText("类别", item.category) { item = item.copy(category = it) }
+-                EditText("子类别", item.subcategory) { item = item.copy(subcategory = it) }
++                Spacer(Modifier.height(8.dp))
++                ImageSection(
++                    images = item.images,
++                    currentKind = currentKind,
++                    onSelectKind = { currentKind = it },
++                    onAdd = { showAddImageSheet = true },
++                    onRemove = { id -> item = item.copy(images = item.images.filterNot { it.id == id }) }
++                )
+             }
++
+             item {
+-                SectionImages(
+-                    images = item.images,
+-                    add = { kind -> currentKind = kind; picker.launch(arrayOf("image/*")) },
+-                    remove = { id -> item = item.copy(images = item.images.filterNot { it.id == id }) }
++                Spacer(Modifier.height(8.dp))
++                EditorTextField(
++                    value = item.name,
++                    onValueChange = { item = item.copy(name = it) },
++                    placeholder = "名称 *",
++                    imeAction = ImeAction.Next
+                 )
+             }
++
+             item {
+-                Text("购买信息", style = MaterialTheme.typography.titleMedium)
+-                EditText("品牌", item.brand) { item = item.copy(brand = it) }
+-                EditText("购买店铺", item.store) { item = item.copy(store = it) }
+-                EditText("购买平台", item.purchasePlatform) { item = item.copy(purchasePlatform = it) }
+-                EditText("商品链接", item.productUrl) { item = item.copy(productUrl = it) }
+-                Button(
+-                    onClick = {
+-                        val url = item.productUrl.trim()
+-                        if (url.isEmpty()) { importError = "请先填写商品链接"; return@Button }
+-                        importing = true
+-                        importError = null
+-                        preview = null
+-                        scope.launch {
+-                            val result = ProductImporter.fetch(url)
+-                            result.onSuccess { p -> preview = p }
+-                                .onFailure { e -> importError = e.message ?: "解析失败，请检查链接或网络" }
+-                            importing = false
+-                        }
+-                    },
+-                    enabled = !importing,
+-                    modifier = Modifier.fillMaxWidth()
+-                ) { Text(if (importing) "解析中…" else "解析商品") }
+-                preview?.let { p ->
+-                    ProductPreviewCard(
+-                        preview = p,
+-                        onApply = { applyPreview(p) },
+-                        onDismiss = { preview = null }
++                SmartPickerField(
++                    label = "类别",
++                    value = item.category,
++                    placeholder = "选择类别",
++                    onClick = { activeSheet = EditorSheet.CATEGORY }
++                )
++            }
++            item {
++                SmartPickerField(
++                    label = "子类别",
++                    value = item.subcategory,
++                    placeholder = "选择子类别",
++                    onClick = { activeSheet = EditorSheet.SUBCATEGORY }
++                )
++            }
++            item {
++                SmartPickerField(
++                    label = "品牌",
++                    value = item.brand,
++                    placeholder = "选择品牌",
++                    onClick = { activeSheet = EditorSheet.BRAND }
++                )
++            }
++            item {
++                SmartPickerField(
++                    label = "尺码",
++                    value = item.sizeLabel,
++                    placeholder = "选择尺码",
++                    onClick = { activeSheet = EditorSheet.SIZE }
++                )
++            }
++            item {
++                EditorTextField(
++                    value = priceField,
++                    onValueChange = { priceField = it },
++                    placeholder = "购买价",
++                    keyboardType = KeyboardType.Decimal,
++                    imeAction = ImeAction.Next
++                )
++            }
++
++            item {
++                Spacer(Modifier.height(12.dp))
++                val purchaseSummary = listOfNotNull(
++                    item.store.takeIf { it.isNotBlank() },
++                    item.purchasePlatform.takeIf { it.isNotBlank() },
++                    item.purchaseDate.takeIf { it.isNotBlank() }
++                ).joinToString(" · ").ifBlank { null }
++                EditorSection(
++                    title = "购买信息",
++                    expanded = expandPurchase,
++                    onToggle = { expandPurchase = !expandPurchase },
++                    summary = purchaseSummary
++                ) {
++                    EditorTextField(
++                        value = originalPriceField,
++                        onValueChange = { originalPriceField = it },
++                        placeholder = "原价（可选）",
++                        keyboardType = KeyboardType.Decimal,
++                        imeAction = ImeAction.Next
+                     )
++                    SmartPickerField(
++                        label = "店铺",
++                        value = item.store,
++                        placeholder = "选择店铺",
++                        onClick = { activeSheet = EditorSheet.STORE }
++                    )
++                    SmartPickerField(
++                        label = "购买平台",
++                        value = item.purchasePlatform,
++                        placeholder = "选择平台",
++                        onClick = { activeSheet = EditorSheet.PLATFORM }
++                    )
++                    Row(
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .heightIn(min = 48.dp)
++                            .clickable {
++                                val date = runCatching { LocalDate.parse(item.purchaseDate) }.getOrDefault(LocalDate.now())
++                                DatePickerDialog(context, { _, year, month, day ->
++                                    item = item.copy(purchaseDate = "%04d-%02d-%02d".format(year, month + 1, day))
++                                }, date.year, date.monthValue - 1, date.dayOfMonth).show()
++                            },
++                        horizontalArrangement = Arrangement.SpaceBetween,
++                        verticalAlignment = Alignment.CenterVertically
++                    ) {
++                        Text("购买日期", style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
++                        Text(
++                            item.purchaseDate.ifBlank { "选择日期" },
++                            style = MaterialTheme.typography.bodyLarge,
++                            color = if (item.purchaseDate.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink
++                        )
++                    }
++                    EditorTextField(
++                        value = item.productUrl,
++                        onValueChange = { item = item.copy(productUrl = it) },
++                        placeholder = "商品链接",
++                        keyboardType = KeyboardType.Uri,
++                        imeAction = ImeAction.Done
++                    )
++                    Button(
++                        onClick = {
++                            val url = item.productUrl.trim()
++                            if (url.isEmpty()) { importError = "请先填写商品链接"; return@Button }
++                            importing = true
++                            importError = null
++                            preview = null
++                            scope.launch {
++                                val result = ProductImporter.fetch(url)
++                                result.onSuccess { p -> preview = p }
++                                    .onFailure { e -> importError = e.message ?: "解析失败，请检查链接或网络" }
++                                importing = false
++                            }
++                        },
++                        enabled = !importing,
++                        shape = RoundedCornerShape(12.dp),
++                        colors = ButtonDefaults.buttonColors(
++                            containerColor = ClosieColor.SurfaceSoft,
++                            contentColor = ClosieColor.Ink
++                        )
++                    ) { Text(if (importing) "识别中…" else "从链接识别") }
++                    preview?.let { p ->
++                        ProductPreviewCard(
++                            preview = p,
++                            onApply = { applyPreview(p) },
++                            onDismiss = { preview = null }
++                        )
++                    }
++                    importError?.let { Text(it, color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall) }
++                    when (productImageStatus) {
++                        ProductImageStatus.DOWNLOADING -> Text("正在下载商品图片…", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
++                        ProductImageStatus.DONE -> Text("已识别", color = ClosieColor.Rose, style = MaterialTheme.typography.bodySmall)
++                        ProductImageStatus.FAILED -> Text("商品信息已应用，但图片下载失败，可以手动添加", color = ClosieColor.Error, style = MaterialTheme.typography.bodySmall)
++                        ProductImageStatus.IDLE -> {}
++                    }
+                 }
+-                importError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+-                when (productImageStatus) {
+-                    ProductImageStatus.DOWNLOADING -> Text("正在下载商品图片…", style = MaterialTheme.typography.bodySmall)
+-                    ProductImageStatus.DONE -> Text("商品图片已保存", color = Rose, style = MaterialTheme.typography.bodySmall)
+-                    ProductImageStatus.FAILED -> Text("商品信息已应用，但图片下载失败，可以手动添加", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+-                    ProductImageStatus.IDLE -> {}
+-                }
+-                EditText("购买价", item.price?.toString().orEmpty()) { item = item.copy(price = it.toDoubleOrNull()) }
+-                EditText("原价（可选）", item.originalPrice?.toString().orEmpty()) { item = item.copy(originalPrice = it.toDoubleOrNull()) }
+-                OutlinedButton(onClick = {
+-                    val date = runCatching { LocalDate.parse(item.purchaseDate) }.getOrDefault(LocalDate.now())
+-                    DatePickerDialog(context, { _, year, month, day ->
+-                        item = item.copy(purchaseDate = "%04d-%02d-%02d".format(year, month + 1, day))
+-                    }, date.year, date.monthValue - 1, date.dayOfMonth).show()
+-                }) { Text("购买日期：${item.purchaseDate}") }
+             }
++
+             item {
+-                EditText("尺码标签", item.sizeLabel) { item = item.copy(sizeLabel = it) }
+-                EditText("安全类别", item.safetyCategory) { item = item.copy(safetyCategory = it) }
+-                EditText("我的评价", item.comment) { item = item.copy(comment = it) }
+-                Text("我的评分", style = MaterialTheme.typography.titleSmall)
+-                Row(verticalAlignment = Alignment.CenterVertically) {
+-                    (1..5).forEach { star ->
+-                        TextButton(onClick = { item = item.copy(rating = if (item.rating == star) 0 else star) }) {
+-                            Text(if (star <= item.rating) "★" else "☆", fontSize = 24.sp)
+-                        }
++                Spacer(Modifier.height(12.dp))
++                EditorSection(
++                    title = "衣物详情",
++                    expanded = expandDetails,
++                    onToggle = { expandDetails = !expandDetails }
++                ) {
++                    SmartPickerField(
++                        label = "安全类别",
++                        value = item.safetyCategory,
++                        placeholder = "选择安全类别",
++                        onClick = { activeSheet = EditorSheet.SAFETY }
++                    )
++                    Text("材质", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++                    item.materials.forEach { part ->
++                        MaterialRow(
++                            part = part,
++                            onNameClick = { editingMaterialId = part.id; activeSheet = EditorSheet.MATERIAL },
++                            onPercentage = { value ->
++                                item = item.copy(materials = item.materials.map { if (it.id == part.id) it.copy(percentage = value) else it })
++                            },
++                            onRemove = { item = item.copy(materials = item.materials.filterNot { it.id == part.id }) }
++                        )
++                    }
++                    TextButton(onClick = { item = item.copy(materials = item.materials + MaterialPart()) }) {
++                        Text("＋ 添加材质", color = ClosieColor.Rose)
++                    }
++
++                    Text("详细尺寸", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++                    item.measurements.forEach { m ->
++                        MeasurementRow(
++                            m = m,
++                            onNameClick = { editingMeasurementId = m.id; activeSheet = EditorSheet.MEASUREMENT },
++                            onValue = { value ->
++                                item = item.copy(measurements = item.measurements.map { if (it.id == m.id) it.copy(value = value) else it })
++                            },
++                            onUnitClick = { editingMeasurementId = m.id; activeSheet = EditorSheet.UNIT },
++                            onRemove = { item = item.copy(measurements = item.measurements.filterNot { it.id == m.id }) }
++                        )
++                    }
++                    TextButton(onClick = { item = item.copy(measurements = item.measurements + Measurement()) }) {
++                        Text("＋ 添加尺寸", color = ClosieColor.Rose)
+                     }
+-                    if (item.rating > 0) Text("${item.rating} 分", Modifier.padding(start = 8.dp), color = Rose)
+                 }
+-                if (item.status == ItemStatus.RETURNED) EditText("退货原因", item.returnReason) { item = item.copy(returnReason = it) }
+             }
++
+             item {
+-                DynamicMaterials(item.materials) { item = item.copy(materials = it) }
+-                DynamicMeasures(item.measurements) { item = item.copy(measurements = it) }
++                Spacer(Modifier.height(12.dp))
++                val recordsSummary = when {
++                    item.rating > 0 -> "★".repeat(item.rating)
++                    item.comment.isNotBlank() -> item.comment
++                    else -> null
++                }
++                EditorSection(
++                    title = "我的记录",
++                    expanded = expandRecords,
++                    onToggle = { expandRecords = !expandRecords },
++                    summary = recordsSummary
++                ) {
++                    Text("评分", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++                    RatingRow(rating = item.rating, onRating = { item = item.copy(rating = it) })
++                    EditorTextField(
++                        value = item.comment,
++                        onValueChange = { item = item.copy(comment = it) },
++                        placeholder = "版型、舒适度、搭配感受…",
++                        singleLine = false,
++                        imeAction = ImeAction.Done
++                    )
++                }
+             }
+-            item {
+-                Button(
+-                    enabled = item.name.isNotBlank() && productImageStatus != ProductImageStatus.DOWNLOADING,
+-                    onClick = {
+-                        val retained = item.images.mapNotNull { it.localPath }.toSet()
+-                        pendingPaths.filterNot { it in retained }.forEach { ImageStore.deletePrivatePath(context, it) }
+-                        if (original == null) repo.createItem(item) else repo.updateItem(item)
+-                        pendingPaths.clear()
+-                        done()
++
++            if (item.status == ItemStatus.RETURNED) {
++                item {
++                    Spacer(Modifier.height(12.dp))
++                    EditorSection(
++                        title = "退货信息",
++                        expanded = expandReturn,
++                        onToggle = { expandReturn = !expandReturn },
++                        summary = item.returnReason.takeIf { it.isNotBlank() }
++                    ) {
++                        SmartPickerField(
++                            label = "退货原因",
++                            value = item.returnReason,
++                            placeholder = "选择退货原因",
++                            onClick = { activeSheet = EditorSheet.RETURN_REASON }
++                        )
++                    }
++                }
++            }
++
++            item { Spacer(Modifier.height(8.dp)) }
++        }
++    }
++
++    activeSheet?.let { sheet ->
++        val cfg = when (sheet) {
++            EditorSheet.CATEGORY -> SheetConfig(
++                title = "选择类别",
++                current = item.category,
++                suggestions = mergeOptions(existing.categories, FieldCatalog.categories),
++                preferred = existing.categories,
++                onSelect = { item = item.copy(category = it) },
++                onClear = { item = item.copy(category = "") }
++            )
++            EditorSheet.SUBCATEGORY -> SheetConfig(
++                title = "选择子类别",
++                current = item.subcategory,
++                suggestions = mergeOptions(existing.subcategories, FieldCatalog.subcategoriesFor(item.category)),
++                preferred = existing.subcategories,
++                onSelect = { item = item.copy(subcategory = it) },
++                onClear = { item = item.copy(subcategory = "") }
++            )
++            EditorSheet.BRAND -> SheetConfig(
++                title = "选择品牌",
++                current = item.brand,
++                suggestions = mergeOptions(existing.brands, FieldCatalog.brands),
++                preferred = existing.brands,
++                onSelect = { item = item.copy(brand = it) },
++                onClear = { item = item.copy(brand = "") }
++            )
++            EditorSheet.STORE -> SheetConfig(
++                title = "选择店铺",
++                current = item.store,
++                suggestions = mergeOptions(existing.stores, FieldCatalog.stores),
++                preferred = existing.stores,
++                onSelect = { item = item.copy(store = it) },
++                onClear = { item = item.copy(store = "") }
++            )
++            EditorSheet.PLATFORM -> SheetConfig(
++                title = "选择购买平台",
++                current = item.purchasePlatform,
++                suggestions = mergeOptions(existing.platforms, FieldCatalog.platforms),
++                preferred = existing.platforms,
++                onSelect = { item = item.copy(purchasePlatform = it) },
++                onClear = { item = item.copy(purchasePlatform = "") }
++            )
++            EditorSheet.SIZE -> SheetConfig(
++                title = "选择尺码",
++                current = item.sizeLabel,
++                suggestions = mergeOptions(existing.sizes, FieldCatalog.sizesFor(item.category)),
++                preferred = existing.sizes,
++                onSelect = { item = item.copy(sizeLabel = it) },
++                onClear = { item = item.copy(sizeLabel = "") }
++            )
++            EditorSheet.SAFETY -> SheetConfig(
++                title = "选择安全类别",
++                current = item.safetyCategory,
++                suggestions = mergeOptions(existing.safetyCategories, FieldCatalog.safetyCategories),
++                preferred = emptyList(),
++                onSelect = { item = item.copy(safetyCategory = it) },
++                onClear = { item = item.copy(safetyCategory = "") }
++            )
++            EditorSheet.RETURN_REASON -> SheetConfig(
++                title = "选择退货原因",
++                current = item.returnReason,
++                suggestions = mergeOptions(existing.returnReasons, FieldCatalog.returnReasons),
++                preferred = existing.returnReasons,
++                onSelect = { item = item.copy(returnReason = it) },
++                onClear = { item = item.copy(returnReason = "") }
++            )
++            EditorSheet.MATERIAL -> {
++                val part = item.materials.firstOrNull { it.id == editingMaterialId }
++                SheetConfig(
++                    title = "选择材质",
++                    current = part?.name ?: "",
++                    suggestions = mergeOptions(existing.materials, FieldCatalog.materials),
++                    preferred = existing.materials,
++                    onSelect = { name ->
++                        item = item.copy(materials = item.materials.map { if (it.id == editingMaterialId) it.copy(name = name) else it })
++                    },
++                    onClear = {
++                        item = item.copy(materials = item.materials.map { if (it.id == editingMaterialId) it.copy(name = "") else it })
++                    }
++                )
++            }
++            EditorSheet.MEASUREMENT -> {
++                val m = item.measurements.firstOrNull { it.id == editingMeasurementId }
++                SheetConfig(
++                    title = "选择尺寸名",
++                    current = m?.name ?: "",
++                    suggestions = mergeOptions(existing.measurementNames, FieldCatalog.measurementNamesFor(item.category)),
++                    preferred = existing.measurementNames,
++                    onSelect = { name ->
++                        item = item.copy(measurements = item.measurements.map { if (it.id == editingMeasurementId) it.copy(name = name) else it })
++                    },
++                    onClear = {
++                        item = item.copy(measurements = item.measurements.map { if (it.id == editingMeasurementId) it.copy(name = "") else it })
++                    }
++                )
++            }
++            EditorSheet.UNIT -> {
++                val m = item.measurements.firstOrNull { it.id == editingMeasurementId }
++                SheetConfig(
++                    title = "选择单位",
++                    current = m?.unit ?: "",
++                    suggestions = mergeOptions(existing.units, FieldCatalog.units),
++                    preferred = existing.units,
++                    onSelect = { unit ->
++                        item = item.copy(measurements = item.measurements.map { if (it.id == editingMeasurementId) it.copy(unit = unit) else it })
+                     },
+-                    modifier = Modifier.fillMaxWidth(),
+-                    colors = ButtonDefaults.buttonColors(containerColor = Rose)
+-                ) { Text(if (productImageStatus == ProductImageStatus.DOWNLOADING) "图片下载中…" else "保存") }
++                    onClear = {
++                        item = item.copy(measurements = item.measurements.map { if (it.id == editingMeasurementId) it.copy(unit = "cm") else it })
++                    }
++                )
+             }
+         }
++        SearchableChoiceSheet(
++            title = cfg.title,
++            currentValue = cfg.current,
++            suggestions = cfg.suggestions,
++            preferredSuggestions = cfg.preferred,
++            allowCustom = true,
++            onSelect = cfg.onSelect,
++            onClear = cfg.onClear,
++            onDismiss = { activeSheet = null }
++        )
++    }
++
++    if (showAddImageSheet) {
++        AddImageSheet(
++            onPick = { kind ->
++                currentKind = kind
++                showAddImageSheet = false
++                picker.launch(arrayOf("image/*"))
++            },
++            onDismiss = { showAddImageSheet = false }
++        )
+     }
+ 
+     if (showDiscardDialog) {
+@@ -247,90 +627,352 @@ fun EditorScreen(repo: WardrobeRepository, itemId: String?, initialStatus: Strin
+ 
+ private enum class ProductImageStatus { IDLE, DOWNLOADING, DONE, FAILED }
+ 
++private enum class EditorSheet { CATEGORY, SUBCATEGORY, BRAND, STORE, PLATFORM, SIZE, SAFETY, RETURN_REASON, MATERIAL, MEASUREMENT, UNIT }
++
++private data class SheetConfig(
++    val title: String,
++    val current: String,
++    val suggestions: List<String>,
++    val preferred: List<String>,
++    val onSelect: (String) -> Unit,
++    val onClear: (() -> Unit)?
++)
++
++private fun priceString(d: Double?): String =
++    if (d == null) "" else if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
++
++private fun normalizePercentage(raw: String): String {
++    val t = raw.trim()
++    if (t.isEmpty() || t.endsWith("%")) return t
++    val num = t.toDoubleOrNull()
++    return if (num != null && num in 0.0..100.0) "$t%" else t
++}
++
++private fun kindLabel(kind: ImageKind): String = when (kind) {
++    ImageKind.FLAT -> "平铺"
++    ImageKind.ME -> "我的上身"
++    ImageKind.MODEL -> "模特"
++    ImageKind.PRODUCT -> "商品"
++}
++
++@Composable
++private fun EditorTextField(
++    value: String,
++    onValueChange: (String) -> Unit,
++    placeholder: String,
++    modifier: Modifier = Modifier,
++    keyboardType: KeyboardType = KeyboardType.Text,
++    imeAction: ImeAction = ImeAction.Next,
++    singleLine: Boolean = true
++) {
++    OutlinedTextField(
++        value = value,
++        onValueChange = onValueChange,
++        modifier = modifier.fillMaxWidth(),
++        placeholder = { Text(placeholder, color = ClosieColor.InkTertiary) },
++        singleLine = singleLine,
++        minLines = if (singleLine) 1 else 3,
++        shape = RoundedCornerShape(12.dp),
++        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
++        colors = OutlinedTextFieldDefaults.colors(
++            focusedBorderColor = ClosieColor.Rose,
++            unfocusedBorderColor = ClosieColor.Hairline,
++            cursorColor = ClosieColor.Rose,
++            focusedTextColor = ClosieColor.Ink,
++            unfocusedTextColor = ClosieColor.Ink
++        )
++    )
++}
++
+ @Composable
+-private fun EditText(label: String, value: String, set: (String) -> Unit) {
+-    OutlinedTextField(value = value, onValueChange = set, label = { Text(label) }, modifier = Modifier.fillMaxWidth())
++private fun StatusSegment(status: ItemStatus, onSelect: (ItemStatus) -> Unit) {
++    Row(
++        modifier = Modifier
++            .fillMaxWidth()
++            .clip(RoundedCornerShape(12.dp))
++            .background(ClosieColor.SurfaceSoft)
++            .padding(4.dp),
++        horizontalArrangement = Arrangement.spacedBy(4.dp)
++    ) {
++        SegmentOption("已拥有", status == ItemStatus.OWNED, Modifier.weight(1f)) { onSelect(ItemStatus.OWNED) }
++        SegmentOption("试过 / 退货", status == ItemStatus.RETURNED, Modifier.weight(1f)) { onSelect(ItemStatus.RETURNED) }
++    }
++}
++
++@Composable
++private fun SegmentOption(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
++    val bg = if (selected) ClosieColor.Rose else Color.Transparent
++    val content = if (selected) ClosieColor.Surface else ClosieColor.InkSecondary
++    Box(
++        modifier = modifier
++            .heightIn(min = 40.dp)
++            .clip(RoundedCornerShape(10.dp))
++            .background(bg)
++            .clickable(onClick = onClick),
++        contentAlignment = Alignment.Center
++    ) {
++        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
++    }
+ }
+ 
+ @Composable
+-private fun SectionImages(images: List<ClothingImage>, add: (ImageKind) -> Unit, remove: (String) -> Unit) {
+-    Text("图片", style = MaterialTheme.typography.titleMedium)
+-    ImageKind.entries.forEach { kind ->
+-        Text(kind.name, style = MaterialTheme.typography.labelLarge)
+-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-            items(images.filter { it.kind == kind }, key = { it.id }) { image ->
+-                Column(Modifier.width(112.dp)) {
+-                    image.localPath?.let { path ->
++private fun RatingRow(rating: Int, onRating: (Int) -> Unit) {
++    Row(verticalAlignment = Alignment.CenterVertically) {
++        (1..5).forEach { star ->
++            IconButton(onClick = { onRating(if (rating == star) 0 else star) }, modifier = Modifier.size(44.dp)) {
++                Text(
++                    if (star <= rating) "★" else "☆",
++                    color = if (star <= rating) ClosieColor.Rose else ClosieColor.InkTertiary,
++                    fontSize = 20.sp
++                )
++            }
++        }
++        if (rating > 0) Text("$rating 分", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++    }
++}
++
++@Composable
++private fun ImageSection(
++    images: List<ClothingImage>,
++    currentKind: ImageKind,
++    onSelectKind: (ImageKind) -> Unit,
++    onAdd: () -> Unit,
++    onRemove: (String) -> Unit
++) {
++    val mainImage = images.firstOrNull { it.kind == ImageKind.FLAT }
++        ?: images.firstOrNull { it.kind == ImageKind.PRODUCT }
++        ?: images.firstOrNull()
++
++    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++        ClosieImageTile(
++            model = mainImage?.localPath?.let { File(it) },
++            contentDescription = "主图",
++            modifier = Modifier.fillMaxWidth().height(220.dp),
++            contentScale = if (mainImage?.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop,
++            placeholder = {
++                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++                    Text("添加一张图片", style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkTertiary)
++                }
++            }
++        )
++
++        Row(
++            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
++            horizontalArrangement = Arrangement.spacedBy(8.dp)
++        ) {
++            ImageKind.entries.forEach { kind ->
++                ClosieFilterChip(
++                    selected = currentKind == kind,
++                    onClick = { onSelectKind(kind) },
++                    label = kindLabel(kind)
++                )
++            }
++        }
++
++        if (images.isNotEmpty()) {
++            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
++                items(images, key = { it.id }) { img ->
++                    Box {
+                         AsyncImage(
+-                            model = File(path),
+-                            contentDescription = kind.name,
+-                            modifier = Modifier.fillMaxWidth().height(112.dp),
+-                            contentScale = if (kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
++                            model = img.localPath?.let { File(it) },
++                            contentDescription = kindLabel(img.kind),
++                            modifier = Modifier
++                                .size(72.dp)
++                                .clip(RoundedCornerShape(12.dp))
++                                .background(ClosieColor.SurfaceSoft),
++                            contentScale = if (img.kind == ImageKind.FLAT) ContentScale.Fit else ContentScale.Crop
+                         )
++                        Box(
++                            modifier = Modifier
++                                .align(Alignment.TopEnd)
++                                .padding(2.dp)
++                                .size(22.dp)
++                                .clip(RoundedCornerShape(999.dp))
++                                .background(ClosieColor.Ink.copy(alpha = 0.55f))
++                                .clickable { onRemove(img.id) },
++                            contentAlignment = Alignment.Center
++                        ) {
++                            Icon(
++                                Icons.Default.Close,
++                                contentDescription = "删除图片",
++                                tint = ClosieColor.Surface,
++                                modifier = Modifier.size(14.dp)
++                            )
++                        }
+                     }
+-                    TextButton(onClick = { remove(image.id) }, modifier = Modifier.fillMaxWidth()) { Text("删除") }
+                 }
+             }
+-            item { OutlinedButton(onClick = { add(kind) }) { Text("添加") } }
+         }
++
++        TextButton(onClick = onAdd) { Text("＋ 添加图片", color = ClosieColor.Rose) }
+     }
+ }
+ 
+ @Composable
+-private fun DynamicMaterials(values: List<MaterialPart>, set: (List<MaterialPart>) -> Unit) {
+-    Text("面料成分", style = MaterialTheme.typography.titleMedium)
+-    values.forEach { row ->
+-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-            OutlinedTextField(row.name, { value -> set(values.map { if (it.id == row.id) it.copy(name = value) else it }) }, label = { Text("成分") }, modifier = Modifier.weight(1f))
+-            OutlinedTextField(row.percentage, { value -> set(values.map { if (it.id == row.id) it.copy(percentage = value) else it }) }, label = { Text("百分比") }, modifier = Modifier.weight(1f))
+-            TextButton(onClick = { set(values.filterNot { it.id == row.id }) }) { Text("删除") }
++private fun MaterialRow(
++    part: MaterialPart,
++    onNameClick: () -> Unit,
++    onPercentage: (String) -> Unit,
++    onRemove: () -> Unit
++) {
++    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++        Box(
++            modifier = Modifier
++                .weight(1f)
++                .heightIn(min = 44.dp)
++                .clip(RoundedCornerShape(999.dp))
++                .background(ClosieColor.SurfaceSoft)
++                .clickable(onClick = onNameClick)
++                .padding(horizontal = 16.dp, vertical = 10.dp),
++            contentAlignment = Alignment.CenterStart
++        ) {
++            Text(
++                if (part.name.isBlank()) "选择材质" else part.name,
++                style = MaterialTheme.typography.bodyMedium,
++                color = if (part.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
++                maxLines = 1
++            )
++        }
++        OutlinedTextField(
++            value = part.percentage,
++            onValueChange = onPercentage,
++            modifier = Modifier.width(92.dp),
++            placeholder = { Text("占比", fontSize = 13.sp) },
++            singleLine = true,
++            shape = RoundedCornerShape(12.dp),
++            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
++            colors = OutlinedTextFieldDefaults.colors(
++                focusedBorderColor = ClosieColor.Rose,
++                unfocusedBorderColor = ClosieColor.Hairline
++            )
++        )
++        IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
++            Icon(Icons.Default.Close, contentDescription = "删除材质", tint = ClosieColor.InkTertiary)
+         }
+     }
+-    OutlinedButton(onClick = { set(values + MaterialPart()) }) { Text("+ 添加面料") }
+ }
+ 
+ @Composable
+-private fun DynamicMeasures(values: List<Measurement>, set: (List<Measurement>) -> Unit) {
+-    Text("具体尺寸", style = MaterialTheme.typography.titleMedium)
+-    values.forEach { row ->
+-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-                OutlinedTextField(row.name, { value -> set(values.map { if (it.id == row.id) it.copy(name = value) else it }) }, label = { Text("尺寸名") }, modifier = Modifier.weight(1f))
+-                OutlinedTextField(row.value, { value -> set(values.map { if (it.id == row.id) it.copy(value = value) else it }) }, label = { Text("数值") }, modifier = Modifier.weight(1f))
+-            }
+-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-                OutlinedTextField(row.unit, { value -> set(values.map { if (it.id == row.id) it.copy(unit = value) else it }) }, label = { Text("单位") }, modifier = Modifier.weight(1f))
+-                TextButton(onClick = { set(values.filterNot { it.id == row.id }) }) { Text("删除") }
++private fun MeasurementRow(
++    m: Measurement,
++    onNameClick: () -> Unit,
++    onValue: (String) -> Unit,
++    onUnitClick: () -> Unit,
++    onRemove: () -> Unit
++) {
++    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++        Box(
++            modifier = Modifier
++                .weight(1f)
++                .heightIn(min = 44.dp)
++                .clip(RoundedCornerShape(999.dp))
++                .background(ClosieColor.SurfaceSoft)
++                .clickable(onClick = onNameClick)
++                .padding(horizontal = 16.dp, vertical = 10.dp),
++            contentAlignment = Alignment.CenterStart
++        ) {
++            Text(
++                if (m.name.isBlank()) "选择尺寸名" else m.name,
++                style = MaterialTheme.typography.bodyMedium,
++                color = if (m.name.isBlank()) ClosieColor.InkTertiary else ClosieColor.Ink,
++                maxLines = 1
++            )
++        }
++        OutlinedTextField(
++            value = m.value,
++            onValueChange = onValue,
++            modifier = Modifier.width(64.dp),
++            placeholder = { Text("数值", fontSize = 13.sp) },
++            singleLine = true,
++            shape = RoundedCornerShape(12.dp),
++            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
++            colors = OutlinedTextFieldDefaults.colors(
++                focusedBorderColor = ClosieColor.Rose,
++                unfocusedBorderColor = ClosieColor.Hairline
++            )
++        )
++        Box(
++            modifier = Modifier
++                .width(56.dp)
++                .heightIn(min = 44.dp)
++                .clip(RoundedCornerShape(999.dp))
++                .background(ClosieColor.SurfaceSoft)
++                .clickable(onClick = onUnitClick),
++            contentAlignment = Alignment.Center
++        ) {
++            Text(m.unit.ifBlank { "cm" }, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.Ink, maxLines = 1)
++        }
++        IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
++            Icon(Icons.Default.Close, contentDescription = "删除尺寸", tint = ClosieColor.InkTertiary)
++        }
++    }
++}
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++private fun AddImageSheet(onPick: (ImageKind) -> Unit, onDismiss: () -> Unit) {
++    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ClosieColor.Surface) {
++        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
++            Text("添加图片", style = MaterialTheme.typography.titleLarge, color = ClosieColor.Ink)
++            Spacer(Modifier.height(8.dp))
++            listOf(
++                ImageKind.FLAT to "平铺图",
++                ImageKind.ME to "我的上身图",
++                ImageKind.MODEL to "模特图",
++                ImageKind.PRODUCT to "商品图"
++            ).forEach { (kind, label) ->
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .clickable { onPick(kind) }
++                        .heightIn(min = 48.dp),
++                    verticalAlignment = Alignment.CenterVertically
++                ) {
++                    Text(label, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
++                }
+             }
+         }
+     }
+-    OutlinedButton(onClick = { set(values + Measurement()) }) { Text("+ 添加尺寸") }
+ }
+ 
+ @Composable
+ private fun ProductPreviewCard(preview: ProductPreview, onApply: () -> Unit, onDismiss: () -> Unit) {
+-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5E7))) {
+-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-            Text("识别结果", style = MaterialTheme.typography.titleMedium)
+-            if (preview.title.isNotBlank()) Text("名称：${preview.title}", style = MaterialTheme.typography.bodySmall)
+-            if (preview.price != null) Text("价格：¥${preview.price}", style = MaterialTheme.typography.bodySmall)
+-            if (preview.originalPrice != null) Text("原价：¥${preview.originalPrice}", style = MaterialTheme.typography.bodySmall)
+-            if (preview.brand.isNotBlank()) Text("品牌：${preview.brand}", style = MaterialTheme.typography.bodySmall)
+-            if (preview.store.isNotBlank()) Text("店铺：${preview.store}", style = MaterialTheme.typography.bodySmall)
+-            if (preview.platform.isNotBlank()) Text("平台：${preview.platform}", style = MaterialTheme.typography.bodySmall)
+-            preview.imageUrl?.let { url ->
+-                AsyncImage(
+-                    model = url,
+-                    contentDescription = "商品主图",
+-                    modifier = Modifier.fillMaxWidth().height(120.dp),
+-                    contentScale = ContentScale.Fit
+-                )
+-            }
+-            Text("仅填充当前为空的字段", color = Rose, style = MaterialTheme.typography.bodySmall)
+-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                Button(onClick = onApply, modifier = Modifier.weight(1f)) { Text("应用识别结果") }
+-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("放弃") }
+-            }
++    Column(
++        modifier = Modifier
++            .fillMaxWidth()
++            .clip(RoundedCornerShape(16.dp))
++            .background(ClosieColor.RoseSoft)
++            .padding(16.dp),
++        verticalArrangement = Arrangement.spacedBy(8.dp)
++    ) {
++        Text("已识别", style = MaterialTheme.typography.titleMedium, color = ClosieColor.Ink)
++        if (preview.title.isNotBlank()) Text(preview.title, style = MaterialTheme.typography.bodyLarge, color = ClosieColor.Ink)
++        val meta = listOfNotNull(
++            preview.price?.let { "¥${priceString(it)}" },
++            preview.brand.takeIf { it.isNotBlank() }
++        ).joinToString(" · ")
++        if (meta.isNotBlank()) Text(meta, style = MaterialTheme.typography.bodyMedium, color = ClosieColor.InkSecondary)
++        preview.imageUrl?.let { url ->
++            AsyncImage(
++                model = url,
++                contentDescription = "商品主图",
++                modifier = Modifier.fillMaxWidth().height(120.dp),
++                contentScale = ContentScale.Fit
++            )
++        }
++        Text("仅填充当前为空的字段", color = ClosieColor.InkSecondary, style = MaterialTheme.typography.bodySmall)
++        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++            Button(
++                onClick = onApply,
++                modifier = Modifier.weight(1f),
++                shape = RoundedCornerShape(12.dp),
++                colors = ButtonDefaults.buttonColors(containerColor = ClosieColor.Rose, contentColor = ClosieColor.Surface)
++            ) { Text("应用信息") }
++            OutlinedButton(
++                onClick = onDismiss,
++                modifier = Modifier.weight(1f),
++                shape = RoundedCornerShape(12.dp)
++            ) { Text("放弃") }
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/editor/FieldCatalog.kt b/app/src/main/java/com/xiaoming/closie/ui/editor/FieldCatalog.kt
+new file mode 100644
+index 0000000..61ea6d5
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/editor/FieldCatalog.kt
+@@ -0,0 +1,140 @@
++package com.xiaoming.closie.ui.editor
++
++import com.xiaoming.closie.data.model.ClothingItem
++
++/**
++ * Static presets for smart entry plus pure helpers that turn the user's already-saved
++ * [ClothingItem]s into future suggestions. No extra database: suggestions come straight
++ * from `repo.items`.
++ */
++object FieldCatalog {
++    val categories = listOf(
++        "上衣", "下装", "外套", "裙装", "连体", "鞋", "包", "配饰", "运动", "家居服", "内衣", "其他"
++    )
++
++    val brands = listOf(
++        "Uniqlo", "GU", "MUJI", "COS", "Zara", "H&M", "Massimo Dutti",
++        "Nike", "Adidas", "New Balance", "Puma",
++        "Lululemon", "Arc'teryx", "The North Face", "Patagonia",
++        "Levi's", "Ralph Lauren", "Tommy Hilfiger",
++        "Coach", "Longchamp", "其他"
++    )
++
++    val platforms = listOf(
++        "淘宝", "天猫", "京东", "拼多多", "小红书", "得物", "抖音",
++        "品牌官网", "微信小程序", "线下门店",
++        "Amazon", "Farfetch", "SSENSE", "END.", "ZOZOTOWN", "其他"
++    )
++
++    val stores = listOf("品牌官方旗舰店", "品牌官网", "线下门店", "百货商场", "其他")
++
++    val safetyCategories = listOf("A类", "B类", "C类", "其他")
++
++    val returnReasons = listOf(
++        "尺码不合适", "版型不合适", "颜色不合适", "材质不喜欢", "做工 / 质量问题",
++        "太透", "不舒服", "实物与图片不符", "性价比低", "重复 / 不需要", "物流问题", "其他"
++    )
++
++    val materials = listOf(
++        "棉", "有机棉", "羊毛", "美利奴羊毛", "羊绒", "亚麻", "真丝",
++        "聚酯纤维", "锦纶 / 尼龙", "腈纶", "氨纶 / 弹性纤维",
++        "粘胶", "莱赛尔 / 天丝", "莫代尔", "醋酸纤维",
++        "皮革", "羊皮", "牛皮", "麂皮", "羽绒", "羽毛", "其他"
++    )
++
++    val units = listOf("cm", "mm", "m", "inch", "g", "kg")
++
++    val apparelSizes = listOf("XXS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "Free")
++    val pantsSizes = (24..36).map { it.toString() }
++    val euSizes = listOf("42", "44", "46", "48", "50", "52", "54", "56")
++    val shoeSizes = (35..46).flatMap { n ->
++        if (n < 46) listOf(n.toString(), "$n.5") else listOf(n.toString())
++    }
++
++    private val subcategories = mapOf(
++        "上衣" to listOf("T恤", "衬衫", "Polo", "背心", "吊带", "针织衫", "毛衣", "卫衣", "打底衫", "短袖上衣", "长袖上衣", "其他"),
++        "下装" to listOf("牛仔裤", "西裤", "休闲裤", "阔腿裤", "直筒裤", "工装裤", "运动裤", "短裤", "半身裙", "打底裤", "其他"),
++        "外套" to listOf("西装", "夹克", "牛仔外套", "皮衣", "风衣", "大衣", "羽绒服", "棉服", "开衫", "马甲", "冲锋衣", "其他"),
++        "裙装" to listOf("连衣裙", "半身裙", "长裙", "短裙", "吊带裙", "针织裙", "其他"),
++        "鞋" to listOf("运动鞋", "休闲鞋", "板鞋", "跑鞋", "乐福鞋", "德比鞋", "牛津鞋", "靴子", "短靴", "凉鞋", "高跟鞋", "拖鞋", "其他"),
++        "包" to listOf("双肩包", "托特包", "斜挎包", "单肩包", "手提包", "腰包", "公文包", "旅行包", "其他"),
++        "配饰" to listOf("帽子", "围巾", "腰带", "眼镜", "首饰", "手表", "袜子", "手套", "领带", "其他"),
++        "运动" to listOf("运动上衣", "运动裤", "瑜伽服", "运动内衣", "骑行服", "泳装", "户外服", "其他"),
++        "连体" to listOf("连衣裙", "连体裤", "背带裤", "其他"),
++        "家居服" to listOf("睡衣", "家居服", "浴袍", "其他"),
++        "内衣" to listOf("内裤", "文胸", "打底", "袜子", "其他")
++    )
++
++    private val measurementNames = mapOf(
++        "上衣" to listOf("衣长", "肩宽", "胸围", "袖长", "袖口", "下摆"),
++        "外套" to listOf("衣长", "肩宽", "胸围", "袖长", "袖口", "下摆"),
++        "下装" to listOf("裤长", "腰围", "臀围", "前裆", "后裆", "大腿围", "裤脚", "内长"),
++        "裙装" to listOf("裙长", "腰围", "臀围", "下摆"),
++        "鞋" to listOf("内长", "鞋底长", "鞋跟高", "筒高", "筒围"),
++        "包" to listOf("宽", "高", "厚", "肩带长", "手柄高")
++    )
++
++    fun subcategoriesFor(category: String): List<String> =
++        subcategories[category] ?: listOf("其他")
++
++    fun sizesFor(category: String): List<String> = when (category) {
++        "鞋" -> shoeSizes
++        "下装" -> pantsSizes + euSizes
++        "外套", "上衣", "裙装", "连体" -> apparelSizes + euSizes
++        else -> apparelSizes + euSizes
++    }
++
++    fun measurementNamesFor(category: String): List<String> =
++        measurementNames[category] ?: listOf("衣长", "肩宽", "胸围", "袖长", "腰围", "臀围")
++}
++
++data class ExistingValues(
++    val categories: List<String> = emptyList(),
++    val subcategories: List<String> = emptyList(),
++    val brands: List<String> = emptyList(),
++    val stores: List<String> = emptyList(),
++    val platforms: List<String> = emptyList(),
++    val sizes: List<String> = emptyList(),
++    val materials: List<String> = emptyList(),
++    val measurementNames: List<String> = emptyList(),
++    val units: List<String> = emptyList(),
++    val safetyCategories: List<String> = emptyList(),
++    val returnReasons: List<String> = emptyList()
++)
++
++fun collectExistingValues(items: List<ClothingItem>): ExistingValues = ExistingValues(
++    categories = freqDedupe(items.map { it.category }),
++    subcategories = freqDedupe(items.map { it.subcategory }),
++    brands = freqDedupe(items.map { it.brand }),
++    stores = freqDedupe(items.map { it.store }),
++    platforms = freqDedupe(items.map { it.purchasePlatform }),
++    sizes = freqDedupe(items.map { it.sizeLabel }),
++    materials = freqDedupe(items.flatMap { it.materials }.map { it.name }),
++    measurementNames = freqDedupe(items.flatMap { it.measurements }.map { it.name }),
++    units = freqDedupe(items.flatMap { it.measurements }.map { it.unit }),
++    safetyCategories = freqDedupe(items.map { it.safetyCategory }),
++    returnReasons = freqDedupe(items.map { it.returnReason })
++)
++
++/** Case-insensitive dedup keeping the user's original spelling, ordered by frequency. */
++fun freqDedupe(values: List<String>): List<String> {
++    val groups = LinkedHashMap<String, MutableList<String>>()
++    values.forEach { raw ->
++        val t = raw.trim()
++        if (t.isNotEmpty()) groups.getOrPut(t.lowercase()) { mutableListOf() }.add(t)
++    }
++    return groups.entries
++        .sortedByDescending { it.value.size }
++        .map { entry ->
++            entry.value.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: entry.value.first()
++        }
++}
++
++/** Existing values first, then presets, deduped case-insensitively. */
++fun mergeOptions(existing: List<String>, presets: List<String>): List<String> {
++    val result = mutableListOf<String>()
++    val seen = HashSet<String>()
++    existing.forEach { if (seen.add(it.lowercase())) result.add(it) }
++    presets.forEach { if (seen.add(it.lowercase())) result.add(it) }
++    return result
++}
+-- 
+2.43.0
+
