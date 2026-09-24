@@ -53,7 +53,23 @@ sealed class TopLevel(
     data object Outfits : TopLevel("outfits", "搭配", Icons.Outlined.AutoAwesome)
 
     companion object {
-        val entries = listOf(Home, Closet, Ootd, Outfits)
+        // by lazy is NOT cosmetic. `val entries = listOf(Home, Closet, …)` runs inside
+        // Companion's <clinit>, and that clinit can be entered *from a child object's own
+        // clinit* — e.g. the first static touch of the process is TopLevel.Closet.INSTANCE
+        // (LifeShell passes TopLevel.Closet.route as ClosieNavHost's startDestination):
+        //
+        //   Closet.<clinit> → super TopLevel.<clinit> → Companion.<clinit>
+        //     → listOf(... Closet.INSTANCE ...)  ← Closet's <clinit> is still on the stack,
+        //                                           so the recursive read yields NULL
+        //
+        // The list then permanently holds a null, and the next `entries.any { it.route == … }`
+        // dies with "Cannot invoke TopLevel.getRoute() because \"it\" is null" — the v0.1
+        // real-device crash on 生活 → 衣橱 that static reading could not find and CI could not
+        // see. The JVM allows a same-thread recursive class-init to return the not-yet-assigned
+        // static; `by lazy` defers reading the instances until every <clinit> has unwound, so
+        // the list is always complete. Regression-tested in TopLevelEntriesTest, which touches
+        // Closet first on purpose to pin this exact order.
+        val entries: List<TopLevel> by lazy { listOf(Home, Closet, Ootd, Outfits) }
     }
 }
 

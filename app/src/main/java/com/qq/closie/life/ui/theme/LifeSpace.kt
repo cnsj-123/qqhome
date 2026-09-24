@@ -4,11 +4,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Life OS spacing scale.
+ * Life OS spacing scale — the fixed micro-scale.
  *
- * One scale for every screen. Pages are 20–24dp from the bezel, sections 28–32dp apart, and
- * content is never allowed to fill the viewport edge-to-edge: at least ~40% of a Life OS page is
- * breathing room, which is what separates "quiet archive" from "dashboard".
+ * One scale for every screen. Content is never allowed to fill the viewport edge-to-edge:
+ * at least ~40% of a Life OS page is breathing room, which is what separates "quiet archive"
+ * from "dashboard".
+ *
+ * Page-level rhythm (page horizontal/top/bottom, section and block gaps) is width-aware and
+ * lives in [LifeDimensions] via `rememberLifeDimensions()` — do not reintroduce fixed page
+ * paddings here, they would fight the compact breakpoint.
  */
 object LifeSpacing {
 
@@ -23,21 +27,8 @@ object LifeSpacing {
     val xxxl: Dp = 40.dp
     val huge: Dp = 48.dp
 
-    // Semantic
-    /** Page content inset from the screen edge. Compact-width safe. */
-    val pageHorizontal: Dp = 20.dp
-
-    /** Top inset — generous, so the first line never crowds the status bar. */
-    val pageTop: Dp = 32.dp
-
-    /** Bottom inset reserved for the navigation bar. */
-    val pageBottom: Dp = 96.dp
-
-    /** Vertical rhythm between sections. */
+    /** Vertical rhythm between sections (fallback for non-page contexts). */
     val sectionGap: Dp = 28.dp
-
-    /** Between sibling rows / items inside one section. */
-    val itemGap: Dp = 12.dp
 
     /** Between a title and the copy directly under it. */
     val titleGap: Dp = 8.dp

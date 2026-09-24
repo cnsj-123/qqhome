@@ -39,6 +39,16 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
          * a schema bump must have an explicit Migration, otherwise the user silently loses every
          * captured memory. Falling back to destructive migration on a personal-data app is the one
          * failure mode we cannot undo.
+         *
+         * enableMultiInstanceInvalidation() is deliberately NOT used either. This app is single-
+         * process and opens exactly ONE RoomDatabase per process (the lazy [instance] below), so
+         * cross-instance invalidation has nothing to do — but it does cost a bind of Room's
+         * MultiInstanceInvalidationService on every database open, an extra asynchronous step on
+         * the startup path, and a whole service component whose failure modes (an aggressive OEM
+         * background-service policy, a half-completed bind during process restore) exist for zero
+         * benefit. The smoke test surfaced exactly that: the invalidation client's
+         * onServiceConnected blew up under Robolectric and kept the main looper never-idle.
+         * One process, one instance — plain databaseBuilder is the correct, quiet choice.
          */
         fun getInstance(context: Context): LifeContainer {
             return instance ?: synchronized(this) {
@@ -48,7 +58,6 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
                         LifeDatabase::class.java,
                         DATABASE_NAME
                     )
-                        .enableMultiInstanceInvalidation()
                         .build()
                     LifeContainer(db).also { instance = it }
                 }

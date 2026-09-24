@@ -64,8 +64,12 @@ sealed class LifeDestination(val route: String, val label: String, val icon: Ima
     data object ClosetSettings : LifeDestination("life_closet_settings", "设置", Icons.Outlined.Home)
 
     companion object {
-        val tabs = listOf(Home, Timeline, Modules, Me)
-        val tabRoutes = tabs.map { it.route }
+        // Same circular-init trap as TopLevel.entries (see ClosieNavigation.kt): a direct
+        // listOf(Home, …) inside the companion's <clinit> captures a null INSTANCE whenever the
+        // first static touch of the family is one of the data objects themselves. lazy defers
+        // the read until all child <clinit>s have unwound — tabs can then never hold a null.
+        val tabs: List<LifeDestination> by lazy { listOf(Home, Timeline, Modules, Me) }
+        val tabRoutes: List<String> by lazy { tabs.map { it.route } }
     }
 }
 
@@ -121,7 +125,17 @@ fun LifeShellNavHost(
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // The Scaffold is the ONE owner of the system-bar insets. Applying its
+                // padding here and then consuming it means nested content (Life OS pages,
+                // and Closie's own M3 Scaffold / TopAppBar when the closet is open) sees a
+                // zero status-bar inset instead of adding a second, third layer of top
+                // padding — the v0.1 "status bar → first line ≈ 60dp" bug.
+                .consumeWindowInsets(padding)
+        ) {
             NavHost(
                 navController = nav,
                 startDestination = LifeDestination.Home.route,
@@ -131,8 +145,7 @@ fun LifeShellNavHost(
                     LifeTheme {
                         LifeHomeScreen(
                             captureRepository = captureRepository,
-                            onQuickCapture = { showCaptureSheet = true },
-                            modifier = Modifier.statusBarsPadding()
+                            onQuickCapture = { showCaptureSheet = true }
                         )
                     }
                 }
@@ -140,8 +153,7 @@ fun LifeShellNavHost(
                 composable(LifeDestination.Timeline.route) {
                     LifeTheme {
                         TimelineScreen(
-                            captureRepository = captureRepository,
-                            modifier = Modifier.statusBarsPadding()
+                            captureRepository = captureRepository
                         )
                     }
                 }
@@ -149,8 +161,7 @@ fun LifeShellNavHost(
                 composable(LifeDestination.Modules.route) {
                     LifeTheme {
                         LifeModulesScreen(
-                            onOpenCloset = { nav.navigate(LifeDestination.Closet.route) },
-                            modifier = Modifier.statusBarsPadding()
+                            onOpenCloset = { nav.navigate(LifeDestination.Closet.route) }
                         )
                     }
                 }
@@ -159,8 +170,7 @@ fun LifeShellNavHost(
                     LifeTheme {
                         ProfileScreen(
                             onOpenSettings = { nav.navigate(LifeDestination.ClosetSettings.route) },
-                            onOpenBackup = { nav.navigate(LifeDestination.ClosetSettings.route) },
-                            modifier = Modifier.statusBarsPadding()
+                            onOpenBackup = { nav.navigate(LifeDestination.ClosetSettings.route) }
                         )
                     }
                 }
@@ -306,10 +316,10 @@ private fun LifeBottomNavigation(
                     modifier = Modifier.size(LifeSpacing.iconSize)
                 )
                 Spacer(Modifier.height(2.dp))
-                // Reserve exactly the caption line box (18sp) so the ＋ glyph sits on the same
-                // baseline as the labelled tabs. An empty Text would work too, but it leaves a
-                // pointless node in the tree.
-                Spacer(Modifier.height(18.dp))
+                // Reserve exactly the Navigation label line box (16sp) so the ＋ glyph sits on
+                // the same baseline as the labelled tabs. An empty Text would work too, but it
+                // leaves a pointless node in the tree.
+                Spacer(Modifier.height(16.dp))
             }
 
             LifeDestination.tabs.drop(2).forEach { tab ->
@@ -352,7 +362,7 @@ private fun RowScope.LifeTabItem(
         Spacer(Modifier.height(2.dp))
         Text(
             text = label,
-            style = LifeType.Caption,
+            style = LifeType.Navigation,
             color = tint
         )
     }

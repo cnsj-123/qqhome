@@ -9,8 +9,8 @@ import com.qq.closie.life.ui.components.LifeGap
 import com.qq.closie.life.ui.components.LifeModuleRow
 import com.qq.closie.life.ui.components.LifePage
 import com.qq.closie.life.ui.components.LifeTopBar
-import com.qq.closie.life.ui.theme.LifeSpacing
 import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.life.ui.theme.rememberLifeDimensions
 
 /**
  * 生活 — the module directory.
@@ -28,12 +28,16 @@ fun LifeModulesScreen(
     onOpenCloset: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val dims = rememberLifeDimensions()
     LifePage(modifier = modifier) {
         item {
             LifeTopBar(title = "生活")
         }
 
-        item { LifeGap(LifeSpacing.xxl) }
+        // blockGap, not a fixed 32dp: on a 393dp phone 生活 → 衣橱 is the very first thing the eye
+        // travels, and a page-title-sized hole above the first row made the directory read as
+        // half-loaded. The gap now matches every other block rhythm on the shell.
+        item { LifeGap(dims.blockGap) }
 
         LifeModuleCatalog.entries.forEachIndexed { index, module ->
             if (index > 0) {
@@ -52,7 +56,9 @@ fun LifeModulesScreen(
     }
 }
 
-@Preview(showBackground = true, name = "生活 — module directory")
+@Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "生活 — 360x800")
+@Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "生活 — 393x852")
+@Preview(showBackground = true, widthDp = 411, heightDp = 891, name = "生活 — 411x891")
 @Composable
 private fun LifeModulesScreenPreview() {
     LifeTheme {

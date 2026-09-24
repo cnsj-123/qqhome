@@ -53,11 +53,18 @@ private val LifeShapes = Shapes(
  *
  * Text inside Life OS uses [LifeType] and [LifeColors] explicitly rather than
  * `MaterialTheme.typography`, so a future Material version bump cannot silently restyle the app.
+ * [LifeMaterialTypography] is the safety net underneath that convention: any Material component
+ * whose text slot we did not style still resolves to a bundled face rather than the platform
+ * default — i.e. rather than the device's theme font.
  */
 @Composable
 fun LifeTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = LifeColorScheme,
+        // Not optional. Omitting typography here would let an unstyled Material component fall
+        // through to FontFamily.Default, which is the system/theme font — the one leak the
+        // bundled-font design exists to close.
+        typography = LifeMaterialTypography,
         shapes = LifeShapes,
         content = content
     )

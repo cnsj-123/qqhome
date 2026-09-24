@@ -127,7 +127,7 @@ fun LifeModuleRow(
     ) {
         Text(
             text = title,
-            style = LifeType.PageTitle,
+            style = LifeType.ModuleTitle,
             color = if (enabled) LifeColors.TextPrimary else LifeColors.TextDisabled
         )
         Row(

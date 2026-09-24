@@ -24,13 +24,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.ui.theme.LifeColors
+import com.qq.closie.life.ui.theme.LifeDimensions
 import com.qq.closie.life.ui.theme.LifeShape
 import com.qq.closie.life.ui.theme.LifeSpacing
 import com.qq.closie.life.ui.theme.LifeType
+import com.qq.closie.life.ui.theme.rememberLifeDimensions
 
 /**
- * Canonical Life OS page: background, page padding and the bottom inset reserved for the
- * navigation bar, so every screen inherits the same rhythm instead of re-deriving it.
+ * Canonical Life OS page: background and page padding, so every screen inherits the same
+ * rhythm instead of re-deriving it.
+ *
+ * Insets have exactly one owner: the shell's Scaffold applies the status bar and bottom
+ * navigation padding *before* [LifePage] is composed, so [pageTop] here is purely the
+ * visual gap to the first line and [pageBottom] a small visual tail — re-adding a safety
+ * inset here would double every margin.
  *
  * Life OS pages are mostly whitespace by design — that is what makes a page read as an archive
  * rather than a dashboard.
@@ -38,19 +45,21 @@ import com.qq.closie.life.ui.theme.LifeType
 @Composable
 fun LifePage(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(
-        start = LifeSpacing.pageHorizontal,
-        end = LifeSpacing.pageHorizontal,
-        top = LifeSpacing.pageTop,
-        bottom = LifeSpacing.pageBottom
-    ),
+    contentPadding: PaddingValues? = null,
     content: LazyListScope.() -> Unit
 ) {
+    val dimensions = rememberLifeDimensions()
+    val resolved = contentPadding ?: PaddingValues(
+        start = dimensions.pageHorizontal,
+        end = dimensions.pageHorizontal,
+        top = dimensions.pageTop,
+        bottom = dimensions.pageBottom
+    )
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .background(LifeColors.Paper),
-        contentPadding = contentPadding,
+        contentPadding = resolved,
         content = content
     )
 }
@@ -68,7 +77,7 @@ fun LifeTopBar(
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = title,
-            style = LifeType.Display,
+            style = LifeType.PageTitle,
             color = LifeColors.TextPrimary
         )
         if (subtitle != null) {
@@ -97,7 +106,7 @@ fun LifeSection(
         Text(
             text = title,
             style = LifeType.SectionTitle,
-            color = LifeColors.TextSecondary
+            color = LifeColors.TextPrimary
         )
         Spacer(Modifier.height(LifeSpacing.xs))
         content(this)
@@ -114,27 +123,50 @@ fun LifeDivider(modifier: Modifier = Modifier) {
     )
 }
 
-/** Secondary information: timestamps, status, source. `mono` aligns numbers vertically. */
+/**
+ * Secondary information: timestamps, status, source. `mono` aligns numbers vertically.
+ *
+ * [LifeType.MonoNumber] is Special Elite — a Latin/NUMERIC face with no CJK glyphs. Requesting it
+ * for text containing Chinese would silently hand those characters to the *system* fallback font,
+ * which is how a device theme font (vivo OriginOS) leaks back into Life OS. So the containment
+ * rule is enforced here rather than left to each caller: a mono request whose text is not
+ * pure-Latin automatically renders as [LifeType.Caption] (Noto Sans SC) instead. Callers that
+ * genuinely mix a Latin stamp with Chinese copy should still split them into two Text runs
+ * (see RecentRecordRow / TimelineItem) so the stamp keeps its typewriter look.
+ */
 @Composable
 fun LifeMetaText(
     text: String,
     modifier: Modifier = Modifier,
     mono: Boolean = false
 ) {
+    // `isLatinOnly` also rejects the fullwidth CJK punctuation range, so "（图片）" cannot slip
+    // through a naive ASCII check.
+    val useMono = mono && text.isLatinOnly()
     Text(
         text = text,
-        style = if (mono) LifeType.MonoNumber else LifeType.Caption,
+        style = if (useMono) LifeType.MonoNumber else LifeType.Caption,
         color = LifeColors.TextSecondary,
         modifier = modifier
     )
 }
 
 /**
+ * True when every character can be rendered by the Latin-only bundled faces (Special Elite /
+ * Caveat): ASCII, Latin-1 punctuation and the general-punctuation symbols used in stamps.
+ * Any CJK ideograph, CJK punctuation or fullwidth form returns false.
+ */
+private fun String.isLatinOnly(): Boolean = all { ch ->
+    ch.code < 0x2E80 || ch.code in 0x2000..0x206F
+}
+
+/**
  * Empty state.
  *
- * Never fakes data — an empty archive shows an empty archive, with a quiet line explaining what
- * will appear here. The optional [action] is a text button, not a filled CTA: nothing on a Life OS
- * page should shout.
+ * Quiet does not mean illegible: the headline is [LifeType.EmptyTitle] in [LifeColors.TextSecondary]
+ * (not a page-title-sized line in near-invisible mist), and the body is one step darker than the
+ * disabled tone. [LifeColors.TextTertiary] stays reserved for disabled / placeholder / the most
+ * incidental metadata, never for copy a user is meant to read.
  */
 @Composable
 fun LifeEmptyState(
@@ -147,20 +179,20 @@ fun LifeEmptyState(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = LifeSpacing.xl),
+            .padding(vertical = LifeSpacing.lg),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(LifeSpacing.xs)
     ) {
         Text(
             text = title,
-            style = LifeType.PageTitle,
-            color = LifeColors.TextTertiary
+            style = LifeType.EmptyTitle,
+            color = LifeColors.TextSecondary
         )
         if (body != null) {
             Text(
                 text = body,
                 style = LifeType.BodySecondary,
-                color = LifeColors.TextTertiary
+                color = LifeColors.TextSecondary
             )
         }
         if (actionLabel != null && onAction != null) {

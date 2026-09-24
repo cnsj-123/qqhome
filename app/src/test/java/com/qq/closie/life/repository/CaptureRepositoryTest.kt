@@ -185,4 +185,39 @@ class CaptureRepositoryTest {
         assertThat(created).isTrue()
         assertThat(repo.getById("cap-1")!!.primaryMediaAssetId).isEqualTo(asset.id)
     }
+
+    /**
+     * v0.2.0 Timeline delete: removing one record must remove exactly that record — the sibling
+     * captured one second later must survive untouched.
+     */
+    @Test
+    fun delete_existingCapture_removesIt() = runTest {
+        repo.create(id = "cap-1", source = CaptureSource.CLIPBOARD, rawText = "delete me", now = 1_000L)
+        repo.create(id = "cap-2", source = CaptureSource.CLIPBOARD, rawText = "keep me", now = 2_000L)
+
+        repo.delete("cap-1")
+
+        assertThat(repo.getById("cap-1")).isNull()
+        // The delete scope is exactly one row: no cascade, no neighbour lost.
+        val survivor = repo.getById("cap-2")
+        assertThat(survivor).isNotNull()
+        assertThat(survivor!!.rawText).isEqualTo("keep me")
+        assertThat(repo.count()).isEqualTo(1)
+    }
+
+    /** Deleting an id that never existed (or was already deleted) must be a silent no-op. */
+    @Test
+    fun delete_missingCapture_doesNotCrash() = runTest {
+        repo.create(id = "cap-1", source = CaptureSource.MANUAL, now = 1_000L)
+
+        // Never-existed id: silent no-op, and the real record is untouched.
+        repo.delete("ghost-id")
+        assertThat(repo.getById("cap-1")).isNotNull()
+
+        // Double delete: the second call sees a missing row and must still be silent.
+        repo.delete("cap-1")
+        repo.delete("cap-1")
+
+        assertThat(repo.count()).isEqualTo(0)
+    }
 }

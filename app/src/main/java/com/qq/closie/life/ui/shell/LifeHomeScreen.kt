@@ -3,6 +3,7 @@ package com.qq.closie.life.ui.shell
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,24 +32,34 @@ import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeSpacing
 import com.qq.closie.life.ui.theme.LifeTheme
 import com.qq.closie.life.ui.theme.LifeType
+import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** 9月24日 · 星期四 — the small date line under the brand, not the page's biggest text. */
 private val HomeDateFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
+    DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA)
+
+private val HomeTimeFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
 
 /**
  * 首页 — a quiet desktop, not a dashboard.
  *
- * Four blocks only: the date, at most a few recent records, one line about what is next, and a
- * low-key capture entry. No stat grid, no module matrix, no "consumption / health / wardrobe all
- * stacked together". Roughly 40% of the page is empty and that is the point — the page's job is to
- * make "capture something" the obvious next action, and every extra control competes with it.
+ * Header hierarchy follows the design (top to bottom):
  *
- * Data flows in from [CaptureRepository]; [LifeHomeContent] renders whatever it is handed, which
- * is also what keeps the preview honest (see [LifeHomePreview]).
+ *   Life OS                      — Serif SemiBold, the page's one big line
+ *   9月24日 · 星期四               — small sans date line
+ *   今天，把重要的放在眼前。        — one quiet status sentence
+ *   — 20–24dp —
+ *   最近 → content → 20–24dp → 接下来 → content → divider → 记点什么
+ *
+ * The date is no longer the page's sole oversized title hanging in empty space, and no two
+ * consecutive 40dp+ gaps remain: the page should read as "loaded and quiet", not "not yet
+ * rendered".
  */
 @Composable
 fun LifeHomeScreen(
@@ -70,25 +81,16 @@ internal fun LifeHomeContent(
     onQuickCapture: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val dimensions = rememberLifeDimensions()
     val today = LocalDate.now()
     val pending = recent.count { it.status in PENDING_STATUSES }
 
     LifePage(modifier = modifier) {
         item {
-            Text(
-                text = today.format(HomeDateFormatter),
-                style = LifeType.PageTitle,
-                color = LifeColors.TextPrimary
-            )
-            Spacer(Modifier.height(LifeSpacing.xxs))
-            Text(
-                text = "Life OS · Today",
-                style = LifeType.Caption,
-                color = LifeColors.TextSecondary
-            )
+            LifeHomeHeader(date = today)
         }
 
-        item { LifeGap(LifeSpacing.xxxl) }
+        item { LifeGap(dimensions.blockGap) }
 
         item {
             LifeSection(title = "最近") {
@@ -112,7 +114,7 @@ internal fun LifeHomeContent(
             }
         }
 
-        item { LifeGap(LifeSpacing.sectionGap) }
+        item { LifeGap(dimensions.blockGap) }
 
         item {
             LifeSection(title = "接下来") {
@@ -123,7 +125,7 @@ internal fun LifeHomeContent(
             }
         }
 
-        item { LifeGap(LifeSpacing.sectionGap) }
+        item { LifeGap(dimensions.blockGap) }
 
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -150,6 +152,43 @@ internal fun LifeHomeContent(
     }
 }
 
+/**
+ * Brand → date → one quiet sentence. Three lines, three weights, no oversized orphan date:
+ * the biggest thing on the page is the app's name, the way the design draws it.
+ */
+@Composable
+private fun LifeHomeHeader(date: LocalDate, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = "Life OS",
+            style = LifeType.Brand,
+            color = LifeColors.TextPrimary
+        )
+        Spacer(Modifier.height(LifeSpacing.xxs))
+        Text(
+            text = date.format(HomeDateFormatter),
+            style = LifeType.Caption,
+            color = LifeColors.TextSecondary
+        )
+        Spacer(Modifier.height(LifeSpacing.titleGap))
+        Text(
+            text = "今天，把重要的放在眼前。",
+            style = LifeType.BodySecondary,
+            color = LifeColors.TextSecondary
+        )
+    }
+}
+
+/**
+ * Metadata line: 08:31 · 新记录.
+ *
+ * Two Text runs, deliberately — NOT one string in one style. Special Elite is Latin/numeric only,
+ * so rendering "08:31 · 新记录" as a single [LifeType.Timestamp] run would push the Chinese
+ * characters into the *system* fallback font, which is exactly how a vivo theme font gets back
+ * into the Life OS UI. The time keeps the typewriter stamp; the separator and the Chinese status
+ * label are explicitly [LifeType.Caption] (Noto Sans SC). No glyph on this row depends on
+ * platform font selection.
+ */
 @Composable
 private fun RecentRecordRow(item: CaptureItemEntity) {
     Column(
@@ -166,11 +205,20 @@ private fun RecentRecordRow(item: CaptureItemEntity) {
             maxLines = 2
         )
         Spacer(Modifier.height(LifeSpacing.xxs))
-        Text(
-            text = statusLabel(item.status),
-            style = LifeType.Caption,
-            color = statusColor(item.status)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = Instant.ofEpochMilli(item.createdAt)
+                    .atZone(ZoneId.systemDefault())
+                    .format(HomeTimeFormatter),
+                style = LifeType.Timestamp,
+                color = statusColor(item.status)
+            )
+            Text(
+                text = " · ${statusLabel(item.status)}",
+                style = LifeType.Caption,
+                color = statusColor(item.status)
+            )
+        }
     }
 }
 
@@ -189,11 +237,10 @@ private fun statusLabel(status: CaptureStatus): String = when (status) {
     CaptureStatus.DISMISSED -> "已丢弃"
 }
 
-/** Failure uses the warm clay tone; everything settled fades to tertiary. No saturated red. */
+/** Failure uses the warm clay tone; everything settled fades to secondary. No saturated red. */
 private fun statusColor(status: CaptureStatus): Color = when (status) {
     CaptureStatus.FAILED -> LifeColors.Alert
-    CaptureStatus.CONFIRMED, CaptureStatus.DISMISSED -> LifeColors.TextTertiary
-    else -> LifeColors.Accent
+    else -> LifeColors.TextSecondary
 }
 
 // ------------------------------------------------------------------
@@ -228,7 +275,11 @@ private fun previewRecords(): List<CaptureItemEntity> = listOf(
     previewRecord("p3", "已归档的一条记录", CaptureStatus.CONFIRMED)
 )
 
-@Preview(showBackground = true, name = "首页 — with records")
+// Device matrix (360 compact / 393 primary / 411 regular) on both the populated and the empty
+// page — the compact breakpoint changes page rhythm, so both sides of 400dp must be eyeballed.
+@Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "首页 — records 360x800")
+@Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "首页 — records 393x852")
+@Preview(showBackground = true, widthDp = 411, heightDp = 891, name = "首页 — records 411x891")
 @Composable
 private fun LifeHomePreview() {
     LifeTheme {
@@ -236,7 +287,9 @@ private fun LifeHomePreview() {
     }
 }
 
-@Preview(showBackground = true, name = "首页 — empty")
+@Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "首页 — empty 360x800")
+@Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "首页 — empty 393x852")
+@Preview(showBackground = true, widthDp = 411, heightDp = 891, name = "首页 — empty 411x891")
 @Composable
 private fun LifeHomeEmptyPreview() {
     LifeTheme {
