@@ -12,8 +12,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      # Unit tests first: a Room schema / repository regression is far cheaper to catch here
+      # than after the APK is installed on a phone.
+      - run: ./gradlew :app:testDebugUnitTest
       - run: ./gradlew :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: closie-debug-apk
+          name: qqhome-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
