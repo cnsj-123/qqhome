@@ -1,19 +1,107 @@
 name: Android CI
+
+# The one and only Android CI for this repository. v0.2 folded the Life OS build requirements
+# (versioned APK names, fixed signing, build-number versionCode, test reports) into this file
+# rather than adding a second workflow — two workflows both running testDebugUnitTest +
+# assembleDebug would double every PR build for no extra signal.
+
 on:
   push:
     branches: [main]
   pull_request:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - run: ./gradlew :app:assembleDebug
-      - uses: actions/upload-artifact@v4
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # ---------------------------------------------------------------------------------------
+      # Fixed signing: decode the keystore into the runner's temp dir (never the workspace, never
+      # the repository). Requires ALL FOUR secrets — a half-configured keystore would make
+      # Gradle assemble fail mid-build, which is worse than plainly falling back to debug signing.
+      # ---------------------------------------------------------------------------------------
+      - name: Check signing configuration
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$KEYSTORE_B64" ]      && missing="$missing ANDROID_KEYSTORE_BASE64"
+          [ -z "$KEYSTORE_PASSWORD" ] && missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -z "$KEYSTORE_ALIAS" ]    && missing="$missing ANDROID_KEYSTORE_ALIAS"
+          [ -z "$KEY_PASSWORD" ]      && missing="$missing ANDROID_KEY_PASSWORD"
+
+          if [ -z "$missing" ]; then
+            KEYSTORE_PATH="${RUNNER_TEMP}/lifeos-release.keystore"
+            echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_PATH"
+            echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+            echo "signing=stable" >> "$GITHUB_OUTPUT"
+            echo "All four signing secrets present — using the fixed release keystore."
+          else
+            echo "keystore_path=" >> "$GITHUB_OUTPUT"
+            echo "signing=debug-fallback" >> "$GITHUB_OUTPUT"
+            echo "Missing signing secrets:$missing"
+            echo "Falling back to the default debug keystore; tests and build still run."
+          fi
+
+      # Unit tests first: a Room schema / repository / lifecycle regression is far cheaper to
+      # catch here than after the APK is installed on a phone.
+      - name: Unit tests
+        env:
+          CI_BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      # versionCode = 200000 + github.run_number, so every CI APK can overwrite-install over the
+      # previous one. Gradle names the output by version:
+      #   app/build/outputs/apk/debug/LifeOS-v0.2.0-build200001.apk
+      - name: Assemble debug APK
+        env:
+          CI_BUILD_NUMBER: ${{ github.run_number }}
+          ANDROID_KEYSTORE_FILE: ${{ steps.signing.outputs.keystore_path }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Note when signing fell back to debug
+        if: steps.signing.outputs.signing == 'debug-fallback'
+        run: |
+          {
+            echo "## 本 build 未使用固定签名"
+            echo ""
+            echo "缺少签名 secrets，APK 使用 debug key 签名。测试与构建均为绿色，但："
+            echo ""
+            echo "- 覆盖安装不保证：与已安装的其他签名版本不兼容，需先卸载旧版。"
+            echo "- 配置齐四个 secrets 后，正式签名 build 可正常覆盖安装。"
+            echo ""
+            echo "需要的 secrets：ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /"
+            echo "ANDROID_KEYSTORE_ALIAS / ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: closie-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: LifeOS-apk-build${{ github.run_number }}
+          # Wildcard: Gradle renames the output to LifeOS-v<version>-build<versionCode>.apk.
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload unit test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-report-build${{ github.run_number }}
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
