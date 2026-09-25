@@ -64,8 +64,6 @@ internal object AtomicJson {
         data class Corrupt(val cause: Throwable) : ReadResult<Nothing>
     }
 
-    fun exists(file: File): Boolean = AtomicFile(file).exists()
-
     /**
      * Writes [value] as JSON, atomically.
      *
@@ -93,14 +91,15 @@ internal object AtomicJson {
      * Reads and parses the file, reporting [ReadResult.Corrupt] rather than throwing, so every caller
      * is forced to decide what a corrupt record means instead of letting it fall out of a `try`.
      *
-     * The [exists] check is not merely an optimisation: [AtomicFile.readFully] throws
-     * `FileNotFoundException` for an absent file, which would otherwise arrive here as a `Throwable`
-     * and be misreported as [ReadResult.Corrupt] — the exact conflation this result type exists to
-     * prevent. A file that disappears between the check and the read (deleted by another pass) is still
-     * reported as [ReadResult.Missing], because at the moment we looked there was nothing to read.
+     * Absence is detected by [AtomicFile.readFully] itself, which throws `FileNotFoundException` when
+     * there is nothing to read — mapped to [ReadResult.Missing] below. There is deliberately **no**
+     * `File.exists()` pre-check: `AtomicFile` owns its own recovery-file semantics (it consults the
+     * `.new` sidecar it writes), so a plain existence probe would both duplicate the decision and get
+     * it wrong, and a `File.exists()` result is stale the moment it is returned anyway. The distinction
+     * that matters is preserved by catching precisely one exception type, so anything else — including
+     * an unreadable or truncated marker — is still reported as [ReadResult.Corrupt].
      */
     inline fun <reified T> read(file: File): ReadResult<T> {
-        if (!exists(file)) return ReadResult.Missing
         val bytes = try {
             AtomicFile(file).readFully()
         } catch (e: FileNotFoundException) {

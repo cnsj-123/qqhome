@@ -87,7 +87,18 @@ object BackupManager {
      * database to finish that. Doing the wardrobe half here is the right split: the repository
      * constructor is the earliest point at which `closie/` must already be correct.
      */
-    fun recoverInterruptedRestore(context: Context, fs: RestoreFs = RealRestoreFs) =
+    fun recoverInterruptedRestore(context: Context): RecoveryOutcome =
+        RestoreCoordinator.recoverFilesystemOnly(context, RealRestoreFs)
+
+    /**
+     * [recoverInterruptedRestore] with an explicit [RestoreFs].
+     *
+     * `internal` because [RestoreFs] is a test seam, not production API: it exists so a test can fail one
+     * named filesystem operation and reach the rollback-failure paths. Exposing it publicly would make
+     * the internal filesystem abstraction part of the app's stable surface, which is exactly what the
+     * "public function exposes its internal parameter type" error was warning about.
+     */
+    internal fun recoverInterruptedRestore(context: Context, fs: RestoreFs): RecoveryOutcome =
         RestoreCoordinator.recoverFilesystemOnly(context, fs)
 
     /**
@@ -100,9 +111,15 @@ object BackupManager {
      */
     suspend fun recoverInterruptedRestore(
         context: Context,
+        lifeDatabase: LifeDatabase?
+    ): RecoveryOutcome = RestoreCoordinator.recover(context, lifeDatabase, RealRestoreFs)
+
+    /** [recoverInterruptedRestore] with an explicit [RestoreFs]. `internal` for the reason above. */
+    internal suspend fun recoverInterruptedRestore(
+        context: Context,
         lifeDatabase: LifeDatabase?,
-        fs: RestoreFs = RealRestoreFs
-    ) = RestoreCoordinator.recover(context, lifeDatabase, fs)
+        fs: RestoreFs
+    ): RecoveryOutcome = RestoreCoordinator.recover(context, lifeDatabase, fs)
 
     /**
      * Returns true when a data directory contains all five core JSON files and they all parse.
@@ -163,8 +180,12 @@ object BackupManager {
      * individual filesystem operation. The latter is what makes the "rollback itself fails" paths
      * reachable — those are the states where recovery must keep its evidence and retry rather than
      * claim success.
+     *
+     * `internal` because [RestoreFs] is a test seam: a public signature here would expose the internal
+     * filesystem abstraction as part of the app's API. [RestoreHooks] stays public on the overload above
+     * because it is a legitimate stage-level seam callers can compose, but [RestoreFs] is not.
      */
-    suspend fun restore(
+    internal suspend fun restore(
         context: Context,
         repo: WardrobeRepository,
         inputUri: Uri,
