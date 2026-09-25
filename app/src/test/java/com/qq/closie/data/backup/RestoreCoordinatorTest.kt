@@ -755,15 +755,6 @@ class RestoreCoordinatorTest {
     }
 
     /**
-     * The predicate's companion, and the one the recovery path actually reads when deciding whether
-     * the Closet may be the backup's version.
-     *
-     * A committed database does not un-swap the directory, so every database state needs the revert
-     * too. Getting this wrong in the "false" direction leaves the user with the backup's wardrobe and
-     * their own life-graph — the half-restore seen from the other side.
-     */
-    @Test
-    /**
      * The Closet-revert half, held to its exact set of states.
      *
      * The predicate used to be a property on [RestoreState]; it is now derived from two inputs — the
