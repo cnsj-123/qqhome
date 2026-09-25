@@ -1,0 +1,50 @@
+From 3e6ecfd35b9bf35c5014734291edd53c3b37a52f Mon Sep 17 00:00:00 2001
+From: Life OS Dev <lifeos@local>
+Date: Fri, 25 Sep 2026 19:26:51 +0800
+Subject: [PATCH] fix(test): repair media importer test comment syntax
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+GitHub Actions run 36128704698, :app:compileDebugUnitTestKotlin reported:
+
+  MediaStoreImporterTest.kt:73: Missing '}'
+  MediaStoreImporterTest.kt:275: Unclosed comment
+
+Root cause is one KDoc line. Kotlin block comments nest, so the two adjacent
+characters /* inside the prose at line 79 opened a nested block comment. Nothing
+closed it, so every following line — including the closing brace at line 274 —
+was swallowed as comment, which is why the two errors surfaced as an apparently
+unrelated brace/EOF pair 200 lines apart.
+
+The text referred to the MIME fallback in MediaStoreImporter. The wildcard is now
+written as `image/<wildcard>`, which cannot open a comment. Wording, meaning and
+the surrounding explanation are unchanged.
+
+Main-source occurrences of the literal wildcard are inside string literals
+(picker calls and the MediaStoreImporter fallback itself), where /* is not a
+comment opener; they are untouched, and no importer logic changed.
+
+Verified by a state-machine scan of all 142 .kt files under app/src that reports
+nesting block-comment openers in comment bodies and files ending inside a
+comment: 0 risk files, 0 unclosed comments.
+---
+ .../java/com/qq/closie/life/media/MediaStoreImporterTest.kt     | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/src/test/java/com/qq/closie/life/media/MediaStoreImporterTest.kt b/app/src/test/java/com/qq/closie/life/media/MediaStoreImporterTest.kt
+index 022b64f..b0108df 100644
+--- a/app/src/test/java/com/qq/closie/life/media/MediaStoreImporterTest.kt
++++ b/app/src/test/java/com/qq/closie/life/media/MediaStoreImporterTest.kt
+@@ -76,7 +76,7 @@ class MediaStoreImporterTest {
+      * The extension the importer derives for a `file://` source.
+      *
+      * `ContentResolver.getType` returns null for a `file://` URI, so the importer falls back to
+-     * `image/*` and then to its `else -> "img"` branch. Hard-coding `.png` here would make the tests
++     * `image/<wildcard>` and then to its `else -> "img"` branch. Hard-coding `.png` here would make the tests
+      * assert against a name production never creates — the assertions would fail for the right reason
+      * but point at the wrong cause, and a future change to the fallback would silently decouple these
+      * tests from reality. Naming the constant makes that coupling explicit.
+-- 
+2.43.0
+
