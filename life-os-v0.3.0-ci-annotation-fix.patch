@@ -1,0 +1,60 @@
+From 06ddafb247b892bdfcfc621c4a5308ce6edc71ee Mon Sep 17 00:00:00 2001
+From: Life OS Dev <lifeos@local>
+Date: Fri, 25 Sep 2026 19:39:25 +0800
+Subject: [PATCH] fix(test): remove duplicate test annotation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+GitHub Actions run 36129867061, :app:compileDebugUnitTestKotlin reported:
+
+  RestoreCoordinatorTest.kt:782:5 This annotation is not repeatable
+
+`closetRevert_coversTheSwapOnwardsButNeverCommitsOrPreparing` carried two
+@Test annotations (lines 765 and 782) with a KDoc block wedged between them.
+JUnit's @Test is not repeatable, so the second one is a hard error.
+
+The two KDoc blocks described the same predicate from two angles and overlapped
+substantially: the first introduced swapInScope and the half-restore it guards,
+the second enumerated the state table and why COMMITTED, FAILED and ROLLED_BACK
+are cleanup-only. The second is the superset, so the first is dropped and its
+one point of substance — that COMMITTED deliberately does not un-swap, which is
+where a "false" answer costs the user half their data — is already stated in the
+surviving block. One @Test and one KDoc remain.
+
+No assertion, no test body and no test-local helper changed. RestoreCoordinator
+production code and the restore state machine are untouched.
+
+Whole-tree audit: a state-machine scanner over all 24 test files pairs every
+annotation run with its declaration and reports repeated names across
+@Test/@Before/@After/@RunWith/@Rule/@Ignore. Run against the pre-fix revision it
+reproduces exactly this error at lines 765 and 782; on the fixed tree it reports
+0 duplicates. Two flagged duplicate `fun` names were checked by hand and are
+local helpers nested inside different test bodies, not clashing methods.
+---
+ .../com/qq/closie/data/backup/RestoreCoordinatorTest.kt  | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+diff --git a/app/src/test/java/com/qq/closie/data/backup/RestoreCoordinatorTest.kt b/app/src/test/java/com/qq/closie/data/backup/RestoreCoordinatorTest.kt
+index 923a831..e49bc96 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/RestoreCoordinatorTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/RestoreCoordinatorTest.kt
+@@ -754,15 +754,6 @@ class RestoreCoordinatorTest {
+         )
+     }
+ 
+-    /**
+-     * The predicate's companion, and the one the recovery path actually reads when deciding whether
+-     * the Closet may be the backup's version.
+-     *
+-     * A committed database does not un-swap the directory, so every database state needs the revert
+-     * too. Getting this wrong in the "false" direction leaves the user with the backup's wardrobe and
+-     * their own life-graph — the half-restore seen from the other side.
+-     */
+-    @Test
+     /**
+      * The Closet-revert half, held to its exact set of states.
+      *
+-- 
+2.43.0
+
