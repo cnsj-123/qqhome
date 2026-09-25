@@ -1,0 +1,132 @@
+From e5e43cd13c8a872577aaead87219519e1f2b3d52 Mon Sep 17 00:00:00 2001
+From: Life OS Dev <lifeos@local>
+Date: Fri, 25 Sep 2026 14:22:54 +0800
+Subject: [PATCH] fix(life): repair v0.3 Kotlin compilation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Two compile blockers from GitHub Actions run 36102017287 (:app:compileDebugKotlin).
+
+1. AtomicJson.kt — `AtomicJson.kt:67 Unresolved reference: exists`.
+   `AtomicFile` has no `exists()`; the helper was declared on top of it and used
+   as a pre-check in `read()`. Both are deleted. `readFully()` already throws
+   `FileNotFoundException` for an absent file, which is the only legitimate
+   `Missing` signal, so the check was both redundant and semantically worse: it
+   duplicated a decision `AtomicFile` owns (its `.new` recovery sidecar) and read
+   a stale `File.exists()` answer. Catching exactly one exception type keeps the
+   contract three-valued — absent -> Missing, unreadable/truncated -> Corrupt,
+   parse failure -> Corrupt. A damaged marker is still Corrupt, never Missing.
+
+2. BackupManager.kt — `'public' function exposes its 'internal' parameter type
+   RestoreFs` (x3). `RestoreFs` stays internal: it is the filesystem test seam
+   for the restore protocol, not production API. The public facades are kept and
+   supply `RealRestoreFs` themselves; every overload carrying `RestoreFs` in its
+   signature becomes `internal`:
+     - recoverInterruptedRestore(context, fs)
+     - recoverInterruptedRestore(context, lifeDatabase, fs)
+     - restore(..., hooks, fs)
+
+No behaviour change beyond the two sites. Restore state machine, COMMITTED
+semantics, startup barrier, media staging, Reference, Plan, Reading, Share and
+Closet are untouched.
+---
+ .../com/qq/closie/data/backup/AtomicJson.kt   | 15 +++++-----
+ .../qq/closie/data/backup/BackupManager.kt    | 29 ++++++++++++++++---
+ 2 files changed, 32 insertions(+), 12 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/data/backup/AtomicJson.kt b/app/src/main/java/com/qq/closie/data/backup/AtomicJson.kt
+index 899ff85..4863ec7 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/AtomicJson.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/AtomicJson.kt
+@@ -64,8 +64,6 @@ internal object AtomicJson {
+         data class Corrupt(val cause: Throwable) : ReadResult<Nothing>
+     }
+ 
+-    fun exists(file: File): Boolean = AtomicFile(file).exists()
+-
+     /**
+      * Writes [value] as JSON, atomically.
+      *
+@@ -93,14 +91,15 @@ internal object AtomicJson {
+      * Reads and parses the file, reporting [ReadResult.Corrupt] rather than throwing, so every caller
+      * is forced to decide what a corrupt record means instead of letting it fall out of a `try`.
+      *
+-     * The [exists] check is not merely an optimisation: [AtomicFile.readFully] throws
+-     * `FileNotFoundException` for an absent file, which would otherwise arrive here as a `Throwable`
+-     * and be misreported as [ReadResult.Corrupt] — the exact conflation this result type exists to
+-     * prevent. A file that disappears between the check and the read (deleted by another pass) is still
+-     * reported as [ReadResult.Missing], because at the moment we looked there was nothing to read.
++     * Absence is detected by [AtomicFile.readFully] itself, which throws `FileNotFoundException` when
++     * there is nothing to read — mapped to [ReadResult.Missing] below. There is deliberately **no**
++     * `File.exists()` pre-check: `AtomicFile` owns its own recovery-file semantics (it consults the
++     * `.new` sidecar it writes), so a plain existence probe would both duplicate the decision and get
++     * it wrong, and a `File.exists()` result is stale the moment it is returned anyway. The distinction
++     * that matters is preserved by catching precisely one exception type, so anything else — including
++     * an unreadable or truncated marker — is still reported as [ReadResult.Corrupt].
+      */
+     inline fun <reified T> read(file: File): ReadResult<T> {
+-        if (!exists(file)) return ReadResult.Missing
+         val bytes = try {
+             AtomicFile(file).readFully()
+         } catch (e: FileNotFoundException) {
+diff --git a/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt b/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt
+index 6f60cac..5687403 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt
+@@ -87,7 +87,18 @@ object BackupManager {
+      * database to finish that. Doing the wardrobe half here is the right split: the repository
+      * constructor is the earliest point at which `closie/` must already be correct.
+      */
+-    fun recoverInterruptedRestore(context: Context, fs: RestoreFs = RealRestoreFs) =
++    fun recoverInterruptedRestore(context: Context): RecoveryOutcome =
++        RestoreCoordinator.recoverFilesystemOnly(context, RealRestoreFs)
++
++    /**
++     * [recoverInterruptedRestore] with an explicit [RestoreFs].
++     *
++     * `internal` because [RestoreFs] is a test seam, not production API: it exists so a test can fail one
++     * named filesystem operation and reach the rollback-failure paths. Exposing it publicly would make
++     * the internal filesystem abstraction part of the app's stable surface, which is exactly what the
++     * "public function exposes its internal parameter type" error was warning about.
++     */
++    internal fun recoverInterruptedRestore(context: Context, fs: RestoreFs): RecoveryOutcome =
+         RestoreCoordinator.recoverFilesystemOnly(context, fs)
+ 
+     /**
+@@ -99,10 +110,16 @@ object BackupManager {
+      * constructor.
+      */
+     suspend fun recoverInterruptedRestore(
++        context: Context,
++        lifeDatabase: LifeDatabase?
++    ): RecoveryOutcome = RestoreCoordinator.recover(context, lifeDatabase, RealRestoreFs)
++
++    /** [recoverInterruptedRestore] with an explicit [RestoreFs]. `internal` for the reason above. */
++    internal suspend fun recoverInterruptedRestore(
+         context: Context,
+         lifeDatabase: LifeDatabase?,
+-        fs: RestoreFs = RealRestoreFs
+-    ) = RestoreCoordinator.recover(context, lifeDatabase, fs)
++        fs: RestoreFs
++    ): RecoveryOutcome = RestoreCoordinator.recover(context, lifeDatabase, fs)
+ 
+     /**
+      * Returns true when a data directory contains all five core JSON files and they all parse.
+@@ -163,8 +180,12 @@ object BackupManager {
+      * individual filesystem operation. The latter is what makes the "rollback itself fails" paths
+      * reachable — those are the states where recovery must keep its evidence and retry rather than
+      * claim success.
++     *
++     * `internal` because [RestoreFs] is a test seam: a public signature here would expose the internal
++     * filesystem abstraction as part of the app's API. [RestoreHooks] stays public on the overload above
++     * because it is a legitimate stage-level seam callers can compose, but [RestoreFs] is not.
+      */
+-    suspend fun restore(
++    internal suspend fun restore(
+         context: Context,
+         repo: WardrobeRepository,
+         inputUri: Uri,
+-- 
+2.43.0
+
