@@ -97,6 +97,23 @@ class MediaRepository(
     suspend fun getResourcesForAsset(assetId: String): List<MediaResourceEntity> =
         mediaDao.getResourcesForAsset(assetId)
 
+    /**
+     * The managed (app-private, non-revocable) image file for [assetId], or null.
+     *
+     * Returns a path only when the file is actually present on disk — a row whose bytes have been
+     * cleared would otherwise hand Coil a path that resolves to a broken image, which is worse than
+     * showing no thumbnail at all. ORIGINAL and PRIMARY_IMAGE are both accepted because an asset
+     * that has been through a re-encode keeps its bytes under the latter.
+     */
+    suspend fun managedImagePathFor(assetId: String): String? =
+        getResourcesForAsset(assetId)
+            .firstOrNull {
+                (it.role == MediaResourceRole.ORIGINAL || it.role == MediaResourceRole.PRIMARY_IMAGE) &&
+                    it.managedPath != null
+            }
+            ?.managedPath
+            ?.takeIf { java.io.File(it).isFile }
+
     fun observeResourcesForAsset(assetId: String): Flow<List<MediaResourceEntity>> =
         mediaDao.observeResourcesForAsset(assetId)
 

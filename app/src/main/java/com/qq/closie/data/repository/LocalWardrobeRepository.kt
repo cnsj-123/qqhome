@@ -5,12 +5,26 @@ import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.qq.closie.data.ImageStore
-import com.qq.closie.data.backup.BackupManager
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.data.model.*
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * Thrown when an interrupted restore has not been repaired yet, so `closie/` cannot be read safely.
+ *
+ * This is deliberately a failure to *open* rather than a degraded read. The interrupted restore left
+ * the directory in a state that is neither the user's wardrobe nor the backup's — serving either one
+ * would be presenting a version of the truth that does not exist. The recovery marker and the parked
+ * original are both still on disk, so the next process start completes the repair; the cost of
+ * refusing is one failed launch, and the cost of guessing is the user's wardrobe.
+ */
+class RestoreRecoveryPendingException(cause: Throwable?) : IllegalStateException(
+    "恢复尚未完成，不能安全打开 wardrobe repository；已保留恢复标记，将在下次启动重试",
+    cause
+)
 
 /** JSON persistence with atomic replacement and observable in-memory snapshots. */
 class LocalWardrobeRepository(private val context: Context) : WardrobeRepository {
@@ -23,7 +37,25 @@ class LocalWardrobeRepository(private val context: Context) : WardrobeRepository
     private val outfitType = object : TypeToken<List<Outfit>>() {}.type
 
     init {
-        BackupManager.recoverInterruptedRestore(context)
+        // The gate, not a second recovery.
+        //
+        // Recovery itself is owned by `ClosieApplication.onCreate`, which runs the whole barrier —
+        // filesystem *and* database — before any repository can be created. That is the guarantee this
+        // class depends on, and it is why there is no recovery call here any more: a partial,
+        // filesystem-only repair performed from a constructor could leave the Closet reverted while the
+        // database was still on the backup's rows, which is precisely the split the barrier exists to
+        // prevent.
+        //
+        // Checking the gate here keeps the guarantee local to the class that actually reads `closie/`.
+        // It matters for a repository constructed directly (a test, or any future entry point that does
+        // not go through the Application), where nothing has resolved the gate yet — the initial value
+        // is BLOCKED, so an unrepaired process fails closed rather than serving a mixture.
+        //
+        // This used to also refresh the marker's own state; it no longer can, because the gate is the
+        // single verdict now, and duplicating the decision in two places is how the two drift.
+        if (!RestoreStartupGate.isReady) {
+            throw RestoreRecoveryPendingException(RestoreStartupGate.blockReason)
+        }
         folder.mkdirs()
     }
 

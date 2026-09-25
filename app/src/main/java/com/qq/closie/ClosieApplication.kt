@@ -1,6 +1,8 @@
 package com.qq.closie
 
 import android.app.Application
+import com.qq.closie.data.backup.RecoveryOutcome
+import com.qq.closie.data.backup.RestoreRecoveryManager
 import com.qq.closie.data.repository.LocalWardrobeRepository
 import com.qq.closie.life.crash.LifeCrashLog
 import com.qq.closie.life.data.LifeContainer
@@ -14,6 +16,14 @@ import com.qq.closie.ui.quickcapture.QuickCaptureTempFiles
  */
 class ClosieApplication : Application() {
 
+    /**
+     * The wardrobe repository, gated on restore recovery.
+     *
+     * [LocalWardrobeRepository] throws when the recovery gate is blocked, so touching this property
+     * before [onCreate] has finished recovery fails loudly rather than reading a half-restored
+     * `closie/`. Every production caller reaches it after `onCreate`, so the gate is already resolved
+     * for them.
+     */
     val wardrobeRepository by lazy { LocalWardrobeRepository(this) }
 
     /** Life OS layer: Room database + repositories. Opened lazily on first access. */
@@ -30,5 +40,48 @@ class ClosieApplication : Application() {
         // After a process kill the preview's onDestroy never ran; any leftover capture_*.png in
         // cache no longer has an owner (PendingProduct is gone too), so drop them on startup.
         QuickCaptureTempFiles.cleanupStale(this)
+        // Finish any restore a previous process was killed in the middle of. This runs here, and only
+        // here, because the Application is the one component every entry point shares: a restore must
+        // not stay half-applied just because the user reopened the app through the quick-capture
+        // notification rather than the main screen.
+        //
+        // This is a **barrier**. When a marker exists, recovery runs to completion — filesystem *and*
+        // database — before this returns, and resolves `RestoreStartupGate` accordingly. Nothing may
+        // read the user's data until then: the previous design finished the filesystem half
+        // synchronously and left the database half to a background coroutine, which left a window in
+        // which the Closet and media were on the user's version while the database still held the
+        // backup's rows, and in which a later snapshot replay could overwrite a fresh user write.
+        //
+        // The startup invariants this depends on, recorded so they stay true:
+        //
+        //  1. Nothing reads `closie/` before this returns. Both the wardrobe repository and the Life
+        //     container are `by lazy`, and `onCreate` touches neither — the only mention of
+        //     `lifeContainer` is inside the `lifeDatabase` *lambda*, which is not evaluated unless a
+        //     marker turns out to exist.
+        //  2. An **ordinary launch does not open the database at all**. The lambda is evaluated only
+        //     on the marker-present path, so a normal start does not build Room just to discover there
+        //     was nothing to recover. Recovery takes the cost only when there is genuinely something to
+        //     recover, and then it takes it on `Dispatchers.IO` (replaying a snapshot runs
+        //     `database.withTransaction`, and the production database is built without
+        //     `allowMainThreadQueries()`).
+        //
+        // Note the direction of the dependency: recovery needs a `LifeDatabase`, and it gets one via
+        // `lifeContainer.lifeDatabase`, which is a raw accessor with no gate on it. The gate is on the
+        // *repositories* — so recovery can always obtain the database it needs, while business code
+        // cannot obtain repositories until recovery is done. That is what avoids a cycle.
+        val outcome = RestoreRecoveryManager.recoverOnStartup(
+            context = this,
+            lifeDatabase = { lifeContainer.lifeDatabase }
+        )
+        if (outcome is RecoveryOutcome.RetryRequired) {
+            // Deliberately not fatal here. `RestoreStartupGate` is blocked, so the wardrobe repository
+            // refuses to open and the failure surfaces at the point of use with a message that explains
+            // what happened, instead of taking down every entry point including quick capture.
+            android.util.Log.w(
+                "ClosieApplication",
+                "上次恢复未完成，已阻止数据访问；下次启动将继续恢复",
+                outcome.error
+            )
+        }
     }
 }

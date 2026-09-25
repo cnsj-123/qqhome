@@ -33,6 +33,31 @@ class CaptureRepository(private val database: LifeDatabase) {
     /** Everything still in flight — i.e. not CONFIRMED, FAILED or DISMISSED. */
     fun observePending(): Flow<List<CaptureItemEntity>> = dao.observePending()
 
+    /**
+     * Local search across a capture's title, raw text, note and source URL.
+     *
+     * Mirrors [ReferenceRepository.search]: the term is escaped for `LIKE` before it reaches SQL,
+     * because a bare `%` or `_` typed by the user would otherwise act as a wildcard and turn "50%"
+     * into "matches every record". Backslash is the escape character, so it has to be escaped
+     * first — the other order would double-escape what the first pass produced.
+     *
+     * A blank query falls back to [observeAll] rather than running a `LIKE '%%'`, so the "no
+     * search" path and the "empty search" path cannot disagree about ordering.
+     */
+    fun search(query: String): Flow<List<CaptureItemEntity>> {
+        val escaped = escapeLike(query.trim())
+        if (escaped.isEmpty()) return dao.observeAll()
+        return dao.search(escaped)
+    }
+
+    /** Recently created captures, newest first. Used by the home page's 最近 block. */
+    fun observeRecent(limit: Int): Flow<List<CaptureItemEntity>> = dao.observeRecent(limit)
+
+    internal fun escapeLike(raw: String): String = raw
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+
     suspend fun getById(id: String): CaptureItemEntity? = dao.getById(id)
 
     suspend fun count(): Int = dao.count()
@@ -79,6 +104,35 @@ class CaptureRepository(private val database: LifeDatabase) {
     suspend fun updateRawText(id: String, rawText: String?): Boolean {
         val current = dao.getById(id) ?: return false
         dao.update(current.copy(rawText = rawText, updatedAt = System.currentTimeMillis()))
+        return true
+    }
+
+    /**
+     * The record editor's save.
+     *
+     * [rawText] is deliberately NOT part of this call. It is the captured history — what the outside
+     * world handed us — and the editor is for the user's own [displayTitle] and [note]. Letting the
+     * editor rewrite the raw text would destroy the only verbatim record Life OS keeps, and would
+     * make "I edited my note" and "I changed what was captured" indistinguishable in the data.
+     *
+     * A blank title or note is stored as `null` rather than an empty string, so "never set" and
+     * "cleared" collapse to the same state. Two different representations of nothing would show up
+     * as two different bugs later.
+     */
+    suspend fun updateUserFields(
+        id: String,
+        displayTitle: String?,
+        note: String?,
+        now: Long = System.currentTimeMillis()
+    ): Boolean {
+        val current = dao.getById(id) ?: return false
+        dao.update(
+            current.copy(
+                displayTitle = displayTitle?.trim()?.takeIf { it.isNotEmpty() },
+                note = note?.trim()?.takeIf { it.isNotEmpty() },
+                updatedAt = now
+            )
+        )
         return true
     }
 

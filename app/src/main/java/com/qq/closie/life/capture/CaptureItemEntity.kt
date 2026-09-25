@@ -48,6 +48,27 @@ data class CaptureItemEntity(
     val sourceUrl: String? = null,
 
     /**
+     * A title the user typed for this capture. Null until they do.
+     *
+     * Added in v0.3.0 as an explicit column rather than a key inside a JSON blob: the record screen
+     * lets the user edit a capture's title directly, and a title buried in serialised JSON could
+     * not be indexed, searched or migrated by SQL. A capture may legitimately have no title (a
+     * screenshot usually does not), so this stays nullable.
+     */
+    @ColumnInfo(name = "displayTitle")
+    val displayTitle: String? = null,
+
+    /**
+     * The user's own note about this capture — why it mattered, what to do with it.
+     *
+     * Separate from [rawText] by design: [rawText] is what was *captured* (and is kept verbatim as
+     * history), while this is what the user *added*. Editing one must never silently rewrite the
+     * other.
+     */
+    @ColumnInfo(name = "note")
+    val note: String? = null,
+
+    /**
      * Optional media reference. Nullable by design: a capture may carry only text.
      *
      * v0.1 declares no physical foreign key on this column. Reference validity is guaranteed by

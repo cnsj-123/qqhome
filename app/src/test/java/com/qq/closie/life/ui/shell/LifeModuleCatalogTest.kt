@@ -11,21 +11,37 @@ import org.junit.Test
 class LifeModuleCatalogTest {
 
     @Test
-    fun directory_hasExactlySevenModulesInOrder() {
+    fun directory_hasExactlyEightModulesInOrder() {
+        // v0.3.0 fixes the sequence to the design's: the four built modules first, then the four
+        // that only have a landing page. 资料库 is second because it is the module this release is
+        // really about — burying it after 财务 would misrepresent what shipped.
         assertThat(LifeModuleCatalog.entries.map { it.title })
-            .containsExactly("衣橱", "财务", "物品", "旅行", "园艺", "阅读", "计划")
+            .containsExactly("衣橱", "资料库", "计划", "阅读", "财务", "物品", "旅行", "园艺")
             .inOrder()
     }
 
     @Test
-    fun onlyClosetIsOpen() {
-        assertThat(LifeModuleCatalog.entries.filter { it.open }.map { it.key })
-            .containsExactly(LifeModuleCatalog.KEY_CLOSET)
-        assertThat(LifeModuleCatalog.openEntries()).hasSize(1)
+    fun theFourBuiltModulesAreOpenAndLive() {
+        assertThat(LifeModuleCatalog.liveEntries().map { it.key })
+            .containsExactly(
+                LifeModuleCatalog.KEY_CLOSET,
+                LifeModuleCatalog.KEY_REFERENCE,
+                LifeModuleCatalog.KEY_PLAN,
+                LifeModuleCatalog.KEY_READING
+            )
+            .inOrder()
+    }
+
+    @Test
+    fun everyRowIsEnterable() {
+        // No row is a dead label any more: the unbuilt four open a landing page that says what the
+        // module will be. A disabled row that silently does nothing is the bug this replaced.
+        assertThat(LifeModuleCatalog.entries.filter { !it.open }).isEmpty()
+        assertThat(LifeModuleCatalog.openEntries()).hasSize(8)
     }
 
     /**
-     * 饮食 / 健康 / 出行 are not part of the v0.1 directory. Listing them would advertise a
+     * 饮食 / 健康 / 出行 are not part of the directory. Listing them would advertise a
      * roadmap that does not exist yet, so the test fails if they sneak back in.
      */
     @Test
@@ -35,12 +51,22 @@ class LifeModuleCatalogTest {
     }
 
     @Test
-    fun statusOf_reflectsOpenState() {
-        val closet = LifeModuleCatalog.entries.first { it.key == LifeModuleCatalog.KEY_CLOSET }
-        val planned = LifeModuleCatalog.entries.first { it.key == "money" }
+    fun statusOf_distinguishesBuiltFromPlannedFromComingSoon() {
+        val closet = LifeModuleCatalog.byKey(LifeModuleCatalog.KEY_CLOSET)!!
+        val money = LifeModuleCatalog.byKey(LifeModuleCatalog.KEY_MONEY)!!
 
         assertThat(LifeModuleCatalog.statusOf(closet)).isEqualTo("已开放")
-        assertThat(LifeModuleCatalog.statusOf(planned)).isEqualTo("即将开放")
+        // 财务 opens a landing page but is not implemented — calling it 已开放 would claim a module
+        // exists when it does not.
+        assertThat(LifeModuleCatalog.statusOf(money)).isEqualTo("规划中")
+    }
+
+    @Test
+    fun byKey_findsEveryDeclaredKeyAndRejectsUnknownOnes() {
+        LifeModuleCatalog.entries.forEach { spec ->
+            assertThat(LifeModuleCatalog.byKey(spec.key)).isEqualTo(spec)
+        }
+        assertThat(LifeModuleCatalog.byKey("nope")).isNull()
     }
 
     @Test

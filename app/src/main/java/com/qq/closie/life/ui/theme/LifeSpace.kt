@@ -44,6 +44,46 @@ object LifeSpacing {
 
     /** Icon size used inside rows. */
     val iconSize: Dp = 20.dp
+
+    // ------------------------------------------------------------------
+    //  v0.3.0 additions
+    // ------------------------------------------------------------------
+
+    /**
+     * Thumbnail edge in a 资料库 row.
+     *
+     * 72dp sits inside the 64–88dp band the design allows: big enough to recognise a screenshot at
+     * a glance, small enough that a list of them still reads as a list rather than a photo grid.
+     */
+    val referenceThumb: Dp = 72.dp
+
+    /** Thumbnail edge in the home page's 最近 block — smaller, because the home page is an entry. */
+    val homeThumb: Dp = 48.dp
+
+    /** Inner padding of the search field. */
+    val searchPadding: Dp = 12.dp
+
+    /** Vertical padding of a filter chip. */
+    val chipPadding: Dp = 8.dp
+
+    /**
+     * Visual diameter of a plan's completion circle.
+     *
+     * 20dp against a 48dp touch target: the circle reads as a quiet bullet point rather than a
+     * form control, while the tappable area is still comfortably thumb-sized.
+     */
+    val planCheck: Dp = 20.dp
+
+    /** The tick inside the completion circle. */
+    val planCheckIcon: Dp = 13.dp
+
+    /**
+     * Nudge that puts a plan's first text line on the circle's optical centre.
+     *
+     * The circle is vertically centred in its 48dp box while the title sits at the top of a short
+     * column, so without this the two baselines disagree by a few dp and the row looks misaligned.
+     */
+    val planRowTextInset: Dp = 10.dp
 }
 
 /**

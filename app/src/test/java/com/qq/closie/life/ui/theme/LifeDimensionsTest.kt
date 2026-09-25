@@ -28,7 +28,8 @@ class LifeDimensionsTest {
     fun compact_usesTheTighterRhythm() {
         val dims = LifeDimensions.fromScreenWidth(393)
         assertThat(dims.pageHorizontal.value).isEqualTo(20f)
-        assertThat(dims.pageTop.value).isEqualTo(16f)
+        // v0.3.0: 16 → 22. A real phone review found the top gap "略微收得过头"; this is the nudge.
+        assertThat(dims.pageTop.value).isEqualTo(22f)
         assertThat(dims.pageBottom.value).isEqualTo(24f)
         assertThat(dims.blockGap.value).isEqualTo(20f)
         assertThat(dims.sectionGap.value).isEqualTo(20f)
@@ -39,11 +40,27 @@ class LifeDimensionsTest {
     fun regular_usesTheComfortableRhythm() {
         val dims = LifeDimensions.fromScreenWidth(411)
         assertThat(dims.pageHorizontal.value).isEqualTo(24f)
-        assertThat(dims.pageTop.value).isEqualTo(20f)
+        assertThat(dims.pageTop.value).isEqualTo(24f)
         assertThat(dims.pageBottom.value).isEqualTo(32f)
         assertThat(dims.blockGap.value).isEqualTo(24f)
         assertThat(dims.sectionGap.value).isEqualTo(28f)
         assertThat(dims.itemGap.value).isEqualTo(12f)
+    }
+
+    /**
+     * §3 fixes the target band for the top gap at 20–24dp on a compact phone. Pinning the exact
+     * number elsewhere is already done; this guards the *band*, which is the thing the spec actually
+     * stated, so a future tweak inside the band is allowed to pass but drifting back to 16 is not.
+     */
+    @Test
+    fun pageTop_staysInsideTheTargetBandOnBothRhythms() {
+        val compact = LifeDimensions.fromScreenWidth(393)
+        val regular = LifeDimensions.fromScreenWidth(411)
+
+        assertThat(compact.pageTop.value).isAtLeast(20f)
+        assertThat(compact.pageTop.value).isAtMost(24f)
+        assertThat(regular.pageTop.value).isAtLeast(20f)
+        assertThat(regular.pageTop.value).isAtMost(24f)
     }
 
     /** Compact must never be *roomier* than regular in any dimension — the invariant of the break. */

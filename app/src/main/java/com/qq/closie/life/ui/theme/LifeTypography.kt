@@ -175,6 +175,31 @@ object LifeType {
         letterSpacing = 0.sp
     )
 
+    /**
+     * A one-line note the user typed — the *safe* sibling of [HandNote].
+     *
+     * [HandNote] is Caveat, a Latin-only face, and that is correct for the decorative English the
+     * design marks as handwritten (`handwritten` labels, the home motto). It is wrong for anything
+     * the user can type: Caveat has no CJK glyphs at all, so a note written in Chinese — which is
+     * the overwhelmingly common case in this app — fell through to the *system* font, and with it
+     * picked up whatever the device's theme font happens to be. That is precisely the vivo-font
+     * leak [LifeFonts] exists to prevent, and it also made a Chinese note render in a different
+     * face from an English one on the same screen.
+     *
+     * This style keeps the same size and rhythm so the note still reads as an aside rather than
+     * body copy, but uses [LifeFonts.Sans] — the full-charset bundled face — so every glyph the
+     * user can produce is drawn from a bundled resource and no system fallback is ever reached.
+     * Losing the handwriting *look* for user text is the right trade: the note is content, and
+     * content must be legible in the user's own language.
+     */
+    val UserNote: TextStyle = TextStyle(
+        fontFamily = LifeFonts.Sans,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 25.sp,
+        letterSpacing = 0.1.sp
+    )
+
     /** Empty-state headline: present, but clearly quieter than a page title. */
     val EmptyTitle: TextStyle = TextStyle(
         fontFamily = LifeFonts.Sans,

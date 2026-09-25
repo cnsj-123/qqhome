@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,6 +19,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,7 +55,19 @@ private val categoryPresets = listOf(
 fun ClosetScreen(
     repo: WardrobeRepository,
     open: (String) -> Unit,
-    add: (ItemStatus) -> Unit
+    add: (ItemStatus) -> Unit,
+    /**
+     * Non-null only when the closet was entered *from* Life OS (生活 → 衣橱).
+     *
+     * The closet is a full product with its own bottom bar and its own visual language, so when it
+     * opens inside Life OS the user has no way of knowing that the system back gesture is the way
+     * home — and on a screen that looks this different, "press back" is not something people try.
+     * A visible return control is the fix; `null` is what keeps a standalone Closie exactly as it
+     * shipped, with no Life OS chrome bolted onto it.
+     */
+    onReturnToLifeOs: (() -> Unit)? = null,
+    /** Text of the return control, e.g. "Life OS" — rendered as "‹ Life OS". */
+    returnLabel: String = "Life OS"
 ) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
@@ -126,6 +141,18 @@ fun ClosetScreen(
                 .padding(horizontal = dims.pageHorizontal, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // "‹ Life OS" — rendered as the first thing inside the *content* column, directly under
+            // the TopAppBar, rather than as a navigationIcon on the bar itself. Two reasons:
+            //
+            //  1. The bar's leading slot already belongs to the title block, and putting an icon
+            //     there would push "我的衣橱" right and change a shipped layout for every user.
+            //  2. As a content row it disappears cleanly when [onReturnToLifeOs] is null — the
+            //     standalone closet gets a byte-identical rendering to v0.2.0, which is what lets
+            //     this change be additive rather than a redesign.
+            if (onReturnToLifeOs != null) {
+                ReturnToLifeOsRow(label = returnLabel, onClick = onReturnToLifeOs)
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -519,5 +546,47 @@ private fun DisplaySheetContent(
                 Switch(checked = onlyUnworn, onCheckedChange = onOnlyUnworn)
             }
         }
+    }
+}
+
+/**
+ * The "‹ Life OS" return control.
+ *
+ * A chevron plus a word, on a 48dp-tall touch target, in the closet's own quiet ink — deliberately
+ * *not* a filled button. The closet is a different product with a different palette, and dropping a
+ * Life OS-styled pill into its header would look like a leftover. A plain text-and-chevron affordance
+ * reads as navigation in either design language, which matters because it has to sit inside Closie's
+ * chrome while referring to Life OS.
+ *
+ * `clickable` is applied before `padding` so the entire row is the target and the ripple covers the
+ * full strip; reversing the order would shrink the hit area down to the two glyphs.
+ */
+@Composable
+private fun ReturnToLifeOsRow(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .semantics { contentDescription = "返回 $label" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+            contentDescription = null,
+            tint = ClosieColor.Graphite,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = ClosieColor.Graphite
+        )
     }
 }

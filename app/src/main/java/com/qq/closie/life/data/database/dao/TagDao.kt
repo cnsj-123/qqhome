@@ -38,4 +38,24 @@ interface TagDao {
 
     @Query("SELECT COUNT(*) FROM entity_tag_cross_ref WHERE entityId = :entityId AND tagId = :tagId")
     suspend fun crossRefExists(entityId: String, tagId: String): Int
+
+    // ---- Backup (v2) --------------------------------------------------------------------------
+
+    @Query("SELECT * FROM tags")
+    suspend fun getAllOnce(): List<TagEntity>
+
+    @Query("SELECT * FROM entity_tag_cross_ref")
+    suspend fun getAllCrossRefsOnce(): List<EntityTagCrossRef>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(tags: List<TagEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllCrossRefs(refs: List<EntityTagCrossRef>)
+
+    @Query("DELETE FROM tags")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM entity_tag_cross_ref")
+    suspend fun deleteAllCrossRefs()
 }

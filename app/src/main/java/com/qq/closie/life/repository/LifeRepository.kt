@@ -52,8 +52,6 @@ class LifeRepository(
 
     suspend fun getEntity(id: String): LifeEntityEntity? = entityDao.getById(id)
 
-    fun observeEntity(id: String): Flow<LifeEntityEntity?> = entityDao.observeById(id)
-
     fun observeByType(type: String): Flow<List<LifeEntityEntity>> = entityDao.observeByType(type)
 
     fun observeRecent(limit: Int = 20): Flow<List<LifeEntityEntity>> = entityDao.observeRecent(limit)
@@ -171,8 +169,6 @@ class LifeRepository(
 
     suspend fun tagAttached(entityId: String, tagId: String): Boolean =
         tagDao.crossRefExists(entityId, tagId) > 0
-
-    fun observeAllTags(): Flow<List<TagEntity>> = tagDao.observeAll()
 
     fun observeTagsForEntity(entityId: String): Flow<List<TagEntity>> =
         tagDao.observeTagsForEntity(entityId)

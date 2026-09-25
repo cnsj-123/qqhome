@@ -37,4 +37,23 @@ interface LifeEntityDao {
 
     @Query("SELECT COUNT(*) FROM life_entities WHERE deletedAt IS NULL")
     suspend fun count(): Int
+
+    // ---- Backup (v2) --------------------------------------------------------------------------
+    // Bulk restore needs whole-table reads and writes. These are deliberately *not* `Flow` and not
+    // filtered by `deletedAt`: a backup must round-trip soft-deleted rows too, otherwise restoring
+    // would silently resurrect — or rather, silently un-delete — nothing and lose the tombstones
+    // the sync layer relies on.
+
+    @Query("SELECT * FROM life_entities")
+    suspend fun getAllOnce(): List<LifeEntityEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<LifeEntityEntity>)
+
+    @Query("DELETE FROM life_entities")
+    suspend fun deleteAll()
+
+    /** Inside-transaction sanity read; see BackupManager.applyLifePayload. */
+    @Query("SELECT COUNT(*) FROM life_entities")
+    suspend fun countOnce(): Int
 }

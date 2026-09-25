@@ -12,6 +12,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.qq.closie.life.capture.ExternalIntentRouter
+import com.qq.closie.life.capture.SharedContent
 import com.qq.closie.life.ui.shell.LifeShellNavHost
 import com.qq.closie.ui.theme.ClosieTheme
 
@@ -19,9 +21,32 @@ import com.qq.closie.ui.theme.ClosieTheme
  * A single one-shot external navigation request. At most one command exists at a time; a new
  * incoming intent always replaces the previous one, so a stale "add" can never preempt a later
  * share. The NavHost consumes the command once navigation has been performed.
+ *
+ * The share variants are split by *destination* rather than all funnelling into one `Import`. The
+ * previous single-command design sent every `ACTION_SEND` into Closie's product importer, which
+ * meant a browser article, a 知乎 answer or a 小红书 tutorial all landed in the wardrobe as a
+ * half-filled 商品. The split is what makes "share a page → 资料库" possible at all; see
+ * [com.qq.closie.life.capture.ExternalIntentRouter].
  */
 sealed interface ExternalNavCommand {
-    data class Import(val text: String, val nonce: Long) : ExternalNavCommand
+    /** A shopping link. Consumed by Closie's product importer, which owns that flow. */
+    data class ProductImport(val text: String, val nonce: Long) : ExternalNavCommand
+
+    /**
+     * A non-shopping web link. Consumed by Life OS: capture → fetch metadata → 资料库 → editor.
+     *
+     * [originalText] is kept alongside [url] so the capture records what the user actually shared,
+     * while [url] is what gets fetched.
+     */
+    data class ReferenceLink(
+        val originalText: String,
+        val url: String,
+        val nonce: Long
+    ) : ExternalNavCommand
+
+    /** Shared text with no URL — becomes a 记录, exactly like a clipboard save. */
+    data class CaptureText(val text: String, val nonce: Long) : ExternalNavCommand
+
     data class Edit(val itemId: String, val nonce: Long) : ExternalNavCommand
     data class Add(val nonce: Long) : ExternalNavCommand
 }
@@ -54,8 +79,14 @@ class MainActivity : ComponentActivity() {
 
         handleIntent(intent)
 
+        // Interrupted-restore recovery is deliberately NOT here. It belongs to the Application,
+        // because this activity is only one of several entry points into the process — quick capture
+        // and its service start the process too, and a restore must not stay half-applied just because
+        // it was reopened through a notification rather than the main screen. See
+        // RestoreRecoveryManager, driven from ClosieApplication.onCreate.
+
+        val app = application as ClosieApplication
         setContent {
-            val app = application as ClosieApplication
             ClosieTheme {
                 Surface {
                     // MainActivity now enters the Life OS shell. Closie itself is reachable from
@@ -80,6 +111,10 @@ class MainActivity : ComponentActivity() {
     /**
      * Reads incoming share / deep-link intents into a single one-shot command. ACTION_SEND is read
      * CharSequence-safe. launchMode is singleTop, so repeated shares reuse this activity.
+     *
+     * Shared text is classified by [ExternalIntentRouter] rather than assumed to be a product. This
+     * is the one place the decision is made, so every downstream flow takes an already-resolved
+     * command and none of them has to re-derive what the user meant.
      */
     private fun handleIntent(intent: Intent?) {
         val text = if (intent?.action == Intent.ACTION_SEND)
@@ -87,11 +122,20 @@ class MainActivity : ComponentActivity() {
         val editId = intent?.getStringExtra(EXTRA_EDIT_ITEM_ID)?.takeIf { it.isNotBlank() }
         val openAdd = intent?.getBooleanExtra(EXTRA_OPEN_ADD, false) == true
 
+        val nonce = nextNonce()
+
         // Replace, never accumulate: a new intent always wins over any stale command.
         externalCommand = when {
-            !text.isNullOrBlank() -> ExternalNavCommand.Import(text, nextNonce())
-            editId != null -> ExternalNavCommand.Edit(editId, nextNonce())
-            openAdd -> ExternalNavCommand.Add(nextNonce())
+            !text.isNullOrBlank() -> when (val shared = ExternalIntentRouter.route(text)) {
+                is SharedContent.ProductLink ->
+                    ExternalNavCommand.ProductImport(shared.text, nonce)
+                is SharedContent.ReferenceLink ->
+                    ExternalNavCommand.ReferenceLink(shared.text, shared.url, nonce)
+                is SharedContent.PlainText ->
+                    ExternalNavCommand.CaptureText(shared.text, nonce)
+            }
+            editId != null -> ExternalNavCommand.Edit(editId, nonce)
+            openAdd -> ExternalNavCommand.Add(nonce)
             else -> externalCommand
         }
     }

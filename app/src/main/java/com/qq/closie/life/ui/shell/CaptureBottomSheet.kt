@@ -48,10 +48,15 @@ private data class CaptureOption(
 )
 
 /**
- * v0.1 availability:
- *  - 快速采集 / 粘贴文本 / 链接 / 手动记录 are wired: they either launch the existing
- *    QuickCaptureActivity or write a capture row through the repository.
- *  - 从相册 is not implemented yet, so it is disabled and says 即将开放.
+ * v0.3.0 availability — **every row is live.**
+ *
+ *  - 快速采集 launches the existing QuickCaptureActivity.
+ *  - 从相册 opens the system Photo Picker and copies the chosen image into Life OS's own media
+ *    directory. It was disabled in v0.1 ("即将开放"); it is now the second-most useful row in the
+ *    sheet, because a screenshot the user already has is the most common thing they want to keep.
+ *  - 粘贴文本 / 链接 write a capture row straight from the clipboard.
+ *  - 手动记录 opens the record editor **immediately** rather than inserting a silent empty row —
+ *    see the note on [CaptureAction.ManualRecord].
  */
 private val CAPTURE_OPTIONS = listOf(
     CaptureOption(
@@ -62,8 +67,7 @@ private val CAPTURE_OPTIONS = listOf(
     CaptureOption(
         action = CaptureAction.FromGallery,
         title = "从相册",
-        subtitle = "即将开放",
-        enabled = false
+        subtitle = "选择一张照片存进记录"
     ),
     CaptureOption(
         action = CaptureAction.PasteText,
@@ -78,7 +82,7 @@ private val CAPTURE_OPTIONS = listOf(
     CaptureOption(
         action = CaptureAction.ManualRecord,
         title = "手动记录",
-        subtitle = "新建一条空记录"
+        subtitle = "直接写一条新记录"
     )
 )
 

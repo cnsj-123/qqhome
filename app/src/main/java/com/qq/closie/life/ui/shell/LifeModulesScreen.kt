@@ -15,17 +15,24 @@ import com.qq.closie.life.ui.theme.rememberLifeDimensions
 /**
  * 生活 — the module directory.
  *
- * Deliberately quiet: a page title, seven rows separated by hairlines, and a status word. No
- * coloured cards, no icons per module, no grid. Seven coloured cards would read as a dashboard,
- * and a dashboard is the one thing Life OS is not.
+ * Deliberately quiet: a page title, eight rows separated by hairlines, and a status word. No
+ * coloured cards, no icons per module, no grid. Eight coloured cards would read as a dashboard, and
+ * a dashboard is the one thing Life OS is not.
  *
- * Only 衣橱 is live; it deep-links into the existing Closie closet. Every other row is disabled
- * (see [LifeModuleRow]) so it cannot be mistaken for a working entry — no ripple, no focus ring,
- * no press animation.
+ * **v0.3.0 change — no row is dead any more.** In v0.1 only 衣橱 was live and the other six were
+ * disabled: no ripple, no focus ring, nothing. That was honest but useless — a user with a thought
+ * about their plants had nowhere to put it, and a row that visibly refuses to respond is worse than
+ * no row at all. Now every row opens something: the four built modules open themselves, and the
+ * planned ones (财务/物品/旅行/园艺) open [ModuleLandingScreen], which says plainly that the module
+ * is 规划中 and offers the one action that is real today — 先记到资料库.
+ *
+ * The screen itself stays a pure renderer: it maps a [LifeModuleSpec] to a title, a status word and
+ * a callback, and knows nothing about routes. The key→destination decision lives in the shell, so
+ * this file never needs to import Navigation.
  */
 @Composable
 fun LifeModulesScreen(
-    onOpenCloset: () -> Unit,
+    onOpenModule: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val dims = rememberLifeDimensions()
@@ -48,7 +55,7 @@ fun LifeModulesScreen(
                     title = module.title,
                     status = LifeModuleCatalog.statusOf(module),
                     enabled = module.open,
-                    onClick = if (module.open) onOpenCloset else null,
+                    onClick = if (module.open) ({ onOpenModule(module.key) }) else null,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -62,6 +69,6 @@ fun LifeModulesScreen(
 @Composable
 private fun LifeModulesScreenPreview() {
     LifeTheme {
-        LifeModulesScreen(onOpenCloset = {})
+        LifeModulesScreen(onOpenModule = {})
     }
 }

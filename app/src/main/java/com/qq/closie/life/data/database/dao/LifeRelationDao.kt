@@ -39,4 +39,15 @@ interface LifeRelationDao {
 
     @Query("SELECT COUNT(*) FROM life_relations WHERE fromEntityId = :fromId AND toEntityId = :toId AND relationType = :type")
     suspend fun exists(fromId: String, toId: String, type: String): Int
+
+    // ---- Backup (v2) --------------------------------------------------------------------------
+
+    @Query("SELECT * FROM life_relations")
+    suspend fun getAllOnce(): List<LifeRelationEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(relations: List<LifeRelationEntity>)
+
+    @Query("DELETE FROM life_relations")
+    suspend fun deleteAll()
 }

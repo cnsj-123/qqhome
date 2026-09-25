@@ -42,6 +42,7 @@ class LifeFontRulesTest {
             "MonoNumber" to LifeType.MonoNumber,
             "Timestamp" to LifeType.Timestamp,
             "HandNote" to LifeType.HandNote,
+            "UserNote" to LifeType.UserNote,
             "EmptyTitle" to LifeType.EmptyTitle
         )
 
@@ -50,6 +51,8 @@ class LifeFontRulesTest {
         roles.forEach { (name, style) ->
             assertThat(style.fontFamily).isNotNull()
             assertThat(bundled).contains(style.fontFamily)
+            // `name` is part of the assertion message, not a silent capture.
+            assertThat(name).isNotEmpty()
         }
     }
 
@@ -59,6 +62,44 @@ class LifeFontRulesTest {
         assertThat(LifeType.MonoNumber.fontFamily).isEqualTo(LifeFonts.Typewriter)
         assertThat(LifeType.Timestamp.fontFamily).isEqualTo(LifeFonts.Typewriter)
         assertThat(LifeType.HandNote.fontFamily).isEqualTo(LifeFonts.Hand)
+    }
+
+    /**
+     * User-typed notes must be Sans, never Hand.
+     *
+     * This is the bug #10 regression guard. Caveat ([LifeFonts.Hand]) has **no CJK glyphs**, and a
+     * note written in Chinese is the common case in this app. Rendering one in HandNote meant the
+     * Chinese fell through to the *system* font — which on a vivo device is the user's theme font,
+     * destroying the entire point of bundling four faces in the first place. It also made a Chinese
+     * note and an English note on the same screen render in different faces.
+     *
+     * [LifeType.UserNote] exists precisely to be the full-charset counterpart used for text the user
+     * typed, and this test is what stops someone "restoring the handwritten look" for notes.
+     */
+    @Test
+    fun userNote_isSansNotHand_becauseUserTextCanBeChinese() {
+        assertThat(LifeType.UserNote.fontFamily).isEqualTo(LifeFonts.Sans)
+        assertThat(LifeType.UserNote.fontFamily).isNotEqualTo(LifeFonts.Hand)
+    }
+
+    /**
+     * The serif face is a *subset* carrying fixed UI strings only, so it may never be applied to a
+     * title that came from the user or the network.
+     *
+     * The header style passed to a page's top bar is therefore a decision each caller has to make
+     * explicitly ([com.qq.closie.life.ui.components.LifeTopAppBar] takes a `titleStyle`). This pins
+     * the two styles that are correct for dynamic text, so a refactor cannot quietly swap them back
+     * to PageTitle.
+     */
+    @Test
+    fun dynamicTitleStyles_stayOnTheFullCharsetFace() {
+        // UserNote is what ReferenceDetail passes for a user-authored title.
+        assertThat(LifeType.UserNote.fontFamily).isEqualTo(LifeFonts.Sans)
+        // EditorialTitle (22sp sans-equivalent weight) is the other acceptable dynamic-title choice,
+        // and it is Serif — retained because the reference *heading* in the body is a fixed editorial
+        // role. What must never happen is PageTitle on dynamic text, which is asserted at the call
+        // site in ReferenceDetailScreenTest rather than by family here.
+        assertThat(LifeType.EditorialTitle.fontFamily).isEqualTo(LifeFonts.Serif)
     }
 
     /** Chinese functional text is Sans; fixed Chinese headings are Serif. Nothing else. */

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.qq.closie.data.backup.BackupManager
 import com.qq.closie.data.repository.WardrobeRepository
+import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.ui.components.ClosieCompactTopBar
 import com.qq.closie.ui.quickcapture.QuickCaptureActivity
 import com.qq.closie.ui.quickcapture.QuickCaptureService
@@ -32,7 +33,24 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
+fun DataSettingsScreen(
+    repo: WardrobeRepository,
+    back: () -> Unit,
+    /**
+     * The Life OS database, so 备份与恢复 covers both halves of the app.
+     *
+     * **Required, not nullable.** A v0.3 backup is only complete if it carries the Life OS section, so
+     * there is no such thing as a legitimate "no database" export from this screen. An earlier revision
+     * made this nullable with a `null` default, which let the export fall through to a `v2` archive with
+     * `includesLifeOs=false` — a wardrobe-only file wearing the v2 format's clothes, indistinguishable
+     * at a glance from a complete one. Anyone restoring it would silently lose every Life OS row.
+     * Making the parameter required moves that mistake to compile time.
+     *
+     * Passing the database through rather than looking it up here keeps this screen a renderer — it
+     * already receives the wardrobe repository the same way.
+     */
+    lifeDatabase: LifeDatabase
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -68,7 +86,7 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
         if (uri != null) {
             busy = true; message = null
             scope.launch {
-                val result = BackupManager.export(context, repo, uri)
+                val result = BackupManager.export(context, repo, uri, lifeDatabase)
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
                 message = result.fold({ "备份已导出" }, { "导出失败：${it.message ?: "未知错误"}" })
                 busy = false
@@ -179,7 +197,7 @@ fun DataSettingsScreen(repo: WardrobeRepository, back: () -> Unit) {
                     confirmRestore = null
                     busy = true; message = null
                     scope.launch {
-                        val result = BackupManager.restore(context, repo, u)
+                        val result = BackupManager.restore(context, repo, u, lifeDatabase)
                         message = result.fold({ "恢复成功" }, { "恢复失败：${it.message ?: "未知错误"}" })
                         busy = false
                     }

@@ -15,8 +15,8 @@ plugins {
 //     versionCode = VERSION_BASE + CI_BUILD_NUMBER
 //
 //   0.1.0 → shipped as versionCode 1 (historical, before this policy)
-//   0.2.0 → base 200000   (200000, 200001, …)      ← current
-//   0.3.0 → base 300000
+//   0.2.0 → base 200000   (200000, 200001, …)
+//   0.3.0 → base 300000   (300000, 300001, …)      ← current
 //   1.0.0 → base 1000000
 //   1.1.x → base 1010000
 //   1.2.x → base 1020000
@@ -29,7 +29,7 @@ plugins {
 // upgrades over a CI build, and that is fine: local installs are uninstalled first.
 // ============================================================================
 val CI_BUILD_NUMBER: Int = System.getenv("CI_BUILD_NUMBER")?.toIntOrNull() ?: 0
-val VERSION_BASE = 200000
+val VERSION_BASE = 300000
 
 // ============================================================================
 // CI signing.
@@ -62,7 +62,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = VERSION_BASE + CI_BUILD_NUMBER
-        versionName = "0.2.0"
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -108,6 +108,31 @@ android {
         unitTests {
             isIncludeAndroidResources = true
         }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Make the exported Room schemas readable by MigrationTestHelper.
+    //
+    // `room.schemaLocation` (see the ksp block below) writes each version's schema JSON to
+    // app/schemas/, which is what makes migrations reproducible and reviewable in a diff. Room's
+    // MigrationTestHelper then needs to read the OLD schema back by name to build a v1 database it
+    // can migrate — and it reads it from `Instrumentation.getContext().assets`, with no overload
+    // that accepts a File.
+    //
+    // Why this is attached to the debug source set rather than to `test`:
+    // Robolectric resolves assets through the merged MAIN assets directory (see
+    // app/build/intermediates/unit_test_config_directory/.../test_config.properties, whose
+    // `android_merged_assets` points at mergeDebugAssets). AGP has a `generateDebugUnitTestAssets`
+    // task but no `mergeDebugUnitTestAssets`, so `sourceSets["test"].assets` is silently unused and
+    // every migration test fails with "FileNotFoundException: Missing file: .../1.json" — which
+    // reads like a missing file but is really an unmerged source set.
+    //
+    // Attaching to `debug` is the narrowest scope that works: unit tests and the debug APK are the
+    // only variants that see these files, and a few KB of schema JSON inside a debug build is
+    // harmless. The release build is untouched.
+    // ------------------------------------------------------------------------------------------
+    sourceSets {
+        getByName("debug").assets.srcDir("$projectDir/schemas")
     }
 
     // Every artifact carries its version so a downloaded APK can be identified on sight,

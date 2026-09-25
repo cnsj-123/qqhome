@@ -2,477 +2,193 @@ package com.qq.closie.data.backup
 
 import android.content.Context
 import android.net.Uri
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import com.qq.closie.data.draft.DraftStore
-import com.qq.closie.data.model.*
 import com.qq.closie.data.repository.WardrobeRepository
+import com.qq.closie.life.data.database.LifeDatabase
 import java.io.File
-import java.util.UUID
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
-const val BACKUP_FORMAT_VERSION = 1
+/**
+ * Backup format version.
+ *
+ *  - **1** — Closie only: five JSON files, the drafts, and the wardrobe images.
+ *  - **2** — v0.3.0: adds the Life OS side (the Room database plus its managed media), which format
+ *    1 did not know about at all. Restoring a v1 archive is still supported — see
+ *    [BackupManager.restore], which treats v1 as "no Life OS section" rather than as an error.
+ *
+ * v2 exists because a v1 backup was *silently incomplete* once Life OS shipped: a user backing up
+ * their wardrobe and restoring on a new phone would lose every 记录, 资料库 entry, 计划 and piece of
+ * media without a single warning. A backup that silently omits half the app is worse than no backup,
+ * because it is trusted.
+ */
+const val BACKUP_FORMAT_VERSION = 2
 const val BACKUP_SCHEMA_VERSION = 1
 
 /** Backward/forward-compatible backup format version. */
 data class BackupManifest(
     val formatVersion: Int = BACKUP_FORMAT_VERSION,
     val schemaVersion: Int = BACKUP_SCHEMA_VERSION,
-    val createdAt: String = ""
+    val createdAt: String = "",
+    /**
+     * Whether the archive carries the Life OS section (`life/…`).
+     *
+     * Explicit in the manifest rather than inferred from the entries present: a v2 backup of an app
+     * whose Life OS database happens to be empty is still a v2 backup, and inferring would make an
+     * empty-but-valid archive indistinguishable from a truncated one.
+     */
+    val includesLifeOs: Boolean = false
 )
 
 /**
- * Creates and restores a complete local backup (all JSON plus private images) as a single ZIP.
- * Restore is staged: everything is fully built and validated in a temporary sibling directory and
- * only swapped into place atomically, so a failed restore leaves the current wardrobe untouched.
+ * The public entry point for backup and restore.
+ *
+ * ### Why this is now only a facade
+ *
+ * This object used to be one ~800-line class that owned the ZIP format, the validation rules, the
+ * restore coordination, the database apply and the rollback snapshot at once. That is how the
+ * restore atomicity defect survived: the ordering that made a half-restore possible was invisible
+ * inside a file whose stated job was "backup", so each new safeguard was added as another branch
+ * around the same commit sequence rather than as a change to the sequence itself.
+ *
+ * The work is now split by direction and by irreversibility:
+ *
+ *  - [BackupValidator] — what counts as an acceptable archive or directory. Reads only.
+ *  - [BackupExporter] / [BackupImporter] — the two directions of the archive format.
+ *  - [LifeBackupApplier] — applying a typed payload to the live database, and the media write log.
+ *  - [RestoreCoordinator] — the commit boundary: staging, the swap, the database commit, the health
+ *    check, and recovery of an interrupted run.
+ *
+ * What remains here is the stable surface the UI and tests already depend on.
+ *
+ * ### The completeness contract
+ *
+ * A "complete backup" in v0.3 means all three surfaces: the Closet, the Life OS database and the Life
+ * OS media. [export] and [restore] therefore require a non-null [LifeDatabase]. The old
+ * `lifeDatabase: LifeDatabase? = null` default permitted a *v2 archive with no Life OS section* —
+ * structurally valid, and a silent data-loss trap for the user who trusted it. Requiring the database
+ * removes the possibility rather than documenting against it.
+ *
+ * v1 remains a **restore-only** format: archives written before v0.3.0 stay restorable forever, but
+ * this build never produces one. Tests that need a v1 archive build one directly rather than asking
+ * the exporter to fake one.
  */
 object BackupManager {
     const val FORMAT_VERSION = BACKUP_FORMAT_VERSION
     const val SCHEMA_VERSION = BACKUP_SCHEMA_VERSION
 
-    // ZIP resource limits (defensive against corrupt/malicious archives).
-    private const val MAX_ENTRIES = 20_000
-    private const val MAX_ENTRY_SIZE = 512L * 1024 * 1024
-    private const val MAX_TOTAL_SIZE = 5L * 1024 * 1024 * 1024
-
-    private val gson = Gson()
-    private val itemType = object : TypeToken<List<ClothingItem>>() {}.type
-    private val wearType = object : TypeToken<List<WearEvent>>() {}.type
-    private val washType = object : TypeToken<List<WashEvent>>() {}.type
-    private val ootdType = object : TypeToken<List<Ootd>>() {}.type
-    private val outfitType = object : TypeToken<List<Outfit>>() {}.type
-
-    private fun dataDir(context: Context) = File(context.filesDir, "closie")
+    /**
+     * Recovers from a restore that was interrupted (e.g. process killed) between publishing the
+     * wardrobe and committing the Life OS half. Must run before the repository reads JSON.
+     *
+     * Never throws — it reports. Callers **must** inspect the returned [RecoveryOutcome]: a
+     * [RecoveryOutcome.RetryRequired] means `closie/` was not repaired and may be a half-restore, so
+     * reading it would expose the user to the backup's wardrobe over their own data.
+     *
+     * This overload cannot see the Life OS database, so it repairs the filesystem halves and leaves the
+     * marker in place if the database half also needs work — call [recoverInterruptedRestore] with a
+     * database to finish that. Doing the wardrobe half here is the right split: the repository
+     * constructor is the earliest point at which `closie/` must already be correct.
+     */
+    fun recoverInterruptedRestore(context: Context, fs: RestoreFs = RealRestoreFs) =
+        RestoreCoordinator.recoverFilesystemOnly(context, fs)
 
     /**
-     * Recovers from a restore that was interrupted (e.g. process killed) between the two directory
-     * renames. Must run before the repository reads JSON. Never throws.
+     * Full recovery, including the Life OS database.
+     *
+     * Needed because a restore that was killed *after* its database transaction committed leaves both
+     * halves on the backup's version, and undoing that requires the rows saved before the transaction.
+     * Requires the live database, so it belongs at a point in startup where one exists — not in a
+     * constructor.
      */
-    fun recoverInterruptedRestore(context: Context) {
-        val filesDir = context.filesDir
-        val closie = File(filesDir, "closie")
-        val olds = listDirs(filesDir, ".closie_restore_old_")
-        val stages = listDirs(filesDir, ".closie_restore_stage_")
-
-        // "closie" missing but an old snapshot exists -> likely died mid-swap; restore the old data.
-        if (!closie.exists() && olds.isNotEmpty()) {
-            runCatching { olds.first().renameTo(closie) }
-        }
-        // Stale staging dirs are always safe to drop.
-        stages.forEach { runCatching { it.deleteRecursively() } }
-        // Only drop stale old snapshots once the live directory looks valid, to never delete the
-        // user's only complete copy.
-        if (closie.exists() && olds.isNotEmpty() && validateDataDirectory(closie)) {
-            olds.forEach { runCatching { it.deleteRecursively() } }
-        }
-    }
-
-    private fun listDirs(parent: File, prefix: String): List<File> =
-        parent.listFiles()?.filter { it.name.startsWith(prefix) }?.sortedByDescending { it.lastModified() }.orEmpty()
+    suspend fun recoverInterruptedRestore(
+        context: Context,
+        lifeDatabase: LifeDatabase?,
+        fs: RestoreFs = RealRestoreFs
+    ) = RestoreCoordinator.recover(context, lifeDatabase, fs)
 
     /**
      * Returns true when a data directory contains all five core JSON files and they all parse.
      * Draft files are optional (older backups have none); when present they must also parse.
      */
-    fun validateDataDirectory(dir: File): Boolean {
-        val files = listOf(
-            "items.json" to itemType,
-            "wear.json" to wearType,
-            "wash.json" to washType,
-            "ootds.json" to ootdType,
-            "outfits.json" to outfitType
-        )
-        val coreValid = files.all { (name, type) ->
-            val f = File(dir, name)
-            f.isFile && runCatching { gson.fromJson<Any>(f.readText(), type) }.getOrNull() != null
-        }
-        if (!coreValid) return false
-        val draftsDir = File(dir, "drafts")
-        val draftFiles = listOf(
-            "ootd_drafts.json" to ootdType,
-            "outfit_drafts.json" to outfitType
-        )
-        return draftFiles.all { (name, type) ->
-            val f = File(draftsDir, name)
-            if (!f.exists()) true // draft-less directories (old data) remain valid
-            else runCatching { gson.fromJson<Any>(f.readText(), type) }.getOrNull() != null
-        }
-    }
+    fun validateDataDirectory(dir: File): Boolean = BackupValidator.validateDataDirectory(dir)
 
-    /** Writes a complete backup ZIP to [outputUri] (SAF document). */
-    suspend fun export(context: Context, repo: WardrobeRepository, outputUri: Uri): Result<String> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val items = repo.listItems()
-                val wears = repo.listWearEvents()
-                val washes = repo.washEvents.value
-                val ootds = repo.listOotds()
-                val outfits = repo.listOutfits()
+    /**
+     * Writes a complete backup ZIP to [outputUri] (SAF document).
+     *
+     * [lifeDatabase] is required: a v0.3 backup always contains the Life OS database and media. See the
+     * completeness contract on this object for why the nullable form was removed rather than
+     * documented.
+     */
+    suspend fun export(
+        context: Context,
+        repo: WardrobeRepository,
+        outputUri: Uri,
+        lifeDatabase: LifeDatabase
+    ): Result<String> = BackupExporter.export(context, repo, outputUri, lifeDatabase)
 
-                val tmpDir = File(context.cacheDir, "backup_export_${System.currentTimeMillis()}").apply { mkdirs() }
-                val imagesDir = File(tmpDir, "images").apply { mkdirs() }
+    /**
+     * Restores a backup ZIP via a staged, crash-consistent flow.
+     *
+     * Both format versions are accepted:
+     *
+     *  - **v1** has no `life/` section. It restores the wardrobe and leaves the Life OS database
+     *    completely untouched — not cleared, not recreated. A user who kept a v1 backup from before
+     *    v0.3.0 and restores it should get their wardrobe back, not lose the 记录 and 资料库 they have
+     *    accumulated since. Passing the live database alongside a v1 archive is harmless: the v1
+     *    protocol never reads it.
+     *  - **v2** additionally carries `life/data.json` (a typed [LifeBackupPayload]) and `life/media/…`.
+     *
+     * [lifeDatabase] is required even though a v1 archive will not use it. Keeping it non-null here is
+     * what stops a production caller from forgetting it: a restore that silently ran without a database
+     * would fail *after* it had already swapped the Closet, which is the worst possible moment.
+     *
+     * The ordering and rollback rules live in [RestoreCoordinator]; this method only forwards.
+     */
+    suspend fun restore(
+        context: Context,
+        repo: WardrobeRepository,
+        inputUri: Uri,
+        lifeDatabase: LifeDatabase
+    ): Result<Unit> = restore(context, repo, inputUri, lifeDatabase, NoOpRestoreHooks)
 
-                val allPaths = mutableListOf<String>()
-                items.forEach { it.images.forEach { img -> img.localPath?.let { p -> allPaths += p } } }
-                ootds.forEach { it.images.forEach { p -> if (p.isNotBlank()) allPaths += p } }
-                outfits.forEach { it.tryOnImages.forEach { p -> if (p.isNotBlank()) allPaths += p } }
+    /** [restore] with an explicit [RestoreHooks] — the seam regression tests use to fail a stage. */
+    suspend fun restore(
+        context: Context,
+        repo: WardrobeRepository,
+        inputUri: Uri,
+        lifeDatabase: LifeDatabase,
+        hooks: RestoreHooks
+    ): Result<Unit> = restore(context, repo, inputUri, lifeDatabase, hooks, RealRestoreFs)
 
-                // Drafts are user data too: a complete backup must include them and their images.
-                val draftStore = DraftStore(context)
-                val ootdDrafts = draftStore.listOotdDrafts()
-                val outfitDrafts = draftStore.listOutfitDrafts()
-                ootdDrafts.forEach { it.images.forEach { p -> if (p.isNotBlank()) allPaths += p } }
-                outfitDrafts.forEach { it.tryOnImages.forEach { p -> if (p.isNotBlank()) allPaths += p } }
-
-                // Never silently drop referenced images: fail if a local file is missing.
-                val missing = allPaths.distinct().filter { path ->
-                    val f = File(path)
-                    !f.exists() || !f.isFile || f.length() <= 0L
-                }
-                if (missing.isNotEmpty()) {
-                    throw IllegalStateException("有 ${missing.size} 张本地图片缺失，无法创建完整备份")
-                }
-
-                val pathMap = mutableMapOf<String, String>()
-                var index = 0
-                allPaths.distinct().forEach { path ->
-                    val f = File(path)
-                    val ext = f.extension.ifBlank { "bin" }
-                    val name = "img_%04d.$ext".format(index++)
-                    f.copyTo(File(imagesDir, name), overwrite = true)
-                    pathMap[path] = name
-                }
-
-                fun mappedPath(p: String?): String? = p?.let { pathMap[it]?.let { n -> "images/$n" } }
-
-                val mappedItems = items.map { item ->
-                    item.copy(images = item.images.map { img -> img.copy(localPath = mappedPath(img.localPath)) })
-                }
-                val mappedOotds = ootds.map { o -> o.copy(images = o.images.mapNotNull { mappedPath(it) }) }
-                val mappedOutfits = outfits.map { o -> o.copy(tryOnImages = o.tryOnImages.mapNotNull { mappedPath(it) }) }
-                val mappedOotdDrafts = ootdDrafts.map { o -> o.copy(images = o.images.mapNotNull { mappedPath(it) }) }
-                val mappedOutfitDrafts = outfitDrafts.map { o -> o.copy(tryOnImages = o.tryOnImages.mapNotNull { mappedPath(it) }) }
-
-                val manifest = BackupManifest(
-                    formatVersion = FORMAT_VERSION,
-                    schemaVersion = SCHEMA_VERSION,
-                    createdAt = java.time.Instant.now().toString()
-                )
-
-                context.contentResolver.openOutputStream(outputUri)?.use { raw ->
-                    ZipOutputStream(raw).use { zip ->
-                        fun writeEntry(name: String, content: String) {
-                            zip.putNextEntry(ZipEntry(name))
-                            zip.write(content.toByteArray(Charsets.UTF_8))
-                            zip.closeEntry()
-                        }
-                        writeEntry("manifest.json", gson.toJson(manifest))
-                        writeEntry("data/items.json", gson.toJson(mappedItems))
-                        writeEntry("data/wear.json", gson.toJson(wears))
-                        writeEntry("data/wash.json", gson.toJson(washes))
-                        writeEntry("data/ootds.json", gson.toJson(mappedOotds))
-                        writeEntry("data/outfits.json", gson.toJson(mappedOutfits))
-                        writeEntry("data/ootd_drafts.json", gson.toJson(mappedOotdDrafts))
-                        writeEntry("data/outfit_drafts.json", gson.toJson(mappedOutfitDrafts))
-                        imagesDir.listFiles().orEmpty().forEach { f ->
-                            zip.putNextEntry(ZipEntry("images/${f.name}"))
-                            f.inputStream().use { it.copyTo(zip) }
-                            zip.closeEntry()
-                        }
-                    }
-                } ?: throw IllegalStateException("无法写入目标文件")
-                tmpDir.deleteRecursively()
-                "OK"
-            }.also { runCatching { context.cacheDir?.listFiles().orEmpty().filter { it.name.startsWith("backup_export_") }.forEach { it.deleteRecursively() } } }
-        }
-
-    /** Restores a backup ZIP via a fully staged, rollback-safe flow. */
-    suspend fun restore(context: Context, repo: WardrobeRepository, inputUri: Uri): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val ts = System.currentTimeMillis()
-                val extractDir = File(context.cacheDir, "backup_restore_extract_$ts")
-                val stageDir = File(context.filesDir, ".closie_restore_stage_$ts")
-                val oldDir = File(context.filesDir, ".closie_restore_old_$ts")
-                try {
-                    unzipSafely(context, inputUri, extractDir)
-
-                    // 1. Validate manifest.
-                    val manifestFile = File(extractDir, "manifest.json")
-                    if (!manifestFile.exists()) throw IllegalStateException("备份缺少 manifest.json")
-                    val manifest = gson.fromJson(manifestFile.readText(), BackupManifest::class.java)
-                        ?: throw IllegalStateException("备份 manifest 无效")
-                    if (manifest.formatVersion != FORMAT_VERSION) {
-                        throw IllegalStateException("该备份版本暂不支持（formatVersion=${manifest.formatVersion}）")
-                    }
-
-                    // 2. Parse and validate all JSON.
-                    val items = parseFile<ClothingItem>(File(extractDir, "data/items.json"), itemType)
-                    val wears = parseFile<WearEvent>(File(extractDir, "data/wear.json"), wearType)
-                    val washes = parseFile<WashEvent>(File(extractDir, "data/wash.json"), washType)
-                    val ootds = parseFile<Ootd>(File(extractDir, "data/ootds.json"), ootdType)
-                    val outfits = parseFile<Outfit>(File(extractDir, "data/outfits.json"), outfitType)
-                    validateReferences(items, wears, washes, ootds, outfits)
-
-                    // Drafts are optional: older backups without draft files still restore cleanly
-                    // and are interpreted as an empty draft list.
-                    val ootdDrafts = parseOptionalFile<Ootd>(File(extractDir, "data/ootd_drafts.json"), ootdType)
-                    val outfitDrafts = parseOptionalFile<Outfit>(File(extractDir, "data/outfit_drafts.json"), outfitType)
-
-                    // 3. Build the full future "closie/" inside staging.
-                    stageDir.mkdirs()
-                    val restoredItems = items.map { item ->
-                        item.copy(images = item.images.map { img ->
-                            img.copy(localPath = if (img.localPath.isNullOrBlank()) null else stageImageStrict(context, extractDir, stageDir, img.localPath, "items"))
-                        })
-                    }
-                    val restoredOotds = ootds.map { o ->
-                        o.copy(images = o.images.mapNotNull { p ->
-                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "ootd")
-                        })
-                    }
-                    val restoredOutfits = outfits.map { o ->
-                        o.copy(tryOnImages = o.tryOnImages.mapNotNull { p ->
-                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "outfit")
-                        })
-                    }
-                    val restoredOotdDrafts = ootdDrafts.map { o ->
-                        o.copy(images = o.images.mapNotNull { p ->
-                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "ootd")
-                        })
-                    }
-                    val restoredOutfitDrafts = outfitDrafts.map { o ->
-                        o.copy(tryOnImages = o.tryOnImages.mapNotNull { p ->
-                            if (p.isBlank()) null else stageImageStrict(context, extractDir, stageDir, p, "outfit")
-                        })
-                    }
-
-                    // 4. Write the staged JSON.
-                    writeAtomic(stageDir, "items.json", gson.toJson(restoredItems))
-                    writeAtomic(stageDir, "wear.json", gson.toJson(wears))
-                    writeAtomic(stageDir, "wash.json", gson.toJson(washes))
-                    writeAtomic(stageDir, "ootds.json", gson.toJson(restoredOotds))
-                    writeAtomic(stageDir, "outfits.json", gson.toJson(restoredOutfits))
-
-                    // Restored drafts live in the same closie/drafts folder the app reads, so the
-                    // store picks them up immediately after the swap — nothing is deleted here.
-                    val draftsDir = File(stageDir, "drafts").apply { mkdirs() }
-                    writeAtomic(draftsDir, "ootd_drafts.json", gson.toJson(restoredOotdDrafts))
-                    writeAtomic(draftsDir, "outfit_drafts.json", gson.toJson(restoredOutfitDrafts))
-
-                    // 5. Re-validate the fully assembled staging directory before committing.
-                    if (!validateDataDirectory(stageDir)) throw IllegalStateException("备份数据校验失败")
-
-                    // 6. Commit via directory-level swap with rollback.
-                    val closieDir = dataDir(context)
-                    if (closieDir.exists() && !closieDir.renameTo(oldDir)) {
-                        throw IllegalStateException("无法暂存旧数据")
-                    }
-                    try {
-                        if (!stageDir.renameTo(closieDir)) {
-                            if (oldDir.exists() && !closieDir.exists()) runCatching { oldDir.renameTo(closieDir) }
-                            throw IllegalStateException("无法应用新数据")
-                        }
-                    } catch (e: Exception) {
-                        if (oldDir.exists() && !closieDir.exists()) runCatching { oldDir.renameTo(closieDir) }
-                        throw e
-                    }
-
-                    // 7. Refresh in-memory state and health-check before dropping the old snapshot.
-                    repo.reloadFromDisk()
-                    if (!validateDataDirectory(closieDir)) {
-                        if (oldDir.exists()) {
-                            runCatching { closieDir.deleteRecursively() }
-                            runCatching { oldDir.renameTo(closieDir) }
-                            repo.reloadFromDisk()
-                        }
-                        throw IllegalStateException("恢复后数据校验失败")
-                    }
-                    oldDir.deleteRecursively()
-                    Unit
-                } finally {
-                    extractDir.deleteRecursively()
-                    if (stageDir.exists()) stageDir.deleteRecursively()
-                }
-            }
-        }
+    /**
+     * [restore] with both seams explicit: [hooks] fails a *stage* of the sequence, [fs] fails an
+     * individual filesystem operation. The latter is what makes the "rollback itself fails" paths
+     * reachable — those are the states where recovery must keep its evidence and retry rather than
+     * claim success.
+     */
+    suspend fun restore(
+        context: Context,
+        repo: WardrobeRepository,
+        inputUri: Uri,
+        lifeDatabase: LifeDatabase,
+        hooks: RestoreHooks,
+        fs: RestoreFs
+    ): Result<Unit> = RestoreCoordinator(context, hooks, fs).restore(repo, inputUri, lifeDatabase)
 
     /** Exports the wardrobe as a CSV (UTF-8 with BOM) for viewing on a computer. */
     suspend fun exportCsv(context: Context, repo: WardrobeRepository, outputUri: Uri): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val items = repo.listItems()
-                val wears = repo.listWearEvents()
-                val washes = repo.washEvents.value
-                val wearCount = wears.groupingBy { it.itemId }.eachCount()
-                val washCount = washes.groupingBy { it.itemId }.eachCount()
-
-                val header = listOf(
-                    "id", "status", "name", "category", "subcategory", "brand", "store",
-                    "platform", "productUrl", "price", "originalPrice", "purchaseDate",
-                    "sizeLabel", "rating", "wearCount", "washCount"
-                )
-                val lines = StringBuilder("\uFEFF")
-                lines.appendLine(header.joinToString(",") { csvCell(it) })
-                items.forEach { item ->
-                    val row = listOf(
-                        item.id, item.status.name, item.name, item.category, item.subcategory,
-                        item.brand, item.store, item.purchasePlatform, item.productUrl,
-                        item.price?.toString().orEmpty(), item.originalPrice?.toString().orEmpty(),
-                        item.purchaseDate, item.sizeLabel, item.rating.toString(),
-                        (wearCount[item.id] ?: 0).toString(), (washCount[item.id] ?: 0).toString()
-                    )
-                    lines.appendLine(row.joinToString(",") { csvCell(it) })
-                }
-                context.contentResolver.openOutputStream(outputUri)?.use { raw ->
-                    raw.write(lines.toString().toByteArray(Charsets.UTF_8))
-                } ?: throw IllegalStateException("无法写入目标文件")
-            }
-        }
-
-    private fun csvCell(value: String): String = "\"" + value.replace("\"", "\"\"") + "\""
-
-    private fun <T> parseFile(file: File, type: java.lang.reflect.Type): List<T> {
-        if (!file.exists()) throw IllegalStateException("备份缺少 ${file.name}")
-        val result = runCatching { gson.fromJson<List<T>>(file.readText(), type) }
-            .getOrElse { throw IllegalStateException("备份数据无法解析（${file.name}）") }
-        if (result == null) throw IllegalStateException("备份数据无效（${file.name}）")
-        return result
-    }
-
-    /** Like [parseFile] but a missing file means an empty list — for optional draft entries. */
-    private fun <T> parseOptionalFile(file: File, type: java.lang.reflect.Type): List<T> {
-        if (!file.exists()) return emptyList()
-        val result = runCatching { gson.fromJson<List<T>>(file.readText(), type) }
-            .getOrElse { throw IllegalStateException("备份数据无法解析（${file.name}）") }
-        return result ?: emptyList()
-    }
-
-    /** Basic referential integrity checks; inconsistent backups must fail, not be silently fixed. */
-    private fun validateReferences(
-        items: List<ClothingItem>,
-        wears: List<WearEvent>,
-        washes: List<WashEvent>,
-        ootds: List<Ootd>,
-        outfits: List<Outfit>
-    ) {
-        fun fail() { throw IllegalStateException("备份数据引用关系无效") }
-
-        val itemIds = items.map { it.id }.toSet()
-        if (items.any { it.id.isBlank() }) fail()
-        if (itemIds.size != items.size) fail()
-
-        val wearIds = wears.map { it.id }.toSet()
-        if (wearIds.size != wears.size) fail()
-        wears.forEach { w ->
-            if (w.itemId !in itemIds) fail()
-            if (w.source == WearSource.OOTD) {
-                if (w.ootdId.isNullOrBlank()) fail()
-                if (ootds.none { it.id == w.ootdId }) fail()
-            }
-        }
-
-        val washIds = washes.map { it.id }.toSet()
-        if (washIds.size != washes.size) fail()
-        washes.forEach { w -> if (w.itemId !in itemIds) fail() }
-
-        val ootdIds = ootds.map { it.id }.toSet()
-        if (ootdIds.size != ootds.size) fail()
-        val ownedIds = items.filter { it.status == ItemStatus.OWNED }.map { it.id }.toSet()
-        ootds.forEach { o -> o.itemIds.forEach { iid -> if (iid !in ownedIds) fail() } }
-
-        val outfitIds = outfits.map { it.id }.toSet()
-        if (outfitIds.size != outfits.size) fail()
-        outfits.forEach { o ->
-            o.itemIds.forEach { iid -> if (iid !in itemIds) fail() }
-            o.placements.forEach { p -> if (p.itemId !in itemIds) fail() }
-        }
-    }
-
-    private fun writeAtomic(dir: File, name: String, content: String) {
-        dir.mkdirs()
-        val f = File(dir, name)
-        val t = File(dir, ".$name.tmp")
-        t.writeText(content)
-        if (!t.renameTo(f)) { f.delete(); check(t.renameTo(f)) }
-    }
+        BackupExporter.exportCsv(context, repo, outputUri)
 
     /**
-     * Copies a backed-up image ("images/xxx.png") into staging and returns its final absolute path.
-     * Strictly validates the reference: canonical path must stay inside the backup's images/ tree,
-     * the file must exist, be a regular file and have non-zero size. Throws on any violation.
+     * Builds a **wardrobe-only v2 archive** — an archive with no `life/` section.
+     *
+     * Kept `internal` and off the production surface on purpose. v1 is a restore-compatibility format,
+     * not something this build should ever *produce*, and the old public signature
+     * (`lifeDatabase: LifeDatabase? = null`) let a caller create exactly this shape of incomplete
+     * "complete backup" by accident. Tests that need to exercise the v1 / no-Life-OS restore path use
+     * this deliberately and by name.
      */
-    private fun stageImageStrict(context: Context, extractDir: File, stageDir: File, relPath: String, subdir: String): String {
-        if (!relPath.startsWith("images/") || relPath.contains("..")) {
-            throw IllegalStateException("备份引用的图片路径非法：$relPath")
-        }
-        val imagesRoot = File(extractDir, "images").canonicalFile
-        val candidate = File(extractDir, relPath).canonicalFile
-        if (!candidate.path.startsWith(imagesRoot.path + File.separator)) {
-            throw IllegalStateException("备份引用的图片路径非法：$relPath")
-        }
-        if (!candidate.exists() || !candidate.isFile) {
-            throw IllegalStateException("备份引用的图片缺失或无效：$relPath")
-        }
-        if (candidate.length() <= 0L) {
-            throw IllegalStateException("备份引用的图片无效：$relPath")
-        }
-        val targetSubdir = when (subdir) {
-            "ootd" -> "images/ootd"
-            "outfit" -> "images/outfit"
-            else -> "images"
-        }
-        val targetDir = File(stageDir, targetSubdir).apply { mkdirs() }
-        val ext = candidate.extension.ifBlank { "bin" }
-        val name = "${UUID.randomUUID()}.$ext"
-        val target = File(targetDir, name)
-        candidate.copyTo(target, overwrite = true)
-        if (target.length() <= 0L) throw IllegalStateException("备份图片复制失败：$relPath")
-        return File(context.filesDir, "closie/$targetSubdir/$name").absolutePath
-    }
-
-    private fun unzipSafely(context: Context, inputUri: Uri, destDir: File) {
-        val root = destDir.canonicalFile
-        var entryCount = 0
-        var totalBytes = 0L
-        val seen = mutableSetOf<String>()
-        context.contentResolver.openInputStream(inputUri)?.use { raw ->
-            ZipInputStream(raw).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    entryCount++
-                    if (entryCount > MAX_ENTRIES) throw IllegalStateException("备份文件条目过多")
-                    if (entry.size > MAX_ENTRY_SIZE) throw IllegalStateException("备份文件过大")
-                    if (!seen.add(entry.name)) throw IllegalStateException("备份文件包含重复条目：${entry.name}")
-                    val target = File(root, entry.name).canonicalFile
-                    if (!target.path.startsWith(root.path + File.separator)) {
-                        throw SecurityException("备份包含非法路径：${entry.name}")
-                    }
-                    if (entry.isDirectory) {
-                        target.mkdirs()
-                    } else {
-                        target.parentFile?.mkdirs()
-                        val buffer = ByteArray(8192)
-                        var entryBytes = 0L
-                        target.outputStream().use { out ->
-                            var read = zip.read(buffer)
-                            while (read > 0) {
-                                entryBytes += read
-                                totalBytes += read
-                                if (entryBytes > MAX_ENTRY_SIZE) throw IllegalStateException("备份文件单条目过大")
-                                if (totalBytes > MAX_TOTAL_SIZE) throw IllegalStateException("备份文件过大")
-                                out.write(buffer, 0, read)
-                                read = zip.read(buffer)
-                            }
-                        }
-                    }
-                    zip.closeEntry()
-                }
-            }
-        } ?: throw IllegalStateException("无法读取备份文件")
-    }
+    internal suspend fun exportWardrobeOnlyForTesting(
+        context: Context,
+        repo: WardrobeRepository,
+        outputUri: Uri
+    ): Result<String> = BackupExporter.exportWardrobeOnly(context, repo, outputUri)
 }

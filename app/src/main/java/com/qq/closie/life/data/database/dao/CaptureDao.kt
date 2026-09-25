@@ -52,4 +52,39 @@ interface CaptureDao {
 
     @Query("SELECT COUNT(*) FROM capture_items")
     suspend fun count(): Int
+
+    /**
+     * Case-insensitive search over the user-visible parts of a capture (v0.3.0).
+     *
+     * The 记录 page gained a search field, and it searches the same four things a user would
+     * remember about a record: the title they gave it, the text that was captured, their own note,
+     * and the URL. `ESCAPE '\'` lets [com.qq.closie.life.repository.CaptureRepository.search] pass a
+     * literal `%` or `_` from user input without it turning into a wildcard.
+     */
+    @Query(
+        """
+        SELECT * FROM capture_items
+        WHERE IFNULL(displayTitle, '') LIKE '%' || :query || '%' ESCAPE '\'
+           OR IFNULL(rawText, '') LIKE '%' || :query || '%' ESCAPE '\'
+           OR IFNULL(note, '') LIKE '%' || :query || '%' ESCAPE '\'
+           OR IFNULL(sourceUrl, '') LIKE '%' || :query || '%' ESCAPE '\'
+        ORDER BY createdAt DESC
+        """
+    )
+    fun search(query: String): Flow<List<CaptureItemEntity>>
+
+    /** Newest captures, for the home page's 最近 block. */
+    @Query("SELECT * FROM capture_items ORDER BY createdAt DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<CaptureItemEntity>>
+
+    // ---- Backup (v2) --------------------------------------------------------------------------
+
+    @Query("SELECT * FROM capture_items")
+    suspend fun getAllOnce(): List<CaptureItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<CaptureItemEntity>)
+
+    @Query("DELETE FROM capture_items")
+    suspend fun deleteAll()
 }
