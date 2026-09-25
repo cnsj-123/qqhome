@@ -76,7 +76,7 @@ class MediaStoreImporterTest {
      * The extension the importer derives for a `file://` source.
      *
      * `ContentResolver.getType` returns null for a `file://` URI, so the importer falls back to
-     * `image/*` and then to its `else -> "img"` branch. Hard-coding `.png` here would make the tests
+     * `image/<wildcard>` and then to its `else -> "img"` branch. Hard-coding `.png` here would make the tests
      * assert against a name production never creates — the assertions would fail for the right reason
      * but point at the wrong cause, and a future change to the fallback would silently decouple these
      * tests from reality. Naming the constant makes that coupling explicit.
