@@ -1,8 +1,27 @@
-# Closie 衣橱 · v0.3（开发中）
+# qqhome · Life OS v0.1（开发中）
 
-一个本地优先的私人衣橱 Android App。所有数据只保存在手机本地（JSON + 私有图片），不会上传到服务器。
+一个本地优先的私人生活记录 Android App。所有数据只保存在手机本地，不会上传到服务器。
 
-## 当前已支持
+包名：`com.qq.closie`（namespace）；`applicationId` 仍为 `com.xiaoming.closie`，
+以保证老用户覆盖安装时数据不丢。
+
+## App Shell
+
+启动后进入 **Life OS**：首页 / 记录 / ＋ / 生活 / 我的。
+
+- **首页**：日期、Today、最近记录，留白优先，点空状态即可开始采集
+- **记录**：采集收件箱时间线
+- **＋**：快速采集 / 从相册（Coming soon）/ 粘贴文本 / 链接 / 手动记录
+- **生活**：衣橱（进入下面已有的 Closie）、饮食、健康、阅读、出行（Coming soon）
+- **我的**：设置、备份与恢复、媒体库（Coming soon）、同步（尚未实现）、版本
+
+Life OS 的持久化基于 Room（`LifeDatabase` v1，8 张表）。
+详见 [`docs/LIFE_OS_ARCHITECTURE.md`](docs/LIFE_OS_ARCHITECTURE.md) 与
+[`docs/LIFE_OS_DATA_MODEL.md`](docs/LIFE_OS_DATA_MODEL.md)。
+
+## 衣橱（Closie）
+
+从「生活 → 衣橱」进入。当前已支持：
 
 - **衣橱管理**：Owned（拥有）/ Returned（试过·退货）两套衣橱，支持多图片（平铺 / 本人 / 模特 / 商品图）
 - **商品链接导入**：粘贴商品链接自动解析标题、价格、原价、品牌、店铺、平台与主图（Open Graph + JSON-LD）
@@ -20,4 +39,13 @@
 
 ## 手机上构建 APK
 
-把项目上传到 GitHub 的 `main` 分支后，打开仓库 **Actions → Android CI**，下载 `closie-debug-apk`，解压并安装其中的 APK。首次安装时请允许浏览器或文件管理器安装未知来源应用。
+把项目上传到 GitHub 的 `main` 分支后，打开仓库 **Actions → Android CI**，下载 `qqhome-debug-apk`，解压并安装其中的 APK。首次安装时请允许浏览器或文件管理器安装未知来源应用。
+
+## 本地构建
+
+```bash
+./gradlew :app:assembleDebug      # 打 debug APK
+./gradlew :app:testDebugUnitTest  # 跑 Room / Repository 测试
+```
+
+需要 JDK 17 与 Android SDK（compileSdk 35）。Room schema 会导出到 `app/schemas/`，请一并提交。

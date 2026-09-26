@@ -1,3 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#713D4B</color>
+    <!--
+      Adaptive-icon background plate.
+
+      Paper (#F7F6F2), the life/theme/LifeColors.kt page colour. The artwork is a dark-ink planet
+      with white highlights, so it needs a light, near-neutral plate: a saturated colour would both
+      fight the monochrome logo and make the icon look like a different app from the one it opens.
+
+      Kept as a literal hex rather than a reference to the Compose palette because this file is a
+      resource read by the launcher at install time, well outside any Compose theme.
+    -->
+    <color name="ic_launcher_background">#F7F6F2</color>
 </resources>
