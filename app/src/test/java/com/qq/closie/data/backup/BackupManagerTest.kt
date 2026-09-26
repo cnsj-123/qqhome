@@ -84,7 +84,7 @@ class BackupManagerTest {
         life = LifeRepository(db)
         media = MediaRepository(db)
         captureRepo = CaptureRepository(db)
-        referenceRepo = ReferenceRepository(db, life, media)
+        referenceRepo = ReferenceRepository(db, life, media, captureRepo)
         planRepo = PlanRepository(db, life)
         wardrobe = LocalWardrobeRepository(context)
     }

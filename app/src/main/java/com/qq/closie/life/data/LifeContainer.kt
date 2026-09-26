@@ -2,6 +2,7 @@ package com.qq.closie.life.data
 
 import android.content.Context
 import androidx.room.Room
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.life.capture.CaptureItemEntity
 import com.qq.closie.life.core.EntityTagCrossRef
 import com.qq.closie.life.core.LifeEntityEntity
@@ -53,27 +54,59 @@ class LifeContainer private constructor(
      * Exposing the database rather than adding a `backup()` method to each repository keeps the
      * backup logic in one place ([com.qq.closie.data.backup.BackupManager]) instead of smeared
      * across four.
+     *
+     * ### Why this one accessor is deliberately **not** gated
+     *
+     * Every other accessor below refuses to hand anything out while recovery is unfinished (see
+     * [gate]). This one cannot, and the reason is a deadlock rather than a preference: recovery *itself*
+     * needs the database. It runs at startup while the gate is still BLOCKED — that is the whole point
+     * of the barrier — and it obtains the live database through this accessor to replay the pre-restore
+     * snapshot. Gating it would mean recovery could not open the database until recovery had finished.
+     *
+     * That is safe because a `LifeDatabase` is not, by itself, a view of the user's data. It is a handle:
+     * it reads nothing until a query runs, and the only thing that runs during recovery is the snapshot
+     * replay, which is the repair. Gating the *repositories* — the objects that actually query — is what
+     * protects the user. See [gate].
      */
     val lifeDatabase: LifeDatabase get() = database
 
-    val lifeRepository: LifeRepository by lazy { LifeRepository(database) }
-    val mediaRepository: MediaRepository by lazy { MediaRepository(database) }
-    val captureRepository: CaptureRepository by lazy { CaptureRepository(database) }
+    /**
+     * Fails closed unless the startup barrier has finished repairing the data.
+     *
+     * Business accessors call this **before** constructing their target, so a half-restored Closet is
+     * never read into a repository's in-memory state. The check is shared with
+     * [com.qq.closie.data.repository.LocalWardrobeRepository] via
+     * [com.qq.closie.data.backup.RestoreStartupGate.requireReady] so both sides of the app make the
+     * identical decision.
+     */
+    private fun gate() = RestoreStartupGate.requireReady()
+
+    val lifeRepository: LifeRepository by lazy { gate(); LifeRepository(database) }
+    val mediaRepository: MediaRepository by lazy { gate(); MediaRepository(database) }
+    val captureRepository: CaptureRepository by lazy { gate(); CaptureRepository(database) }
 
     /** 资料库 — the curated reference archive (v0.3.0). */
     val referenceRepository: ReferenceRepository by lazy {
-        ReferenceRepository(database, lifeRepository, mediaRepository)
+        gate()
+        ReferenceRepository(database, lifeRepository, mediaRepository, captureRepository)
     }
 
     /** 计划 — the lightweight plan list (v0.3.0). */
-    val planRepository: PlanRepository by lazy { PlanRepository(database, lifeRepository) }
+    val planRepository: PlanRepository by lazy { gate(); PlanRepository(database, lifeRepository) }
 
     /** Copies a picked gallery image into Life OS-managed storage and records it as media. */
     val mediaStoreImporter: MediaStoreImporter by lazy {
+        gate()
         MediaStoreImporter(database, mediaRepository)
     }
 
-    /** Fetches a page's title/description/site name for link capture. Never throws. */
+    /**
+     * Fetches a page's title/description/site name for link capture. Never throws.
+     *
+     * Not gated, because it touches no user data at all: it is a stateless HTTP/metadata reader with no
+     * database, no filesystem and no in-memory state to be inconsistent. Gating it would protect
+     * nothing and would only add a way for a capture flow to fail for a reason that does not apply to it.
+     */
     val webMetadataReader: WebMetadataReader by lazy { WebMetadataReader() }
 
     /**
@@ -83,12 +116,14 @@ class LifeContainer private constructor(
      * the container keeps it rather than letting a ViewModel construct one.
      */
     val referenceImporter: ReferenceImporter by lazy {
+        gate()
         ReferenceImporter(
             context = appContext,
             database = database,
             mediaStoreImporter = mediaStoreImporter,
             referenceRepository = referenceRepository,
             captureRepository = captureRepository,
+            mediaRepository = mediaRepository,
             webMetadataReader = webMetadataReader
         )
     }
@@ -127,6 +162,23 @@ class LifeContainer private constructor(
                 }
             }
         }
+
+        /**
+         * Builds a container around an arbitrary database, bypassing the process singleton.
+         *
+         * Exists so a test can exercise the startup gate against an in-memory database. The singleton is
+         * the wrong shape for that: it is process state, so a test that went through [getInstance] would
+         * share one container with every other test in the same JVM and would depend on execution order
+         * to say anything about the gate. Injecting the database keeps the question local — "given a
+         * container and a gate in state X, what does this accessor do?" — and leaves [instance]
+         * untouched.
+         *
+         * `internal`, so it is not part of the app's shipped surface. It does not weaken the gate:
+         * accessors are gated the same way regardless of how the container was built.
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun createForTesting(context: Context, database: LifeDatabase): LifeContainer =
+            LifeContainer(database, context.applicationContext)
 
         /**
          * The database filename, aliased to [LifeDatabase.DATABASE_NAME].

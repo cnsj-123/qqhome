@@ -323,7 +323,7 @@ class QuickCaptureService : Service() {
     private fun buildNotification(): android.app.Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "屏幕采集", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),

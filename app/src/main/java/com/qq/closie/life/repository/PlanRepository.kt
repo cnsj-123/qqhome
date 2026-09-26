@@ -2,6 +2,7 @@ package com.qq.closie.life.repository
 
 import android.annotation.SuppressLint
 import androidx.room.withTransaction
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.data.database.dao.PlanDao
 import com.qq.closie.life.plan.PlanEntityType
@@ -11,6 +12,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import com.qq.closie.data.backup.gateAwareFlow
 
 /**
  * The 计划 repository.
@@ -31,7 +33,52 @@ class PlanRepository(
     private val lifeRepository: LifeRepository,
 ) {
 
-    private val dao: PlanDao = database.planDao()
+    /**
+     * Every query in this repository reaches the database through this property, which is why the startup
+     * gate is consulted **here** and not at the top of each method — see [RestoreStartupGate.gated].
+     *
+     * A getter rather than a `val` initialiser is the whole point: it is re-evaluated on *every* access,
+     * so a repository instance constructed while the gate was READY stops working the moment the gate
+     * closes. A constructor-time check cannot do that — the object already exists.
+     */
+    private val dao: PlanDao get() = database.planDao()
+
+    /**
+     * The same gate for the paths that bypass [dao] — the transaction bodies below.
+     *
+     * ### Why the `dao` getter alone was not enough
+     *
+     * The comment above says every query in this repository reaches the database through [dao]. For this
+     * class that was not true: four methods opened `database.withTransaction { … }` directly, so the
+     * transaction boundary — and its reads — were reached without passing through the gated property.
+     *
+     * A transaction boundary **is** a durable access. Opening one while a restore is swapping the same
+     * database is exactly the write the gate exists to refuse, and it does not become safe because the
+     * statements inside it consult a gated getter later: by then the transaction is open and its reads
+     * have already happened.
+     *
+     * ### Three checks, because the window is not only at the start
+     *
+     * ```
+     *   1. before the transaction opens   -> don't even start one while the gate is closed
+     *   2. first line inside it           -> the gate may have closed while we were scheduling
+     *   3. last line before it returns    -> if a restore began mid-transaction, fail *now*
+     * ```
+     *
+     * The third is the one that is easy to omit and the one that matters most. A restore can start at
+     * any moment, including while a long transaction is running; without the final check that
+     * transaction would **commit** after the snapshot had been taken and the archive applied, silently
+     * reintroducing the row the restore had just removed. Throwing instead rolls the transaction back,
+     * so the restore's view of the database stays true.
+     *
+     * The `requireReady` calls throw [com.qq.closie.data.backup.RestoreRecoveryPendingException], the
+     * same refusal the property getter produces — a caller cannot tell, and should not be able to tell,
+     * which of the two chokepoints stopped it.
+     */
+    private suspend fun <T> gateCheckedTransaction(block: suspend () -> T): T =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            database.withTransaction { block() }
+        }
 
     // ------------------------------------------------------------------
     //  Create
@@ -49,7 +96,7 @@ class PlanRepository(
         sortOrder: Int = 0,
         id: String = UUID.randomUUID().toString(),
         now: Long = System.currentTimeMillis()
-    ): PlanItemEntity = database.withTransaction {
+    ): PlanItemEntity = gateCheckedTransaction {
         val entity = lifeRepository.createEntity(entityType = PlanEntityType.PLAN, timestamp = now)
         val item = PlanItemEntity(
             id = id,
@@ -70,37 +117,39 @@ class PlanRepository(
      * True when [id] already exists. Used by the editor to avoid inserting a second row when the
      * user taps 保存 twice before the first insert has committed.
      */
-    suspend fun exists(id: String): Boolean = dao.getById(id) != null
+    suspend fun exists(id: String): Boolean =
+        RestoreStartupGate.withBusinessAccessSuspending { dao.getById(id) != null }
 
     // ------------------------------------------------------------------
     //  Read
     // ------------------------------------------------------------------
 
-    suspend fun getById(id: String): PlanItemEntity? = dao.getById(id)
+    suspend fun getById(id: String): PlanItemEntity? =
+        RestoreStartupGate.withBusinessAccessSuspending { dao.getById(id) }
 
-    fun observeById(id: String): Flow<PlanItemEntity?> = dao.observeById(id)
+    fun observeById(id: String): Flow<PlanItemEntity?> = gateAwareFlow { dao.observeById(id) }
 
-    fun observeAll(): Flow<List<PlanItemEntity>> = dao.observeAll()
+    fun observeAll(): Flow<List<PlanItemEntity>> = gateAwareFlow { dao.observeAll() }
 
     fun observeCompleted(limit: Int? = null): Flow<List<PlanItemEntity>> =
-        if (limit == null) dao.observeCompleted() else dao.observeCompletedLimited(limit)
+        gateAwareFlow { if (limit == null) dao.observeCompleted() else dao.observeCompletedLimited(limit) }
 
     /** 今天 — open plans falling inside the given day window. */
     fun observeToday(zone: ZoneId = ZoneId.systemDefault()): Flow<List<PlanItemEntity>> {
         val (start, end) = dayWindow(zone)
-        return dao.observeDueBetween(start, end)
+        return gateAwareFlow { dao.observeDueBetween(start, end) }
     }
 
     /** 今天 including finished ones, so a completed item can still show under its own header. */
     fun observeTodayIncludingDone(zone: ZoneId = ZoneId.systemDefault()): Flow<List<PlanItemEntity>> {
         val (start, end) = dayWindow(zone)
-        return dao.observeTodayIncludingDone(start, end)
+        return gateAwareFlow { dao.observeTodayIncludingDone(start, end) }
     }
 
     /** 接下来 — open plans due later, plus everything undated ("someday" is legitimate). */
     fun observeUpcoming(zone: ZoneId = ZoneId.systemDefault()): Flow<List<PlanItemEntity>> {
         val (_, end) = dayWindow(zone)
-        return dao.observeUpcoming(end)
+        return gateAwareFlow { dao.observeUpcoming(end) }
     }
 
     /**
@@ -114,7 +163,7 @@ class PlanRepository(
      */
     fun observeOverdue(zone: ZoneId = ZoneId.systemDefault()): Flow<List<PlanItemEntity>> {
         val (start, _) = dayWindow(zone)
-        return dao.observeOverdue(start)
+        return gateAwareFlow { dao.observeOverdue(start) }
     }
 
     /** The home page's 接下来 source: at most a couple of items, never a task dashboard. */
@@ -123,7 +172,7 @@ class PlanRepository(
         zone: ZoneId = ZoneId.systemDefault()
     ): Flow<List<PlanItemEntity>> {
         val (_, end) = dayWindow(zone)
-        return dao.observeUpcomingLimited(end, limit)
+        return gateAwareFlow { dao.observeUpcomingLimited(end, limit) }
     }
 
     /**
@@ -138,7 +187,7 @@ class PlanRepository(
      * at all: the ordering (`NULL` last, then `dueAt ASC`) does the grouping, so today lands between
      * the past and the future on its own.
      */
-    fun observeOpenLimited(limit: Int): Flow<List<PlanItemEntity>> = dao.observeOpenLimited(limit)
+    fun observeOpenLimited(limit: Int): Flow<List<PlanItemEntity>> = gateAwareFlow { dao.observeOpenLimited(limit) }
 
     /**
      * Past-due open plans for the home page's preview.
@@ -151,19 +200,19 @@ class PlanRepository(
         zone: ZoneId = ZoneId.systemDefault()
     ): Flow<List<PlanItemEntity>> {
         val (start, _) = dayWindow(zone)
-        return dao.observeOverdueLimited(start, limit)
+        return gateAwareFlow { dao.observeOverdueLimited(start, limit) }
     }
 
-    suspend fun countOpen(): Int = dao.countOpen()
+    suspend fun countOpen(): Int = RestoreStartupGate.withBusinessAccessSuspending { dao.countOpen() }
 
-    fun observeOpenCount(): Flow<Int> = dao.observeOpenCount()
+    fun observeOpenCount(): Flow<Int> = gateAwareFlow { dao.observeOpenCount() }
 
     fun observeTodayOpenCount(zone: ZoneId = ZoneId.systemDefault()): Flow<Int> {
         val (start, end) = dayWindow(zone)
-        return dao.observeTodayOpenCount(start, end)
+        return gateAwareFlow { dao.observeTodayOpenCount(start, end) }
     }
 
-    suspend fun count(): Int = dao.count()
+    suspend fun count(): Int = RestoreStartupGate.withBusinessAccessSuspending { dao.count() }
 
     // ------------------------------------------------------------------
     //  Edit
@@ -181,8 +230,8 @@ class PlanRepository(
         dueAt: Long? = null,
         sortOrder: Int? = null,
         now: Long = System.currentTimeMillis()
-    ): PlanItemEntity? = database.withTransaction {
-        val current = dao.getById(id) ?: return@withTransaction null
+    ): PlanItemEntity? = gateCheckedTransaction {
+        val current = dao.getById(id) ?: return@gateCheckedTransaction null
         val updated = current.copy(
             title = title?.trim()?.takeIf { it.isNotEmpty() } ?: current.title,
             note = if (note != null) note.trim().takeIf { it.isNotEmpty() } else current.note,
@@ -204,9 +253,9 @@ class PlanRepository(
      * to anything reading the graph.
      */
     suspend fun clearDueAt(id: String, now: Long = System.currentTimeMillis()): Boolean =
-        database.withTransaction {
-            val current = dao.getById(id) ?: return@withTransaction false
-            if (current.dueAt == null) return@withTransaction true
+        gateCheckedTransaction {
+            val current = dao.getById(id) ?: return@gateCheckedTransaction false
+            if (current.dueAt == null) return@gateCheckedTransaction true
             dao.update(current.copy(dueAt = null, updatedAt = now))
             touchEntity(current.lifeEntityId, now)
             true
@@ -216,25 +265,27 @@ class PlanRepository(
     //  Complete / uncomplete
     // ------------------------------------------------------------------
 
-    suspend fun complete(id: String, now: Long = System.currentTimeMillis()): Boolean {
-        val current = dao.getById(id) ?: return false
-        if (current.completedAt != null) return true
-        dao.update(current.copy(completedAt = now, updatedAt = now))
-        touchEntity(current.lifeEntityId, now)
-        return true
-    }
+    suspend fun complete(id: String, now: Long = System.currentTimeMillis()): Boolean =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            val current = dao.getById(id) ?: return@withBusinessAccessSuspending false
+            if (current.completedAt != null) return@withBusinessAccessSuspending true
+            dao.update(current.copy(completedAt = now, updatedAt = now))
+            touchEntity(current.lifeEntityId, now)
+            true
+        }
 
     /**
      * Undo. Clears `completedAt` but keeps `dueAt` — un-completing something that was due today
      * should put it back under 今天, not silently reschedule it.
      */
-    suspend fun uncomplete(id: String, now: Long = System.currentTimeMillis()): Boolean {
-        val current = dao.getById(id) ?: return false
-        if (current.completedAt == null) return true
-        dao.update(current.copy(completedAt = null, updatedAt = now))
-        touchEntity(current.lifeEntityId, now)
-        return true
-    }
+    suspend fun uncomplete(id: String, now: Long = System.currentTimeMillis()): Boolean =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            val current = dao.getById(id) ?: return@withBusinessAccessSuspending false
+            if (current.completedAt == null) return@withBusinessAccessSuspending true
+            dao.update(current.copy(completedAt = null, updatedAt = now))
+            touchEntity(current.lifeEntityId, now)
+            true
+        }
 
     // ------------------------------------------------------------------
     //  Delete
@@ -242,8 +293,8 @@ class PlanRepository(
 
     /** Soft-deletes the LifeEntity and drops the typed row — same policy as references. */
     suspend fun delete(id: String, now: Long = System.currentTimeMillis()): Boolean =
-        database.withTransaction {
-            val current = dao.getById(id) ?: return@withTransaction false
+        gateCheckedTransaction {
+            val current = dao.getById(id) ?: return@gateCheckedTransaction false
             lifeRepository.softDeleteEntity(current.lifeEntityId, now)
             dao.deleteById(id)
             true

@@ -10,8 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -23,6 +21,7 @@ import com.qq.closie.data.model.ImageKind
 import com.qq.closie.data.model.ItemStatus
 import com.qq.closie.data.model.Ootd
 import com.qq.closie.data.repository.WardrobeRepository
+import com.qq.closie.ui.LocalWardrobeSnapshot
 import com.qq.closie.ui.components.ClosieImageTile
 import com.qq.closie.ui.components.ClosieSectionHeader
 import com.qq.closie.ui.theme.ClosieColor
@@ -40,9 +39,13 @@ fun HomeScreen(
     onOpenCloset: () -> Unit,
     onOpenOotd: () -> Unit
 ) {
-    val items by repo.items.collectAsState()
-    val ootds by repo.ootds.collectAsState()
-    val wears by repo.wearEvents.collectAsState()
+    // One shared generation. 首页 reads items + ootds + wear together (today's outfit is looked up
+    // against today's wears and the owned items), so three separate flows could show a mix of two
+    // generations. Collected once at the top of the navigation graph — see LocalWardrobeSnapshot.
+    val wardrobe = LocalWardrobeSnapshot.current
+    val items = wardrobe.items
+    val ootds = wardrobe.ootds
+    val wears = wardrobe.wearEvents
     val dims = rememberClosieDimensions()
 
     val owned = items.filter { it.status == ItemStatus.OWNED }

@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qq.closie.data.model.*
 import com.qq.closie.data.repository.WardrobeRepository
+import com.qq.closie.ui.LocalWardrobeSnapshot
 import com.qq.closie.ui.components.ClosieCompactTopBar
 import com.qq.closie.ui.components.ClosieImageTile
 import com.qq.closie.ui.components.priceText
@@ -38,9 +39,13 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(repo: WardrobeRepository, id: String, edit: (String) -> Unit, back: () -> Unit) {
-    val all by repo.items.collectAsState()
-    val ws by repo.wearEvents.collectAsState()
-    val xs by repo.washEvents.collectAsState()
+    // One shared generation: the item, its wear history and its wash history must come from the same
+    // emission, or the detail page can show a saved item beside the previous generation's records.
+    // Collected once at the top of the navigation graph — see LocalWardrobeSnapshot.
+    val wardrobe = LocalWardrobeSnapshot.current
+    val all = wardrobe.items
+    val ws = wardrobe.wearEvents
+    val xs = wardrobe.washEvents
     val v = all.firstOrNull { it.id == id }
     val context = LocalContext.current
     val dims = rememberClosieDimensions()

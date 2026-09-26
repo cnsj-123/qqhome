@@ -1,17 +1,42 @@
 package com.qq.closie
 
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.data.draft.DraftImageCleanup
 import com.qq.closie.data.draft.DraftStore
 import com.qq.closie.data.model.Ootd
 import com.qq.closie.data.model.Outfit
 import com.qq.closie.data.model.Placement
 import java.io.File
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class DraftStoreTest {
+
+    /**
+     * `DraftStore`'s mutations take a business lease on [RestoreStartupGate], so the gate has to be
+     * resolved before any of them runs — and the gate's initial value is deliberately BLOCKED ("unanswered
+     * must not read as safe"), which no repository will work behind.
+     *
+     * This class is a plain JUnit test with no Robolectric, so nothing has run `ClosieApplication.onCreate`
+     * to resolve it. `markReady` is the same call that startup barrier makes.
+     *
+     * The gate is **process-wide** and JUnit's execution order is not source order, so resetting it in
+     * `@After` matters as much as setting it here: a test in another class that intentionally leaves it
+     * BLOCKED must not be able to make these tests fail for an unrelated reason, and vice versa.
+     */
+    @Before
+    fun markGateReady() {
+        RestoreStartupGate.markReady()
+    }
+
+    @After
+    fun resetGate() {
+        RestoreStartupGate.resetForTesting()
+    }
 
     private fun tempDir(): File =
         File(System.getProperty("java.io.tmpdir"), "draft_test_${System.nanoTime()}").apply { mkdirs() }

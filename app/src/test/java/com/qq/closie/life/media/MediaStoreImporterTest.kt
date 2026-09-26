@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.qq.closie.data.backup.BackupValidator
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.repository.MediaRepository
 import java.io.File
@@ -50,6 +51,14 @@ class MediaStoreImporterTest {
 
     @Before
     fun setUp() {
+        // This file is about file durability, not about the restore barrier, so it declares the gate's
+        // resolved state as a precondition instead of inheriting whatever a previous class left behind.
+        // The gate starts BLOCKED by design and `MediaStoreImporter.import` refuses while it is, so
+        // without this every test below would fail with "恢复尚未完成" — for a reason that has nothing to
+        // do with what it asserts. `resetForTesting` first, because the gate is process-wide and a
+        // barrier test may have closed it permanently for this JVM.
+        RestoreStartupGate.resetForTesting()
+        RestoreStartupGate.markReady()
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, LifeDatabase::class.java)
             .allowMainThreadQueries()
@@ -65,6 +74,7 @@ class MediaStoreImporterTest {
     fun tearDown() {
         runCatching { db.close() }
         File(context.filesDir, MediaStoreImporter.MEDIA_DIR).deleteRecursively()
+        RestoreStartupGate.resetForTesting()
     }
 
     private fun sha256Of(bytes: ByteArray): String =

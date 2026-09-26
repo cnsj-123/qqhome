@@ -39,6 +39,7 @@ import com.qq.closie.data.model.ItemStatus
 import com.qq.closie.data.model.Outfit
 import com.qq.closie.data.model.Placement
 import com.qq.closie.data.repository.WardrobeRepository
+import com.qq.closie.ui.LocalWardrobeSnapshot
 import com.qq.closie.ui.components.ClosieCompactTopBar
 import com.qq.closie.ui.components.ClosieImageTile
 import com.qq.closie.ui.theme.ClosieColor
@@ -50,8 +51,12 @@ import kotlin.math.roundToInt
 @Composable
 fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, draftId: String? = null, back: () -> Unit) {
     val context = LocalContext.current
-    val items by repo.items.collectAsState()
-    val outfits by repo.outfits.collectAsState()
+    // One shared generation: the canvas resolves placements against `items`, so the outfit being edited
+    // and the wardrobe it is composed from must be one emission. Collected once at the top of the
+    // navigation graph — see LocalWardrobeSnapshot.
+    val wardrobe = LocalWardrobeSnapshot.current
+    val items = wardrobe.items
+    val outfits = wardrobe.outfits
     val draftStore = remember { DraftStore(context) }
     val draft = remember(draftId) { draftId?.let { id -> draftStore.listOutfitDrafts().firstOrNull { it.id == id } } }
     val original = outfits.firstOrNull { it.id == outfitId } ?: draft
@@ -100,9 +105,13 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, draftId: Str
     }
 
     fun cleanupDraftImages(removed: Collection<String>) {
-        val live = repo.items.value.flatMap { it.images }.mapNotNull { it.localPath } +
-            repo.ootds.value.flatMap { it.images } +
-            repo.outfits.value.flatMap { it.tryOnImages }
+        // One emission for all three surfaces: this decides what is safe to delete, so `items`,
+        // `ootds` and `outfits` must be read from the same generation or the sweep could judge a
+        // path unreferenced using a view the wardrobe has already moved past.
+        val current = repo.snapshot.value
+        val live = current.items.flatMap { it.images }.mapNotNull { it.localPath } +
+            current.ootds.flatMap { it.images } +
+            current.outfits.flatMap { it.tryOnImages }
         val remaining = draftStore.listOotdDrafts().flatMap { it.images } +
             draftStore.listOutfitDrafts().flatMap { it.tryOnImages }
         DraftImageCleanup.cleanupOrphans(removed, live, remaining) { ImageStore.deletePrivatePath(context, it) }

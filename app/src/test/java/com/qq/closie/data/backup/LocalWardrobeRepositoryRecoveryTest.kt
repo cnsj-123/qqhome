@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.qq.closie.data.repository.LocalWardrobeRepository
-import com.qq.closie.data.repository.RestoreRecoveryPendingException
 import java.io.File
 import org.junit.After
 import org.junit.Before
@@ -101,21 +100,41 @@ class LocalWardrobeRepositoryRecoveryTest {
      * The injected failure is the Closet rename back — the exact operation that stands between the user
      * and their own wardrobe. With it failing, `closie/` still holds the *backup's* item, so a repository
      * that opened would be handing the UI someone else's data.
+     *
+     * ### Why the failure is injected rather than provoked with a non-empty directory
+     *
+     * This test used to create `closie/blocker/child`, on the theory that `File.renameTo` refuses to
+     * replace an existing **non-empty** directory, so the rename back would fail "for real, without a
+     * mock". The theory is sound about `renameTo` and wrong about the code path, which makes it a test
+     * that could never have failed for the reason it claimed:
+     *
+     * `revertCloset` handles the "swap completed, marker lagging" case by **deleting `live` first**, then
+     * renaming `old` into its place. So the blocker directory — child file and all — is gone before the
+     * rename is attempted, the rename finds an empty destination, and it succeeds. The test then observed
+     * `RetryRequired`, which it read as "the rename failed", when the real cause was that the marker
+     * described `DB_COMMITTING` with no Life OS section and so had an *outstanding database half*. The
+     * assertion happened to hold for a reason unrelated to what it was testing.
+     *
+     * With the truth table corrected, that accidental cause is gone too, so the fixture and the failure
+     * both have to be explicit. [RestoreRecoveryManager.recoverOnStartup] takes an `internal` `RestoreFs`
+     * seam precisely so a test can name the operation to fail; the parked tree is left untouched by the
+     * failed rename, which is what the evidence assertions below pin.
      */
     @Test
     fun retryRequired_blocksTheRepositoryInsteadOfReadingHalfRestoredData() {
         val oldDir = parkInterruptedSwap(id = 900)
         val closieDir = File(context.filesDir, "closie")
 
-        // Make `closie/` non-empty, which is what makes `renameTo(closieDir)` fail: `File.renameTo`
-        // refuses when the destination is an existing non-empty directory. This is a real filesystem
-        // refusal rather than a mock, and it is the same class of failure as a permission error.
-        val blocker = File(closieDir, "blocker")
-        blocker.mkdirs()
-        File(blocker, "child").writeText("x")
+        // Fail the one operation that matters: renaming the parked tree back into the live slot. The
+        // filesystem is otherwise completely real.
+        val failingFs = FailingRestoreFs(failRenameInto = closieDir.absolutePath)
 
         // The barrier runs first, exactly as `Application.onCreate` would.
-        val outcome = RestoreRecoveryManager.recoverOnStartup(context = context, lifeDatabase = { null })
+        val outcome = RestoreRecoveryManager.recoverOnStartup(
+            context = context,
+            lifeDatabase = { null },
+            fs = failingFs
+        )
         assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
 
         val failure = runCatching { LocalWardrobeRepository(context) }.exceptionOrNull()
@@ -126,9 +145,24 @@ class LocalWardrobeRepositoryRecoveryTest {
         // The evidence survives — recovery refused, it did not tidy up after itself.
         assertThat(RestoreIntentStore.read(context)).isNotInstanceOf(AtomicJson.ReadResult.Missing::class.java)
         assertThat(oldDir.exists()).isTrue()
-        // And crucially the backup's item was never exposed: the live directory still holds it, because
-        // nothing was allowed to read it as if it were the user's wardrobe.
-        assertThat(File(closieDir, "items.json").readText()).contains("new-item")
+
+        // ### What the failed rename-back actually leaves behind, and why it is still safe
+        //
+        // `revertCloset` cannot rename `old` onto a non-empty `closie/`, so it removes the live tree
+        // first and renames the parked one into the empty slot. The rename is the step that failed here,
+        // so the slot was cleared but never refilled:
+        //
+        //   closie/  -> gone   (it held the backup's tree, which is exactly the half-restore to remove)
+        //   oldDir   -> intact (it holds the user's wardrobe, untouched)
+        //
+        // The user's data is therefore still on disk and still named by the marker, so the next start
+        // renames it back into place — see `aLaterSuccessfulStart_clearsTheBlock`. An earlier revision of
+        // this assertion expected `closie/items.json` to still hold `new-item` after the failure; that is
+        // not what the code does, and asserting it would have pinned a state the implementation never
+        // produces. The property under test is the one asserted above: nothing read that directory as if
+        // it were the user's wardrobe.
+        assertThat(closieDir.exists()).isFalse()
+        assertThat(File(oldDir, "items.json").readText()).contains("old-item")
     }
 
     /**
@@ -198,24 +232,38 @@ class LocalWardrobeRepositoryRecoveryTest {
      *
      * The failure is transient by design — the marker, the parked tree and the snapshot all outlive the
      * process — so the repository must not have cached the refusal in any way that survives a new
-     * process. This test simulates the restart by clearing the obstruction and resolving the gate again.
+     * process. This test simulates the restart by making the failure stop happening, then running
+     * recovery again; the gate is process state, so it starts blocked and must be resolved by the second
+     * run rather than inherited from the first.
+     *
+     * The obstruction is a real injected failure again, for the reason spelled out on
+     * [retryRequired_blocksTheRepositoryInsteadOfReadingHalfRestoredData]: the parked tree's rename is
+     * what has to fail, and a non-empty destination directory does not accomplish that because
+     * `revertCloset` deletes the destination first.
      */
     @Test
     fun aLaterSuccessfulStart_clearsTheBlock() {
         parkInterruptedSwap(id = 905)
         val closieDir = File(context.filesDir, "closie")
-        File(closieDir, "blocker").mkdirs()
-        File(File(closieDir, "blocker"), "child").writeText("x")
 
-        // First start: blocked.
-        assertThat(RestoreRecoveryManager.recoverOnStartup(context = context, lifeDatabase = { null }))
-            .isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        // First start: the rename back fails, so the gate blocks.
+        assertThat(
+            RestoreRecoveryManager.recoverOnStartup(
+                context = context,
+                lifeDatabase = { null },
+                fs = FailingRestoreFs(failRenameInto = closieDir.absolutePath)
+            )
+        ).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
         assertThat(RestoreStartupGate.isReady).isFalse()
+        // The failed attempt cleared the live slot without refilling it (see the note on the test above),
+        // so the second start is the one that puts the user's wardrobe back — that is the state it has to
+        // resolve, and it resolves it from the parked tree, which is still intact.
+        assertThat(closieDir.exists()).isFalse()
+        assertThat(File(File(context.filesDir, ".closie_restore_old_905"), "items.json").readText())
+            .contains("old-item")
 
         // The obstruction is removed (in reality: the transient error is gone), and a *new* process
-        // start runs recovery again — the gate is process state, so it starts blocked and must be
-        // resolved by this second run rather than inherited from the first.
-        File(closieDir, "blocker").deleteRecursively()
+        // start runs recovery again with a working filesystem.
         RestoreStartupGate.resetForTesting()
 
         assertThat(RestoreRecoveryManager.recoverOnStartup(context = context, lifeDatabase = { null }))

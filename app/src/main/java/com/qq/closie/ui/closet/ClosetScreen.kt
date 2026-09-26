@@ -1,7 +1,6 @@
 package com.qq.closie.ui.closet
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -28,6 +27,7 @@ import com.qq.closie.data.model.ClothingItem
 import com.qq.closie.data.model.ImageKind
 import com.qq.closie.data.model.ItemStatus
 import com.qq.closie.data.repository.WardrobeRepository
+import com.qq.closie.ui.LocalWardrobeSnapshot
 import com.qq.closie.ui.components.ClosieEmptyState
 import com.qq.closie.ui.components.ClosieImageTile
 import com.qq.closie.ui.components.ClosieSearchBar
@@ -82,11 +82,15 @@ fun ClosetScreen(
     var showDisplaySheet by remember { mutableStateOf(false) }
     val dims = rememberClosieDimensions()
 
-    val all by repo.items.collectAsState()
-    val wears by repo.wearEvents.collectAsState()
-    val washes by repo.washEvents.collectAsState()
-    val wearCount = remember(wears) { wears.groupingBy { it.itemId }.eachCount() }
-    val washCount = remember(washes) { washes.groupingBy { it.itemId }.eachCount() }
+    // One *shared* generation, not three collected flows. This screen renders `wearCount`/`washCount`
+    // next to item names, so it needs items + wear + wash from the same emission; three separate
+    // `collectAsState()` calls would be three independent resume points, which is the cross-generation
+    // mixture `WardrobeSnapshot` exists to make unrepresentable. The collection happens once, at the top
+    // of the navigation graph — see LocalWardrobeSnapshot for why it cannot be per screen.
+    val wardrobe = LocalWardrobeSnapshot.current
+    val all = wardrobe.items
+    val wearCount = remember(wardrobe) { wardrobe.wearEvents.groupingBy { it.itemId }.eachCount() }
+    val washCount = remember(wardrobe) { wardrobe.washEvents.groupingBy { it.itemId }.eachCount() }
 
     val statusItems = all.filter { it.status == status }
     val userCategories = statusItems.map { it.category }.filter { it.isNotBlank() }.distinct()

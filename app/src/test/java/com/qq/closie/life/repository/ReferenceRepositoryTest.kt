@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.media.MediaType
 import com.qq.closie.life.reference.ReferenceEntityType
@@ -40,19 +41,27 @@ class ReferenceRepositoryTest {
 
     @Before
     fun setUp() {
+        // This file asserts repository semantics, not the restore barrier, so it resolves the gate as a
+        // precondition. The gate starts BLOCKED by design and every repository re-checks it per call, so
+        // without this each test would fail with "恢复尚未完成" for a reason unrelated to what it asserts.
+        // `resetForTesting` first: the gate is process-wide, and a barrier test may have closed it for
+        // the rest of this JVM.
+        RestoreStartupGate.resetForTesting()
+        RestoreStartupGate.markReady()
         val context: Context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, LifeDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         life = LifeRepository(db)
         media = MediaRepository(db)
-        repo = ReferenceRepository(db, life, media)
         captureRepo = CaptureRepository(db)
+        repo = ReferenceRepository(db, life, media, captureRepo)
     }
 
     @After
     fun tearDown() {
         db.close()
+        RestoreStartupGate.resetForTesting()
     }
 
     // ------------------------------------------------------------------

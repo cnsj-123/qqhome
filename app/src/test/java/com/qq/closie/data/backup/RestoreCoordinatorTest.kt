@@ -11,6 +11,7 @@ import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.media.MediaAssetEntity
 import com.qq.closie.life.media.MediaResourceEntity
 import com.qq.closie.life.media.MediaResourceRole
+import com.qq.closie.life.media.MediaStoreImporter
 import com.qq.closie.life.media.MediaType
 import com.qq.closie.life.repository.CaptureRepository
 import com.qq.closie.life.repository.LifeRepository
@@ -87,7 +88,7 @@ class RestoreCoordinatorTest {
         life = LifeRepository(db)
         media = MediaRepository(db)
         captureRepo = CaptureRepository(db)
-        referenceRepo = ReferenceRepository(db, life, media)
+        referenceRepo = ReferenceRepository(db, life, media, captureRepo)
         planRepo = PlanRepository(db, life)
         wardrobe = LocalWardrobeRepository(context)
     }
@@ -170,6 +171,136 @@ class RestoreCoordinatorTest {
         )
         // No parked tree may survive: the revert is only complete once `oldDir` is consumed.
         assertThat(strayRestoreDirs()).isEmpty()
+    }
+
+    // ------------------------------------------------------------------
+    //  Regression 2a-bis: a *pre-durable* refusal must not sticky-block
+    // ------------------------------------------------------------------
+
+    /**
+     * A stale parking slot refuses the restore **as a `Result.failure`**, leaving the gate `READY` and
+     * every surface untouched.
+     *
+     * ### Why this needed its own test
+     *
+     * The preflight that rejects a stale `.closie_restore_old_*` slot is deliberately the *first* thing
+     * `restore()` does — before `intent` exists and before any marker is written — because the danger it
+     * prevents is a *later* check: once a marker names that path, `revertCloset` treats an existing parked
+     * tree as the user's data and renames it over the live Closet.
+     *
+     * Being first is also what made it easy to get the *error handling* wrong. Because it sits before
+     * `val phaseA = runCatching { … }`, a throw there does not reach the coordinator's own verdict logic
+     * at all — it escapes to [BackupManager]'s outer `catch`, whose single verdict is
+     * `markRestoreUnfinished`. That verdict is right for "something threw that I cannot reason about" and
+     * exactly wrong here, where the code can *prove* nothing durable happened:
+     *
+     * ```
+     *   stale slot -> outer catch -> markRestoreUnfinished (sticky, restart-required)
+     *                              and no marker exists for the next start to clean up
+     *   -> the app refuses every read and write, forever, because of a leftover directory in cacheDir
+     * ```
+     *
+     * The whole point of the three-surface protocol is that a refusal costing nothing must cost nothing.
+     * So the assertions here are the complete "nothing happened" ledger, not just the return value:
+     *
+     * | surface | expected |
+     * |---|---|
+     * | return | `Result.failure`, not a thrown exception |
+     * | marker | `Missing` — the refusal is pre-marker, so there is no evidence to keep |
+     * | Closet | the user's own `local-item-only`, in memory *and* on disk |
+     * | media | the user's own media bytes, and the stale slot's own file |
+     * | database | the user's own capture row, unchanged |
+     * | stale slot | **preserved** — it is the evidence; only this run's scratch may be deleted |
+     * | gate | `READY`, and business code genuinely works again |
+     */
+    @Test
+    fun staleParkingSlot_refusesAsFailureWithoutStickyBlockingOrTouchingAnything() = runTest {
+        val (backup, oldMedia) = backupThenInstallOldState(
+            mediaFileNames = listOf("bk-stale-slot.png"),
+            oldBytes = listOf(byteArrayOf(5, 5, 5))
+        )
+
+        val filesDir = context.filesDir
+
+        // A leftover parked tree, holding the *previous* generation's wardrobe. It is placed on a real
+        // `.closie_restore_old_*` path because that is what a genuinely interrupted earlier run leaves
+        // behind, and it is asserted to survive below — deleting it would destroy the user's old wardrobe.
+        val staleClosetOld = File(filesDir, ".closie_restore_old_stale-generation")
+        staleClosetOld.deleteRecursively()
+        writeWardrobeFiles(
+            staleClosetOld,
+            itemsJson = """[{"id":"stale-generation-item","name":"上一次恢复的残留"}]"""
+        )
+
+        // ### Reaching the real refusal branch, honestly
+        //
+        // The preflight derives its four candidate paths from a wall-clock id, so a test cannot
+        // pre-create the exact directory a run will look for. Rather than racing the clock, the seam
+        // answers the *question* — "is this slot taken?" — and this override answers it for the parking
+        // slot while delegating everything else to production. The refusal therefore runs through the
+        // real `restore()`: same branch, same cleanup, same gate handling.
+        val preflightRefusalFs = object : DelegatingRestoreFs() {
+            override fun isSlotOccupied(slot: File): Boolean =
+                slot.name.startsWith(".closie_restore_old_") || RealRestoreFs.isSlotOccupied(slot)
+        }
+
+        // --- The complete "nothing happened" ledger, captured before the attempt. ---
+        val closetFile = File(filesDir, "closie/items.json")
+        val closetBefore = closetFile.readText()
+        val mediaBefore = oldMedia.map { path -> File(path).readBytes().toList() }
+        val captureCountBefore = db.captureDao().count()
+        val staleItemsBefore = File(staleClosetOld, "items.json").readText()
+        assertThat(mediaBefore).isNotEmpty()
+
+        val result = BackupManager.restore(
+            context = context,
+            repo = wardrobe,
+            inputUri = backup,
+            lifeDatabase = db,
+            hooks = NoOpRestoreHooks,
+            fs = preflightRefusalFs
+        )
+
+        // 1. A `Result.failure`, **not** an escaping exception. The distinction is the whole point: a
+        //    throw out of the preflight reaches `BackupManager`'s outer `catch`, whose only verdict is the
+        //    sticky restart-required block — for a leftover directory that the next start would have
+        //    cleaned up anyway.
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()).isInstanceOf(java.io.IOException::class.java)
+
+        // 2. No marker: the refusal happened before `RestoreIntent` existed, so there is no evidence to
+        //    preserve and nothing for a later start to resume.
+        assertThat(markerMissing()).isTrue()
+
+        // 3. The Closet is the user's, in memory and on disk.
+        assertThat(wardrobe.items.value.map { it.id }).contains(OLD_ITEM_ID)
+        assertThat(wardrobe.items.value.map { it.id }).doesNotContain(NEW_ITEM_ID)
+        assertThat(closetFile.readText()).isEqualTo(closetBefore)
+
+        // 4. The media tree is untouched, byte for byte.
+        oldMedia.forEachIndexed { i, path ->
+            assertThat(File(path).readBytes().toList()).isEqualTo(mediaBefore[i])
+        }
+
+        // 5. The database is untouched.
+        assertThat(db.captureDao().count()).isEqualTo(captureCountBefore)
+
+        // 6. The stale parking slot is **preserved**. This is what separates "refused safely" from
+        //    "refused and deleted the evidence": the directory holds the user's previous wardrobe, and a
+        //    refusal that cleaned it up would be the very data loss the preflight exists to prevent.
+        assertThat(staleClosetOld.exists()).isTrue()
+        assertThat(File(staleClosetOld, "items.json").readText()).isEqualTo(staleItemsBefore)
+
+        // 7. The gate is genuinely READY — not sticky BLOCKED. Both halves are asserted, because a gate
+        //    that claimed READY while still refusing leases would be the same broken app wearing a
+        //    different label.
+        assertThat(RestoreStartupGate.isRestoreUnfinished).isFalse()
+        assertThat(RestoreStartupGate.status).isEqualTo(RestoreStartupGate.Status.READY)
+        assertThat(RestoreStartupGate.beginRestore()).isTrue()
+        RestoreStartupGate.endRestoreReady()
+
+        // 8. Business code genuinely works again — the positive control that makes 7 meaningful.
+        assertThat(wardrobe.listItems().map { it.id }).contains(OLD_ITEM_ID)
     }
 
     // ------------------------------------------------------------------
@@ -567,7 +698,16 @@ class RestoreCoordinatorTest {
             RestoreIntent(
                 id = 555,
                 state = RestoreState.DB_COMMITTING,
+                // A `DB_COMMITTING` marker is reached only through the v2 branch that writes the
+                // snapshot and opens the transaction, so the flag and the parked tree must be present
+                // for this to describe a state a real device can actually be in.
+                includesLifeOs = true,
                 closetOldDir = oldDir.absolutePath,
+                closetExistedBefore = true,
+                // A v2 marker names both media paths whether or not the device had a media directory;
+                // here it had none, which is what `mediaExistedBefore` (default false) records.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_555").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_555").absolutePath,
                 dbSnapshot = snapFile.absolutePath
             )
         )
@@ -611,7 +751,14 @@ class RestoreCoordinatorTest {
             RestoreIntent(
                 id = 444,
                 state = RestoreState.DB_COMMITTING,
+                // Same reasoning as the test above: the state implies a v2 restore, and the parked tree
+                // really is on disk, so the marker must say both.
+                includesLifeOs = true,
                 closetOldDir = oldDir.absolutePath,
+                closetExistedBefore = true,
+                // As above: a v2 marker carries both media paths even when there was no media to park.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_444").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_444").absolutePath,
                 dbSnapshot = snapFile.absolutePath
             )
         )
@@ -723,11 +870,14 @@ class RestoreCoordinatorTest {
      * classified one notch too low, and a test that only exercised the happy path would agree with a
      * predicate that returned `true` unconditionally.
      *
-     * `HEALTH_CHECKING` is the one worth staring at. It is reachable with **no snapshot at all** — a
-     * Backup v1 archive, or any restore with no live database, still passes through `DB_COMMITTED` and
-     * then `HEALTH_CHECKING` while never writing a row. Treating it as "the database needs nothing"
-     * would let a process killed there be "recovered" by reverting the Closet alone, which is the
-     * mirror image of the original bug: the user's wardrobe next to the backup's life-graph.
+     * This case pins the **v2** column: with a Life OS section present, the three states that follow the
+     * transaction are exactly the ones needing a replay. `HEALTH_CHECKING` is included because for v2 the
+     * rows may already be the backup's, and treating it as "nothing to do" would let a process killed
+     * there be "recovered" by reverting the Closet alone — the user's wardrobe next to the backup's
+     * life-graph.
+     *
+     * The v1 column is a separate question and is asserted separately below; see
+     * [requiresDatabaseRecovery_healthCheckingIsFormatDependent] for why it cannot be folded in here.
      */
     @Test
     fun requiresDatabaseRecovery_isExactlyTheThreeStatesThatFollowTheTransaction() {
@@ -752,6 +902,339 @@ class RestoreCoordinatorTest {
             RestoreState.FAILED,
             RestoreState.ROLLED_BACK
         )
+    }
+
+    /**
+     * The full truth table, both columns, asserted state by state.
+     *
+     * ### Why this cannot be one `includesLifeOs && state in {…}` expression
+     *
+     * `HEALTH_CHECKING` is reached by **both** formats and means something different in each. For v2 the
+     * transaction has run and the rows may be the backup's; for **v1** there is no Life OS section at
+     * all — no transaction, no rows written, no snapshot on disk — so replaying anything would
+     * `withTransaction` a database the archive never mentioned and overwrite 记录 / 资料库 the user
+     * accumulated *after* taking that v1 backup. A single conjunction cannot express that; it collapses
+     * to a state-only predicate whenever `includesLifeOs` is true.
+     *
+     * ### Why `DB_COMMITTING` / `DB_COMMITTED` stay `true` even with `includesLifeOs = false`
+     *
+     * Those two states do **not** consult the flag, and that asymmetry is deliberate. They are reachable
+     * only through the v2 branch that writes the snapshot and opens the transaction, so a marker claiming
+     * one of them while saying `includesLifeOs = false` is **self-contradictory** — the durable record of
+     * a database half genuinely in flight, with a flag denying it exists. The dangerous reading is "no
+     * Life OS, nothing to do": recovery would then consume the parked trees, delete the marker, and step
+     * over a database that may hold the backup's rows. The conservative `true` leaves the marker and the
+     * snapshot for a later pass, which may waste a retry but can never lose data.
+     *
+     * Asserting both columns explicitly is the point. A test that only checked the v2 column would pass
+     * against the old `includesLifeOs && …` shape and silently lose this distinction.
+     */
+    @Test
+    fun requiresDatabaseRecovery_isFormatDependentInExactlyOneState() {
+        // The honest, reachable markers for each format, then the contradictory combination that must
+        // still resolve to the safe answer rather than to "nothing to do".
+        data class Row(val state: RestoreState, val includesLifeOs: Boolean, val expected: Boolean)
+
+        val table = listOf(
+            // --- v2: the full protocol, transaction included. ------------------------------------
+            Row(RestoreState.PREPARING, true, false),
+            Row(RestoreState.STAGED, true, false),
+            Row(RestoreState.CLOSET_SWAPPED, true, false),
+            Row(RestoreState.MEDIA_SWAPPED, true, false),
+            Row(RestoreState.DB_COMMITTING, true, true),
+            Row(RestoreState.DB_COMMITTED, true, true),
+            Row(RestoreState.HEALTH_CHECKING, true, true),
+            Row(RestoreState.COMMITTED, true, false),
+            Row(RestoreState.FAILED, true, false),
+            Row(RestoreState.ROLLED_BACK, true, false),
+
+            // --- v1: no Life OS section, so no transaction ever ran. ------------------------------
+            // HEALTH_CHECKING is the row that matters: v1 passes through it with no snapshot.
+            Row(RestoreState.PREPARING, false, false),
+            Row(RestoreState.STAGED, false, false),
+            Row(RestoreState.CLOSET_SWAPPED, false, false),
+            Row(RestoreState.MEDIA_SWAPPED, false, false),
+            Row(RestoreState.DB_COMMITTING, false, true),
+            Row(RestoreState.DB_COMMITTED, false, true),
+            Row(RestoreState.HEALTH_CHECKING, false, false),
+            Row(RestoreState.COMMITTED, false, false),
+            Row(RestoreState.FAILED, false, false),
+            Row(RestoreState.ROLLED_BACK, false, false)
+        )
+
+        table.forEach { row ->
+            assertThat(
+                RestoreIntent(includesLifeOs = row.includesLifeOs, state = row.state)
+                    .requiresDatabaseRecovery()
+            ).isEqualTo(row.expected)
+        }
+
+        // The complete enumeration is asserted too, so a future state added to the enum cannot quietly
+        // fall into `else -> false` without a line here failing.
+        assertThat(table.map { it.state }.toSet()).containsExactlyElementsIn(RestoreState.entries.toSet())
+    }
+
+    /**
+     * The single cell where the format decides the answer: `HEALTH_CHECKING`.
+     *
+     * Stated on its own because it is the one behavioural difference between v1 and v2 in this predicate,
+     * and because it is the cell a careless refactor is most likely to flatten. For a v1 marker the answer
+     * must stay `false` — there is no snapshot to replay and touching the database would corrupt data the
+     * archive never mentioned.
+     */
+    @Test
+    fun requiresDatabaseRecovery_healthCheckingIsFormatDependent() {
+        assertThat(
+            RestoreIntent(includesLifeOs = true, state = RestoreState.HEALTH_CHECKING)
+                .requiresDatabaseRecovery()
+        ).isTrue()
+
+        // v1 HEALTH_CHECKING must remain false. This is the assertion that forbids collapsing the
+        // predicate into a state-only check.
+        assertThat(
+            RestoreIntent(includesLifeOs = false, state = RestoreState.HEALTH_CHECKING)
+                .requiresDatabaseRecovery()
+        ).isFalse()
+    }
+
+    /**
+     * The media-recovery predicate, asserted as its complete truth table.
+     *
+     * [revertMedia] used to gate on `includesLifeOs` while [requiresDatabaseRecovery] had already been
+     * corrected to ignore it for `DB_COMMITTING`/`DB_COMMITTED`. Two predicates describing the same
+     * durable record, disagreeing — and the disagreement was a permanent half-restore, because the media
+     * tree stayed on the backup's version while the Closet and database were rolled back, and the cleanup
+     * then deleted the media evidence.
+     *
+     * ### Why "the flag alone means the media was swapped" is false
+     *
+     * The obvious fix is `includesLifeOs` for every state, and it is wrong. `includesLifeOs` describes
+     * what the **archive** contained, not what this marker's restore had *done* by the time it was killed.
+     * A v2 restore killed at `STAGED` has `includesLifeOs = true` and has not renamed a single directory;
+     * reverting media there would delete a media tree that was never replaced. So the answer has to come
+     * from *where in the sequence* the marker sits, with the flag consulted only where the sequence is
+     * genuinely ambiguous — `CLOSET_SWAPPED`, where the rename may have completed without the marker
+     * catching up, and `HEALTH_CHECKING`, which both formats pass through.
+     *
+     * An earlier revision of this test asserted exactly the wrong thing — "v2 flag ⇒ media was swapped,
+     * in every state" — which is the belief that produced the bug. It is replaced by the table below.
+     */
+    @Test
+    fun requiresLifeMediaRecovery_isExactlyTheStatesWhereTheSwapCanHaveHappened() {
+        data class Row(val state: RestoreState, val includesLifeOs: Boolean, val expected: Boolean)
+
+        val table = listOf(
+            // --- v2: the archive carried a media section. -----------------------------------------
+            // PREPARING / STAGED are provably before the first rename, so there is nothing to revert.
+            Row(RestoreState.PREPARING, true, false),
+            Row(RestoreState.STAGED, true, false),
+            // The media rename may have completed without the marker catching up — only the format can
+            // say whether there was a media section to rename.
+            Row(RestoreState.CLOSET_SWAPPED, true, true),
+            // MEDIA_SWAPPED *is* the swap; the DB states follow it. Self-evidencing, flag not consulted.
+            Row(RestoreState.MEDIA_SWAPPED, true, true),
+            Row(RestoreState.DB_COMMITTING, true, true),
+            Row(RestoreState.DB_COMMITTED, true, true),
+            Row(RestoreState.HEALTH_CHECKING, true, true),
+            // Resolved: reverting would destroy a committed restore or redo a finished rollback.
+            Row(RestoreState.COMMITTED, true, false),
+            Row(RestoreState.FAILED, true, false),
+            Row(RestoreState.ROLLED_BACK, true, false),
+
+            // --- v1: the archive had no media section. --------------------------------------------
+            Row(RestoreState.PREPARING, false, false),
+            Row(RestoreState.STAGED, false, false),
+            Row(RestoreState.CLOSET_SWAPPED, false, false),
+            // The v2-only states stay `true` even here. They are reachable only through the branch that
+            // performs the media swap, so the state contradicts the flag — and the state wins. This is the
+            // same asymmetry [requiresDatabaseRecovery] applies, and it must be applied here too, or the
+            // two predicates disagree about one marker and recovery repairs two surfaces out of three.
+            Row(RestoreState.MEDIA_SWAPPED, false, true),
+            Row(RestoreState.DB_COMMITTING, false, true),
+            Row(RestoreState.DB_COMMITTED, false, true),
+            Row(RestoreState.HEALTH_CHECKING, false, false),
+            Row(RestoreState.COMMITTED, false, false),
+            Row(RestoreState.FAILED, false, false),
+            Row(RestoreState.ROLLED_BACK, false, false)
+        )
+
+        table.forEach { row ->
+            assertThat(
+                RestoreIntent(includesLifeOs = row.includesLifeOs, state = row.state)
+                    .requiresLifeMediaRecovery()
+            ).isEqualTo(row.expected)
+        }
+
+        // No state may fall through an `else` unexamined.
+        assertThat(table.map { it.state }.toSet()).containsExactlyElementsIn(RestoreState.entries.toSet())
+    }
+
+    /**
+     * The two predicates must agree about any one marker.
+     *
+     * Wherever the database half is known to be in flight, the media half is known to have been swapped,
+     * so "database recovery required" must always **imply** "media recovery required". The converse does
+     * not hold and must not be asserted: `MEDIA_SWAPPED` needs the media revert while being provably
+     * before the transaction, so it needs no database work. Asserting the implication rather than the
+     * equivalence keeps that legitimate case legal while still forbidding the contradiction that caused
+     * the half-restore.
+     */
+    @Test
+    fun requiresLifeMediaRecovery_neverContradictsTheDatabasePredicate() {
+        val markers = RestoreState.entries.flatMap { state ->
+            listOf(
+                RestoreIntent(includesLifeOs = true, state = state),
+                RestoreIntent(includesLifeOs = false, state = state)
+            )
+        }
+
+        markers.forEach { marker ->
+            if (marker.requiresDatabaseRecovery()) {
+                assertThat(marker.requiresLifeMediaRecovery()).isTrue()
+            }
+        }
+
+        // The concrete cell that used to be wrong: DB_COMMITTING with a flag denying Life OS.
+        assertThat(
+            RestoreIntent(includesLifeOs = false, state = RestoreState.DB_COMMITTING)
+                .requiresLifeMediaRecovery()
+        ).isTrue()
+
+        // …and the v1 protection in the other direction: a marker that never entered a v2-only state must
+        // not have its media touched, because the archive never mentioned a media directory.
+        assertThat(
+            RestoreState.entries.filter { !it.isV2Only() }.all {
+                !RestoreIntent(includesLifeOs = false, state = it).requiresLifeMediaRecovery()
+            }
+        ).isTrue()
+    }
+
+    /** States reachable only through the v2 branch, which therefore imply the media swap happened. */
+    private fun RestoreState.isV2Only(): Boolean = when (this) {
+        RestoreState.MEDIA_SWAPPED, RestoreState.DB_COMMITTING, RestoreState.DB_COMMITTED -> true
+        else -> false
+    }
+
+    /**
+     * The evidence check fires for every missing piece — **whatever the flag says**.
+     *
+     * Exhaustive over the missing fields and over both formats, because "fail closed" is only meaningful
+     * if it fires for every missing piece: a check that tested only `dbSnapshot` would pass the
+     * two-evidence case and let the rest through.
+     *
+     * ### Why `includesLifeOs = true` is no longer a shortcut to "complete"
+     *
+     * The previous revision opened with `if (includesLifeOs) return false`, on the theory that the flag
+     * establishes v2 and therefore the metadata must be present. It does not. The flag records what the
+     * **archive** contained; it says nothing about what this marker file managed to persist. A
+     * `DB_COMMITTED` marker with `includesLifeOs = true` and `mediaOldDir == null` would have sailed
+     * through the check, had its database and Closet rolled back, failed to revert media — and then had
+     * its marker cleared over the resulting half-restore, because cleanup does not care that the revert
+     * was incomplete.
+     *
+     * So completeness is now derived from what recovery is *about to do* ([RestoreIntent.swapInScope],
+     * [RestoreIntent.requiresLifeMediaRecovery], [RestoreIntent.requiresDatabaseRecovery]) and is checked
+     * for **every** non-terminal marker.
+     */
+    @Test
+    fun missingRecoveryEvidence_firesForEveryMissingPieceWhateverTheFlagSays() {
+        fun marker(
+            includesLifeOs: Boolean,
+            state: RestoreState = RestoreState.DB_COMMITTING,
+            closetOld: String? = "/old-closet",
+            snapshot: String? = "/snap",
+            mediaStage: String? = "/stage",
+            mediaOld: String? = "/old"
+        ) = RestoreIntent(
+            state = state,
+            includesLifeOs = includesLifeOs,
+            closetOldDir = closetOld,
+            dbSnapshot = snapshot,
+            mediaStageDir = mediaStage,
+            mediaOldDir = mediaOld
+        )
+
+        // Complete evidence: decidable, so recovery may proceed — in either format.
+        assertThat(marker(includesLifeOs = false).missingRecoveryEvidence()).isNull()
+        assertThat(marker(includesLifeOs = true).missingRecoveryEvidence()).isNull()
+
+        // Each missing piece on its own makes the marker undecidable …
+        assertThat(marker(includesLifeOs = false, snapshot = null).missingRecoveryEvidence())
+            .isEqualTo("dbSnapshot")
+        assertThat(marker(includesLifeOs = false, mediaStage = null).missingRecoveryEvidence())
+            .isEqualTo("mediaStageDir")
+        assertThat(marker(includesLifeOs = false, mediaOld = null).missingRecoveryEvidence())
+            .isEqualTo("mediaOldDir")
+        assertThat(marker(includesLifeOs = false, closetOld = null).missingRecoveryEvidence())
+            .isEqualTo("closetOldDir")
+
+        // … and the *same* gaps in a marker whose flag agrees with its state. This is the assertion the
+        // old short-circuit made impossible to write, and it is the one that matters: these are ordinary
+        // v2 markers, not exotic contradictions.
+        assertThat(marker(includesLifeOs = true, snapshot = null).missingRecoveryEvidence())
+            .isEqualTo("dbSnapshot")
+        assertThat(marker(includesLifeOs = true, mediaStage = null).missingRecoveryEvidence())
+            .isEqualTo("mediaStageDir")
+        assertThat(marker(includesLifeOs = true, mediaOld = null).missingRecoveryEvidence())
+            .isEqualTo("mediaOldDir")
+        assertThat(marker(includesLifeOs = true, closetOld = null).missingRecoveryEvidence())
+            .isEqualTo("closetOldDir")
+
+        // The predicate wrapper still answers the same question.
+        assertThat(marker(includesLifeOs = true, mediaOld = null).hasIncompleteLifeOsEvidence()).isTrue()
+    }
+
+    /**
+     * Terminal markers are exempt from the evidence check, on purpose.
+     *
+     * `COMMITTED` / `ROLLED_BACK` / `FAILED` mean every durable surface already agrees and only cleanup
+     * remains. Demanding rollback metadata there would be wrong twice over: it would fail a recovery that
+     * has nothing left to undo, and it would do so over data that is already consistent — which is exactly
+     * the "bricked by an undeletable leftover" failure the gate's terminal rule exists to prevent.
+     */
+    @Test
+    fun missingRecoveryEvidence_neverDemandsRollbackMetadataFromATerminalMarker() {
+        listOf(RestoreState.COMMITTED, RestoreState.ROLLED_BACK, RestoreState.FAILED).forEach { state ->
+            listOf(true, false).forEach { includesLifeOs ->
+                assertThat(
+                    RestoreIntent(includesLifeOs = includesLifeOs, state = state)
+                        .missingRecoveryEvidence()
+                ).isNull()
+            }
+        }
+    }
+
+    /**
+     * The evidence required follows the predicates, so a state that needs no rollback needs no metadata.
+     *
+     * `PREPARING` is provably before any rename and `MEDIA_SWAPPED` in a v1 marker never touched media, so
+     * neither may be rejected for missing paths it would never have written. Over-demanding evidence is
+     * not a harmless strictness: it turns a recoverable marker into one that nothing can act on.
+     */
+    @Test
+    fun missingRecoveryEvidence_asksOnlyForWhatRecoveryWouldActuallyUse() {
+        // PREPARING is out of scope for every revert, so a bare marker is fine.
+        assertThat(
+            RestoreIntent(includesLifeOs = true, state = RestoreState.PREPARING, closetOldDir = null)
+                .missingRecoveryEvidence()
+        ).isNull()
+
+        // A v1 CLOSET_SWAPPED marker needs the Closet path (a swap may have happened) but not the media
+        // paths, because v1 never had a media section to swap.
+        assertThat(
+            RestoreIntent(includesLifeOs = false, state = RestoreState.CLOSET_SWAPPED, closetOldDir = "/old-closet")
+                .missingRecoveryEvidence()
+        ).isNull()
+        assertThat(
+            RestoreIntent(includesLifeOs = false, state = RestoreState.CLOSET_SWAPPED, closetOldDir = null)
+                .missingRecoveryEvidence()
+        ).isEqualTo("closetOldDir")
+
+        // …whereas the same state in v2 does need them, because there the media rename may have run.
+        assertThat(
+            RestoreIntent(includesLifeOs = true, state = RestoreState.CLOSET_SWAPPED, closetOldDir = "/old-closet")
+                .missingRecoveryEvidence()
+        ).isEqualTo("mediaStageDir")
     }
 
     /**
@@ -1128,6 +1611,11 @@ class RestoreCoordinatorTest {
                 includesLifeOs = true,
                 closetOldDir = closieOld.absolutePath,
                 closetExistedBefore = true,
+                // Both media paths, as a v2 marker always carries. `mediaOldDir` is named even though the
+                // directory does not exist — the device had no media before, which is what
+                // `mediaExistedBefore = false` records and what makes "delete the published tree" the
+                // correct revert instead of "rename something back".
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_711").absolutePath,
                 mediaOldDir = mediaOld.absolutePath,
                 mediaExistedBefore = false
             )
@@ -1406,6 +1894,10 @@ class RestoreCoordinatorTest {
                 includesLifeOs = true,
                 closetOldDir = closieOld.absolutePath,
                 closetExistedBefore = true,
+                // v2, so both media paths are recorded — this device had no media directory, which is
+                // what the default `mediaExistedBefore = false` says.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_741").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_741").absolutePath,
                 dbSnapshot = snapFile.absolutePath
             )
         )
@@ -1418,22 +1910,55 @@ class RestoreCoordinatorTest {
         assertThat(strayRestoreDirs()).isEmpty()
     }
 
-    /** The predicate itself, held to its exact truth table — the state half and the includesLifeOs half. */
+    /**
+     * The predicate itself, held to its exact truth table — the state half and the `includesLifeOs` half.
+     *
+     * ### What this replaced, and why the old expectation was the bug
+     *
+     * This test used to assert `v1: never, in any state` — that `includesLifeOs = false` made
+     * `requiresDatabaseRecovery()` false for **every** state, `DB_COMMITTING` included. That is the
+     * collapse the predicate was rewritten to avoid. Those two states are reachable *only* through the
+     * v2 branch that writes the snapshot and opens the transaction, so a marker claiming one of them
+     * while denying the Life OS section is not a v1 restore to be left alone — it is a contradiction
+     * describing a database genuinely in flight. Answering "no recovery needed" there would let recovery
+     * consume the parked trees, delete the marker, and walk past a database that may hold the backup's
+     * rows.
+     *
+     * The correct table therefore has exactly one format-dependent cell, `HEALTH_CHECKING`, and this test
+     * pins both columns so that neither can drift back.
+     */
     @Test
     fun requiresDatabaseRecovery_dependsOnBothStateAndIncludesLifeOs() {
-        val afterTxn = listOf(RestoreState.DB_COMMITTING, RestoreState.DB_COMMITTED, RestoreState.HEALTH_CHECKING)
+        fun needs(state: RestoreState, lifeOs: Boolean) =
+            RestoreIntent(includesLifeOs = lifeOs, state = state).requiresDatabaseRecovery()
 
         // v2: exactly the three states that follow the transaction.
-        assertThat(RestoreState.entries.filter { RestoreIntent(includesLifeOs = true, state = it).requiresDatabaseRecovery() })
-            .containsExactlyElementsIn(afterTxn)
-        // v1: never, in any state.
-        assertThat(RestoreState.entries.filter { RestoreIntent(includesLifeOs = false, state = it).requiresDatabaseRecovery() })
-            .isEmpty()
+        assertThat(RestoreState.entries.filter { needs(it, lifeOs = true) })
+            .containsExactly(
+                RestoreState.DB_COMMITTING,
+                RestoreState.DB_COMMITTED,
+                RestoreState.HEALTH_CHECKING
+            )
 
-        // The one state that is reachable by both formats and means different things in each — the
-        // reason the state alone was not enough.
-        assertThat(RestoreIntent(includesLifeOs = true, state = RestoreState.HEALTH_CHECKING).requiresDatabaseRecovery()).isTrue()
-        assertThat(RestoreIntent(includesLifeOs = false, state = RestoreState.HEALTH_CHECKING).requiresDatabaseRecovery()).isFalse()
+        // v1: the two transaction states still demand repair, because a marker in either of them cannot
+        // be a v1 restore — the contradiction is resolved conservatively, never as "nothing to do".
+        assertThat(RestoreState.entries.filter { needs(it, lifeOs = false) })
+            .containsExactly(
+                RestoreState.DB_COMMITTING,
+                RestoreState.DB_COMMITTED
+            )
+
+        // The one state that is reachable by both formats and means different things in each — the reason
+        // the state alone was not enough, and the cell that forbids the flattened predicate.
+        assertThat(needs(RestoreState.HEALTH_CHECKING, lifeOs = true)).isTrue()
+        assertThat(needs(RestoreState.HEALTH_CHECKING, lifeOs = false)).isFalse()
+
+        // The difference between the two columns is exactly `HEALTH_CHECKING`, and nothing else. Stated
+        // as a set difference so a future state cannot silently join one column only.
+        val v2Only = RestoreState.entries.filter { needs(it, lifeOs = true) }
+        val v1 = RestoreState.entries.filter { needs(it, lifeOs = false) }
+        assertThat(v2Only.toSet() - v1.toSet()).containsExactly(RestoreState.HEALTH_CHECKING)
+        assertThat(v1.toSet() - v2Only.toSet()).isEmpty()
     }
 
     // ------------------------------------------------------------------
@@ -1511,6 +2036,9 @@ class RestoreCoordinatorTest {
                 includesLifeOs = true,
                 closetOldDir = closieOld.absolutePath,
                 closetExistedBefore = true,
+                // The stage path too: a v2 marker records where the swap happened even though the
+                // directory is gone by the time recovery reads it.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_751").absolutePath,
                 mediaOldDir = mediaOld.absolutePath,
                 mediaExistedBefore = true
             )
@@ -1592,6 +2120,10 @@ class RestoreCoordinatorTest {
                 includesLifeOs = true,
                 closetOldDir = oldDir.absolutePath,
                 closetExistedBefore = true,
+                // v2, so the media paths are recorded; this device had no media directory before the
+                // restore, which is what the default `mediaExistedBefore = false` says.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_753").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_753").absolutePath,
                 dbSnapshot = snapFile.absolutePath
             )
         )
@@ -1834,6 +2366,7 @@ class RestoreCoordinatorTest {
         const val NEW_ITEM_ID = "backup-item-only"
         const val OLD_ITEM_ID = "local-item-only"
         const val OLD_CAPTURE_TEXT = "用户原有的记录"
+        const val NEW_CAPTURE_TEXT = "备份里的记录"
     }
 
     /** Builds a v2 backup whose wardrobe contains a marker item no local state has. */
@@ -1919,11 +2452,52 @@ class RestoreCoordinatorTest {
      *  - the marker says `DB_COMMITTING` and names the snapshot,
      *  - the snapshot holds the rows the *database* had before the transaction.
      *
+     * ### Every field a real `DB_COMMITTING` marker carries, and why each one is set
+     *
+     * The rule this fixture follows — and the rule the whole suite has to follow — is that *every other*
+     * piece of evidence must be valid so that the one condition under test is the only thing that can
+     * produce the observed behaviour. A fixture that is also missing, say, `mediaStageDir` makes
+     * `validateRecoveryEvidence` refuse the marker first, and the test then passes for a reason unrelated
+     * to its name: a false positive that keeps passing after the real behaviour breaks.
+     *
+     *  - `includesLifeOs = true` — the state is reachable only through the v2 branch that writes the
+     *    snapshot and opens the transaction. A `DB_COMMITTING` marker with `includesLifeOs = false` is
+     *    self-contradictory, and [requiresDatabaseRecovery] deliberately reads it as "handle the
+     *    database" rather than as a v1 restore, so it is not a shape a test should be built on.
+     *  - `closetStageDir` / `closetOldDir` — the marker records **where the swap happened**, and the
+     *    stage path is recorded even though (precisely because) the directory is gone by now: by the
+     *    time a marker says `DB_COMMITTING`, `closetStage` has already been renamed into `closie/`. Both
+     *    are `dbSnapshot`'s peers in `missingRecoveryEvidence`, so omitting the stage path made this
+     *    fixture describe a marker no device can write.
+     *  - `closetExistedBefore = true` — `closie/` really did exist before the restore (the fixture
+     *    writes the user's wardrobe into the parked tree), and the flag is what tells the revert path
+     *    that `old` holds real data to rename back rather than a tree to delete.
+     *  - the media fields — a v2 restore swaps media too, so a marker that omits them describes a
+     *    restore that never published the media surface. Both paths are set: the stage path as metadata
+     *    naming where the swap happened, and the parked directory as a real tree holding the user's
+     *    previous media.
+     *  - `mediaExistedBefore = true` — same argument as the Closet flag, for the same reason.
+     *
      * @param snapshotOf the database to snapshot. Pass the database **after** seeding the user's
      *   pre-restore rows and **before** mutating it to the backup's, so the snapshot describes the
      *   state recovery is supposed to restore. Defaults to the field `db`, which is already at that
      *   state in most tests.
      */
+    // FIX7-ANCHOR parkDbCommittingState-definition-start.
+    //
+    // This marker exists so the *definition* of this helper is findable by grep, which it previously was
+    // not in a way a reader could rely on. A patch hunk's `@@` header carries the enclosing *class*
+    // (`class RestoreCoordinatorTest {`), not the enclosing function, so `grep "parkDbCommittingState"`
+    // over a patch file matches only the call sites in the added lines — the definition itself appears
+    // inside a hunk whose header names neither the function nor its line. That made it look, on a casual
+    // read, as though the helper's body had never been changed, when in fact the definition was rewritten
+    // to carry the full v2 evidence set (see the KDoc above). Searching for this marker instead finds the
+    // definition unambiguously.
+    //
+    // The fields below are the whole point of the fixture: a real `DB_COMMITTING` marker is reachable
+    // only after `MEDIA_SWAPPED`, so `requiresLifeMediaRecovery()` is true and `validateRecoveryEvidence`
+    // demands both `mediaStageDir` and `mediaOldDir` before any mutation. A fixture missing them would
+    // never enter the recovery path it claims to exercise.
     private suspend fun parkDbCommittingState(
         id: Long,
         snapshotOf: LifeDatabase = db
@@ -1933,6 +2507,25 @@ class RestoreCoordinatorTest {
         val oldDir = File(filesDir, ".closie_restore_old_$id")
         writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
         writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        // The media surface, parked the same way the Closet is. A v2 restore publishes both, so a
+        // fixture that only describes the Closet half would not be the shape this state is reached in.
+        val mediaDir = File(filesDir, "media")
+        val mediaOldDir = File(filesDir, ".life_media_restore_old_$id")
+        // The swap has *already happened*, so whatever the user had in the live tree is now parked in
+        // `old` — including files a caller seeded before calling this fixture (their media rows point at
+        // those paths, and recovery will only find them if they were parked here rather than left in the
+        // live tree the revert is about to delete). Synthesising a fresh `old` directory instead would
+        // describe a swap that silently destroyed the user's media, and every caller that asserts on its
+        // own media files would be asserting against a tree recovery was never going to restore.
+        mediaOldDir.mkdirs()
+        File(mediaOldDir, "old-media.txt").writeText("user's previous media")
+        mediaDir.listFiles()?.forEach { f ->
+            val target = File(mediaOldDir, f.name)
+            if (!target.exists()) f.renameTo(target) else f.deleteRecursively()
+        }
+        mediaDir.mkdirs()
+        File(mediaDir, "new-media.txt").writeText("backup's media")
 
         val snapFile = File(filesDir, ".closie_restore_dbsnap_$id.json")
         // Written through the same helper production uses, so the fixture and the reader agree on the
@@ -1944,8 +2537,26 @@ class RestoreCoordinatorTest {
             RestoreIntent(
                 id = id,
                 state = RestoreState.DB_COMMITTING,
+                // The transaction branch is v2-only, so the marker that records it says so.
+                includesLifeOs = true,
                 closetOldDir = oldDir.absolutePath,
-                dbSnapshot = snapFile.absolutePath
+                // Gone from disk by now — renamed into `closie/` — but still named, because the marker
+                // records where the swap happened and `missingRecoveryEvidence` demands the path be
+                // present. Leaving it out made this fixture describe a marker no device can produce,
+                // and the evidence check then refused the marker before any snapshot logic ran.
+                closetStageDir = File(filesDir, ".closie_restore_stage_$id").absolutePath,
+                // Both media paths, because a v2 marker always carries both and `missingRecoveryEvidence`
+                // demands them: the stage path is *metadata* naming where the swap happened, so it is
+                // recorded even though — indeed precisely because — the directory is gone afterwards.
+                // Omitting it made this fixture describe a marker no real device can write, and the
+                // evidence check correctly refused to act on it.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_$id").absolutePath,
+                mediaOldDir = mediaOldDir.absolutePath,
+                dbSnapshot = snapFile.absolutePath,
+                // Both surfaces really did exist before the restore: the parked trees hold the user's
+                // data, which is exactly what makes them worth renaming back.
+                closetExistedBefore = true,
+                mediaExistedBefore = true
             )
         )
         return snapFile
@@ -2034,59 +2645,1110 @@ class RestoreCoordinatorTest {
         File(dir, "ootds.json").writeText("[]")
         File(dir, "outfits.json").writeText("[]")
     }
-}
 
-/**
- * A [RestoreFs] that fails one chosen operation and otherwise behaves exactly like the real one.
- *
- * Used instead of `chmod`-style permission tricks for two reasons: those are unreliable under
- * Robolectric's filesystem, and — more importantly — they produce an *arbitrary* failure, whereas the
- * question these tests ask is about a *specific* operation ("the rename back could not be performed").
- * Targeting the operation keeps the test honest about which recovery step is under examination.
- *
- * Failure is keyed on the *destination* path, because that is what the recovery code names when it
- * decides what it is undoing.
- */
-private class FailingRestoreFs(
-    private val failRenameInto: String? = null,
-    private val failDelete: String? = null,
+    /** Writes one file into a media directory, creating it. Used to make the media surface detectable. */
+    private fun writeMediaFile(dir: File, name: String, contents: String) {
+        dir.mkdirs()
+        File(dir, name).writeText(contents)
+    }
+
+    // ------------------------------------------------------------------
+    //  RealRestoreFs.park: a fresh-only contract, with no fabricated evidence
+    // ------------------------------------------------------------------
+
     /**
-     * Fails deletion of any directory whose **name** contains this substring.
+     * `park` refuses to invent a parked tree when the live directory it was told to preserve is missing.
      *
-     * Used for the post-commit cleanup tests, where the parked tree's name carries a
-     * `System.currentTimeMillis()` suffix that a test cannot predict. Matching on the invariant part of
-     * the name (`.closie_restore_old_`, `.life_media_restore_old_`) keeps those tests from depending on
-     * the clock while still targeting exactly one class of directory.
+     * ### The fabrication this forbids, and why it was worse than failing
+     *
+     * The old `park` had an `else if (existedBefore)` branch that did `old.mkdirs()` — creating an
+     * **empty** directory and reporting success. The stated reason was to keep the invariant
+     * "`old.exists()` means there is an original to restore", which the revert logic relies on. It
+     * achieved the opposite: the placeholder is an empty directory that is *not the user's data*, and
+     * `revertCloset` treats `old.exists()` as exactly that data. So recovery would have renamed the empty
+     * placeholder over the live Closet, cleared the marker, and reported the user's wardrobe restored —
+     * destroying it and removing the evidence in one move.
+     *
+     * Failing loudly is strictly better. The marker and the real parked tree (if any) survive, the next
+     * start retries, and nothing has been overwritten with a directory that only *looks* like data.
+     *
+     * A caller reaching this state is not something to paper over: either something external deleted the
+     * user's tree or the restore's bookkeeping is wrong. In both cases the rename that follows cannot
+     * produce a correct result.
      */
-    private val failDeleteContaining: String? = null
-) : RestoreFs {
+    @Test
+    fun park_whenTheOriginalWasExpectedButIsGone_refusesInsteadOfFabricatingAnEmptyOldDir() {
+        val filesDir = context.filesDir
+        val live = File(filesDir, "closie-contract-missing")
+        val old = File(filesDir, ".closie_restore_old_contract1")
+        // Deliberately: `live` does not exist, and the caller claimed it did.
+        live.deleteRecursively()
+        old.deleteRecursively()
 
-    override fun park(live: File, old: File, existedBefore: Boolean) =
-        RealRestoreFs.park(live, old, existedBefore)
+        val failure = runCatching { RealRestoreFs.park(live, old, existedBefore = true) }.exceptionOrNull()
 
-    override fun rename(from: File, to: File, message: String) {
-        if (failRenameInto != null && to.absolutePath == failRenameInto) {
-            throw java.io.IOException("注入的失败：重命名到 $failRenameInto 不可用")
-        }
-        RealRestoreFs.rename(from, to, message)
+        assertThat(failure).isInstanceOf(java.io.IOException::class.java)
+        // The important assertion: no fake `old` was left behind for the revert logic to mistake for the
+        // user's data. If this ever regresses, the rename-back would silently restore an empty directory.
+        assertThat(old.exists()).isFalse()
     }
 
-    override fun deleteTree(dir: File) {
-        if (failDelete != null && dir.absolutePath == failDelete) {
-            throw java.io.IOException("注入的失败：无法删除 $failDelete")
-        }
-        if (failDeleteContaining != null && dir.name.contains(failDeleteContaining)) {
-            throw java.io.IOException("注入的失败：无法删除 ${dir.name}")
-        }
-        RealRestoreFs.deleteTree(dir)
+    /**
+     * The legitimate `existedBefore = true` case: the live tree is moved aside intact.
+     *
+     * The positive control for the test above — the refusal must not be so eager that a normal park stops
+     * working. The parked tree must hold the user's *content*, not merely exist.
+     */
+    @Test
+    fun park_movesTheLiveTreeAsideWhenItIsActuallyThere() {
+        val filesDir = context.filesDir
+        val live = File(filesDir, "closie-contract-present")
+        val old = File(filesDir, ".closie_restore_old_contract2")
+        old.deleteRecursively()
+        writeWardrobeFiles(live, itemsJson = """[{"id":"user-item","name":"用户的衣服"}]""")
+
+        RealRestoreFs.park(live, old, existedBefore = true)
+
+        // Moved, not copied: the live slot is empty for the staged tree to take.
+        assertThat(live.exists()).isFalse()
+        assertThat(old.exists()).isTrue()
+        // …and the parked tree carries the user's item, which is the whole point of parking it.
+        assertThat(File(old, "items.json").readText()).contains("user-item")
     }
 
-    override fun cleanupChecked(intent: RestoreIntent) {
-        intent.closetOldDir?.let { deleteTree(File(it)) }
-        intent.mediaOldDir?.let { deleteTree(File(it)) }
-        intent.dbSnapshot?.let { path ->
-            val f = File(path)
-            if (f.exists() && !f.delete()) throw java.io.IOException("注入的失败：无法删除快照 $path")
-        }
+    /**
+     * `park` refuses to merge two generations of data when the parked slot is already occupied.
+     *
+     * `File.renameTo` onto an existing **directory** does not replace it — on most filesystems it moves
+     * the source *inside* it. Silently succeeding there would leave one directory holding both the user's
+     * wardrobe and the backup's, and no way to tell them apart afterwards. Since a fresh restore owns the
+     * parked path (it is derived from the restore id), a pre-existing directory means the bookkeeping is
+     * wrong and the run must stop.
+     */
+    @Test
+    fun park_whenTheParkingSlotIsAlreadyOccupied_refusesToMergeTwoGenerations() {
+        val filesDir = context.filesDir
+        val live = File(filesDir, "closie-contract-occupied")
+        val old = File(filesDir, ".closie_restore_old_contract3")
+        writeWardrobeFiles(live, itemsJson = """[{"id":"new-gen","name":"这一代"}]""")
+        writeWardrobeFiles(old, itemsJson = """[{"id":"stale-gen","name":"上一代"}]""")
+
+        val failure = runCatching { RealRestoreFs.park(live, old, existedBefore = true) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(java.io.IOException::class.java)
+        // Both trees are untouched: nothing was merged and nothing was lost.
+        assertThat(File(live, "items.json").readText()).contains("new-gen")
+        assertThat(File(old, "items.json").readText()).contains("stale-gen")
+    }
+
+    /**
+     * `existedBefore = false` does **not** license an occupied parking slot.
+     *
+     * This is the resurrection window the previous revision left open. The `old.exists()` guard sat inside
+     * the `existedBefore == true` branch, so with `existedBefore = false` a stale parked directory was
+     * simply ignored:
+     *
+     * ```
+     *   existedBefore = false      (no live tree when the restore started)
+     *   old/ still present         (a leftover from an earlier, finished restore)
+     *   -> park is a no-op
+     *   -> the staged tree is published as live
+     *   -> a later rollback sees old/.exists() and renames the STALE generation over live/
+     * ```
+     *
+     * `revertCloset` and `revertMedia` both open with "if the parked tree exists, it is the user's data",
+     * so `old` is not inert litter — it is a directory that will be treated as the user's wardrobe the
+     * moment anything looks at it. The user would end up with data from two restores ago and a marker
+     * reporting a successful rollback.
+     *
+     * A free parking slot is therefore a **precondition** of the operation, not a consequence of the flag,
+     * and is checked before the flag is consulted at all.
+     */
+    @Test
+    fun park_whenNoOriginalButParkingSlotAlreadyExists_refusesAndPreservesIt() {
+        val filesDir = context.filesDir
+        val live = File(filesDir, "closie-contract-stale-slot")
+        val old = File(filesDir, ".closie_restore_old_contract6")
+        // Deliberately: no live tree (consistent with `existedBefore = false`) …
+        live.deleteRecursively()
+        // … but the parking slot is occupied by a stale generation.
+        writeWardrobeFiles(old, itemsJson = """[{"id":"stale-gen","name":"上一次恢复留下的"}]""")
+
+        val failure = runCatching { RealRestoreFs.park(live, old, existedBefore = false) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(java.io.IOException::class.java)
+        // The stale tree is preserved exactly as it was: refusing must not destroy the thing whose
+        // presence is the problem, or the diagnosis disappears with the evidence.
+        assertThat(File(old, "items.json").readText()).contains("stale-gen")
+        // …and nothing was fabricated in the live slot either.
+        assertThat(live.exists()).isFalse()
+    }
+
+    /**
+     * The `existedBefore = false` contract: there was no original, so nothing is parked — but a live
+     * tree appearing anyway is a contradiction, not a licence to overwrite it.
+     *
+     * This is the other half of "the decision comes from the marker, not from the disk". The marker says
+     * the user had no Closet; if one is there, it was written by something the restore does not know
+     * about, and silently renaming it away would discard it. The revert path handles the "no original"
+     * case by *deleting* the swapped-in tree, which is only correct when the flag is truthful — so the
+     * flag being contradicted must stop the run.
+     */
+    @Test
+    fun park_whenNoOriginalWasDeclaredButALiveTreeIsPresent_refuses() {
+        val filesDir = context.filesDir
+        val live = File(filesDir, "closie-contract-unexpected")
+        val old = File(filesDir, ".closie_restore_old_contract4")
+        old.deleteRecursively()
+        writeWardrobeFiles(live, itemsJson = """[{"id":"surprise","name":"意外的数据"}]""")
+
+        val failure = runCatching { RealRestoreFs.park(live, old, existedBefore = false) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(java.io.IOException::class.java)
+        // The unexpected tree is still there, untouched, for someone to look at.
+        assertThat(File(live, "items.json").readText()).contains("surprise")
+        assertThat(old.exists()).isFalse()
+    }
+
+    /**
+     * The normal `existedBefore = false` case is a genuine no-op.
+     *
+     * The positive control: a first-ever restore has nothing to park, and that must not be an error.
+     */
+    @Test
+    fun park_whenThereWasGenuinelyNoOriginal_isANoOp() {
+        val filesDir = context.filesDir
+        val live = File(filesDir, "closie-contract-absent")
+        val old = File(filesDir, ".closie_restore_old_contract5")
+        live.deleteRecursively()
+        old.deleteRecursively()
+
+        RealRestoreFs.park(live, old, existedBefore = false)
+
+        assertThat(live.exists()).isFalse()
+        // Critically: no placeholder directory was created, so the revert path will delete the
+        // swapped-in tree rather than rename an empty stand-in over it.
+        assertThat(old.exists()).isFalse()
+    }
+
+    // ------------------------------------------------------------------
+    //  recoverFilesystemOnly: the completion contract
+    // ------------------------------------------------------------------
+
+    /**
+     * The filesystem-only pass concludes a marker that has nothing outstanding — and *proves* it.
+     *
+     * ### What the old behaviour got wrong, in both directions
+     *
+     * `recoverFilesystemOnly` used to return `Completed` unconditionally as soon as the filesystem repair
+     * did not throw, and never cleared the marker at all. So a marker whose database half was still
+     * outstanding was reported as finished, while a marker that was genuinely finished stayed on disk
+     * forever. The second half is the less obvious one: a marker that is never cleared makes every
+     * subsequent start redo the work, and — because the gate keys off the same verdict — makes a
+     * completed recovery look permanently pending.
+     *
+     * This test pins the concluding direction: a pre-transaction marker with nothing left to do must come
+     * back `Completed` **with the marker actually gone**, verified by re-reading through the same
+     * `AtomicJson` semantics rather than by trusting the delete.
+     */
+    @Test
+    fun recoverFilesystemOnly_concludesAMarkerWithNothingOutstanding_andRemovesIt() {
+        val filesDir = context.filesDir
+        val oldDir = File(filesDir, ".closie_restore_old_fs1")
+        writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(File(filesDir, "closie"), itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+        val snapFile = File(filesDir, ".closie_restore_dbsnap_fs1.json")
+        snapFile.writeText("{}")
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9001,
+                state = RestoreState.CLOSET_SWAPPED,
+                includesLifeOs = false,
+                closetOldDir = oldDir.absolutePath,
+                dbSnapshot = snapFile.absolutePath,
+                closetExistedBefore = true
+            )
+        )
+
+        val outcome = RestoreCoordinator.recoverFilesystemOnly(context)
+
+        assertThat(outcome).isEqualTo(RecoveryOutcome.Completed)
+        assertThat(File(File(filesDir, "closie"), "items.json").readText()).contains(OLD_ITEM_ID)
+        // Concluded means concluded: the marker is verifiably gone…
+        assertThat(RestoreIntentStore.read(context)).isInstanceOf(AtomicJson.ReadResult.Missing::class.java)
+        // …and so are the leftovers, including the snapshot, which is pure liability once replayed.
+        assertThat(oldDir.exists()).isFalse()
+        assertThat(snapFile.exists()).isFalse()
+    }
+
+    /**
+     * The other direction: a marker with an outstanding database half must come back `RetryRequired`
+     * **with the marker and the snapshot intact** — and must not be mistaken for "the Closet is broken".
+     *
+     * This is the assertion that makes the filesystem-only pass safe to run without a database. The
+     * tempting "clean up and report done" behaviour would delete the snapshot, and the snapshot is the
+     * only record of the rows a later start must replay. The parked trees are also preserved, because
+     * nothing about them is finished either.
+     *
+     * Note what the Closet looks like at the end: it **is** repaired. `RetryRequired` here means "the
+     * protocol has outstanding durable work", not "the wardrobe was left half-swapped" — the distinction
+     * the caller must not collapse, and the reason this test asserts both facts at once.
+     */
+    @Test
+    fun recoverFilesystemOnly_keepsTheMarkerAndSnapshotWhenTheDatabaseHalfIsOutstanding() = runTest {
+        seedCapture(OLD_CAPTURE_TEXT)
+        val snapFile = parkDbCommittingState(id = 9002)
+
+        val outcome = RestoreCoordinator.recoverFilesystemOnly(context)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        // The Closet repair happened anyway — this is the "RetryRequired is not about the Closet" part.
+        assertThat(File(File(context.filesDir, "closie"), "items.json").readText()).contains(OLD_ITEM_ID)
+        assertThat(File(File(context.filesDir, "closie"), "items.json").readText()).doesNotContain(NEW_ITEM_ID)
+        // …and every artefact the database half depends on survives.
+        assertThat(markerPresent()).isTrue()
+        val pending = requireMarker()
+        assertThat(pending.state).isEqualTo(RestoreState.DB_COMMITTING)
+        assertThat(pending.dbSnapshot).isEqualTo(snapFile.absolutePath)
+        assertThat(snapFile.isFile).isTrue()
+        // The parked trees survive too: a later pass may still need to reason about them.
+        assertThat(strayRestoreDirs()).isNotEmpty()
+    }
+
+    /**
+     * A corrupt marker is never a clean slate, for this entry point too.
+     *
+     * The three-valued read exists so that "unreadable" cannot be confused with "absent" — and this is the
+     * entry point that used to have the most to lose from that confusion, since a clean slate is what
+     * authorises deleting the parked trees.
+     */
+    @Test
+    fun recoverFilesystemOnly_treatsACorruptMarkerAsRetryNotAsCleanSlate() {
+        val filesDir = context.filesDir
+        val oldDir = File(filesDir, ".closie_restore_old_fs2")
+        writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        RestoreIntentStore.markerFile(context).writeText("{ \"id\": 9003, \"state\":")
+
+        val outcome = RestoreCoordinator.recoverFilesystemOnly(context)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        // Nothing was deleted on the strength of an unreadable record.
+        assertThat(RestoreIntentStore.markerFile(context).exists()).isTrue()
+        assertThat(oldDir.exists()).isTrue()
+        assertThat(File(oldDir, "items.json").readText()).contains(OLD_ITEM_ID)
+    }
+
+    /**
+     * No marker at all is the one case that is genuinely no work — and it must touch nothing.
+     */
+    @Test
+    fun recoverFilesystemOnly_withNoMarker_reportsNoWork() {
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        val before = File(closieDir, "items.json").readBytes()
+
+        val outcome = RestoreCoordinator.recoverFilesystemOnly(context)
+
+        assertThat(outcome).isEqualTo(RecoveryOutcome.NoWork)
+        assertThat(File(closieDir, "items.json").readBytes()).isEqualTo(before)
+    }
+
+    // ------------------------------------------------------------------
+    //  A marker that contradicts its own flags is handled conservatively
+    // ------------------------------------------------------------------
+
+    /**
+     * `DB_COMMITTING` + `includesLifeOs = false`: the contradictory marker must **not** be treated as
+     * "nothing to do", because a database half may genuinely be in flight.
+     *
+     * ### Why this fixture exists despite being unreachable in normal operation
+     *
+     * A real restore writes `DB_COMMITTING` only inside the `if (includesLifeOs)` branch, so the flag can
+     * never be false there on a device. But the marker is *durable data read from disk*, and the whole
+     * point of the three-valued read is that recovery must not assume the file is well-formed. A torn or
+     * hand-edited marker, or one written by a future build with a different branch order, can present this
+     * combination — and it is precisely the combination where the wrong answer is destructive.
+     *
+     * Reading it as "v1, no Life OS" would make recovery consume the parked trees, delete the marker and
+     * the snapshot, and walk past a database that may hold the backup's rows. The conservative reading is
+     * `requiresDatabaseRecovery() == true`, which preserves everything for a later pass. This test pins
+     * that, so the asymmetry in the truth table cannot be "simplified" away.
+     */
+    @Test
+    fun dbCommittingMarkerWithoutLifeOsFlag_isStillTreatedAsNeedingDatabaseRecovery() = runTest {
+        seedCapture(OLD_CAPTURE_TEXT)
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+        val oldDir = File(filesDir, ".closie_restore_old_contradiction")
+        writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+        val snapFile = File(filesDir, ".closie_restore_dbsnap_contradiction.json")
+        LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9004,
+                state = RestoreState.DB_COMMITTING,
+                // The contradiction under test.
+                includesLifeOs = false,
+                closetOldDir = oldDir.absolutePath,
+                // The v2 media paths, even though the flag denies Life OS.
+                //
+                // `includesLifeOs` and "this marker carries v2 media metadata" are different claims: the
+                // flag records what the *archive* had, the paths record what this *marker file* persisted.
+                // The state is what makes the paths meaningful — `DB_COMMITTING` is written only from the
+                // v2 branch — and `missingRecoveryEvidence` demands them for exactly that reason, whatever
+                // the flag says.
+                //
+                // Supplying them is what keeps this test about its actual subject. Without them the marker
+                // is simply *incomplete*, `validateRecoveryEvidence` refuses it before the predicate under
+                // test is consulted, and the test passes without ever exercising the flag/predicate
+                // disagreement that the asymmetry in the truth table exists for. The paths need no
+                // directory behind them; `mediaExistedBefore` defaults to `false`, recording that this
+                // device had no media tree.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_contradiction").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_contradiction").absolutePath,
+                dbSnapshot = snapFile.absolutePath,
+                closetExistedBefore = true
+            )
+        )
+
+        // The predicate itself, first: it must be `true` despite the flag.
+        assertThat(requireMarker().requiresDatabaseRecovery()).isTrue()
+        // …and the marker must be *actionable*, so that the outcome below is decided by the database
+        // predicate rather than by the evidence check.
+        assertThat(requireMarker().missingRecoveryEvidence()).isNull()
+
+        // And the entry point must agree — the marker survives, so a later pass can finish the database
+        // half rather than inheriting a clean slate over a half-applied transaction.
+        val outcome = RestoreCoordinator.recoverFilesystemOnly(context)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        assertThat(markerPresent()).isTrue()
+        assertThat(snapFile.isFile).isTrue()
+    }
+
+    // ------------------------------------------------------------------
+    //  Contradictory markers: the media half must be repaired too
+    // ------------------------------------------------------------------
+
+    /**
+     * `DB_COMMITTING` + `includesLifeOs = false` **with complete v2 evidence**: the database, the Closet
+     * *and* the media must all be rolled back together.
+     *
+     * ### The half-restore this pins
+     *
+     * [RestoreIntent.requiresDatabaseRecovery] was corrected to treat these states as "the database needs
+     * attention regardless of the flag", but [revertMedia] still opened with `if (!includesLifeOs) return`.
+     * The two decisions then disagreed about the same marker, and the result was a **permanent** split:
+     *
+     * ```
+     *   DB      -> replayed back to the user's rows
+     *   Closet  -> reverted to the user's wardrobe
+     *   media   -> skipped, because the flag says "no Life OS"      <- still the backup's
+     *   cleanup -> deletes mediaOldDir and clears the marker
+     * ```
+     *
+     * Two surfaces on the user's version, one on the backup's, and the evidence that would have detected
+     * it deleted. That is strictly worse than leaving everything alone, because nothing on disk records
+     * the inconsistency any more.
+     *
+     * The state is what proves the media was swapped (`DB_COMMITTING` is written only inside the v2 branch,
+     * *after* `MEDIA_SWAPPED`), so it is the state that must drive the media revert — see
+     * [RestoreIntent.requiresLifeMediaRecovery].
+     *
+     * ### Why the database is put into a *different* state first
+     *
+     * An earlier revision of this test seeded nothing, so the "database was replayed" assertions were
+     * satisfied by a database that had never changed — the replay could have been skipped entirely and
+     * every assertion would still have passed. The snapshot is therefore written from an explicitly
+     * different, earlier version of the data (an OLD capture row), and the live database is then moved to
+     * the backup's version (the OLD row deleted, a NEW row inserted) before recovery runs. Only a real
+     * replay can turn the NEW row back into the OLD one, which is what the assertions now check.
+     */
+    @Test
+    fun contradictoryDbCommittingMarker_withCompleteV2Evidence_recoversDbClosetAndMediaTogether() = runTest {
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+
+        // ---- 1. The pre-restore ("OLD") state, and the snapshot taken from it. --------------------
+        val oldCaptureId = seedCapture(OLD_CAPTURE_TEXT)
+        val snapFile = File(filesDir, ".closie_restore_dbsnap_contradiction.json")
+        LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
+
+        // ---- 2. The live state is now the BACKUP's, on all three surfaces. ------------------------
+        // Database: the OLD row is gone and a NEW one is in its place.
+        captureRepo.delete(oldCaptureId)
+        seedCapture(NEW_CAPTURE_TEXT)
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).containsExactly(NEW_CAPTURE_TEXT)
+
+        // Closet: the parked tree is the user's, the live tree is the backup's.
+        val closetOld = File(filesDir, ".closie_restore_old_contradiction")
+        writeWardrobeFiles(closetOld, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        // Media: swapped in exactly the shape a real v2 restore leaves behind.
+        val mediaLive = File(filesDir, MediaStoreImporter.MEDIA_DIR)
+        val mediaOld = File(filesDir, ".life_media_restore_old_contradiction")
+        val mediaStage = File(filesDir, ".life_media_restore_stage_9004")
+        writeMediaFile(mediaOld, "old-photo.jpg", "用户原有的照片")
+        writeMediaFile(mediaLive, "new-photo.jpg", "备份里的照片")
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9004,
+                state = RestoreState.DB_COMMITTING,
+                // The contradiction: the state says v2, the flag says v1.
+                includesLifeOs = false,
+                closetOldDir = closetOld.absolutePath,
+                mediaOldDir = mediaOld.absolutePath,
+                // The stage path is *metadata*: it names where the swap happened. After the rename it
+                // legitimately no longer exists, which is why evidence completeness is checked on the
+                // field and never on the file. Listed here because a real v2 marker always carries it —
+                // a fixture that omitted it was itself incomplete and made the marker undecidable.
+                mediaStageDir = mediaStage.absolutePath,
+                dbSnapshot = snapFile.absolutePath,
+                closetExistedBefore = true,
+                mediaExistedBefore = true
+            )
+        )
+
+        // The fixture is genuinely complete — otherwise this test would be asserting a refusal.
+        assertThat(requireMarker().missingRecoveryEvidence()).isNull()
+
+        // Recovery drives the database half, so it needs a database.
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        assertThat(outcome).isEqualTo(RecoveryOutcome.Completed)
+        // Database: the OLD row is back and the backup's row is gone. Only a real replay can do this.
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).containsExactly(OLD_CAPTURE_TEXT)
+        // Closet: the user's wardrobe is back.
+        assertThat(File(closieDir, "items.json").readText()).contains(OLD_ITEM_ID)
+        assertThat(File(closieDir, "items.json").readText()).doesNotContain(NEW_ITEM_ID)
+        // Media: the user's photo is back — this is the assertion that failed before the fix.
+        assertThat(File(mediaLive, "old-photo.jpg").isFile).isTrue()
+        assertThat(File(mediaLive, "new-photo.jpg").exists()).isFalse()
+        // Nothing is left pended, and the evidence is gone because the rollback really finished.
+        assertThat(markerPresent()).isFalse()
+    }
+
+    /**
+     * The same contradictory state **without** the v2 media evidence must fail closed, before any mutation.
+     *
+     * A marker cannot claim a v2 database state while omitting the paths a v2 restore always records. When
+     * it does, its provenance is undecidable — and every way of guessing is destructive: treating it as v1
+     * deletes the media tree and the marker over data the archive may have included, while treating it as
+     * v2 would revert directories that were never swapped. Both write a wrong answer into the durable
+     * record.
+     *
+     * So recovery must refuse *before* touching anything, leaving every surface and every piece of evidence
+     * exactly as it found them. Compare with the test above, which differs only by carrying the evidence.
+     */
+    @Test
+    fun contradictoryDbCommittingMarker_missingMediaEvidence_failsClosedBeforeMutation() = runTest {
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+        val closetOld = File(filesDir, ".closie_restore_old_contradiction")
+        writeWardrobeFiles(closetOld, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        // Put the database into a visibly different state first, so "the database was not replayed" is a
+        // real assertion rather than a tautology over an unchanged database.
+        val oldCaptureId = seedCapture(OLD_CAPTURE_TEXT)
+        val snapFile = File(filesDir, ".closie_restore_dbsnap_contradiction.json")
+        LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
+        captureRepo.delete(oldCaptureId)
+        seedCapture(NEW_CAPTURE_TEXT)
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9004,
+                state = RestoreState.DB_COMMITTING,
+                // The contradiction, *and* no media paths at all: the evidence is incomplete.
+                includesLifeOs = false,
+                closetOldDir = closetOld.absolutePath,
+                dbSnapshot = snapFile.absolutePath,
+                closetExistedBefore = true,
+                // mediaOldDir / mediaStageDir deliberately omitted.
+            )
+        )
+
+        assertThat(requireMarker().missingRecoveryEvidence()).isEqualTo("mediaStageDir")
+
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        // Refused, and refused *before* mutating: every surface is exactly as it was.
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+        assertThat(closetOld.exists()).isTrue()
+        // The database is still on the BACKUP's version — the snapshot was never replayed. This is the
+        // assertion that proves the refusal happens before the replay and not merely before the cleanup.
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).containsExactly(NEW_CAPTURE_TEXT)
+        assertThat(markerPresent()).isTrue()
+        assertThat(snapFile.isFile).isTrue()
+    }
+
+    /**
+     * The same refusal for an **ordinary v2 marker** — `includesLifeOs = true` — that is missing
+     * `mediaOldDir`.
+     *
+     * This is the case the old short-circuit let through. The flag agreeing with the state was treated as
+     * proof that the metadata must be present, and the marker was acted on: database replayed, Closet
+     * reverted, media skipped for want of a path, evidence deleted, marker cleared. A complete-looking
+     * flag over an incomplete marker is the most dangerous shape of this bug, because nothing about it
+     * looks exceptional.
+     *
+     * The assertions are the same as the contradictory case on purpose: the flag must not change the
+     * answer, only the state and the fields may.
+     */
+    @Test
+    fun completeLookingFlagWithMissingMediaEvidence_alsoFailsClosedBeforeMutation() = runTest {
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+        val closetOld = File(filesDir, ".closie_restore_old_flagtrue")
+        writeWardrobeFiles(closetOld, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        val oldCaptureId = seedCapture(OLD_CAPTURE_TEXT)
+        val snapFile = File(filesDir, ".closie_restore_dbsnap_flagtrue.json")
+        LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
+        captureRepo.delete(oldCaptureId)
+        seedCapture(NEW_CAPTURE_TEXT)
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9005,
+                state = RestoreState.DB_COMMITTED,
+                // The flag *agrees* with the state — nothing here looks contradictory …
+                includesLifeOs = true,
+                closetOldDir = closetOld.absolutePath,
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_9005").absolutePath,
+                dbSnapshot = snapFile.absolutePath,
+                closetExistedBefore = true,
+                mediaExistedBefore = true
+                // … but `mediaOldDir` is missing, so the media half cannot be reverted.
+            )
+        )
+
+        assertThat(requireMarker().missingRecoveryEvidence()).isEqualTo("mediaOldDir")
+
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+        assertThat(closetOld.exists()).isTrue()
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).containsExactly(NEW_CAPTURE_TEXT)
+        assertThat(markerPresent()).isTrue()
+        assertThat(snapFile.isFile).isTrue()
+    }
+
+    // ------------------------------------------------------------------
+    //  recover: validate the evidence before consuming it
+    // ------------------------------------------------------------------
+
+    /**
+     * An unusable snapshot aborts the **whole** recovery with every surface untouched — the Closet is
+     * *not* rolled back first.
+     *
+     * ### The ordering bug this pins
+     *
+     * The full recovery used to run the filesystem half first and only then look for the snapshot:
+     *
+     * ```kotlin
+     * recoverFilesystem(context, intent, fs)              // <- consumes the parked tree
+     * if (intent.requiresDatabaseRecovery()) { …readSnapshot… }
+     * ```
+     *
+     * `revertCloset` deletes the live tree and renames the parked one into place, so by the time the
+     * snapshot is read the "before" state is gone. If the snapshot then turned out to be missing or
+     * corrupt, recovery had already rolled the Closet back and could not roll the database back with it —
+     * a three-way split *manufactured by the recovery path itself*, on the very marker that told it to
+     * keep the surfaces consistent. Aborting with nothing touched is the only safe answer, and it is only
+     * reachable if the evidence is validated first.
+     *
+     * The assertions are chosen to distinguish the two orderings rather than merely observe a failure:
+     * `closie/` must still hold the **backup's** item (nothing was reverted) and the parked tree must
+     * still exist (nothing was consumed).
+     */
+    @Test
+    fun recover_withAnUnusableSnapshot_abortsBeforeTouchingTheCloset() = runTest {
+        seedCapture(OLD_CAPTURE_TEXT)
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+        val oldDir = File(filesDir, ".closie_restore_old_order1")
+        writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        // The marker names a snapshot that is not there. Recovery cannot replay the database, so it must
+        // not touch anything at all.
+        val missingSnapshot = File(filesDir, ".closie_restore_dbsnap_order1.json")
+        missingSnapshot.deleteRecursively()
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9101,
+                state = RestoreState.DB_COMMITTING,
+                includesLifeOs = true,
+                closetOldDir = oldDir.absolutePath,
+                // Both media paths, present but with no directory behind them.
+                //
+                // ### Why a fixture whose *subject* is the snapshot still needs these
+                //
+                // `missingRecoveryEvidence` demands `mediaStageDir` and `mediaOldDir` for every
+                // `DB_COMMITTING` marker, because those states are reachable only after `MEDIA_SWAPPED`.
+                // Omitting them made `validateRecoveryEvidence` refuse the marker *before* the snapshot
+                // was ever read — so this test passed by proving "evidence validation rejects an
+                // incomplete marker", which is a different test, and the ordering it exists to pin (read
+                // the snapshot before reverting the Closet) was never exercised. The principle: every
+                // other piece of evidence must be valid so the one fault under test is the only thing
+                // that can produce the observed behaviour.
+                //
+                // No directory is created at either path, which is legitimate: the paths are metadata
+                // recording where the swap happened, and `mediaExistedBefore = false` is what says the
+                // device had no media tree.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_9101").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_9101").absolutePath,
+                dbSnapshot = missingSnapshot.absolutePath,
+                closetExistedBefore = true
+            )
+        )
+
+        // The fixture is complete apart from the snapshot: the abort below must come from the *snapshot*
+        // read, not from evidence validation. Without this, the test could silently regress to passing for
+        // the wrong reason (see the comment on the media paths above).
+        assertThat(requireMarker().missingRecoveryEvidence()).isNull()
+
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        // The decisive assertion: the Closet is *still the backup's*, i.e. nothing was reverted. Under
+        // the old ordering this would already hold the user's item and the parked tree would be gone.
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+        assertThat(oldDir.exists()).isTrue()
+        assertThat(File(oldDir, "items.json").readText()).contains(OLD_ITEM_ID)
+        // The marker is kept so a later start — one with usable evidence — can finish.
+        assertThat(markerPresent()).isTrue()
+    }
+
+    /**
+     * A **corrupt** snapshot is treated exactly like a missing one: abort, do not discard the evidence.
+     *
+     * Corrupt and absent are both "cannot replay now", and neither justifies deleting the file — a corrupt
+     * snapshot is still the only record of what the database held, and discarding it would remove the last
+     * chance of a human recovering anything from it.
+     */
+    @Test
+    fun recover_withACorruptSnapshot_abortsAndKeepsTheEvidence() = runTest {
+        seedCapture(OLD_CAPTURE_TEXT)
+        val filesDir = context.filesDir
+        val closieDir = File(filesDir, "closie")
+        val oldDir = File(filesDir, ".closie_restore_old_order2")
+        writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        val corruptSnapshot = File(filesDir, ".closie_restore_dbsnap_order2.json")
+        corruptSnapshot.writeText("{ \"captures\": [ { \"id\": ")
+
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9102,
+                state = RestoreState.DB_COMMITTING,
+                includesLifeOs = true,
+                closetOldDir = oldDir.absolutePath,
+                // The media paths are metadata and are present even though no directory exists at them,
+                // so this marker is *complete* and the abort below comes from the corrupt snapshot rather
+                // than from evidence validation. See the longer comment in
+                // `recover_withAnUnusableSnapshot_abortsBeforeTouchingTheCloset`.
+                mediaStageDir = File(filesDir, ".life_media_restore_stage_9102").absolutePath,
+                mediaOldDir = File(filesDir, ".life_media_restore_old_9102").absolutePath,
+                dbSnapshot = corruptSnapshot.absolutePath,
+                closetExistedBefore = true
+            )
+        )
+
+        assertThat(requireMarker().missingRecoveryEvidence()).isNull()
+
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+        assertThat(oldDir.exists()).isTrue()
+        // The unusable file is preserved, not tidied away.
+        assertThat(corruptSnapshot.exists()).isTrue()
+        assertThat(markerPresent()).isTrue()
+    }
+
+    /**
+     * The positive control for the ordering: with a *usable* snapshot the whole recovery completes.
+     *
+     * Without this, the two tests above could pass with a recovery that simply always aborts.
+     */
+    @Test
+    fun recover_withAUsableSnapshot_rollsBackBothSurfacesAndConcludes() = runTest {
+        seedCapture(OLD_CAPTURE_TEXT)
+        val snapFile = parkDbCommittingState(id = 9103)
+        // Move the database to the backup's rows, so there is genuinely something to replay.
+        db.captureDao().deleteAll()
+        seedCapture("备份里的记录")
+
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        assertThat(outcome).isEqualTo(RecoveryOutcome.Completed)
+        assertMutuallyConsistent(
+            expectedCaptureTexts = listOf(OLD_CAPTURE_TEXT),
+            expectedMediaFiles = emptyList()
+        )
+        assertThat(File(File(context.filesDir, "closie"), "items.json").readText()).contains(OLD_ITEM_ID)
+        assertThat(markerMissing()).isTrue()
+        assertThat(snapFile.exists()).isFalse()
+        assertThat(strayRestoreDirs()).isEmpty()
+    }
+
+    // ------------------------------------------------------------------
+    //  COMMITTED cleanup failure must never clear the marker
+    // ------------------------------------------------------------------
+
+    /**
+     * A **failed** post-commit cleanup must leave the marker in place, because the marker is the only
+     * pointer to the leftover.
+     *
+     * ### The defect, and why "best effort" was the wrong shape
+     *
+     * Phase B used to run the cleanup and the marker clear as two independent `runCatching` blocks and
+     * merely OR their failures together for logging. That looks harmless and is not: the marker names the
+     * parked trees *and the snapshot path*. Clearing it after a failed cleanup does not leave a stray
+     * directory — it destroys the record of where that directory is, and a `HEALTH_CHECKING` marker's
+     * snapshot is unrecoverable by construction once the pointer is gone. The leftover becomes permanent,
+     * unattributed litter holding the user's previous wardrobe, and nothing will ever clean it up.
+     *
+     * The fix is that the clear is *conditional on the cleanup succeeding*. Note what this test must
+     * therefore assert: not merely "a retry eventually works" (the existing cleanup-failure tests cover
+     * that) but that **the marker survives the failed attempt at all** — which is the thing the old code
+     * destroyed.
+     */
+    @Test
+    fun committedCleanupFailure_leavesTheMarkerSoTheLeftoverCanBeFoundAgain() = runTest {
+        val (backup, _) = backupThenInstallOldState(
+            mediaFileNames = listOf("bk-marker-kept.png"),
+            oldBytes = listOf(byteArrayOf(7, 7))
+        )
+
+        // Deleting the parked Closet tree fails, so `cleanupChecked` throws.
+        val result = BackupManager.restore(
+            context = context,
+            repo = wardrobe,
+            inputUri = backup,
+            lifeDatabase = db,
+            hooks = NoOpRestoreHooks,
+            fs = FailingRestoreFs(failDeleteContaining = "closie_restore_old_")
+        )
+
+        // The restore itself still succeeded — cleanup is housekeeping and must not turn success into
+        // failure, or the user would be invited to re-run a restore onto restored data.
+        assertThat(result.isSuccess).isTrue()
+
+        // The decisive assertion: the marker is still there. If the clear had run unconditionally, this
+        // would be Missing and the leftover tree below would be unreachable forever.
+        assertThat(markerPresent()).isTrue()
+        assertThat(requireMarker().state).isEqualTo(RestoreState.COMMITTED)
+
+        // …and the leftover it points at is indeed still on disk, which is exactly why the marker matters.
+        val leftoverOldDirs = context.filesDir.listFiles().orEmpty()
+            .filter { it.name.startsWith(".closie_restore_old_") }
+        assertThat(leftoverOldDirs).isNotEmpty()
+
+        // A later start, with a working filesystem, finds it via the marker and converges.
+        val outcome = RestoreRecoveryManager.recoverOnStartup(context = context, lifeDatabase = { db })
+        assertThat(outcome).isEqualTo(RecoveryOutcome.Completed)
+        assertThat(markerMissing()).isTrue()
+        assertThat(strayRestoreDirs()).isEmpty()
+        // Still the backup's version — cleanup never rolls a commit back.
+        assertCommittedConsistent()
+    }
+
+    /**
+     * The positive control: when cleanup succeeds, the marker **is** cleared.
+     *
+     * Without this, the conditional clear could be broken into "never clear", and every start would redo
+     * a finished cleanup forever — and, worse, would leave a marker that makes a completed restore look
+     * pending to anything reading it.
+     */
+    @Test
+    fun successfulCleanup_verifiablyRemovesTheMarker() = runTest {
+        val (backup, _) = backupThenInstallOldState(
+            mediaFileNames = listOf("bk-marker-cleared.png"),
+            oldBytes = listOf(byteArrayOf(6, 6))
+        )
+
+        val result = BackupManager.restore(context, wardrobe, backup, db)
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(markerMissing()).isTrue()
+        assertThat(strayRestoreDirs()).isEmpty()
+    }
+
+    // ------------------------------------------------------------------
+    //  compensateRestore: the same invariants as recovery
+    // ------------------------------------------------------------------
+
+    /**
+     * A failed restore whose compensation cannot replay the database must **not** delete the evidence.
+     *
+     * ### The silent split the old guard manufactured
+     *
+     * `compensateRestore` guarded the database replay with
+     * `requiresDatabaseRecovery() && intent.dbSnapshot != null && lifeDatabase != null`. A marker that
+     * *required* a replay but named no snapshot therefore fell straight through to the cleanup below,
+     * which deleted the parked trees, the snapshot and the marker — over a database that may still hold
+     * the backup's rows. The compensation reported success while leaving exactly the three-way split this
+     * protocol exists to prevent.
+     *
+     * A missing snapshot on a marker that requires one is a contradiction, not a licence to proceed. It
+     * is now a hard failure that aborts with everything preserved, which is what this test asserts: the
+     * Closet is reverted (that half is safe and idempotent), but the marker and the parked trees survive
+     * so a later start can finish the database half.
+     *
+     * The failure is triggered by a health-check hook *after* the database commit, so the marker is
+     * genuinely at `HEALTH_CHECKING` — a state that requires a replay — when compensation runs.
+     */
+    @Test
+    fun compensationWithAnUnreplayableDatabase_keepsTheEvidenceAndDoesNotClaimSuccess() = runTest {
+        val closieDir = File(context.filesDir, "closie")
+        seedCapture(OLD_CAPTURE_TEXT)
+        val oldDir = File(context.filesDir, ".closie_restore_old_comp1")
+
+        // A marker that requires a database replay but names no snapshot: the contradiction.
+        RestoreIntentStore.write(
+            context,
+            RestoreIntent(
+                id = 9201,
+                state = RestoreState.HEALTH_CHECKING,
+                includesLifeOs = true,
+                closetOldDir = oldDir.absolutePath,
+                closetExistedBefore = true,
+                // Deliberately no `dbSnapshot` — the contradiction under test.
+                dbSnapshot = null
+            )
+        )
+        writeWardrobeFiles(oldDir, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
+        writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
+
+        // Recovery is the same code path's counterpart and shares the invariant; running it must not
+        // silently conclude over the unusable database half.
+        val outcome = RestoreCoordinator.recover(context, db)
+
+        assertThat(outcome).isInstanceOf(RecoveryOutcome.RetryRequired::class.java)
+        // Nothing was reverted here either, because recovery validates before consuming.
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+        assertThat(oldDir.exists()).isTrue()
+        // The marker is preserved, so a later, better-informed start can decide what to do.
+        assertThat(markerPresent()).isTrue()
+    }
+
+    /**
+     * A compensation that cannot finish — reached **through the real restore**, not by hand-writing a
+     * marker — must fail closed over the whole process.
+     *
+     * ### Why the previous "compensation test" proved nothing about compensation
+     *
+     * It wrote a marker by hand and called [RestoreCoordinator.recover]. That exercises the *startup*
+     * path, never [compensateRestore], so the compensation's ordering, its evidence handling and its
+     * failure behaviour were all untested — and all three were wrong. This test reaches compensation the
+     * way production does: a restore that fails late, in-process, with the marker still pre-commit.
+     *
+     * ### What is injected, and why those two things
+     *
+     *  - a [RestoreHooks] that fails at `beforeHealthCheck`, so the restore is past its database commit
+     *    and still pre-`COMMITTED` — the exact window in which compensation is allowed to run;
+     *  - a [FailingRestoreFs] that fails `deleteTree` of the **live Closet**, which is the first
+     *    filesystem step compensation performs *after* the database replay.
+     *
+     * The second choice is what makes this a regression test for the ordering: if compensation reverted
+     * the filesystem first, the parked tree would already be consumed by the time the revert failed, and
+     * the assertion below that the parked tree survives would fail.
+     *
+     * ### What "fail closed" means here, concretely
+     *
+     * The previous code was `runCatching { compensateRestore(...) }`. The failure was discarded, the
+     * `Result` the caller already had was unaffected, and the process carried on: every repository
+     * instance held by every live ViewModel kept reading and writing a half-restored data set. So the
+     * assertions below are about the *process*, not about the return value.
+     */
+    @Test
+    fun compensationFailure_throughRestore_keepsEvidenceAndFailClosesTheWholeProcess() = runTest {
+        val closieDir = File(context.filesDir, "closie")
+        val (backup, _) = backupThenInstallOldState(
+            mediaFileNames = listOf("bk-compensation.png"),
+            oldBytes = listOf(byteArrayOf(7, 7))
+        )
+
+        // Ordinarily usable — held *before* anything fails, which is the case the gate has to cover.
+        assertThat(RestoreStartupGate.isReady).isTrue()
+        val heldWardrobe = wardrobe
+        val heldLife = life
+        assertThat(heldLife.count()).isGreaterThan(0)
+
+        val result = BackupManager.restore(
+            context = context,
+            repo = wardrobe,
+            inputUri = backup,
+            lifeDatabase = db,
+            hooks = object : RestoreHooks {
+                override fun beforeHealthCheck() =
+                    throw IllegalStateException("injected: 健康检查失败，进入补偿")
+            },
+            // Fails the *first filesystem step after the database replay*.
+            fs = FailingRestoreFs(failDelete = closieDir.absolutePath)
+        )
+
+        // The restore failed — that was always true, and is not the point.
+        assertThat(result.isFailure).isTrue()
+
+        // ---- 1. The evidence is preserved, so the next start can finish. ---------------------------
+        assertThat(markerPresent()).isTrue()
+        // …and it was not advanced: claiming ROLLED_BACK over an unfinished revert would be a lie that
+        // the next start would act on.
+        assertThat(requireMarker().state).isEqualTo(RestoreState.HEALTH_CHECKING)
+        assertThat(requireMarker().dbSnapshot).isNotNull()
+        assertThat(File(requireMarker().dbSnapshot!!).isFile).isTrue()
+        // The parked tree was NOT consumed. This is the assertion that pins the ordering.
+        assertThat(requireMarker().closetOldDir).isNotNull()
+        assertThat(File(requireMarker().closetOldDir!!).exists()).isTrue()
+
+        // ---- 2. The database half *did* run, and ran first. ---------------------------------------
+        // Proven by the rows: the replay is the only thing that can turn the backup's rows back into the
+        // user's. (Read through the raw DAO: the repositories now correctly refuse.)
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).contains(OLD_CAPTURE_TEXT)
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).doesNotContain(NEW_CAPTURE_TEXT)
+        // …while the Closet is still the backup's, because the revert is exactly what failed.
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+
+        // ---- 3. The whole process refuses business reads and writes. ------------------------------
+        assertThat(RestoreStartupGate.isReady).isFalse()
+        assertThat(RestoreStartupGate.isRestoreUnfinished).isTrue()
+
+        // Instances held *before* the failure included — a constructor-time check cannot do this.
+        assertThat(runCatching { heldWardrobe.listItems() }.exceptionOrNull())
+            .isInstanceOf(RestoreRecoveryPendingException::class.java)
+        assertThat(
+            runCatching {
+                heldWardrobe.createItem(
+                    com.qq.closie.data.model.ClothingItem(
+                        id = "written-after-failure",
+                        name = "失败之后写入的数据",
+                        category = "上衣",
+                        status = com.qq.closie.data.model.ItemStatus.OWNED
+                    )
+                )
+            }.exceptionOrNull()
+        ).isInstanceOf(RestoreRecoveryPendingException::class.java)
+        assertThat(runCatching { heldLife.getEntity("any") }.exceptionOrNull())
+            .isInstanceOf(RestoreRecoveryPendingException::class.java)
+
+        // ---- 4. Nothing in this process may reopen the gate, and no new restore may start. --------
+        RestoreStartupGate.markReady()
+        assertThat(RestoreStartupGate.isReady).isFalse()
+
+        // The refusal arrives as a failed `Result`, not as a thrown exception, and that is the
+        // [BLOCKER 8] contract: this is a `suspend` function the Settings screen calls from a button
+        // handler that does `result.fold(...)` and then clears its `busy` flag. Anything thrown out of
+        // it escapes that block, so the spinner would never stop and the screen would be stuck — a
+        // worse outcome than the refusal itself.
+        val refused = BackupManager.restore(context, wardrobe, backup, db)
+        assertThat(refused.isFailure).isTrue()
+        assertThat(refused.exceptionOrNull()).isInstanceOf(RestoreAlreadyPendingException::class.java)
+    }
+
+    /**
+     * The other half of the compensation ordering, reached the same way: a **database replay** failure
+     * must not consume the filesystem evidence.
+     *
+     * The test above injects a filesystem failure, which proves the database runs *first* but says
+     * nothing about what happens when the database itself is the failure. That case is the one
+     * [BLOCKER 6's ordering note] exists for, and it is the one that used to produce the permanent split:
+     *
+     * ```
+     *   revertCloset / revertMedia   -> parked trees consumed, surfaces on the user's version
+     *   restoreSnapshot              -> throws
+     *   result: Closet = old, media = old, DB = backup, and nothing left to repair from
+     * ```
+     *
+     * ### How the replay is made to fail
+     *
+     * `afterDbCommit` drops one of the tables the replay touches and then throws. Two things fall out of
+     * that single injection:
+     *
+     *  - the throw puts Phase A into failure at `DB_COMMITTED`, i.e. post-transaction and pre-`COMMITTED`,
+     *    so compensation is entered with real database work to undo;
+     *  - the dropped table makes `LifeBackupApplier.restoreSnapshot` fail inside its transaction. Not a
+     *    missing file, not an unreadable snapshot — the replay itself, on evidence that reads fine.
+     *
+     * The assertions are therefore about *evidence*: the Closet is still the backup's version and both
+     * parked trees are still on disk. Had the filesystem reverted first, every one of them would be gone.
+     */
+    @Test
+    fun compensationWithDbReplayFailure_throughRestore_doesNotConsumeFilesystemEvidence() = runTest {
+        val closieDir = File(context.filesDir, "closie")
+        val liveMediaDir = File(context.filesDir, MediaStoreImporter.MEDIA_DIR)
+        val (backup, _) = backupThenInstallOldState(
+            mediaFileNames = listOf("bk-comp-dbreplay.png"),
+            oldBytes = listOf(byteArrayOf(9, 9))
+        )
+
+        assertThat(RestoreStartupGate.isReady).isTrue()
+
+        val result = BackupManager.restore(
+            context = context,
+            repo = wardrobe,
+            inputUri = backup,
+            lifeDatabase = db,
+            hooks = object : RestoreHooks {
+                // Fires immediately after the transaction commits — the earliest point at which a later
+                // compensation has database work to undo.
+                override fun afterDbCommit() {
+                    // Break the *replay*, not any file: `applyDeleteOrder` opens with this table, so the
+                    // compensation's restoreSnapshot throws inside its transaction.
+                    db.openHelper.writableDatabase.execSQL("DROP TABLE plan_items")
+                    throw IllegalStateException("injected: 数据库提交后失败，进入补偿")
+                }
+            },
+            fs = RealRestoreFs
+        )
+
+        assertThat(result.isFailure).isTrue()
+
+        // ---- 1. The database half failed, so the filesystem half must never have run. ---------------
+        // This is the assertion that pins the ordering: `revertCloset` deletes the live tree and renames
+        // the parked one into the resulting empty slot, so a consumed parked tree is unrecoverable.
+        assertThat(File(closieDir, "items.json").readText()).contains(NEW_ITEM_ID)
+        assertThat(liveMediaDir.exists()).isTrue()
+
+        // ---- 2. Every piece of evidence survives. ---------------------------------------------------
+        assertThat(markerPresent()).isTrue()
+        val marker = requireMarker()
+        assertThat(marker.state).isEqualTo(RestoreState.DB_COMMITTED)
+        assertThat(File(marker.closetOldDir!!).exists()).isTrue()
+        assertThat(File(marker.mediaOldDir!!).exists()).isTrue()
+        assertThat(File(marker.dbSnapshot!!).isFile).isTrue()
+
+        // ---- 3. The database really is still on the backup's version. ------------------------------
+        // Read through the raw DAO: nothing built it back from the snapshot, so only an unrestored row
+        // can be here.
+        assertThat(db.captureDao().getAllOnce().map { it.rawText }).contains(NEW_CAPTURE_TEXT)
+
+        // ---- 4. Fail closed, process-wide. ---------------------------------------------------------
+        assertThat(RestoreStartupGate.isReady).isFalse()
+        assertThat(RestoreStartupGate.isRestoreUnfinished).isTrue()
+        assertThat(runCatching { wardrobe.listItems() }.exceptionOrNull())
+            .isInstanceOf(RestoreRecoveryPendingException::class.java)
     }
 }

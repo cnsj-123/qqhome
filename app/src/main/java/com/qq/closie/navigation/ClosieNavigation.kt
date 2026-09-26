@@ -12,7 +12,9 @@ import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,7 @@ import com.qq.closie.ui.outfit.OutfitListScreen
 import com.qq.closie.ui.outfit.OutfitStudioScreen
 import com.qq.closie.ui.settings.DataSettingsScreen
 import com.qq.closie.ui.theme.ClosieColor
+import com.qq.closie.ui.LocalWardrobeSnapshot
 
 sealed class TopLevel(
     val route: String,
@@ -216,6 +219,21 @@ fun ClosieNavHost(
         }
     }
 
+    // ONE canonical wardrobe collection for the whole Closie nav graph.
+    //
+    // This is the single point at which the wardrobe is read into Compose inside Closie. Every
+    // screen downstream that needs multiple surfaces (items + wear + wash, outfits + items, …)
+    // reads LocalWardrobeSnapshot.current, which is the same instance for all of them — so no two
+    // screens can be composed from two different generations. See [WardrobeRepository.snapshot]
+    // for why five per-surface StateFlows could not give this guarantee.
+    //
+    // The collection lives in ClosieNavHost, not in LifeShell: Life OS does not read the wardrobe,
+    // and the snapshot is only meaningful while a Closie NavHost is actually composed. When the
+    // user navigates back to Life OS, this composition leaves and the collector stops — there is
+    // no stale subscription keeping a snapshot alive that nobody renders.
+    val wardrobe by repository.snapshot.collectAsState()
+
+    CompositionLocalProvider(LocalWardrobeSnapshot provides wardrobe) {
     Scaffold(
         containerColor = ClosieColor.Canvas,
         bottomBar = {
@@ -327,6 +345,7 @@ fun ClosieNavHost(
             }
         }
     }
+    }   // CompositionLocalProvider(LocalWardrobeSnapshot provides wardrobe)
 }
 
 private fun NavHostController.navigateTopLevel(tab: TopLevel) {

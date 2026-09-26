@@ -1,6 +1,8 @@
 package com.qq.closie.life.repository
 
 import androidx.room.withTransaction
+import com.qq.closie.data.backup.RestoreStartupGate
+import com.qq.closie.data.backup.gateAwareFlow
 import com.qq.closie.life.core.TagEntity
 import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.data.database.dao.ReferenceDao
@@ -34,9 +36,61 @@ class ReferenceRepository(
     private val database: LifeDatabase,
     private val lifeRepository: LifeRepository,
     private val mediaRepository: MediaRepository,
+    private val captureRepository: CaptureRepository,
 ) {
 
-    private val dao: ReferenceDao = database.referenceDao()
+    /**
+     * Every query in this repository reaches the database through this property, which is why the startup
+     * gate is consulted **here** and not at the top of each method — see [RestoreStartupGate.gated].
+     *
+     * A getter rather than a `val` initialiser is the whole point: it is re-evaluated on *every* access,
+     * so a repository instance constructed while the gate was READY stops working the moment the gate
+     * closes. A constructor-time check cannot do that — the object already exists.
+     *
+     * Being the gate on the *property* also keeps the "UI must never touch [ReferenceDao] directly"
+     * rule true in the one case that matters most: a repository handed out before an in-process restore
+     * failed cannot quietly keep using the DAO it captured at construction time.
+     */
+    private val dao: ReferenceDao get() = database.referenceDao()
+
+    /**
+     * The same gate for the paths that bypass [dao] — the transaction bodies below.
+     *
+     * ### Why the `dao` getter alone was not enough
+     *
+     * The comment above says every query reaches the database through [dao]. For this class that was
+     * simply untrue, and the claim is what let the hole survive review: five methods opened
+     * `database.withTransaction { … }` and used `dao` *inside* the transaction, but the transaction —
+     * and, worse, a handful of raw `database.captureDao()` / `database.mediaDao()` lookups — were
+     * reached without passing through the gated property at all.
+     *
+     * A transaction boundary **is** a durable access. Opening one while a restore is swapping the same
+     * database is exactly the write the gate exists to refuse, and it does not become safe just because
+     * the statements inside it happen to consult a gated getter later — by then the transaction is
+     * already open and its reads have already happened.
+     *
+     * ### Three checks, because the window is not only at the start
+     *
+     * ```
+     *   1. before the transaction opens   -> don't even start one while the gate is closed
+     *   2. first line inside it           -> the gate may have closed while we were scheduling
+     *   3. last line before it returns    -> if a restore began mid-transaction, fail *now*
+     * ```
+     *
+     * The third is the one that is easy to omit and the one that matters most. A restore can start at
+     * any moment, including while a long transaction is running; without the final check that
+     * transaction would **commit** after the snapshot had been taken and the archive applied, silently
+     * reintroducing the row the restore had just removed. Throwing instead rolls the transaction back,
+     * so the restore's view of the database stays true.
+     *
+     * The `requireReady` calls throw [com.qq.closie.data.backup.RestoreRecoveryPendingException], which
+     * is the same refusal the property getter produces — a caller cannot tell, and should not be able to
+     * tell, which of the two chokepoints stopped it.
+     */
+    private suspend fun <T> gateCheckedTransaction(block: suspend () -> T): T =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            database.withTransaction { block() }
+        }
 
     // ------------------------------------------------------------------
     //  Create
@@ -63,13 +117,16 @@ class ReferenceRepository(
         status: ReferenceStatus = ReferenceStatus.INBOX,
         id: String = UUID.randomUUID().toString(),
         now: Long = System.currentTimeMillis()
-    ): ReferenceItemEntity = database.withTransaction {
+    ): ReferenceItemEntity = gateCheckedTransaction {
         val entity = lifeRepository.createEntity(
             entityType = ReferenceEntityType.REFERENCE,
             timestamp = now
         )
-        val verifiedCaptureId = originalCaptureId
-            ?.takeIf { database.captureDao().getById(it) != null }
+            val verifiedCaptureId = originalCaptureId
+                // Through the CaptureRepository, not `database.captureDao()`: the raw DAO is ungated by
+                // design (recovery needs it), so reaching for it from a business path would sidestep the
+                // barrier this class is supposed to enforce.
+                ?.takeIf { captureRepository.getById(it) != null }
         val item = ReferenceItemEntity(
             id = id,
             lifeEntityId = entity.id,
@@ -96,31 +153,33 @@ class ReferenceRepository(
     //  Read
     // ------------------------------------------------------------------
 
-    suspend fun getById(id: String): ReferenceItemEntity? = dao.getById(id)
+    suspend fun getById(id: String): ReferenceItemEntity? =
+        RestoreStartupGate.withBusinessAccessSuspending { dao.getById(id) }
 
-    fun observeById(id: String): Flow<ReferenceItemEntity?> = dao.observeById(id)
+    fun observeById(id: String): Flow<ReferenceItemEntity?> = gateAwareFlow { dao.observeById(id) }
 
-    fun observeAll(): Flow<List<ReferenceItemEntity>> = dao.observeAll()
+    fun observeAll(): Flow<List<ReferenceItemEntity>> = gateAwareFlow { dao.observeAll() }
 
     fun observeByStatus(status: ReferenceStatus): Flow<List<ReferenceItemEntity>> =
-        dao.observeByStatus(status)
+        gateAwareFlow { dao.observeByStatus(status) }
 
-    fun observeRecent(limit: Int = 20): Flow<List<ReferenceItemEntity>> = dao.observeRecent(limit)
+    fun observeRecent(limit: Int = 20): Flow<List<ReferenceItemEntity>> = gateAwareFlow { dao.observeRecent(limit) }
 
     /** 阅读 module source: READING + ARTICLE, archived items excluded. */
-    fun observeReading(): Flow<List<ReferenceItemEntity>> = dao.observeActiveReading()
+    fun observeReading(): Flow<List<ReferenceItemEntity>> = gateAwareFlow { dao.observeActiveReading() }
 
-    suspend fun count(): Int = dao.count()
+    suspend fun count(): Int = RestoreStartupGate.withBusinessAccessSuspending { dao.count() }
 
-    suspend fun countInbox(): Int = dao.countInbox()
+    suspend fun countInbox(): Int = RestoreStartupGate.withBusinessAccessSuspending { dao.countInbox() }
 
-    fun observeInboxCount(): Flow<Int> = dao.observeInboxCount()
+    fun observeInboxCount(): Flow<Int> = gateAwareFlow { dao.observeInboxCount() }
 
     suspend fun findByOriginalCaptureId(captureId: String): ReferenceItemEntity? =
-        dao.findByOriginalCaptureId(captureId)
+        RestoreStartupGate.withBusinessAccessSuspending { dao.findByOriginalCaptureId(captureId) }
 
     /** Distinct types actually present — drives an honest type filter. */
-    suspend fun distinctTypes(): List<ReferenceType> = dao.distinctTypes()
+    suspend fun distinctTypes(): List<ReferenceType> =
+        RestoreStartupGate.withBusinessAccessSuspending { dao.distinctTypes() }
 
     // ------------------------------------------------------------------
     //  Search
@@ -136,14 +195,16 @@ class ReferenceRepository(
      */
     fun search(query: String): Flow<List<ReferenceItemEntity>> {
         val escaped = escapeLike(query.trim())
-        if (escaped.isEmpty()) return dao.observeAll()
-        return dao.search(escaped)
+        return gateAwareFlow {
+            if (escaped.isEmpty()) dao.observeAll() else dao.search(escaped)
+        }
     }
 
     fun searchByStatus(query: String, status: ReferenceStatus): Flow<List<ReferenceItemEntity>> {
         val escaped = escapeLike(query.trim())
-        if (escaped.isEmpty()) return dao.observeByStatus(status)
-        return dao.searchByStatus(escaped, status)
+        return gateAwareFlow {
+            if (escaped.isEmpty()) dao.observeByStatus(status) else dao.searchByStatus(escaped, status)
+        }
     }
 
     internal fun escapeLike(raw: String): String = raw
@@ -166,8 +227,8 @@ class ReferenceRepository(
         author: String? = null,
         referenceType: ReferenceType? = null,
         now: Long = System.currentTimeMillis()
-    ): ReferenceItemEntity? = database.withTransaction {
-        val current = dao.getById(id) ?: return@withTransaction null
+    ): ReferenceItemEntity? = gateCheckedTransaction {
+        val current = dao.getById(id) ?: return@gateCheckedTransaction null
         val updated = current.copy(
             title = title?.trim() ?: current.title,
             summary = summary?.trim()?.takeIf { it.isNotEmpty() } ?: if (summary != null) null else current.summary,
@@ -197,8 +258,8 @@ class ReferenceRepository(
      * treat new OCR output as already-synced.
      */
     suspend fun updateOcrText(id: String, text: String?, now: Long = System.currentTimeMillis()): Boolean =
-        database.withTransaction {
-            val current = dao.getById(id) ?: return@withTransaction false
+        gateCheckedTransaction {
+            val current = dao.getById(id) ?: return@gateCheckedTransaction false
             dao.update(current.copy(ocrText = text?.takeIf { it.isNotBlank() }, updatedAt = now))
             lifeRepository.getEntity(current.lifeEntityId)?.let {
                 lifeRepository.updateEntity(it, now)
@@ -222,23 +283,24 @@ class ReferenceRepository(
     suspend fun unarchive(id: String, now: Long = System.currentTimeMillis()): Boolean =
         setStatus(id, ReferenceStatus.INBOX, now)
 
-    private suspend fun setStatus(id: String, status: ReferenceStatus, now: Long): Boolean {
-        val current = dao.getById(id) ?: return false
-        if (current.status == status) return true
-        // organizedAt records the FIRST time this item left the inbox. Restoring an archived item
-        // must not erase that history, and re-organising must not keep pushing the date forward.
-        val organizedAt = when {
-            status == ReferenceStatus.INBOX -> null
-            else -> current.organizedAt ?: now
-        }
-        val changed = dao.updateStatus(id, status, organizedAt, now) > 0
-        if (changed) {
-            lifeRepository.getEntity(current.lifeEntityId)?.let {
-                lifeRepository.updateEntity(it, now)
+    private suspend fun setStatus(id: String, status: ReferenceStatus, now: Long): Boolean =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            val current = dao.getById(id) ?: return@withBusinessAccessSuspending false
+            if (current.status == status) return@withBusinessAccessSuspending true
+            // organizedAt records the FIRST time this item left the inbox. Restoring an archived item
+            // must not erase that history, and re-organising must not keep pushing the date forward.
+            val organizedAt = when {
+                status == ReferenceStatus.INBOX -> null
+                else -> current.organizedAt ?: now
             }
+            val changed = dao.updateStatus(id, status, organizedAt, now) > 0
+            if (changed) {
+                lifeRepository.getEntity(current.lifeEntityId)?.let {
+                    lifeRepository.updateEntity(it, now)
+                }
+            }
+            changed
         }
-        return changed
-    }
 
     // ------------------------------------------------------------------
     //  Tags — reuse the shared TagEntity / EntityTagCrossRef tables
@@ -251,18 +313,22 @@ class ReferenceRepository(
      * `tags` + `entity_tag_cross_ref` pair already models this correctly. A second tagging system
      * would mean two places to search and two ways to lose data.
      */
-    suspend fun addTag(referenceId: String, tagName: String): TagEntity? {
-        val reference = dao.getById(referenceId) ?: return null
-        val tag = lifeRepository.createTag(tagName)
-        lifeRepository.attachTag(reference.lifeEntityId, tag.id)
-        return tag
-    }
+    suspend fun addTag(referenceId: String, tagName: String): TagEntity? =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            // One lease across "resolve the reference, create the tag, attach it": three durable steps
+            // that a restore must not be able to slip between.
+            val reference = dao.getById(referenceId) ?: return@withBusinessAccessSuspending null
+            val tag = lifeRepository.createTag(tagName)
+            lifeRepository.attachTag(reference.lifeEntityId, tag.id)
+            tag
+        }
 
-    suspend fun removeTag(referenceId: String, tagId: String): Boolean {
-        val reference = dao.getById(referenceId) ?: return false
-        lifeRepository.detachTag(reference.lifeEntityId, tagId)
-        return true
-    }
+    suspend fun removeTag(referenceId: String, tagId: String): Boolean =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            val reference = dao.getById(referenceId) ?: return@withBusinessAccessSuspending false
+            lifeRepository.detachTag(reference.lifeEntityId, tagId)
+            true
+        }
 
     /**
      * Tags for a reference, read through its LifeEntity.
@@ -275,7 +341,9 @@ class ReferenceRepository(
         lifeRepository.observeTagsForEntity(reference.lifeEntityId)
 
     suspend fun tagsFor(reference: ReferenceItemEntity): List<TagEntity> =
-        lifeRepository.getTagsForEntity(reference.lifeEntityId)
+        RestoreStartupGate.withBusinessAccessSuspending {
+            lifeRepository.getTagsForEntity(reference.lifeEntityId)
+        }
 
     // ------------------------------------------------------------------
     //  Media — through the LifeEntity, never a cascade
@@ -298,21 +366,26 @@ class ReferenceRepository(
         referenceId: String,
         mediaAssetId: String,
         role: String = MEDIA_ROLE_PRIMARY
-    ): Boolean {
-        val reference = dao.getById(referenceId) ?: return false
-        val assetExists = database.mediaDao().getAssetById(mediaAssetId) != null
-        if (!assetExists) return false
+    ): Boolean = RestoreStartupGate.withBusinessAccessSuspending {
+        // One lease across the whole sequence: resolve the reference, validate the asset, and insert the
+        // link. Three repository calls, one operation — acquiring per call would let a restore start
+        // between two of them.
+        val reference = dao.getById(referenceId) ?: return@withBusinessAccessSuspending false
+        val assetExists = mediaRepository.getMediaAsset(mediaAssetId) != null
+        if (!assetExists) return@withBusinessAccessSuspending false
         mediaRepository.linkMedia(
             mediaAssetId = mediaAssetId,
             ownerEntityId = reference.lifeEntityId,
             role = role
         )
-        return true
+        true
     }
 
     /** Media assets linked to this reference, in link order. */
     suspend fun mediaFor(reference: ReferenceItemEntity): List<String> =
-        mediaRepository.getLinksForOwner(reference.lifeEntityId).map { it.mediaAssetId }
+        RestoreStartupGate.withBusinessAccessSuspending {
+            mediaRepository.getLinksForOwner(reference.lifeEntityId).map { it.mediaAssetId }
+        }
 
     companion object {
         /**
@@ -337,8 +410,8 @@ class ReferenceRepository(
      * failure direction — an unused file wastes space, a wrong delete loses a photo forever.
      */
     suspend fun delete(id: String, now: Long = System.currentTimeMillis()): Boolean =
-        database.withTransaction {
-            val current = dao.getById(id) ?: return@withTransaction false
+        gateCheckedTransaction {
+            val current = dao.getById(id) ?: return@gateCheckedTransaction false
             lifeRepository.softDeleteEntity(current.lifeEntityId, now)
             dao.deleteById(id)
             true

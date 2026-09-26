@@ -22,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.qq.closie.data.backup.BackupManager
+import com.qq.closie.data.backup.RestoreRecoveryPendingException
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.ui.components.ClosieCompactTopBar
@@ -59,6 +61,36 @@ fun DataSettingsScreen(
     var confirmRestore by remember { mutableStateOf<Uri?>(null) }
     var quickCapture by remember { mutableStateOf(QuickCaptureService.isEnabled(context)) }
 
+    /**
+     * A restore in progress, observed for real rather than inferred from this screen's own `busy` flag.
+     *
+     * ### The bug this closes, and why it is a *consequence* of the Result-contract fix
+     *
+     * An export or a restore attempted while the gate is closed is now correctly reported as
+     * `Result.failure` with `RestoreRecoveryPendingException` as its cause — that is the whole point of
+     * putting the lease acquisition inside `runCatching`. But `it.message` for that exception is the bare
+     * technical string from the gate, and `result.fold` would render it verbatim: a user who taps 导出衣橱
+     * CSV during a restore would read a Kotlin exception message about "恢复进行中" or similar, which is
+     * accurate and useless. Worse, the *restore* path has the same problem in reverse — the operation
+     * genuinely did not complete, and the message would read 导出失败 rather than "the app is restoring;
+     * try again in a moment".
+     *
+     * So the screen reports the *condition* when it can see it, and falls back to the exception text
+     * otherwise. Reading the gate here rather than parsing the message keeps the wording decision in the
+     * UI (where it belongs) and keeps the gate's exception free of presentation concerns.
+     */
+    val restoring by remember {
+        RestoreStartupGate.restoreInProgressFlowForUi
+    }.collectAsState(initial = RestoreStartupGate.isRestoring)
+
+    /** The message for a failed export/restore, distinguishing "a restore is running" from a real error. */
+    fun failureMessage(prefix: String, error: Throwable): String =
+        if (restoring || error is RestoreRecoveryPendingException) {
+            "应用正在恢复备份，请稍后再试"
+        } else {
+            "$prefix：${error.message ?: "未知错误"}"
+        }
+
     fun launchConsent() {
         runCatching { context.startActivity(Intent(context, QuickCaptureActivity::class.java)) }
     }
@@ -88,7 +120,7 @@ fun DataSettingsScreen(
             scope.launch {
                 val result = BackupManager.export(context, repo, uri, lifeDatabase)
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
-                message = result.fold({ "备份已导出" }, { "导出失败：${it.message ?: "未知错误"}" })
+                message = result.fold({ "备份已导出" }, { failureMessage("导出失败", it) })
                 busy = false
             }
         }
@@ -100,7 +132,7 @@ fun DataSettingsScreen(
             scope.launch {
                 val result = BackupManager.exportCsv(context, repo, uri)
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
-                message = result.fold({ "CSV 已导出" }, { "导出失败：${it.message ?: "未知错误"}" })
+                message = result.fold({ "CSV 已导出" }, { failureMessage("导出失败", it) })
                 busy = false
             }
         }
@@ -180,7 +212,12 @@ fun DataSettingsScreen(
                 }
             }
             message?.let {
-                val isError = it.startsWith("导出失败") || it.startsWith("恢复失败")
+                // A refused-while-restoring message is not an error the user caused or must act on
+                // beyond waiting, so it is rendered in the neutral accent rather than the error colour.
+                // `failureMessage` is the only producer of that wording, so matching its prefix keeps
+                // the decision next to the string instead of re-deriving it from an exception type here.
+                val isError = (it.startsWith("导出失败") || it.startsWith("恢复失败")) &&
+                    !it.startsWith("应用正在恢复备份")
                 Text(it, color = if (isError) ClosieColor.Error else ClosieColor.RosePressed)
             }
         }
@@ -198,7 +235,7 @@ fun DataSettingsScreen(
                     busy = true; message = null
                     scope.launch {
                         val result = BackupManager.restore(context, repo, u, lifeDatabase)
-                        message = result.fold({ "恢复成功" }, { "恢复失败：${it.message ?: "未知错误"}" })
+                        message = result.fold({ "恢复成功" }, { failureMessage("恢复失败", it) })
                         busy = false
                     }
                 }) { Text("确认恢复", color = ClosieColor.Rose) }
