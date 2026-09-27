@@ -1,0 +1,309 @@
+From 495aa9cf7c5eed4e6fb28aca4bc55edef0e35f3b Mon Sep 17 00:00:00 2001
+From: Life OS Dev <lifeos@local>
+Date: Sun, 27 Sep 2026 09:37:24 +0800
+Subject: [PATCH] fix(backup): close gate-aware flow delivery race
+
+---
+ .../closie/data/backup/RestoreStartupGate.kt  | 90 +++++++++++++------
+ .../closie/data/backup/GateAwareFlowTest.kt   | 13 ++-
+ .../data/backup/RestoreGateConcurrencyTest.kt | 42 ++++++---
+ .../backup/RestoreStartupGateLifecycleTest.kt | 51 +++++++----
+ 4 files changed, 143 insertions(+), 53 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/data/backup/RestoreStartupGate.kt b/app/src/main/java/com/qq/closie/data/backup/RestoreStartupGate.kt
+index 8ae2186..5b6fbe1 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/RestoreStartupGate.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/RestoreStartupGate.kt
+@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.emptyFlow
+ import kotlinx.coroutines.flow.flatMapLatest
+ import kotlinx.coroutines.flow.map
+ import kotlinx.coroutines.flow.stateIn
++import kotlinx.coroutines.flow.transform
+ 
+ /**
+  * Process-wide answer to one question: *may business code read the user's data yet?*
+@@ -520,24 +521,47 @@ internal object RestoreStartupGate {
+      * `block` is re-invoked on each reopen rather than captured once, because the `Flow` a DAO returns is
+      * a cold description: re-creating it is what produces a fresh query against the repaired tables.
+      *
+-     * ### The cancellation race this still closes
++     * ### The cancellation race this still closes, and where the lease has to sit
+      *
+      * `flatMapLatest` cancels the old inner flow when the status changes, but that cancellation is not
+      * synchronous with the value that triggered it: a Room emission already in flight can be delivered
+-     * after [beginRestore] has succeeded. So each value is passed through [emitUnderBusinessLease], which
+-     * refuses to hand it on unless a lease can be taken — see that function.
++     * after [beginRestore] has succeeded. So values are passed through [emitUnderBusinessLease], which
++     * refuses to hand one on unless a lease can be taken — see that function.
++     *
++     * Where that wrapper sits is not cosmetic. `flatMapLatest` is an operator with its own channel in
++     * between: the inner flow's `emit` completes once the value has been handed to that channel, *not*
++     * once the downstream collector has seen it. Wrapping only the inner flow (as
++     * `flatMapLatest { emitUnderBusinessLease(block()) }`) therefore releases the lease while the value is
++     * still sitting in the channel, and the collector runs with `activeBusinessOps == 0` — precisely the
++     * window in which [beginRestore] succeeds, after which the channel hands the *stale* value to the UI.
++     * That is the race `aSlowCollectorHoldsTheEmissionLease_andBeginRestoreIsRefusedNotBlocked` pins.
++     *
++     * Wrapping the *whole* `flatMapLatest` result instead makes the lease bracket the only window that
++     * matters:
++     *
++     * ```
++     *   final value -> acquire emission lease -> downstream emit -> collector returns -> release lease
++     * ```
++     *
++     * `flatMapLatest` keeps its proper job — subscribing to, and cancelling, the durable DAO flow — while
++     * the lease is taken at the outermost point, where `emit` is genuinely synchronous with the collector.
++     * A value that was already buffered when the status left `READY` now arrives at the wrapper with
++     * `tryAcquireEmissionLease() == false` and is dropped, instead of being delivered to a UI that is
++     * about to be swapped out from under it.
+      */
+     internal fun <T> gateAwareFlow(block: () -> Flow<T>): Flow<T> =
+-        // `flatMapLatest` is still marked experimental in the version this project compiles against. The
+-        // opt-in is scoped to this one expression rather than the file or the object: the semantics relied
+-        // on here (`flatMapLatest` cancels the previous inner flow — dropping the durable subscription —
+-        // and re-invokes the lambda on each new upstream value) are exactly what the surrounding doc
+-        // argues for, and `filter` cannot express them. A future signature change would be caught by
+-        // `GateAwareFlowTest`'s subscription counter rather than by a compile error.
+-        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+-        statusFlow.flatMapLatest { s ->
+-            if (s == Status.READY) emitUnderBusinessLease(block()) else emptyFlow()
+-        }
++        emitUnderBusinessLease(
++            // `flatMapLatest` is still marked experimental in the version this project compiles against. The
++            // opt-in is scoped to this one expression rather than the file or the object: the semantics relied
++            // on here (`flatMapLatest` cancels the previous inner flow — dropping the durable subscription —
++            // and re-invokes the lambda on each new upstream value) are exactly what the surrounding doc
++            // argues for, and `filter` cannot express them. A future signature change would be caught by
++            // `GateAwareFlowTest`'s subscription counter rather than by a compile error.
++            @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
++            statusFlow.flatMapLatest { s ->
++                if (s == Status.READY) block() else emptyFlow()
++            }
++        )
+ 
+     // ------------------------------------------------------------------
+     //  Lifecycle
+@@ -755,22 +779,34 @@ internal object RestoreStartupGate {
+      *
+      * Note this is deliberately *not* a second state: it reads the same [State] and uses the same lease
+      * mechanism as every other business operation.
++     *
++     * ### Why `transform` and not `flow { upstream.collect { … } }`
++     *
++     * The obvious spelling of this helper is a `flow { upstream.collect { emit(it) } }` wrapper, and it is
++     * wrong for the one caller that matters. `transform` runs its lambda *in the upstream's own context and
++     * coroutine*, whereas `flow { … }` starts a new `ProducerCoroutine` and re-emits into it. When the
++     * upstream is `flatMapLatest` — which is a `ChannelFlow`, i.e. it deliberately moves values between
++     * coroutines — the re-emit crosses that boundary and the `flow { }` builder's context check rejects it.
++     * The failure mode is the worst kind: **silent**. It is not an exception the caller can see, it is a
++     * subscription that simply never emits again, so `gateAwareFlow { dao.observeAll() }` would deliver
++     * nothing and every screen backed by it would sit blank.
++     *
++     * `transform` inherits the upstream context, so its `emit` *is* the downstream delivery: no extra
++     * coroutine, no channel, and the lease brackets exactly the window documented above.
+      */
+     private fun <T> emitUnderBusinessLease(upstream: Flow<T>): Flow<T> =
+-        kotlinx.coroutines.flow.flow {
+-            upstream.collect { value ->
+-                // Retry the compare-and-set rather than giving up on the first failure: a failed CAS only
+-                // means the state changed underneath (another lease taken or released), not that the gate
+-                // is closed. Only a status that is no longer READY decides to drop the value.
+-                if (!tryAcquireEmissionLease()) return@collect
+-                try {
+-                    // Suspends until the downstream collector has processed the value — see the note above
+-                    // on what that means for how long this lease is held. The `finally` guarantees it is
+-                    // released even if the collector throws or is cancelled.
+-                    emit(value)
+-                } finally {
+-                    releaseBusinessLease()
+-                }
++        upstream.transform { value ->
++            // Retry the compare-and-set rather than giving up on the first failure: a failed CAS only
++            // means the state changed underneath (another lease taken or released), not that the gate
++            // is closed. Only a status that is no longer READY decides to drop the value.
++            if (!tryAcquireEmissionLease()) return@transform
++            try {
++                // Suspends until the downstream collector has processed the value — see the note above
++                // on what that means for how long this lease is held. The `finally` guarantees it is
++                // released even if the collector throws or is cancelled.
++                emit(value)
++            } finally {
++                releaseBusinessLease()
+             }
+         }
+ 
+diff --git a/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt b/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
+index f02d659..5fd2996 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
+@@ -19,6 +19,7 @@ import java.util.concurrent.CountDownLatch
+ import java.util.concurrent.TimeUnit
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.async
++import kotlinx.coroutines.cancelAndJoin
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.flow.first
+ import kotlinx.coroutines.launch
+@@ -583,8 +584,18 @@ class GateAwareFlowTest {
+ 
+             // Let the collector return: the lease is released as soon as it does, and the same call now
+             // succeeds — so the postponement is bounded by the collector, not permanent.
++            //
++            // `cancelAndJoin` rather than `join`: the collector is subscribed to a Room `Flow`, which by
++            // design **never completes**, so `join` would wait for a completion that cannot happen. That
++            // was invisible before this fix only because the assertion two lines above it failed first and
++            // the test aborted before reaching here — the moment `emitUnderBusinessLease` was moved so the
++            // lease really is held (BLOCKER: the delivery race), the test started getting this far and the
++            // unbounded `join` became a hang. Cancelling is also the honest way to end a parked collector:
++            // the assertions below are about what `emit`'s `finally` did, not about the collector looping
++            // forever. The `finally` in `emitUnderBusinessLease` releases the lease on cancellation too,
++            // which is exactly what `activeBusinessOps == 0` checks.
+             collectorMayReturn.countDown()
+-            collector.join()
++            collector.cancelAndJoin()
+             assertThat(RestoreStartupGate.activeBusinessOps).isEqualTo(0)
+             assertThat(RestoreStartupGate.beginRestore()).isTrue()
+             RestoreStartupGate.endRestoreReady()
+diff --git a/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt b/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
+index 7bdac72..a7e9a39 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
+@@ -431,6 +431,22 @@ class RestoreGateConcurrencyTest {
+         // it is constructed first; the parked write below is a *second* call on that instance.
+         val writesEntered = CountDownLatch(1)
+         val releaseWrite = CountDownLatch(1)
++
++        // The seed goes through an *unhooked* repository on purpose. `afterDurableWrite()` fires on
++        // **every** write, so seeding through `hooked` would consume both latches before the write under
++        // test had even started — `writesEntered` would already be down and `releaseWrite` already
++        // released, and the assertions below would be observing nothing. Only the call under test may
++        // touch the hook.
++        val seedRepo = LocalWardrobeRepository(context)
++        seedRepo.createItem(
++            ClothingItem(
++                id = "concurrent-item",
++                name = "并发写入的前一项",
++                category = "上衣",
++                status = ItemStatus.OWNED
++            )
++        )
++
+         val hooked = LocalWardrobeRepository(
+             context,
+             testHooks = object : WardrobeTestHooks {
+@@ -444,15 +460,6 @@ class RestoreGateConcurrencyTest {
+             }
+         )
+ 
+-        hooked.createItem(
+-            ClothingItem(
+-                id = "concurrent-item",
+-                name = "并发写入的前一项",
+-                category = "上衣",
+-                status = ItemStatus.OWNED
+-            )
+-        )
+-
+         // The production call parks *inside* its lease.
+         val writer = async(Dispatchers.IO) {
+             hooked.createItem(
+@@ -740,9 +747,24 @@ class RestoreGateConcurrencyTest {
+             }
+         }
+         // Ensure the durable subscription exists before mutating behind it.
+-        life.createEntity(entityType = "race")
++        val seeded = life.createEntity(entityType = "race")
+         collectorStarted.await(5, TimeUnit.SECONDS)
+ 
++        // Once the delivery race is genuinely closed (the emission lease spans the *downstream collector
++        // body* — see `emitUnderBusinessLease`), the collector legitimately holds a lease while it hands
++        // the seeded row over, and `beginRestore` must refuse inside that handover — that is the whole
++        // point of the fix. Closing the gate there would fail the assertion below for the *wrong* reason:
++        // an ordinary emission still in delivery, not a restore-era row leaking. So wait here until the
++        // seed has been delivered and the emission lease is back to zero. The collector is then idle,
++        // and the only interleaving left to observe below is the one this test exists for.
++        val seedDelivered = withTimeoutOrNull(GATE_PROBE_TIMEOUT_MS) {
++            while (!delivered.contains(seeded.id) || RestoreStartupGate.activeBusinessOps != 0) {
++                delay(25)
++            }
++            true
++        }
++        assertThat(seedDelivered).isTrue()
++
+         // Close the gate, then insert a restore-era row directly at the DAO level. If the in-flight
+         // emission guard were missing, this invalidation could be delivered after `beginRestore`.
+         assertThat(RestoreStartupGate.beginRestore()).isTrue()
+diff --git a/app/src/test/java/com/qq/closie/data/backup/RestoreStartupGateLifecycleTest.kt b/app/src/test/java/com/qq/closie/data/backup/RestoreStartupGateLifecycleTest.kt
+index 0e28561..c04429d 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/RestoreStartupGateLifecycleTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/RestoreStartupGateLifecycleTest.kt
+@@ -638,11 +638,16 @@ class RestoreStartupGateLifecycleTest {
+ 
+         // Positive control: the same calls succeed once the gate reopens, so the test cannot pass on an
+         // `ImageStore` that simply refuses everything.
++        //
++        // `requireNotNull` rather than `assertThat(...).isNotNull()`: Truth's assertion is a runtime check
++        // that does not narrow Kotlin's type, so the compiler would still (correctly) treat `afterPath` as
++        // nullable and demand `!!` at every later use. Asserting and then re-asserting through `!!` also
++        // moves the failure to a KotlinNullPointerException on the *second* line instead of the first.
+         val afterPath = com.qq.closie.data.ImageStore.copyFromFile(context, source)
+-        assertThat(afterPath).isNotNull()
+-        createdFiles += File(afterPath!!)
+-        com.qq.closie.data.ImageStore.deletePrivatePath(context, afterPath)
+-        assertThat(File(afterPath).exists()).isFalse()
++        val savedPath = requireNotNull(afterPath)
++        createdFiles += File(savedPath)
++        com.qq.closie.data.ImageStore.deletePrivatePath(context, savedPath)
++        assertThat(File(savedPath).exists()).isFalse()
+     }
+ 
+     /**
+@@ -774,18 +779,34 @@ class RestoreStartupGateLifecycleTest {
+ 
+         // A delegation, not a subclass, so no member can be silently lost — the same technique the
+         // restore-filesystem seam uses.
+-        val parkingRepo = object : com.qq.closie.data.repository.WardrobeRepository by gatedRepo {
+-            private val parked = java.util.concurrent.atomic.AtomicBoolean(false)
+-            override fun listItems(): List<ClothingItem> {
+-                val rows = gatedRepo.listItems()
+-                if (parked.compareAndSet(false, true)) {
+-                    // The export has already read durable wardrobe state, so its lease is held.
+-                    countsWhileExporting.add(RestoreStartupGate.activeBusinessOps)
+-                    exportInside.countDown()
+-                    exportMayFinish.await(5, java.util.concurrent.TimeUnit.SECONDS)
+-                }
+-                return rows
++        //
++        // The seam has to intercept `snapshot.value`, not `listItems()`. `BackupExporter` reads the
++        // wardrobe through the canonical snapshot (`repo.snapshot.value`) rather than through the
++        // per-collection accessors, so overriding `listItems()` would leave a hook that the exporter never
++        // calls — the test would park on nothing and hang on `exportInside.await`, or (worse) pass by
++        // accident against a future exporter that happened to call it. `value` is the read the production
++        // path actually performs, so that is where the window is observed.
++        val parkingSnapshot =
++            object : kotlinx.coroutines.flow.StateFlow<com.qq.closie.data.repository.WardrobeSnapshot> by
++                gatedRepo.snapshot {
++                private val parked = java.util.concurrent.atomic.AtomicBoolean(false)
++                override val value: com.qq.closie.data.repository.WardrobeSnapshot
++                    get() {
++                        val snapshotValue = gatedRepo.snapshot.value
++                        if (parked.compareAndSet(false, true)) {
++                            // The export has already taken its outer lease and is reading durable wardrobe
++                            // state, so the count is non-zero for the rest of the export.
++                            countsWhileExporting.add(RestoreStartupGate.activeBusinessOps)
++                            exportInside.countDown()
++                            exportMayFinish.await(5, java.util.concurrent.TimeUnit.SECONDS)
++                        }
++                        return snapshotValue
++                    }
+             }
++
++        val parkingRepo = object : com.qq.closie.data.repository.WardrobeRepository by gatedRepo {
++            override val snapshot: kotlinx.coroutines.flow.StateFlow<com.qq.closie.data.repository.WardrobeSnapshot> =
++                parkingSnapshot
+         }
+ 
+         val outputUri = android.net.Uri.fromFile(
+-- 
+2.43.0
+
