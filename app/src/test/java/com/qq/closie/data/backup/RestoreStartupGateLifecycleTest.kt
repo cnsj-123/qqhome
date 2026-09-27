@@ -638,11 +638,16 @@ class RestoreStartupGateLifecycleTest {
 
         // Positive control: the same calls succeed once the gate reopens, so the test cannot pass on an
         // `ImageStore` that simply refuses everything.
+        //
+        // `requireNotNull` rather than `assertThat(...).isNotNull()`: Truth's assertion is a runtime check
+        // that does not narrow Kotlin's type, so the compiler would still (correctly) treat `afterPath` as
+        // nullable and demand `!!` at every later use. Asserting and then re-asserting through `!!` also
+        // moves the failure to a KotlinNullPointerException on the *second* line instead of the first.
         val afterPath = com.qq.closie.data.ImageStore.copyFromFile(context, source)
-        assertThat(afterPath).isNotNull()
-        createdFiles += File(afterPath!!)
-        com.qq.closie.data.ImageStore.deletePrivatePath(context, afterPath)
-        assertThat(File(afterPath).exists()).isFalse()
+        val savedPath = requireNotNull(afterPath)
+        createdFiles += File(savedPath)
+        com.qq.closie.data.ImageStore.deletePrivatePath(context, savedPath)
+        assertThat(File(savedPath).exists()).isFalse()
     }
 
     /**
@@ -774,18 +779,34 @@ class RestoreStartupGateLifecycleTest {
 
         // A delegation, not a subclass, so no member can be silently lost — the same technique the
         // restore-filesystem seam uses.
-        val parkingRepo = object : com.qq.closie.data.repository.WardrobeRepository by gatedRepo {
-            private val parked = java.util.concurrent.atomic.AtomicBoolean(false)
-            override fun listItems(): List<ClothingItem> {
-                val rows = gatedRepo.listItems()
-                if (parked.compareAndSet(false, true)) {
-                    // The export has already read durable wardrobe state, so its lease is held.
-                    countsWhileExporting.add(RestoreStartupGate.activeBusinessOps)
-                    exportInside.countDown()
-                    exportMayFinish.await(5, java.util.concurrent.TimeUnit.SECONDS)
-                }
-                return rows
+        //
+        // The seam has to intercept `snapshot.value`, not `listItems()`. `BackupExporter` reads the
+        // wardrobe through the canonical snapshot (`repo.snapshot.value`) rather than through the
+        // per-collection accessors, so overriding `listItems()` would leave a hook that the exporter never
+        // calls — the test would park on nothing and hang on `exportInside.await`, or (worse) pass by
+        // accident against a future exporter that happened to call it. `value` is the read the production
+        // path actually performs, so that is where the window is observed.
+        val parkingSnapshot =
+            object : kotlinx.coroutines.flow.StateFlow<com.qq.closie.data.repository.WardrobeSnapshot> by
+                gatedRepo.snapshot {
+                private val parked = java.util.concurrent.atomic.AtomicBoolean(false)
+                override val value: com.qq.closie.data.repository.WardrobeSnapshot
+                    get() {
+                        val snapshotValue = gatedRepo.snapshot.value
+                        if (parked.compareAndSet(false, true)) {
+                            // The export has already taken its outer lease and is reading durable wardrobe
+                            // state, so the count is non-zero for the rest of the export.
+                            countsWhileExporting.add(RestoreStartupGate.activeBusinessOps)
+                            exportInside.countDown()
+                            exportMayFinish.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                        }
+                        return snapshotValue
+                    }
             }
+
+        val parkingRepo = object : com.qq.closie.data.repository.WardrobeRepository by gatedRepo {
+            override val snapshot: kotlinx.coroutines.flow.StateFlow<com.qq.closie.data.repository.WardrobeSnapshot> =
+                parkingSnapshot
         }
 
         val outputUri = android.net.Uri.fromFile(

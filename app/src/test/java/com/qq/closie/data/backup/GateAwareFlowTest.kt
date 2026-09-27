@@ -19,6 +19,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -583,8 +584,18 @@ class GateAwareFlowTest {
 
             // Let the collector return: the lease is released as soon as it does, and the same call now
             // succeeds — so the postponement is bounded by the collector, not permanent.
+            //
+            // `cancelAndJoin` rather than `join`: the collector is subscribed to a Room `Flow`, which by
+            // design **never completes**, so `join` would wait for a completion that cannot happen. That
+            // was invisible before this fix only because the assertion two lines above it failed first and
+            // the test aborted before reaching here — the moment `emitUnderBusinessLease` was moved so the
+            // lease really is held (BLOCKER: the delivery race), the test started getting this far and the
+            // unbounded `join` became a hang. Cancelling is also the honest way to end a parked collector:
+            // the assertions below are about what `emit`'s `finally` did, not about the collector looping
+            // forever. The `finally` in `emitUnderBusinessLease` releases the lease on cancellation too,
+            // which is exactly what `activeBusinessOps == 0` checks.
             collectorMayReturn.countDown()
-            collector.join()
+            collector.cancelAndJoin()
             assertThat(RestoreStartupGate.activeBusinessOps).isEqualTo(0)
             assertThat(RestoreStartupGate.beginRestore()).isTrue()
             RestoreStartupGate.endRestoreReady()

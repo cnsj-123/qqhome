@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transform
 
 /**
  * Process-wide answer to one question: *may business code read the user's data yet?*
@@ -520,24 +521,47 @@ internal object RestoreStartupGate {
      * `block` is re-invoked on each reopen rather than captured once, because the `Flow` a DAO returns is
      * a cold description: re-creating it is what produces a fresh query against the repaired tables.
      *
-     * ### The cancellation race this still closes
+     * ### The cancellation race this still closes, and where the lease has to sit
      *
      * `flatMapLatest` cancels the old inner flow when the status changes, but that cancellation is not
      * synchronous with the value that triggered it: a Room emission already in flight can be delivered
-     * after [beginRestore] has succeeded. So each value is passed through [emitUnderBusinessLease], which
-     * refuses to hand it on unless a lease can be taken — see that function.
+     * after [beginRestore] has succeeded. So values are passed through [emitUnderBusinessLease], which
+     * refuses to hand one on unless a lease can be taken — see that function.
+     *
+     * Where that wrapper sits is not cosmetic. `flatMapLatest` is an operator with its own channel in
+     * between: the inner flow's `emit` completes once the value has been handed to that channel, *not*
+     * once the downstream collector has seen it. Wrapping only the inner flow (as
+     * `flatMapLatest { emitUnderBusinessLease(block()) }`) therefore releases the lease while the value is
+     * still sitting in the channel, and the collector runs with `activeBusinessOps == 0` — precisely the
+     * window in which [beginRestore] succeeds, after which the channel hands the *stale* value to the UI.
+     * That is the race `aSlowCollectorHoldsTheEmissionLease_andBeginRestoreIsRefusedNotBlocked` pins.
+     *
+     * Wrapping the *whole* `flatMapLatest` result instead makes the lease bracket the only window that
+     * matters:
+     *
+     * ```
+     *   final value -> acquire emission lease -> downstream emit -> collector returns -> release lease
+     * ```
+     *
+     * `flatMapLatest` keeps its proper job — subscribing to, and cancelling, the durable DAO flow — while
+     * the lease is taken at the outermost point, where `emit` is genuinely synchronous with the collector.
+     * A value that was already buffered when the status left `READY` now arrives at the wrapper with
+     * `tryAcquireEmissionLease() == false` and is dropped, instead of being delivered to a UI that is
+     * about to be swapped out from under it.
      */
     internal fun <T> gateAwareFlow(block: () -> Flow<T>): Flow<T> =
-        // `flatMapLatest` is still marked experimental in the version this project compiles against. The
-        // opt-in is scoped to this one expression rather than the file or the object: the semantics relied
-        // on here (`flatMapLatest` cancels the previous inner flow — dropping the durable subscription —
-        // and re-invokes the lambda on each new upstream value) are exactly what the surrounding doc
-        // argues for, and `filter` cannot express them. A future signature change would be caught by
-        // `GateAwareFlowTest`'s subscription counter rather than by a compile error.
-        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-        statusFlow.flatMapLatest { s ->
-            if (s == Status.READY) emitUnderBusinessLease(block()) else emptyFlow()
-        }
+        emitUnderBusinessLease(
+            // `flatMapLatest` is still marked experimental in the version this project compiles against. The
+            // opt-in is scoped to this one expression rather than the file or the object: the semantics relied
+            // on here (`flatMapLatest` cancels the previous inner flow — dropping the durable subscription —
+            // and re-invokes the lambda on each new upstream value) are exactly what the surrounding doc
+            // argues for, and `filter` cannot express them. A future signature change would be caught by
+            // `GateAwareFlowTest`'s subscription counter rather than by a compile error.
+            @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+            statusFlow.flatMapLatest { s ->
+                if (s == Status.READY) block() else emptyFlow()
+            }
+        )
 
     // ------------------------------------------------------------------
     //  Lifecycle
@@ -755,22 +779,34 @@ internal object RestoreStartupGate {
      *
      * Note this is deliberately *not* a second state: it reads the same [State] and uses the same lease
      * mechanism as every other business operation.
+     *
+     * ### Why `transform` and not `flow { upstream.collect { … } }`
+     *
+     * The obvious spelling of this helper is a `flow { upstream.collect { emit(it) } }` wrapper, and it is
+     * wrong for the one caller that matters. `transform` runs its lambda *in the upstream's own context and
+     * coroutine*, whereas `flow { … }` starts a new `ProducerCoroutine` and re-emits into it. When the
+     * upstream is `flatMapLatest` — which is a `ChannelFlow`, i.e. it deliberately moves values between
+     * coroutines — the re-emit crosses that boundary and the `flow { }` builder's context check rejects it.
+     * The failure mode is the worst kind: **silent**. It is not an exception the caller can see, it is a
+     * subscription that simply never emits again, so `gateAwareFlow { dao.observeAll() }` would deliver
+     * nothing and every screen backed by it would sit blank.
+     *
+     * `transform` inherits the upstream context, so its `emit` *is* the downstream delivery: no extra
+     * coroutine, no channel, and the lease brackets exactly the window documented above.
      */
     private fun <T> emitUnderBusinessLease(upstream: Flow<T>): Flow<T> =
-        kotlinx.coroutines.flow.flow {
-            upstream.collect { value ->
-                // Retry the compare-and-set rather than giving up on the first failure: a failed CAS only
-                // means the state changed underneath (another lease taken or released), not that the gate
-                // is closed. Only a status that is no longer READY decides to drop the value.
-                if (!tryAcquireEmissionLease()) return@collect
-                try {
-                    // Suspends until the downstream collector has processed the value — see the note above
-                    // on what that means for how long this lease is held. The `finally` guarantees it is
-                    // released even if the collector throws or is cancelled.
-                    emit(value)
-                } finally {
-                    releaseBusinessLease()
-                }
+        upstream.transform { value ->
+            // Retry the compare-and-set rather than giving up on the first failure: a failed CAS only
+            // means the state changed underneath (another lease taken or released), not that the gate
+            // is closed. Only a status that is no longer READY decides to drop the value.
+            if (!tryAcquireEmissionLease()) return@transform
+            try {
+                // Suspends until the downstream collector has processed the value — see the note above
+                // on what that means for how long this lease is held. The `finally` guarantees it is
+                // released even if the collector throws or is cancelled.
+                emit(value)
+            } finally {
+                releaseBusinessLease()
             }
         }
 

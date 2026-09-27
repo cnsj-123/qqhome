@@ -431,6 +431,22 @@ class RestoreGateConcurrencyTest {
         // it is constructed first; the parked write below is a *second* call on that instance.
         val writesEntered = CountDownLatch(1)
         val releaseWrite = CountDownLatch(1)
+
+        // The seed goes through an *unhooked* repository on purpose. `afterDurableWrite()` fires on
+        // **every** write, so seeding through `hooked` would consume both latches before the write under
+        // test had even started — `writesEntered` would already be down and `releaseWrite` already
+        // released, and the assertions below would be observing nothing. Only the call under test may
+        // touch the hook.
+        val seedRepo = LocalWardrobeRepository(context)
+        seedRepo.createItem(
+            ClothingItem(
+                id = "concurrent-item",
+                name = "并发写入的前一项",
+                category = "上衣",
+                status = ItemStatus.OWNED
+            )
+        )
+
         val hooked = LocalWardrobeRepository(
             context,
             testHooks = object : WardrobeTestHooks {
@@ -442,15 +458,6 @@ class RestoreGateConcurrencyTest {
                     releaseWrite.await(5, TimeUnit.SECONDS)
                 }
             }
-        )
-
-        hooked.createItem(
-            ClothingItem(
-                id = "concurrent-item",
-                name = "并发写入的前一项",
-                category = "上衣",
-                status = ItemStatus.OWNED
-            )
         )
 
         // The production call parks *inside* its lease.
@@ -740,8 +747,23 @@ class RestoreGateConcurrencyTest {
             }
         }
         // Ensure the durable subscription exists before mutating behind it.
-        life.createEntity(entityType = "race")
+        val seeded = life.createEntity(entityType = "race")
         collectorStarted.await(5, TimeUnit.SECONDS)
+
+        // Once the delivery race is genuinely closed (the emission lease spans the *downstream collector
+        // body* — see `emitUnderBusinessLease`), the collector legitimately holds a lease while it hands
+        // the seeded row over, and `beginRestore` must refuse inside that handover — that is the whole
+        // point of the fix. Closing the gate there would fail the assertion below for the *wrong* reason:
+        // an ordinary emission still in delivery, not a restore-era row leaking. So wait here until the
+        // seed has been delivered and the emission lease is back to zero. The collector is then idle,
+        // and the only interleaving left to observe below is the one this test exists for.
+        val seedDelivered = withTimeoutOrNull(GATE_PROBE_TIMEOUT_MS) {
+            while (!delivered.contains(seeded.id) || RestoreStartupGate.activeBusinessOps != 0) {
+                delay(25)
+            }
+            true
+        }
+        assertThat(seedDelivered).isTrue()
 
         // Close the gate, then insert a restore-era row directly at the DAO level. If the in-flight
         // emission guard were missing, this invalidation could be delivered after `beginRestore`.
