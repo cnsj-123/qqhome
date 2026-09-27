@@ -1,5 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive launcher icon (API 26+).
+
+  Built from the user-supplied artwork: a dark-ink planet with a glowing Q, a star ring and two
+  small bodies. The source image carried a "豆包AI生成" watermark in its bottom-right corner; it was
+  cropped out before any density was generated, so no launcher size can show it.
+
+  Three layers, each with a reason:
+
+  - background = Paper (#F7F6F2), NOT a saturated brand colour. The artwork is monochrome
+    dark-ink-on-light, so a coloured plate would fight it and make the planet read as a sticker.
+    Paper is also the app's own page colour, so the icon and the app look like the same product.
+  - foreground = the artwork scaled into the inner 66dp safe zone of the 108dp canvas. Anything
+    outside that zone is where launchers apply their mask, and the star ring reaches the edge of
+    the art — drawing it full-bleed would let an aggressive circular mask slice the ring off.
+  - monochrome = an alpha-only silhouette of the same shape, for Android 13+ themed icons. The
+    system tints it, so its RGB is irrelevant; only the alpha matters.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>
