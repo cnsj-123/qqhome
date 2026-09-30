@@ -1,0 +1,196 @@
+---
+Title: Life OS 媒体、原图、缓存与动态照片架构
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Recommended Path: docs/life-os/04-architecture/09-media-architecture.md
+---
+
+# 1. MediaAsset 是共享核心对象
+
+同一张照片可同时被 Travel、Person、Plog、Garden、Hobbies 引用，但底层只有一个 MediaAsset。
+
+模块只保存自己的：
+
+- crop
+- caption
+- order
+- layout
+- contextual role
+
+# 2. Stable Media Identity
+
+Media ID 与下列内容分离：
+
+- Android URI
+- file path
+- cloud URL
+- SHA hash
+
+这些只是 Locator / integrity evidence。
+
+# 3. 分层
+
+```text
+Original
+Metadata
+Derived
+```
+
+## Original
+
+不可替代的原始媒体，包括 Motion / Live Photo 的完整组件。
+
+## Metadata
+
+- dimensions
+- capture time
+- mime type
+- source
+- dynamic photo components
+- asset identity
+- locator state
+
+## Derived
+
+- micro thumbnail
+- grid thumbnail
+- preview
+- OCR
+- embedding
+- face index
+- render cache
+
+Derived 可删除重建。
+
+# 4. Media Locator
+
+同一 MediaAsset 可以有多个 Locator：
+
+```text
+SYSTEM_URI
+LOCAL_PRIVATE
+CLOUD_ORIGINAL
+BACKUP_OBJECT
+```
+
+Source missing 不等于 MediaAsset/history deleted。
+
+建议状态：
+
+```text
+AVAILABLE
+MISSING
+RELINK_NEEDED
+BACKUP_AVAILABLE
+```
+
+# 5. Photo Picker / URI
+
+Android URI 不应成为业务身份。持久 URI grant 有现实限制，长期档案必须允许 Source Missing 后仍保留 MediaAsset、历史关系和恢复路径。
+
+# 6. Thumbnail Tier
+
+大图库必须避免 grid 直接 decode original。
+
+建议：
+
+```text
+micro
+grid
+screen_preview
+original
+```
+
+只有原图查看 / 导出才真正触碰 Original。
+
+# 7. Cache
+
+Derived cache 自动管理，不要求用户维护复杂 MB 数字。
+
+可提供意图级设置：
+
+- 节省手机空间
+- 平衡
+- 更多内容离线可用
+
+# 8. Eviction
+
+长期未访问 preview / derived 可被清理。
+
+Truth metadata 和 Original location/backup state 保留。
+
+# 9. Dynamic Photo
+
+抽象 `DynamicPhotoAsset`，在 Android / iOS 分别映射 Motion Photo / Live Photo。
+
+导出：
+
+- 兼容平台保留动态语义；
+- 不兼容目标回退视频；
+- GIF 不是优选。
+
+# 10. Composition
+
+Media original 不因同一照片出现在多个作品中复制。
+
+Composition 保存引用和 presentation metadata。
+
+# 11. Delete Semantics
+
+必须区分：
+
+```text
+Remove relation
+Remove from Life OS
+Delete device original
+Delete cloud backup
+Permanent delete everywhere
+```
+
+不能一个“删除”按钮混在一起。
+
+# 12. Relink
+
+Source missing 时：
+
+- 显示哪些 Life OS 对象引用它；
+- 尝试 cloud/backup 恢复；
+- 允许用户 relink；
+- 不删除历史关系。
+
+# 13. Media Worker
+
+Thumbnail、OCR、Embedding 等走 Work Scheduler。
+
+首次大规模索引要：
+
+- chunked
+- checkpointed
+- resource-bounded
+- resumable
+
+# 14. Original Backup
+
+Cloud sync / backup 应保护 original bytes，不仅保存 DB metadata。
+
+# 15. Creative Vault Media
+
+Vault 媒体使用独立加密存储与 sync boundary。
+
+普通 MediaAsset registry 不得暴露 Vault object identity。
+
+# 16. Invariants
+
+- Media Identity Independent From URI/Path/Hash
+- One Original, Many References
+- Derived Rebuildable
+- Source Missing ≠ Asset Deleted
+- Original ≠ Cache
+- Delete Semantics Explicit
+- Dynamic Photo Semantics Preserved Where Possible
+- Vault Media Separate

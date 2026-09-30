@@ -1,0 +1,252 @@
+---
+Title: Life OS 同步、备份、冲突与恢复架构
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Recommended Path: docs/life-os/04-architecture/08-sync-backup-recovery.md
+---
+
+# 1. 三个概念必须分开
+
+```text
+Saved
+Synced
+Backed Up
+```
+
+本地保存成功不代表已同步；同步成功不代表有灾难恢复点。
+
+# 2. Local-first Write
+
+正常写入：
+
+```text
+User Action
+→ Local Canonical Commit
+→ Saved
+→ Outbox
+→ Sync later
+```
+
+离线是状态，不是错误。
+
+UI 可显示：
+
+> 已保存在本机，等待同步。
+
+# 3. Sync 内容
+
+默认同步：
+
+- Canonical Truth
+- Relations
+- User Content / Composition
+- Essential Provenance
+- Media Manifest
+- Cross-device Settings
+- necessary recovery metadata
+
+通常不要求同步：
+
+- thumbnail cache
+- FTS temp
+- render cache
+- device-specific transient state
+
+# 4. Sync Envelope 语义
+
+建议包含：
+
+```text
+object_id
+object_kind
+domain_key
+object_schema_version
+revision
+base_revision
+change_set_id
+origin_device_id
+committed_at
+payload
+extension_payloads
+tombstone
+```
+
+wire format 后续决定。
+
+# 5. At-least-once + Idempotent Apply
+
+网络可能重试和重复。
+
+远端用 `change_set_id` / operation identity 幂等应用。
+
+不追求脆弱的“exactly once transport”。
+
+# 6. Version Skew
+
+Phone v8、Tablet v7 同时在线是正常状态。
+
+旧客户端：
+
+- 保留 unknown fields / extensions；
+- 使用 patch semantics；
+- 不能 whole-object replace；
+- 不能把新数据降级丢失。
+
+# 7. Conflict
+
+非冲突字段可自动 merge。
+
+语义冲突必须保留：
+
+```text
+Phone: concert=19:30
+Tablet: concert=20:00
+```
+
+产生 Conflict Proposal，而不是 Last Write Wins。
+
+# 8. Atomic ChangeSet Replication
+
+一个逻辑 ChangeSet 若要求原子可见，远端不能只 apply 一半。
+
+必要时 Sync Bundle 携带：
+
+- change_set_id
+- part_count
+- part_index
+
+全部到齐再 apply。
+
+# 9. Tombstone
+
+删除同步不能依赖“对象没出现”。
+
+需要 Tombstone / deletion revision，避免被旧设备复活。
+
+永久删除策略需与 Backup retention、Vault、安全需求协调。
+
+# 10. Backup
+
+Backup 是一致可恢复 Snapshot。
+
+不能 naive copy live SQLite，尤其不能忽略 WAL。
+
+Backup 至少保存：
+
+- Canonical DB consistent snapshot
+- schema metadata
+- required recovery metadata
+- media manifest
+- necessary originals / remote object refs
+- Vault independent snapshot
+
+Derived cache 不需要全部备份。
+
+# 11. Backup Health
+
+状态至少区分：
+
+```text
+Attempted
+Snapshot Created
+Verified
+```
+
+System Health 关注最近“已验证恢复点”。
+
+# 12. Restore
+
+Restore 是高权限系统动作。
+
+恢复后不能让云端旧错误状态重新覆盖回来。
+
+因此引入：
+
+```text
+Recovery / Sync Epoch
+```
+
+Restore 产生新 Epoch，把恢复后的状态视为用户有意重新确立的 Canonical Baseline。
+
+# 13. Restore 后的 Sync Runtime
+
+不能简单复用旧 Outbox / cursors。
+
+Restore 流程需要重新初始化 Sync runtime，并明确哪些 pending operation 可安全保留。
+
+# 14. Recovery Layer
+
+包括：
+
+- Undo
+- Change History
+- Trash
+- Conflict Preservation
+- Import Rollback
+- Migration Snapshot
+- Backup Snapshot
+- Restore Epoch
+
+# 15. Migration
+
+Canonical migration：
+
+```text
+Preflight
+→ Recovery Snapshot
+→ Expand
+→ Migrate / Lazy Migrate
+→ Validate
+→ Commit New Schema
+→ rollback window
+```
+
+禁止 destructive fallback。
+
+# 16. Import Rollback
+
+ImportBatch 应可整体撤销，但必须保护后来被用户继续编辑的对象。
+
+# 17. Media Sync
+
+Media metadata 与 binary transfer 分离。
+
+MediaAsset 可处于：
+
+```text
+LOCAL_ONLY
+BACKUP_PENDING
+BACKED_UP
+SOURCE_MISSING
+RESTORE_PENDING
+```
+
+上传成功但 DB commit 失败产生 orphan object，后续由 GC 清理；DB commit 成功但上传失败则保持 pending 并 retry。
+
+# 18. Multi-device Setting
+
+设置需要 scope，device-specific policy 不应被 account sync 覆盖。
+
+# 19. Failure Message
+
+恢复/同步错误首先回答：
+
+> **数据有没有丢？**
+
+然后再告诉用户如何处理。
+
+# 20. Invariants
+
+- Sync ≠ Backup
+- Local Save First
+- Semantic Conflict Never Silent
+- Unknown Newer Data Preserved
+- Restore Creates New Epoch
+- Backup Must Be Consistent and Verifiable
+- Media Transfer Is Retryable
+- Offline Is a State, Not an Error

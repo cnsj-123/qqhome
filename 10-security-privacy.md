@@ -1,0 +1,217 @@
+---
+Title: Life OS 安全、隐私与信任边界
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Recommended Path: docs/life-os/04-architecture/10-security-privacy.md
+---
+
+# 1. 威胁模型
+
+Life OS 长期保存的是人生轨迹，因此需要考虑：
+
+- 手机丢失
+- 本地数据库被复制
+- 云端/VPS 泄露
+- 备份泄露
+- Plugin / MCP 恶意或被攻破
+- AI prompt injection
+- 过宽权限
+- 第三方模型看到不应看到的数据
+- Supply-chain 风险
+- Creative Vault metadata 泄漏
+
+# 2. Encryption Is Architecture
+
+加密不是后加功能。
+
+需要区分：
+
+- local storage encryption
+- transport encryption
+- cloud encryption
+- E2EE
+- key recovery
+- Vault independent key boundary
+
+# 3. Normal Life OS 与 Vault
+
+普通 Life OS 与 Creative Vault 不应一刀切使用同一安全模型。
+
+Vault：
+
+- 独立密钥
+- 独立 E2EE
+- encrypted-at-rest
+- own lock
+- no AI
+- no global search
+- no normal relation graph
+- no ordinary metadata visibility
+
+# 4. AI Gets Capabilities, Not Keys
+
+AI 不拿数据库密钥，也不拿 unrestricted SQL。
+
+它得到业务级 capability-scoped APIs。
+
+# 5. External Content Cannot Elevate Privilege
+
+网页、PDF、邮件、OCR、外部文件只属于 Content。
+
+```text
+Content ≠ Instruction
+```
+
+其中的恶意 prompt 不得改变系统权限或触发高风险动作。
+
+# 6. Principle of Least Capability
+
+Plugin / Skill / Agent / Worker 只获得任务所需最小能力。
+
+Worker OCR 只写 Derived Extraction；不能写 Health Truth。
+
+# 7. Permission Model
+
+权限可按：
+
+- Domain
+- Field / category
+- operation (read/propose/export)
+- duration (one-time/conversation/durable)
+- sensitivity
+
+例如：
+
+```text
+Finance expenses read = allow
+Finance income read = deny
+Medication read = ask
+```
+
+# 8. Device Management
+
+用户应能看到可信设备、最后同步时间、会话状态，并可撤销旧设备访问。
+
+# 9. App Lock ≠ Encryption
+
+App Lock 防止正常打开。
+
+Database encryption 防止直接复制文件读取。
+
+二者都需要，但不是同一个安全能力。
+
+# 10. Recovery
+
+高安全模式不能假装“忘记密码也能随便恢复”。
+
+Vault recovery 可依赖：
+
+- trusted device
+- recovery code/key
+- auxiliary security question（仅辅助）
+
+账号密码重置不能自动解密真正零知识 Vault。
+
+# 11. Backup Is Attack Surface
+
+Backup 同样需要：
+
+- encryption
+- retention policy
+- access boundary
+- deletion semantics
+- integrity verification
+
+# 12. Server Should Know Less
+
+理想情况下普通服务器只知道最小必要 sync metadata 和 encrypted blobs。
+
+需要云 AI 时，也只发送一次任务最小 Context。
+
+# 13. Plugin Security
+
+Plugin manifest 声明 capability，例如：
+
+```text
+calendar.event.read
+calendar.event.propose
+```
+
+UI 用人话解释，而不是展示内部技术权限列表。
+
+Plugin 不直接访问 DB。
+
+# 14. Supply-chain
+
+未来 Plugin / MCP / dependency 需要：
+
+- signature / source trust strategy
+- version pinning where appropriate
+- permission isolation
+- audit
+- update rollback
+- schema data preservation on uninstall
+
+# 15. Audit
+
+用户可看到：
+
+> Companion 今天读取了 Hobbies，因为你询问最近的课程。
+
+不需要暴露开发者级日志。
+
+# 16. Privacy 四分法
+
+```text
+Data existence
+Search permission
+AI permission
+Resurfacing preference
+```
+
+四者独立。
+
+# 17. Vault Non-observability
+
+普通系统不能知道：
+
+- Vault object ID
+- title
+- metadata
+- relation
+- embedding
+- event hook
+- ordinary share history
+
+显式导出创建新的普通 Artifact。
+
+# 18. Security Health
+
+正常：
+
+> 一切正常。
+
+异常显示真实风险，例如：
+
+- recovery key 未确认
+- 旧设备仍登录
+- backup verification failed
+- media originals 未受保护
+
+不展示虚假“安全分数”。
+
+# 19. Invariants
+
+- AI Gets Capabilities, Not Database Access
+- External Content Cannot Elevate Privilege
+- Vault Non-observable
+- Plugin Is Guest
+- Minimum Necessary Context
+- Recovery and Security Coexist
+- App Lock Is Not Encryption
+- Backup Is Protected Data

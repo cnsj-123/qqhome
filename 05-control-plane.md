@@ -1,0 +1,226 @@
+---
+Title: Life OS Control Plane：权限、动作、注意力与后台工作
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Recommended Path: docs/life-os/04-architecture/05-control-plane.md
+---
+
+# 1. 目的
+
+Control Plane 统一回答四个不同问题：
+
+```text
+Capability        —— 谁有能力？
+Action Gate       —— 这个动作允许发生吗？
+Attention Gate    —— 这件事值得打扰用户吗？
+Work Scheduler    —— 这项工作现在应该运行吗？
+System Health     —— 系统自己有没有风险？
+```
+
+# 2. Capability
+
+Capability 是最小权限单位。
+
+示例：
+
+```text
+health.sleep.read
+health.medication.ask_read
+shopping.proposal.create
+calendar.event.read
+finance.transaction.read
+media.thumbnail.write
+```
+
+Principal 可能是：
+
+- UI
+- Companion
+- Plugin
+- MCP
+- Worker
+- Sync
+- Importer
+- Migration
+- Recovery
+
+# 3. Grant Scope
+
+权限可以有：
+
+```text
+ONE_TIME
+CONVERSATION
+DURABLE
+DEVICE
+MODULE
+VAULT
+```
+
+敏感数据如 Health / Finance 默认更保守。
+
+Creative Vault 不进入普通 Capability Registry。
+
+# 4. Central Action Gate
+
+负责判断：
+
+> 动作是否允许发生？
+
+输入可包含：
+
+- principal
+- requested capability
+- target scope
+- actor authority
+- data sensitivity
+- user grant
+- command risk
+- current revision
+
+输出：
+
+```text
+ALLOW
+DENY
+ASK_USER
+PROPOSAL_ONLY
+```
+
+# 5. Central Attention Gate
+
+业务模块只能生成 Attention Candidate，不能直接 Push。
+
+候选可被送到：
+
+```text
+Ignore
+Inbox
+Home
+Companion
+Digest
+Live Surface
+Push
+Alarm
+```
+
+区分：
+
+- Reminder：用户明确要求未来打断；
+- Alert：真实风险；
+- Candidate：可能事实；
+- Draft：未完成内容；
+- Resurfacing：旧内容重现；
+- Task Result：用户请求的后台任务结果。
+
+# 6. Silent / Ambient / Interrupt
+
+```text
+Silent:
+Inbox / Home / Chat / Digest
+
+Ambient:
+Live Update / status chip / Live Activity
+
+Interrupt:
+Push / Alarm
+```
+
+Live Surface 只用于真正 ongoing activity。
+
+# 7. Work Scheduler
+
+后台工作统一提交 Work Request，而不是 worker 自己抢资源。
+
+考虑：
+
+- priority
+- charging
+- battery
+- network / metered
+- thermal
+- idle
+- foreground activity
+- deadline
+- user-visible need
+
+例如 OCR 大批量旧截图可以等充电 + Wi-Fi；用户刚拍的照片缩略图需要马上生成。
+
+# 8. Resource Budget
+
+同一时间 OCR、Embedding、Backup、Sync、Index 不应全部高并发运行。
+
+Resource Budget 控制：
+
+- CPU budget
+- memory budget
+- network budget
+- thermal pressure
+- parallel worker count
+
+原则：
+
+> Work Scheduler 决定谁可以打扰手机。
+
+# 9. System Health
+
+Settings 表示“用户希望怎样”。
+
+System Health 表示“现在系统实际怎样”。
+
+不做虚假的 health score。
+
+正常：
+
+> 一切正常。
+
+异常只显示真实可操作风险：
+
+- 最近没有验证过的 Backup；
+- 某设备长时间同步失败；
+- Media originals 待上传过多；
+- Search index stale；
+- Recovery key 风险；
+- 数据完整性问题。
+
+# 10. Audit
+
+Human-readable Audit 重点记录：
+
+- AI access
+- Plugin / MCP access
+- Sensitive read/write
+- External export
+- High-risk action
+
+不记录每一个 UI SELECT。
+
+# 11. 三个 Gate 的区别
+
+```text
+Action Gate:
+允许做吗？
+
+Attention Gate:
+值得告诉用户吗？
+
+Work Scheduler:
+现在该做吗？
+```
+
+三者不能合并，否则权限、打扰和资源策略会互相污染。
+
+# 12. Invariants
+
+- Module Cannot Push Directly
+- Worker Cannot Self-grant Resources
+- Skill / Agent Does Not Gain Capability Automatically
+- Sensitive Read May Require Ask
+- AI Write Is Proposal-only by Default
+- System Health Reports Reality, Not Intent
+- Audit Is Human-readable

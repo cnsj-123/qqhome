@@ -1,0 +1,304 @@
+---
+Title: Life OS 命令流、查询流与异步执行
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Recommended Path: docs/life-os/04-architecture/03-command-query-flow.md
+---
+
+# 1. 目的
+
+本文定义 Life OS “怎样动起来”：用户、AI、Import、Plugin、Sync 如何读写世界，以及 Commit 之后怎样安全触发 Derived、Sync、Attention 和跨 Domain 反应。
+
+# 2. Command Side
+
+所有 Canonical Write 统一走：
+
+```text
+Command
+  ↓
+Actor / Authority
+  ↓
+Capability Check
+  ↓
+Central Action Gate
+  ↓
+Domain Command Handler
+  ↓
+Validation
+  ↓
+Expected Revision Check
+  ↓
+ChangeSet
+  ↓
+Local DB Transaction
+  ├── Canonical Mutation
+  ├── ChangeSet
+  └── Outbox
+  ↓
+COMMIT
+```
+
+只有 Commit 成功后，Truth 才改变。
+
+# 3. Actor 与 Authority
+
+建议区分：
+
+```text
+USER_DIRECT
+USER_CONFIRMED_PROPOSAL
+SYNC_REPLICATION
+MIGRATION
+RECOVERY
+SYSTEM_DERIVED
+AI_PROPOSAL
+PLUGIN_PROPOSAL
+IMPORT_STAGING
+```
+
+AI / Plugin 默认不拥有 Canonical Commit authority。
+
+# 4. Query Side
+
+查询用于 View Composition：
+
+```text
+Domain Query
+→ canonical read
+→ extension read
+→ relation read
+→ derived assist
+→ permission filtering
+→ View Model
+```
+
+View Model 不是 Canonical Object。
+
+# 5. 为什么读写分离
+
+写入要：
+
+- 保守
+- 可审计
+- 可恢复
+- 有 Revision
+- 有 ChangeSet
+
+读取可以：
+
+- 聚合
+- 缓存
+- 分页
+- 搜索
+- Compose 专业 View
+
+原则：
+
+> **写人生要谨慎，读人生可以灵活。**
+
+# 6. Transactional Outbox
+
+禁止：
+
+```text
+save()
+→ updateSearch()
+→ sync()
+→ notify()
+→ updateHome()
+```
+
+因为中途崩溃会丢 side effect。
+
+正确：
+
+```text
+DB TX
+ ├── Truth
+ ├── ChangeSet
+ └── Outbox
+COMMIT
+     ↓
+Post-Commit Processor
+ ├── Derived Update
+ ├── Sync
+ ├── Attention Evaluation
+ └── Domain Reaction
+```
+
+# 7. Post-Commit Event
+
+Post-Commit Event 是“发生了一个已提交 Canonical Change”的系统信号。
+
+建议至少包含：
+
+```text
+change_set_id
+object_id
+event_type
+origin
+causation_id
+correlation_id
+revision
+```
+
+它不是新 Truth，而是异步工作的可靠触发依据。
+
+# 8. Idempotency
+
+所有异步边界默认：
+
+- 会重复
+- 会中断
+- 会乱序
+
+因此 effect 应拥有 idempotency key。
+
+例如：
+
+```text
+source_event_id + effect_key
+```
+
+同一 ClassSession 的 Membership deduction 即使消费 5 次，也只能生效 1 次。
+
+# 9. Causation / Correlation
+
+为防止 Domain event loop，所有自动反应建议保存：
+
+- `causation_id`：谁直接导致我；
+- `correlation_id`：属于哪次更大的用户操作。
+
+例如 Hobbies → Membership 不得再通过 Membership 反向生成同类 Hobbies Event 形成循环。
+
+# 10. Proposal → Command
+
+Proposal 本身不 Commit。
+
+```text
+Proposal
+→ Revalidate
+→ user confirms / authorized batch commit
+→ Domain Command
+→ ChangeSet
+→ Truth
+```
+
+Proposal stale 时必须重新整理，而不是机械执行。
+
+# 11. AI 写入路径
+
+```text
+Conversation
+→ Model interpretation
+→ Tool
+→ proposal.create
+→ User confirmation
+→ Domain Command
+```
+
+AI 不获得 `truth.commit`。
+
+# 12. Import 写入路径
+
+Importer 默认只拥有：
+
+```text
+Evidence.ingest
+Proposal.create
+```
+
+批量 Import 可一次确认整个 Batch，但内部仍通过 Domain Command 提交。
+
+# 13. Sync 写入路径
+
+另一可信设备已经 Commit 的 Change 不需要用户再次确认。
+
+`SYNC_REPLICATION` 可以应用远端已授权 Canonical Change，但遇到 semantic conflict 必须转 Conflict Proposal。
+
+# 14. Worker 写入路径
+
+OCR / Embedding / Thumbnail Worker 只拥有 Derived Write Capability，不拥有 World Write。
+
+# 15. Cross-domain Operation
+
+同一 `lifeos.db` 内的 Canonical changes 尽量一个 DB transaction 原子提交。
+
+外部 side effect（第三方 API、远程对象上传）不能与 SQLite 强行假装同一事务。它们应在 Commit 后：
+
+- retryable
+- idempotent
+- tracked
+- recoverable
+
+# 16. Query 示例：Closet Detail
+
+```text
+Item
++ Product
++ Purchase
++ Transaction refs
++ Wear / Wash
++ Media
++ Closet Extension
+→ ClosetItemView
+```
+
+UI 不自己拼 15 个 DAO。
+
+# 17. Query 示例：Home
+
+Home 主要读取：
+
+```text
+Today Summary
+Recent Events
+Future Intents
+Resurfacing Candidate
+Attention Candidate
+Hero Media
+```
+
+不能每次打开 Home 扫十年数据库。
+
+# 18. Command 示例：记录油画课
+
+```text
+RecordClassSession
+→ validate Hobbies rules
+→ create ClassSession
+→ record ChangeSet
+→ outbox
+COMMIT
+→ Membership consumer -1
+→ Calendar projection
+→ Life Marks projection
+→ Home summary invalidation
+→ Sync
+```
+
+# 19. Failure Rule
+
+Post-commit consumer 失败：
+
+> Truth 仍然是 Truth。
+
+Derived / Sync / Attention later retry。
+
+# 20. Invariants
+
+- No Direct DAO Outside Domain/Storage
+- No AI Direct Commit
+- Canonical Mutation Requires ChangeSet
+- Commit + Outbox Atomic
+- Async Effect Idempotent
+- Proposal Revalidates
+- Query Result Does Not Become Truth
+- Derived Failure Cannot Roll Back Truth
+- External Side Effect Must Be Trackable
+- Semantic Conflict Is Preserved
