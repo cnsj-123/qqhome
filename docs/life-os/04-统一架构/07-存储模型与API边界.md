@@ -6,8 +6,8 @@ Authority: Canonical Architecture Detail
 Last Updated: 2026-09-30
 Owner: Product Owner
 Scope: Life OS
-Parent Document: 00-architecture-overview.md
-Recommended Path: docs/life-os/04-architecture/07-storage-api-boundary.md
+Parent Document: 00-统一架构总览.md
+Recommended Path: docs/life-os/04-统一架构/07-存储模型与API边界.md
 ---
 
 # 1. 物理存储方向

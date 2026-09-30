@@ -6,8 +6,8 @@ Authority: Canonical Architecture Detail
 Last Updated: 2026-09-30
 Owner: Product Owner
 Scope: Life OS
-Parent Document: 00-architecture-overview.md
-Recommended Path: docs/life-os/04-architecture/06-ai-ombre-boundary.md
+Parent Document: 00-统一架构总览.md
+Recommended Path: docs/life-os/04-统一架构/06-AI与Ombre边界.md
 ---
 
 # 1. 系统职责
@@ -29,7 +29,17 @@ Companion Runtime:
 User-facing conversational experience
 ```
 
-这些不能合并成一个“AI Database”。
+这五套数据必须分开：
+
+```text
+Life OS Canonical World
+Ombre Memory
+Conversation Archive
+Model Context
+Creative Vault
+```
+
+它们**彼此不是同一个数据库**，不能合并成一个“AI Database”。
 
 # 2. Context Assembly
 
@@ -53,6 +63,28 @@ Gateway 只发送当前必要部分。
 原则：
 
 > **保存得多，不等于每次加载得多。**
+
+# 3.1 Chat Shared Card
+
+聊天里分享的 Life OS 对象需要区分「历史快照」与「当前对象」。
+
+建议语义：
+
+```text
+SharedRecordAttachment
+├── display_snapshot
+└── canonical_source_ref
+```
+
+原因：
+
+- 聊天历史应保持“当时发送了什么”的**历史真实性**；
+- 但用户仍可以跳转到**当前** Canonical Object。
+
+因此：
+
+- `display_snapshot` 不会因未来 Truth 修改而偷偷改写 → **Chat Historical Snapshot**。
+- `canonical_source_ref` 可以跳转当前对象。
 
 # 4. AI Read
 
@@ -148,6 +180,27 @@ cancelled
 
 主聊天只显示必要状态和最终结果，避免刷屏。
 
+# 10.1 Agent Runtime Capability Re-check
+
+Agent 长任务创建时的 permission snapshot 只用于审计，**不是**永久授权。
+
+执行中必须在敏感时点复查当前 capability：
+
+```text
+sensitive read
+external provider call
+external side effect
+final canonical commit
+```
+
+权限被撤销时：
+
+```text
+running → waiting_permission / cancelled
+```
+
+不得继续使用旧 snapshot 越权运行。
+
 # 11. Prompt Injection Boundary
 
 外部网页、PDF、邮件、OCR 文本均视为 Content，不是系统指令。
@@ -197,6 +250,8 @@ Vault：
 - 不暴露 metadata / relation / existence；
 - 不提供 Tool capability。
 
+Vault 内部可以**单向**引用普通世界对象（例如 Knowledge / Reading），但普通世界不保存反向关系、不建立反向索引（见 `01-世界模型与核心数据语义.md` §51）。
+
 # 16. Multi-model Routing
 
 OCR、Vision、Embedding、Research、Companion 可以使用不同模型或 provider。
@@ -225,3 +280,6 @@ AI 可以在允许范围内后台组织、索引、形成候选。
 - Vault Absent From AI Capability Registry
 - Conversation Archive Separate From Context Window
 - Long Task Separate From Main Conversation
+- Conversation Archive ≠ Model Context ≠ Ombre Memory
+- Chat Historical Snapshot
+- Runtime Capability Re-check

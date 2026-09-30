@@ -20,10 +20,14 @@
 | `10-安全与隐私.md` | Threat Model、Encryption、Vault、Plugin/AI 权限与隐私 |
 | `11-扩展与版本演进.md` | Schema Evolution、Migration、Version Skew、Plugin Extension |
 | `12-架构不变量与工程红线.md` | Architecture v0.1 硬不变量与 Code Review 红线 |
+| `13-统一术语表.md` | 统一术语映射（Canonical Truth / Proposal / Draft / Inbox / Evidence / Derived…）与必须突出的不等式 |
+| `14-领域归属注册表.md` | 完整 Domain Ownership Registry（Business Domains / Surfaces / Infrastructure 三类）与 Domain Contract 模板 |
 
 ## 推荐阅读顺序
 
-`00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 12`
+`00 → 01 → 02 → 13 → 14 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 12`
+
+原因：先理解世界、层次和术语，再读具体执行架构。
 
 ## 核心架构句
 
