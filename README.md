@@ -1,42 +1,23 @@
-# Life OS Architecture v0.1 文档索引
+# Closie 衣橱 · v0.3（开发中）
 
-> Status: DRAFT  
-> Last Updated: 2026-09-30
+一个本地优先的私人衣橱 Android App。所有数据只保存在手机本地（JSON + 私有图片），不会上传到服务器。
 
-本目录是 Life OS 当前统一架构基线。所有文档均为中文 Markdown。
+## 当前已支持
 
-| 文件 | 内容 |
-|---|---|
-| `00-architecture-overview.md` | 总体架构、核心分层、Control Plane、Intelligence Plane |
-| `01-world-model.md` | Entity / Event / Intent / Relation / Evidence / Artifact / Composition |
-| `02-data-layers.md` | Truth / Proposal / Draft / Evidence / Extraction / Derived / Recovery |
-| `03-command-query-flow.md` | Command、Query、ChangeSet、Transactional Outbox、Idempotency |
-| `04-domain-ownership.md` | Domain Ownership Registry 与跨模块共享 |
-| `05-control-plane.md` | Capability、Action Gate、Attention Gate、Work Scheduler、System Health |
-| `06-ai-ombre-boundary.md` | Companion、Ombre Brain、Context Gateway、Tool/Skill/Agent 边界 |
-| `07-storage-api-boundary.md` | SQLite/Room、typed tables、Extension、API Boundary |
-| `08-sync-backup-recovery.md` | Local-first、Sync、Conflict、Backup、Restore Epoch |
-| `09-media-architecture.md` | MediaAsset、Original/Metadata/Derived、动态照片、缓存 |
-| `10-security-privacy.md` | Threat Model、Encryption、Vault、Plugin/AI 权限与隐私 |
-| `11-extension-versioning.md` | Schema Evolution、Migration、Version Skew、Plugin Extension |
-| `12-architecture-invariants.md` | Architecture v0.1 硬不变量与 Code Review 红线 |
+- **衣橱管理**：Owned（拥有）/ Returned（试过·退货）两套衣橱，支持多图片（平铺 / 本人 / 模特 / 商品图）
+- **商品链接导入**：粘贴商品链接自动解析标题、价格、原价、品牌、店铺、平台与主图（Open Graph + JSON-LD）
+- **搜索 / 筛选 / 排序**：多字段搜索、动态类别筛选、多种排序、只看未穿过
+- **单品资料**：名称、分类、子类别、品牌、店铺、平台、商品链接、价格、原价、购买日期、尺码、安全类别、评分（0–5 星）、评价、面料成分、具体尺寸（含单位）
+- **使用记录**：穿着 / 洗涤记录，历史列表、补录历史日期、误操作可删除，自动计算单次穿着成本
+- **OOTD 日历**：按日期记录每日穿搭（含照片），保存后自动联动穿着记录
+- **搭配室（Outfit Studio）**：画布拖拽、缩放、层级调整，支持试穿照片
+- **本地备份与恢复**：导出 / 恢复完整备份（ZIP，含图片），以及导出衣橱 CSV
 
-## 推荐阅读顺序
+## 数据说明
 
-`00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 12`
+- 数据仍是 **local-only**：只存在设备本地（`filesDir/closie/`）。
+- **Web / server 同步尚未实现**，暂不支持云同步。
 
-## 核心架构句
+## 手机上构建 APK
 
-> **一个真实的个人世界，多种专业视图；AI 是有权限边界的伙伴，而不是数据库的主人。**
-
-## 状态说明
-
-这些文件是 Architecture v0.1 的 DRAFT 基线，用于后续：
-- PRD 收束；
-- 数据模型设计；
-- UI/UX 设计；
-- Codex Task；
-- Architecture Review；
-- Pull Request Review。
-
-在 Product Owner 明确确认前，不应把 `DRAFT` 自动改成 `CONFIRMED`。
+把项目上传到 GitHub 的 `main` 分支后，打开仓库 **Actions → Android CI**，下载 `closie-debug-apk`，解压并安装其中的 APK。首次安装时请允许浏览器或文件管理器安装未知来源应用。
