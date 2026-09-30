@@ -1,0 +1,1378 @@
+---
+Title: Life OS 统一架构总览
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Baseline
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Related System: Ombre Brain / Context Gateway
+Recommended Path: docs/life-os/04-architecture/00-architecture-overview.md
+---
+
+# Life OS 统一架构总览
+
+## 1. 文档目的
+
+Life OS 是一个 **Local-first 的个人生活操作系统**。
+
+它不是一组彼此独立的小工具，也不是把 Finance、Shopping、Closet、Travel、Health、Knowledge 等模块简单堆在一起。
+
+Life OS 的目标是建立一个长期稳定的 **个人世界模型（Canonical Personal World）**：
+
+- 保存真实发生过的生活事实；
+- 保存人物、地点、物品、事件、媒体和内容之间的关系；
+- 让不同专业模块从同一份事实中生成不同视图；
+- 允许 AI 帮助理解、整理、检索和提出建议；
+- 但 AI 不能静默修改用户的正式事实；
+- 所有重要数据都应可恢复、可迁移、可导出，并能长期演进。
+
+整个架构的核心可以概括为一句话：
+
+> **一个真实的个人世界，多种专业视图；AI 是有权限边界的伙伴，而不是数据库的主人。**
+
+## 2. Life OS 与 Ombre Brain 的边界
+
+### Life OS
+
+Life OS 负责回答：
+
+- 实际发生了什么？
+- 谁参与了？
+- 在哪里？
+- 什么时候发生？
+- 哪个对象和哪个对象是同一个？
+- 当前正式接受的事实是什么？
+- 这些事实来自什么证据？
+
+Life OS 是 **Canonical Personal World Model**。
+
+### Ombre Brain
+
+Ombre Brain 负责回答：
+
+- 现在 AI 应该想起什么？
+- 哪些过去的记忆和当前对话有关？
+- 哪些长期关系信息值得被召回？
+- 哪些记忆可以进入这一轮 Context？
+
+Ombre Brain 是 **AI 长期记忆、关系记忆与上下文召回系统**。
+
+### 两者关系
+
+```text
+Life OS
+正式个人事实
+    │
+    │ 授权后的事实上下文
+    ▼
+Context Gateway
+    ▲
+    │ 相关记忆上下文
+Ombre Brain
+长期记忆 / 召回 / 关系上下文
+    │
+    ▼
+Model
+```
+
+核心原则：
+
+> **Life OS 记录世界。Ombre Brain 决定此刻应该想起世界里的什么。**
+
+Ombre Brain 可以推断、召回、联想，但不能绕过 Life OS 的写入边界，直接改变正式事实。
+
+## 3. 总体架构
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│                         用户体验层                            │
+│ Home · Modules · Search · Calendar · Map · Companion · Share │
+└──────────────────────────────┬────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────┐
+│                         应用层                                │
+│ Query · Command · Domain Workflow · View Composition         │
+└──────────────────────────────┬────────────────────────────────┘
+                               │
+                  ┌────────────┼────────────┐
+                  ▼            ▼            ▼
+              Proposal       Truth       Evidence
+               Draft      World Model     Sources
+                  │            │            │
+                  └────────────┼────────────┘
+                               ▼
+┌───────────────────────────────────────────────────────────────┐
+│                     Canonical World Model                     │
+│ Entity · Event · Intent · Relation · Artifact · Composition  │
+│                    + Domain Extension                         │
+└─────────────┬───────────────────────┬─────────────────────────┘
+              │                       │
+              ▼                       ▼
+       Derived Data Layer        Recovery Layer
+       Search / OCR / AI         ChangeSet / Undo
+       Summary / Thumbnail       History / Trash
+       Embedding / Cache         Conflict / Snapshot
+              │                       │
+              └───────────┬───────────┘
+                          ▼
+┌───────────────────────────────────────────────────────────────┐
+│                      Local-first Storage                      │
+│   Room / SQLite · Media Reference · Encrypted Vault Store    │
+└────────────┬────────────────────────┬─────────────────────────┘
+             │                        │
+             ▼                        ▼
+            Sync                    Backup
+        Multi-device            Restore History
+```
+
+## 4. 核心架构原则
+
+### 4.1 一个事实只有一个 Canonical Identity
+
+同一件现实事件不能因为出现在多个模块，就被复制成多份。
+
+例如一次油画课：
+
+```text
+ClassSession
+   ├─ Hobbies 展示
+   ├─ Calendar 展示
+   ├─ Membership 扣 1 次
+   ├─ Life Marks 统计
+   └─ Home 可能回顾
+```
+
+底层仍然只有一个 `ClassSession`。
+
+因此：
+
+> **Shared Fact，Professional Views。**
+
+### 4.2 Local-first
+
+普通读取和写入首先在本地完成。
+
+```text
+Saved
+≠
+Synced
+≠
+Backed Up
+```
+
+- Saved：已经安全写入当前设备；
+- Synced：已经传播到其他设备；
+- Backed Up：已经存在可恢复快照。
+
+这三个状态必须始终区分。
+
+### 4.3 AI 只能读取授权数据或创建 Proposal
+
+AI 默认没有 Canonical Commit 权限。
+
+AI 可以：
+
+- 搜索授权范围的数据；
+- 帮用户理解；
+- 创建候选；
+- 创建修改 Proposal；
+- 创建 Import / Merge / Association 建议。
+
+AI 不可以：
+
+- 直接修改正式事实；
+- 绕过 Action Gate；
+- 直接写 SQLite；
+- 使用 arbitrary SQL 查询整库；
+- 因为 Skill 或 Agent 需要某数据就自动获得权限。
+
+### 4.4 Confirmed 不等于 Immutable
+
+Truth Layer 表示：
+
+> 当前被正式接受的 Canonical State。
+
+不是“永远不能变”。
+
+例如：
+
+```text
+原记录：
+旅行日期 10 月 1 日
+
+后来纠正：
+旅行日期 10 月 2 日
+```
+
+当前 Truth 改为 10 月 2 日，但旧值仍进入历史。
+
+### 4.5 Evidence 与 Fact 分离
+
+例如一张购物截图：
+
+```text
+Screenshot
+    ↓
+Evidence
+
+OCR
+    ↓
+Extraction
+
+AI 识别：
+“这是 699 元羽绒服”
+    ↓
+Proposal
+
+用户确认
+    ↓
+Purchase / Product / Transaction
+```
+
+原截图仍然存在。
+
+OCR 可以换模型重新生成。
+
+Fact 可以 later correction。
+
+因此：
+
+> **Evidence ≠ Extraction ≠ Proposal ≠ Truth。**
+
+### 4.6 Derived Data 可以重建
+
+以下都属于 Derived Data：
+
+- FTS 搜索索引；
+- OCR 文本；
+- Embedding；
+- AI Tag；
+- Thumbnail；
+- Preview；
+- Daily Summary；
+- Monthly Summary；
+- Timeline Cache；
+- Resurfacing Candidate。
+
+这些内容丢失以后应该可以重新生成。
+
+因此：
+
+> **Derived ≠ Truth。**
+
+### 4.7 恢复优先于到处确认
+
+Life OS 不应该因为害怕错误，就让用户每一步都确认。
+
+对于可恢复操作：
+
+> 优先执行 + Undo。
+
+对于真正不可逆、高风险操作：
+
+> 才明确确认。
+
+因此需要统一 Recovery Layer。
+
+## 5. Canonical World Model
+
+目前 Life OS 定义七类核心世界原语。
+
+它们是概念模型，不意味着最终数据库一定只有七张表。
+
+### 5.1 Entity
+
+表示：
+
+> 谁 / 什么东西。
+
+例如：
+
+- Person
+- Place
+- Organization
+- Product
+- Item
+- Plant
+- Book
+- Membership Account
+- Artwork
+
+Entity 有稳定 ID。
+
+名字不是身份。
+
+例如：
+
+```text
+person_01H...
+```
+
+才是稳定身份。
+
+而“小王 / 王明 / 王老师 / Wang Ming”只是显示名或 Alias。
+
+### 5.2 Event
+
+表示：
+
+> 实际发生了什么。
+
+例如：
+
+- Purchase
+- Payment
+- Meal
+- Wear
+- Wash
+- Class Session
+- Concert
+- Visit
+- Medical Visit
+- Medication Intake
+- Travel movement
+- Garden Care
+
+Event 是 Life OS 人生时间线的主要事实载体。
+
+### 5.3 Intent
+
+表示：
+
+> 计划、准备、期望发生，但尚未确认实际发生。
+
+例如：
+
+- Goal
+- Project
+- Task
+- Planned Event
+- Recurring Plan
+
+核心原则：
+
+```text
+Intent ≠ Event
+```
+
+“准备下个月去看演唱会”不是“已经参加演唱会”。
+
+### 5.4 Relation
+
+表示具有明确语义的持续关系。
+
+例如：
+
+```text
+Person A friend_of Me
+Person B teacher_of Me
+Item instance_of Product
+Store belongs_to Brand
+Artwork created_by Me
+```
+
+不要依赖一个万能 `related_to`。
+
+Relation 必须表达“为什么有关”。
+
+### 5.5 Evidence
+
+表示：
+
+> 我们为什么知道这件事。
+
+例如：
+
+- screenshot
+- file
+- URL
+- invoice
+- bank feed
+- photo
+- external calendar
+- user input
+- conversation
+- imported record
+
+Evidence 是来源，不是 Truth 本身。
+
+### 5.6 Artifact
+
+表示长期存在的内容或作品。
+
+例如：
+
+- Photo
+- Video
+- Knowledge Document
+- Artwork
+- Plog
+- Book Note
+- Generated Report
+
+### 5.7 Composition
+
+表示：
+
+> 怎样把已有内容组织成一个可编辑的呈现工程。
+
+例如：
+
+- Travel Book
+- Garden Yearbook
+- Plog Layout
+- Portfolio
+- Annual Review
+- Outfit freeform canvas
+
+Composition 与 Render 分开：
+
+```text
+Composition
+    ↓ render
+Export Artifact
+```
+
+Composition 是可继续编辑的工程。
+
+PDF / Image / Video 是输出结果。
+
+## 6. Event-Centric Life History
+
+现实中的很多事情不是简单二元关系。
+
+例如：
+
+```text
+2026-09-30
+油画课
+老师：王老师
+地点：画室
+会员扣 1 次
+照片：3 张
+```
+
+最合理的表达是：
+
+```text
+                    王老师
+                      ↑
+                  instructor
+                      │
+Me ─ participant → ClassSession ← location ─ 画室
+                      │
+                   consumes
+                      ↓
+                 Membership
+```
+
+也就是说：
+
+> **Event 是人生中 n-ary relation 的主要承载体。**
+
+## 7. Composite Event
+
+Event 可以包含独立子 Event。
+
+例如 Travel：
+
+```text
+Trip
+ ├── Flight
+ ├── Hotel Stay
+ ├── Meal
+ └── Concert
+```
+
+Concert 被加入 Trip 后不会复制一份，只形成 `Concert part_of Trip`。
+
+## 8. 时间模型
+
+Life OS 必须区分现实发生时间和系统记录时间。
+
+例如 9 月 30 日补录：
+
+> 9 月 28 日换盆。
+
+应记录：
+
+```text
+event_time = 2026-09-28
+recorded_at = 2026-09-30
+```
+
+否则 Timeline 会错误认为换盆发生在 9 月 30 日。
+
+## 9. Proposal Layer
+
+Proposal 是：
+
+> 尚未 Commit 的 Canonical Change Plan。
+
+来源可能包括：
+
+- AI；
+- OCR；
+- Import；
+- Entity Merge；
+- Sync Conflict；
+- Bank transaction classification；
+- Companion conversation；
+- Screenshot extraction。
+
+标准流程：
+
+```text
+Evidence / Context
+        ↓
+Interpretation
+        ↓
+Proposal
+        ↓
+Revalidation
+        ↓
+User / Authorized Confirmation
+        ↓
+Domain Command
+        ↓
+Truth
+```
+
+Proposal 不是正式事实。
+
+建议支持状态：
+
+```text
+ACTIVE
+SNOOZED
+STALE
+SUPERSEDED
+CONFIRMED
+REJECTED
+EXPIRED
+```
+
+## 10. Draft 与 Proposal 分离
+
+Draft 是用户自己的未完成内容。
+
+Proposal 是系统建议正式写入 Canonical Data 的变化。
+
+因此：
+
+```text
+Draft
+≠
+Proposal
+≠
+Truth
+```
+
+## 11. Domain Ownership
+
+每种 Canonical Fact Type 必须只有一个语义 Owner。
+
+例如：
+
+```text
+finance.transaction
+Owner = Finance Domain
+
+commerce.purchase
+Owner = Commerce Domain
+
+hobbies.class_session
+Owner = Hobbies Domain
+
+health.medication_intake
+Owner = Health Domain
+```
+
+其他模块只能 query、reference、display、react、propose。
+
+不能重新创建第二份同义对象。
+
+## 12. Domain Extension
+
+Core World Model 保持小而稳定。
+
+专业模块通过 Extension 扩展。
+
+例如：
+
+```text
+Core Item
+    ↓
+Closet Extension
+    size
+    fabric
+    measurements
+    fit
+```
+
+标准模式：
+
+```text
+World Primitive
+       ↓
+Canonical Domain Object
+       ↓
+Domain Extension
+       ↓
+Cross-domain Relation
+       ↓
+View Composition
+       ↓
+Module UI
+```
+
+## 13. 可复用 Domain Pattern
+
+目前保留以下 Pattern：
+
+- Composite Event
+- Observation
+- Ledger / Delta
+- Lifecycle Projection
+- Relationship State
+
+这些是共享建模模式，不需要升格成新的世界原语。
+
+## 14. Life Marks 的正式定位
+
+Life Marks 不是第二套行为数据库。
+
+它是：
+
+> **Cross-domain Event Projection + Quick Entry Surface。**
+
+例如：
+
+```text
+“上次画画？”
+→ Hobbies Session
+
+“上次上油画课？”
+→ Hobbies ClassSession
+```
+
+只有系统中不存在对应专业 Domain 时，Life Marks 才创建 `GenericMarkEvent`。
+
+## 15. Home / Calendar / Search / Map
+
+这些不是 Truth Owner。
+
+它们都是 Projection Surface。
+
+- Home：Today + Recent Event + Future Intent + Resurfacing + Attention
+- Calendar：Event + Intent + External Calendar Reference
+- Search：Canonical Object + Artifact + Evidence + Authorized External Reference
+- Map：Place + geocoded Event
+
+它们不能维护第二份 Canonical Event Store。
+
+## 16. Command Architecture
+
+所有 Canonical Write 必须走统一命令流：
+
+```text
+Command
+   ↓
+Capability Check
+   ↓
+Central Action Gate
+   ↓
+Domain Command Handler
+   ↓
+Validation
+   ↓
+Revision Check
+   ↓
+ChangeSet
+   ↓
+Atomic Commit
+```
+
+正式修改必须满足：
+
+```text
+Known Actor
++
+Known Authority
++
+Capability Allowed
++
+Domain Command Valid
++
+Expected Revision Valid
++
+ChangeSet Created
++
+Atomic Commit
+```
+
+## 17. Query Architecture
+
+查询可以自由组合，写入必须严格。
+
+例如 Closet Item Detail：
+
+```text
+Item
++ Product
++ Purchase
++ Transaction refs
++ Wear Event
++ Wash Event
++ Media
++ Closet Extension
+        ↓
+ClosetItemView
+```
+
+因此必须区分：
+
+```text
+Persistence Entity
+≠
+Domain Model
+≠
+View Model
+```
+
+## 18. ChangeSet
+
+每次正式 Canonical 修改都应该属于一个逻辑 ChangeSet。
+
+例如“记录一次油画课”可能同时影响：
+
+- ClassSession；
+- Membership；
+- Calendar projection；
+- Life Marks；
+- Home summary。
+
+用户理解的是一次操作。
+
+因此 Undo 也应该恢复整个逻辑操作。
+
+## 19. Transactional Outbox
+
+Canonical Commit 不能依赖脆弱的链式调用。
+
+正确模式：
+
+```text
+DB Transaction
+    │
+    ├── Canonical Mutation
+    ├── ChangeSet
+    └── Outbox
+         ↓
+       COMMIT
+```
+
+Commit 后：
+
+```text
+Post-Commit Processor
+   ├── Derived Update
+   ├── Sync
+   ├── Attention
+   └── Cross-domain Reaction
+```
+
+如果后处理失败，Canonical Truth 仍然安全。
+
+## 20. Idempotency
+
+所有异步边界默认：
+
+- 可能重复；
+- 可能中断；
+- 可能乱序。
+
+因此 Sync、Import、Worker、Media Processing、Attention、Cross-domain Consumer、Backup Job 必须可安全重放。
+
+## 21. Central Action Gate
+
+Action Gate 负责：
+
+> **这个动作是否允许发生？**
+
+它统一约束：
+
+- UI；
+- AI；
+- Plugin；
+- MCP；
+- Import；
+- Worker；
+- Sync；
+- Recovery。
+
+AI 不拥有特殊数据库通道。
+
+## 22. Central Attention Gate
+
+Attention Gate 负责：
+
+> **这件事是否值得打扰用户？**
+
+业务模块只能生成 Attention Candidate。
+
+由 Gate 决定：
+
+```text
+Ignore
+Inbox
+Home
+Companion
+Digest
+Live Surface
+Push
+Alarm
+```
+
+## 23. Work Scheduler / Resource Budget
+
+Work Scheduler 负责：
+
+> **这项工作现在是否应该运行？**
+
+例如：
+
+- OCR；
+- Embedding；
+- Search Reindex；
+- Media Backup；
+- Cloud Upload；
+- AI Background Organizing。
+
+原则：
+
+> Attention Gate 决定谁可以打扰用户。  
+> Work Scheduler 决定谁可以打扰手机。
+
+## 24. AI / Companion 架构
+
+```text
+Companion UI
+      ↓
+Companion Runtime
+      ↓
+Context Gateway
+     /           ↓         ↓
+Ombre       Life OS
+Memory      Fact APIs
+    \         /
+      ↓     ↓
+       Model
+         ↓
+   Tool / Skill / Agent
+         ↓
+ Central Action Gate
+```
+
+Companion 是用户界面，不是 Canonical Database Owner。
+
+## 25. Conversation Archive 与 Model Context 分离
+
+```text
+Full Conversation Archive
+≠
+Current Model Context
+```
+
+每轮模型 Context 只组装：
+
+```text
+Recent Messages
++
+Relevant Ombre Memory
++
+Relevant Life OS Facts
++
+Current Task Context
+```
+
+## 26. Tool / Skill / Agent / Worker 分离
+
+- Tool：具体能力
+- Skill：完成一类工作的流程
+- Agent：持续执行多步任务
+- Worker：OCR、Embedding、Thumbnail 等后台执行器
+
+Skill / Agent 不会因为“工作需要”而自动获得额外权限。
+
+## 27. Capability Model
+
+系统通过 Capability 而不是“角色很可信”控制权限。
+
+例如：
+
+```text
+health.sleep.read
+shopping.proposal.create
+calendar.event.read
+finance.transaction.read
+```
+
+不同 Principal 获得不同能力。
+
+## 28. Storage Boundary
+
+建议逻辑层次：
+
+```text
+SQLite / Files
+      ↓
+Storage DAO
+      ↓
+Repository
+      ↓
+Domain Service
+      ↓
+Command / Query API
+      ↓
+Capability API
+      ↓
+UI / AI / Plugin / Import
+```
+
+DAO 只属于 Storage / Domain implementation。
+
+Companion、Plugin、Screen、MCP、Importer 都不能直接操作 DAO。
+
+## 29. Identity Spine + Typed Tables
+
+不建议把所有人生数据塞进一个万能 JSON Object Table。
+
+更适合：
+
+> 统一 Identity Spine + 强类型 Domain Table。
+
+概念上：
+
+```text
+world_object
+
+object_id
+object_kind
+domain_key
+created_at
+recorded_at
+revision
+schema_version
+deleted_at
+```
+
+专业字段继续进入强类型表。
+
+## 30. Relation 使用 Hybrid 模式
+
+需要 generic Relation 能力，但不是所有关系都图数据库化。
+
+高频、强 invariant 的专业关系：
+
+> 正常 FK / Junction。
+
+真正跨 Domain、需要统一语义查询的关系：
+
+> Generic Relation。
+
+因此：
+
+> **Graph 是领域能力，不是技术宗教。**
+
+## 31. Plugin Extension
+
+Plugin 不允许直接修改 Core Schema。
+
+Plugin 数据应放在独立 namespace 的 extension envelope 中。
+
+卸载 Plugin：
+
+> Data 保留。
+
+Core Fact 的有效性也不能依赖 Plugin 是否存在。
+
+## 32. Unknown Preservation
+
+旧客户端看不懂新数据时：
+
+> 必须保留。
+
+不能因为无法显示就删除或降级覆盖。
+
+原则：
+
+> **Unknown ≠ Delete。**
+
+## 33. Patch，不做 Whole-object Replace
+
+旧客户端只修改自己理解的字段。
+
+原则：
+
+> **只修改你理解的字段，保留你不理解的字段。**
+
+## 34. Revision 与 Conflict
+
+Canonical Object 具有 Revision。
+
+若编辑基于旧 Revision：
+
+- 可自动 merge 时自动 merge；
+- 不能确定时进入 Conflict Proposal；
+- 不允许静默 Last Write Wins。
+
+## 35. Sync
+
+Sync 不复制 SQLite 文件。
+
+Sync 同步：
+
+- Canonical Change；
+- Canonical Object State；
+- Relation；
+- Media Manifest；
+- 必要 Change metadata。
+
+核心原则：
+
+```text
+Stable Identity
+Revision
+Schema Version
+ChangeSet Identity
+Device Origin
+Idempotency
+Conflict Preservation
+Unknown Preservation
+```
+
+## 36. Restore Epoch
+
+灾难恢复必须创建新的 Recovery / Sync Epoch。
+
+Restore 是：
+
+> 用户主动重新确立 Canonical Baseline。
+
+不是：
+
+> 一台落后的旧设备。
+
+这样可以防止云端旧错误状态再次覆盖恢复后的本地状态。
+
+## 37. Backup
+
+Sync 与 Backup 永远分开。
+
+Backup 是一致、可验证的恢复快照。
+
+状态至少区分：
+
+```text
+Job Ran
+Snapshot Created
+Snapshot Verified
+```
+
+System Health 显示最近一个已验证恢复点。
+
+## 38. Media Architecture
+
+MediaAsset 有稳定 Identity。
+
+Android URI、File Path、SHA Hash 都不能直接成为 Media Identity。
+
+建议区分：
+
+- Original
+- Metadata
+- Derived
+
+Derived 包括 Thumbnail、Preview、OCR、Embedding、Render Cache，可删除重建。
+
+## 39. Creative Vault
+
+Creative Vault 是完全独立安全域，而不是 `private=true`。
+
+要求：
+
+- 独立数据库；
+- 独立密钥；
+- 独立媒体空间；
+- 独立 E2EE；
+- 独立 Search；
+- 独立 Lock；
+- 无 AI；
+- 无 Global Search；
+- 无普通 Resurfacing；
+- 无普通 Relation Edge；
+- 普通 Life OS 不能观察 Vault object ID 或 metadata。
+
+用户显式导出 Vault 内容后，创建新的普通 Artifact，而不是暴露 Vault 原对象。
+
+## 40. Import
+
+统一流程：
+
+```text
+External Source
+      ↓
+Adapter
+      ↓
+Evidence
+      ↓
+Import Staging
+      ↓
+Dedup / Entity Resolution
+      ↓
+Proposal
+      ↓
+Confirm
+      ↓
+Domain Command
+      ↓
+Truth
+```
+
+大批量 Import 可以分析完成后一次展示报告、一次确认，不需要逐条打断。
+
+## 41. Entity Resolution
+
+AI 可以提出 Person / Place / Product Merge Proposal。
+
+不能自动合并。
+
+Merge 必须可逆，并支持后续 Split。
+
+## 42. Export
+
+Life OS 需要两类 Export：
+
+### Human Archive
+- Markdown
+- HTML
+- PDF
+- Original Media
+
+### Canonical Archive
+- Stable IDs
+- Entity
+- Event
+- Relation
+- Media Manifest
+- Provenance
+- Composition
+- Settings
+- 必要 History metadata
+
+App 内部 Schema 可以快速演化，Archive Schema 应更稳定。
+
+## 43. Schema Evolution
+
+Canonical Data 禁止 destructive fallback。
+
+Migration 失败：
+
+> 宁可不开库，也不能清空重建。
+
+建议：
+
+```text
+Expand
+  ↓
+Migrate
+  ↓
+Validate
+  ↓
+Contract
+```
+
+大 Migration 前自动创建 Recovery Point。
+
+Migration 应支持 resume、retry、rollback。
+
+## 44. Settings Scope
+
+Settings 需要区分：
+
+```text
+ACCOUNT
+DEVICE
+MODULE
+VAULT
+SESSION
+```
+
+避免手机设置覆盖平板设置，也避免所有偏好都错误地全局同步。
+
+## 45. Human-readable Audit
+
+Audit 重点记录：
+
+- AI access；
+- Plugin access；
+- MCP access；
+- External Export；
+- High-risk action；
+- Sensitive read/write。
+
+不需要记录每个普通 UI SELECT。
+
+## 46. Architecture Invariants
+
+以下规则作为 Life OS Architecture v0.1 的硬不变量：
+
+| ID | 不变量 | 含义 |
+|---|---|---|
+| I1 | Canonical Identity | 一个现实事实只有一个 canonical identity |
+| I2 | Single Domain Ownership | 每类事实只有一个语义 Owner |
+| I3 | No AI Commit Capability | AI / Plugin 默认不能直接 Commit Truth |
+| I4 | Atomic Canonical Commit | 同一逻辑操作的 canonical 修改原子提交 |
+| I5 | ChangeSet Always | 每次正式 Truth 改变都有 ChangeSet |
+| I6 | Transactional Outbox | Truth 改变与后续 Sync / Derived 信号不能丢 |
+| I7 | Idempotent Effects | Sync / Import / Worker / Consumer 可安全重放 |
+| I8 | Derived Is Disposable | Derived 失败不能破坏 Truth，可重建 |
+| I9 | Canonical Revalidation | Derived / Proposal 使用前回查 canonical 状态 |
+| I10 | Unknown Preservation | 旧客户端看不懂的数据必须保留 |
+| I11 | Patch, Don't Replace | 旧客户端不能抹掉未知新字段 |
+| I12 | Semantic Conflict Preservation | 无法确定的冲突不静默覆盖 |
+| I13 | Restore Is a New Epoch | Restore 不能被旧 Sync 状态重新覆盖 |
+| I14 | Evidence ≠ Fact Lifecycle | Evidence 消失不自动删除已确认 Fact |
+| I15 | Vault Non-observability | 普通世界不能观察 Vault ID / metadata / relation |
+| I16 | Plugin Non-criticality | Core Fact 有效性不能依赖 Plugin 存在 |
+| I17 | Proposal Revalidation | Proposal Commit 前必须重新检查当前世界 |
+| I18 | No Blind Cascade Delete | DB cascade 不能代替 Domain 删除语义 |
+| I19 | Live vs Snapshot Reference | 动态 View 与手工作品引用行为不同 |
+| I20 | Safety Before Progress | 错误信息首先回答“数据有没有丢” |
+
+## 47. 推荐代码逻辑层次
+
+这不是最终 Android 工程结构，但建议概念上保持：
+
+```text
+core-model
+core-domain
+core-storage
+core-recovery
+core-sync
+core-media
+core-search
+core-security
+core-attention
+core-work
+
+domain-finance
+domain-commerce
+domain-items
+domain-closet
+domain-garden
+domain-health
+domain-hobbies
+domain-reading
+domain-travel
+domain-place
+...
+
+feature-home
+feature-calendar
+feature-search
+feature-companion
+feature-map
+...
+
+integration-ombre
+integration-import
+integration-plugin
+```
+
+关键区别：
+
+> `domain-*` 拥有业务事实。
+
+> `feature-*` 拥有用户体验和 View。
+
+## 48. 当前不提前决定的技术问题
+
+Architecture v0.1 暂不锁定：
+
+- UUIDv7 还是 ULID；
+- Sync 是否采用 CRDT；
+- field-level merge 还是 operation log；
+- ChangeSet 使用 full snapshot 还是 inverse patch；
+- Derived 是否物理分库；
+- Plugin payload 使用 JSON / CBOR / Protobuf；
+- Relation 最终物理结构；
+- Archive 最终 wire format。
+
+当前先固定语义不变量，避免过早技术锁定。
+
+## 49. 总结
+
+Life OS Architecture v0.1 可以压缩为以下几句话：
+
+> **Life OS 保存一个 Canonical Personal World。**
+
+> **一个事实只有一个正式身份，但可以出现在很多专业视图中。**
+
+> **Intent、Event、Evidence、Narrative 和 Presentation 永远不混为一谈。**
+
+> **AI 可以理解、检索、关联和提出建议，但正式写入必须受到 Capability 与 Action Gate 控制。**
+
+> **写人生要谨慎，读人生可以灵活。**
+
+> **Derived 数据可以重建，Canonical Truth 必须长期保护。**
+
+> **Sync 负责传播，Backup 负责恢复，二者不是一回事。**
+
+> **错误应该可恢复，而不是让用户承担系统维护工作。**
+
+> **Creative Vault 是真正独立的安全域，而不是一个隐私标签。**
+
+> **今天不需要预测十年后所有模块，只需要确保十年后新的模块能够安全长出来。**
+
+## 50. Architecture v0.1 核心一句话
+
+英文：
+
+> **One personal world, many professional views, AI as a permissioned companion.**
+
+中文：
+
+> **一个真实的个人世界，多种专业视图；AI 是有权限边界的伙伴。**
+
+这句话作为后续 PRD、数据模型、UI、Codex Task、Architecture Review 和 Pull Request Review 的共同架构基线。
+
+## 51. 后续架构文档
+
+建议继续拆分：
+
+```text
+04-architecture/
+├── 00-architecture-overview.md
+├── 01-world-model.md
+├── 02-data-layers.md
+├── 03-command-query-flow.md
+├── 04-domain-ownership.md
+├── 05-control-plane.md
+├── 06-ai-ombre-boundary.md
+├── 07-storage-api-boundary.md
+├── 08-sync-backup-recovery.md
+├── 09-media-architecture.md
+├── 10-security-privacy.md
+├── 11-extension-versioning.md
+└── 12-architecture-invariants.md
+```
+
+`00-architecture-overview.md` 是总纲。
+
+后续文档负责展开具体边界，但不得无意改变本文定义的核心架构原则。
+
+任何需要改变核心不变量的设计，都应通过正式 Architecture Decision Record（ADR）记录原因与影响。

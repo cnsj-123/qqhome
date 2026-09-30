@@ -1,0 +1,1849 @@
+---
+Title: Life OS 数据分层与事实生命周期
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Related Document: 01-world-model.md
+Recommended Path: docs/life-os/04-architecture/02-data-layers.md
+---
+
+# Life OS 数据分层与事实生命周期
+
+## 1. 文档目的
+
+本文定义 Life OS 中不同类型数据的分层边界，以及一条信息从“刚被系统看到”到“成为正式事实”、再到“被搜索、展示、同步、恢复”的完整生命周期。
+
+本文重点解决以下问题：
+
+- 什么是 Truth？
+- 什么是 Proposal？
+- Draft 和 Proposal 为什么不能混？
+- Evidence 与 Extraction 有什么区别？
+- OCR / Embedding / Summary 应该放在哪一层？
+- AI 的推断什么时候可以成为正式事实？
+- Import 数据为什么不能直接视为 Truth？
+- 一个事实被修改、删除、恢复时，哪些层一起变化？
+- Search Index 或 AI Cache 损坏时，为什么不应该影响 Canonical Data？
+- 一个数据对象在不同层之间可以怎样流动，哪些流动是禁止的？
+
+Life OS 必须长期坚持一个核心原则：
+
+> **系统可以很聪明地观察、提取、推断、排序和推荐，但只有经过明确的 Canonical Commit 流程，信息才能成为正式事实。**
+
+---
+
+# 2. 数据分层总览
+
+Life OS 的核心数据层可以概括为：
+
+```text
+External / User Input
+        │
+        ▼
+     Evidence
+        │
+        ▼
+    Extraction
+        │
+        ▼
+     Proposal
+        │
+        ▼
+      Truth
+        │
+        ├──────────────┐
+        ▼              ▼
+    Derived         Recovery
+        │              │
+        ▼              ▼
+ Search / AI       History / Undo
+ Summary / Cache   Trash / Snapshot
+```
+
+另外还有一个与上述层平行的重要概念：
+
+```text
+Draft
+```
+
+Draft 不是 Proposal，也不是 Truth。
+
+它是用户自己尚未完成的内容状态。
+
+---
+
+# 3. Truth Layer
+
+## 3.1 定义
+
+Truth Layer 表示：
+
+> 当前已经被 Life OS 正式接受的 Canonical State。
+
+这里的 Truth 并不表示“绝对客观真理”。
+
+它表示：
+
+> 当前系统认为应该作为正式记录保存、共享、同步、引用和长期维护的事实版本。
+
+例如：
+
+```text
+Person:
+display_name = 王明
+
+Trip:
+start_date = 2026-10-02
+
+Item:
+ownership_state = OWNED
+```
+
+只要这些值已经经过合法 Canonical Commit，它们就是当前 Truth。
+
+---
+
+## 3.2 Confirmed ≠ Immutable
+
+Truth 可以被纠正。
+
+例如：
+
+```text
+旧值：
+Trip.start_date = 2026-10-01
+
+新值：
+Trip.start_date = 2026-10-02
+```
+
+当前 Truth 变成：
+
+```text
+2026-10-02
+```
+
+但 Recovery Layer 应保留：
+
+```text
+2026-10-01 → 2026-10-02
+```
+
+因此：
+
+> **Confirmed 不等于 Immutable。**
+
+正式事实可以纠正，但不能静默丢失历史。
+
+---
+
+## 3.3 Truth 的特征
+
+Canonical Truth 通常具有：
+
+- Stable Identity；
+- Domain Ownership；
+- Revision；
+- Schema Version；
+- Created / Recorded Time；
+- 必要 Provenance；
+- Soft-delete / lifecycle state；
+- ChangeSet history；
+- Sync identity。
+
+Truth 是：
+
+> Sync、Backup、Export、Search 回查、View Composition 的最终依据。
+
+---
+
+# 4. Proposal Layer
+
+## 4.1 定义
+
+Proposal 表示：
+
+> 一个尚未被正式 Commit 的 Canonical Change Plan。
+
+它不是文本提示而已。
+
+它应该有结构化目标，例如：
+
+```text
+Create Purchase
+Update Person
+Merge Entity
+Associate Transaction
+Create Planned Event
+Resolve Conflict
+```
+
+---
+
+## 4.2 Proposal 的常见来源
+
+Proposal 可以来自：
+
+- Companion AI；
+- OCR / Vision；
+- Bank import；
+- Shopping screenshot；
+- External calendar；
+- Import batch；
+- Entity resolution；
+- Search / semantic inference；
+- Sync conflict；
+- Background organizer；
+- User conversation；
+- Connected external service。
+
+---
+
+## 4.3 Proposal 默认不能直接进入 Truth
+
+标准流程：
+
+```text
+Evidence / Context
+        ↓
+Extraction / Interpretation
+        ↓
+Proposal
+        ↓
+Revalidation
+        ↓
+User or Authorized Confirmation
+        ↓
+Domain Command
+        ↓
+Truth
+```
+
+任何 AI 推断默认只能走到 Proposal。
+
+AI 不拥有直接 Truth Commit 权限。
+
+---
+
+## 4.4 Proposal 是计划，不是预留事实
+
+Proposal 在创建后，世界可能继续变化。
+
+例如：
+
+六月产生：
+
+```text
+Purchase Proposal
+price = 599
+```
+
+九月用户才点确认。
+
+这时可能已经发生：
+
+- Transaction 已被别的 Purchase 关联；
+- 商品已退货；
+- Item 已存在；
+- 价格来源发生变化；
+- Evidence 被删除；
+- 对象 Revision 已改变。
+
+所以 Proposal Commit 前必须：
+
+```text
+Revalidate
+```
+
+然后决定：
+
+```text
+Commit
+Update
+Mark Stale
+Mark Superseded
+Reject
+```
+
+因此：
+
+> **Proposal is a plan, not a reserved truth.**
+
+---
+
+# 5. Proposal 状态模型
+
+建议 Proposal 支持以下状态：
+
+```text
+ACTIVE
+SNOOZED
+STALE
+SUPERSEDED
+CONFIRMED
+REJECTED
+EXPIRED
+```
+
+## ACTIVE
+
+当前有效，可以处理。
+
+## SNOOZED
+
+用户选择以后再看。
+
+它应该离开当前注意力表面，在指定时间后重新出现。
+
+## STALE
+
+它基于的世界已经明显变化，需要重新分析。
+
+## SUPERSEDED
+
+有更新、更完整的 Proposal 替代它。
+
+例如：
+
+第一次只根据账单猜测：
+
+```text
+Possible Food Purchase
+```
+
+后来截图 + Conversation 提供更完整信息：
+
+```text
+Confirmed-looking Shopping Purchase Proposal
+```
+
+旧 Proposal 应被 supersede，而不是同时显示两份。
+
+## CONFIRMED
+
+已通过合法流程 Commit 到 Truth。
+
+## REJECTED
+
+用户明确拒绝。
+
+默认不应重复出现同一 Proposal。
+
+## EXPIRED
+
+Proposal 已超出合理有效期，且不值得继续保留在活动候选中。
+
+---
+
+# 6. Proposal Correlation
+
+多个来源可能描述同一个现实事实。
+
+例如同一次购买：
+
+```text
+Bank Transaction
+Shopping Screenshot
+Companion Conversation
+```
+
+不应该产生：
+
+```text
+Proposal A
+Proposal B
+Proposal C
+```
+
+让用户确认三遍。
+
+应该先进行：
+
+```text
+Candidate Correlation
+```
+
+形成一个 Proposal：
+
+```text
+Purchase Proposal
+
+Evidence:
+- Bank transaction
+- Screenshot
+- Conversation
+```
+
+这样：
+
+> Evidence 可以多份，Truth 仍然只有一份。
+
+---
+
+# 7. Draft Layer
+
+## 7.1 定义
+
+Draft 表示：
+
+> 用户自己尚未完成的内容或创作状态。
+
+例如：
+
+- 未完成 Plog；
+- 未完成 Portfolio；
+- 未完成 Knowledge Note；
+- 未发布 Composition；
+- 未完成表单。
+
+Draft 属于用户内容生命周期。
+
+它不是：
+
+> 系统对 Canonical Data 的判断。
+
+---
+
+## 7.2 Draft ≠ Proposal
+
+核心区别：
+
+```text
+Draft
+= 用户自己的未完成内容
+
+Proposal
+= 系统建议发生的 Canonical Change
+```
+
+例如：
+
+用户写了一半旅行故事：
+
+```text
+Draft
+```
+
+AI 判断这段话里可能提到一次新的 Trip：
+
+```text
+Proposal
+```
+
+两者完全不同。
+
+因此：
+
+```text
+Draft
+≠
+Proposal
+≠
+Truth
+```
+
+---
+
+# 8. Evidence Layer
+
+## 8.1 定义
+
+Evidence 表示：
+
+> 系统获取信息的原始来源。
+
+例如：
+
+- Screenshot；
+- Photo；
+- PDF；
+- URL；
+- Receipt；
+- Invoice；
+- Bank record；
+- Calendar source；
+- User-uploaded file；
+- Conversation message；
+- External provider record。
+
+Evidence 的职责是：
+
+> 保留“系统为什么知道这件事”的来源。
+
+---
+
+## 8.2 Evidence 不应被 AI Interpretation 替代
+
+例如：
+
+一张发票截图。
+
+错误：
+
+```text
+OCR 得到结构化内容
+→ 删除原截图
+```
+
+正确：
+
+```text
+Screenshot
+→ Evidence
+
+OCR
+→ Derived Extraction
+
+Structured interpretation
+→ Proposal
+```
+
+原始 Evidence 继续存在。
+
+以后更换 OCR 模型：
+
+可以重新提取。
+
+---
+
+# 9. Extraction Layer
+
+## 9.1 定义
+
+Extraction 表示：
+
+> 从 Evidence 中机器提取出的结构化或半结构化信息。
+
+例如：
+
+```text
+OCR text
+Detected date
+Detected price
+Detected merchant
+Detected location
+Detected product name
+Speech transcript
+Image labels
+```
+
+Extraction 不是 Truth。
+
+---
+
+## 9.2 Extraction 应带版本信息
+
+例如：
+
+```text
+extractor = OCR-v3
+model_version = 2026.09
+evidence_id = ...
+created_at = ...
+```
+
+这样以后模型升级：
+
+可以判断：
+
+> 哪些 Extraction 需要重建。
+
+---
+
+## 9.3 Extraction 属于 Derived Data
+
+Extraction 本质是：
+
+> Evidence 的机器解释结果。
+
+它可以删除、重跑、升级。
+
+因此应归入 Derived Layer，而不是 Canonical Truth。
+
+---
+
+# 10. Evidence → Extraction → Proposal → Truth
+
+这是 Life OS 智能 Capture 的标准链路。
+
+例如一张订单截图：
+
+```text
+Screenshot
+    ↓
+Evidence
+
+OCR + Vision
+    ↓
+Extraction
+
+merchant = ...
+price = 699
+product = 羽绒服
+    ↓
+Proposal
+
+Create Purchase
+Create Product?
+Create Item?
+Associate Transaction?
+    ↓
+User Confirm
+    ↓
+Truth
+```
+
+这个链路非常重要，因为它可以防止：
+
+> AI 一次错误识别直接污染十年数据库。
+
+---
+
+# 11. Imported Data ≠ Truth
+
+Import 数据即使来自成熟 Provider，也不能默认视为 Life OS Canonical Truth。
+
+原因可能包括：
+
+- 外部记录重复；
+- 时间错误；
+- Category 不兼容；
+- Merchant ID 与真实 Place 不一致；
+- External Calendar 是计划，不是实际事件；
+- Provider 数据是估计值；
+- 导出文件格式版本不同；
+- 旧系统本身就存在错误。
+
+因此 Import 应走：
+
+```text
+Raw Import
+    ↓
+Import Staging
+    ↓
+Parsing
+    ↓
+Dedup / Resolution
+    ↓
+Proposal / Batch Review
+    ↓
+Commit
+```
+
+核心原则：
+
+> **Imported Data ≠ Truth。**
+
+---
+
+# 12. Connect ≠ Import ≠ Reference
+
+三种外部数据关系需要区分。
+
+## Import
+
+数据进入 Life OS，并拥有 Canonical Identity。
+
+## Connect
+
+数据继续由外部系统拥有。
+
+Life OS 仅在需要时查询。
+
+## Reference
+
+Life OS 保存稳定指向外部内容的链接或 identity。
+
+因此：
+
+```text
+Import
+≠
+Connect
+≠
+Reference
+```
+
+这对 Calendar、Knowledge、Cloud File、Photos 等外部数据尤其重要。
+
+---
+
+# 13. Derived Data Layer
+
+## 13.1 定义
+
+Derived Data 是：
+
+> 从 Canonical Truth、Evidence 或其他可靠来源计算出来，但可以重新生成的数据。
+
+典型包括：
+
+```text
+FTS index
+Semantic embedding
+OCR extraction
+Thumbnail
+Preview
+Daily summary
+Monthly summary
+Year aggregate
+Timeline cache
+AI tag
+Resurfacing candidate
+Similarity score
+Face embedding
+Recommendation cache
+```
+
+---
+
+## 13.2 Derived Is Disposable
+
+Derived Data 的核心属性：
+
+> 丢失不会导致原始人生事实消失。
+
+例如：
+
+Search Index 损坏：
+
+```text
+rebuild
+```
+
+Thumbnail 丢失：
+
+```text
+regenerate
+```
+
+Embedding 模型升级：
+
+```text
+recompute
+```
+
+Canonical Truth 不受影响。
+
+---
+
+## 13.3 Derived 不能成为唯一事实来源
+
+错误：
+
+```text
+Search Index says object exists
+→ directly show it
+```
+
+正确：
+
+```text
+Search Index
+   ↓
+candidate object IDs
+   ↓
+Canonical read
+   ↓
+permission / tombstone / current revision
+   ↓
+result
+```
+
+所以：
+
+> **Derived provides candidates; Canonical decides validity.**
+
+---
+
+# 14. Derived Revision
+
+为了判断派生数据是否过期，建议支持：
+
+```text
+source_revision
+derived_revision
+generator_version
+```
+
+例如：
+
+```text
+Canonical Object revision = 18
+Search Index source_revision = 17
+```
+
+系统立即知道：
+
+> Index stale。
+
+然后可以异步补建。
+
+---
+
+# 15. Derived Update 失败不能回滚 Truth
+
+例如用户记录一次 ClassSession。
+
+Canonical Commit 成功。
+
+随后：
+
+- Search Index 更新失败；
+- Home Summary 更新失败；
+- Embedding Worker 崩溃。
+
+不能把已经记录成功的 ClassSession 回滚掉。
+
+正确：
+
+```text
+Truth committed
+    ↓
+Derived invalidation / outbox
+    ↓
+retry later
+```
+
+因此：
+
+> **Canonical consistency > Derived immediacy。**
+
+---
+
+# 16. Recovery Layer
+
+Recovery Layer 负责：
+
+> 当用户、系统、AI、Import、Sync 或 Migration 出错时，怎样安全回来。
+
+它包含：
+
+```text
+ChangeSet
+Undo
+Soft Delete
+Trash
+Correction History
+Conflict Preservation
+Import Rollback
+Migration Snapshot
+Backup Snapshot
+Restore Epoch
+```
+
+---
+
+# 17. ChangeSet
+
+## 17.1 定义
+
+ChangeSet 表示：
+
+> 一次用户能够理解的逻辑修改，以及它导致的全部 Canonical Changes。
+
+例如：
+
+用户：
+
+> “记录今天的油画课。”
+
+可能产生：
+
+```text
+Create ClassSession
+Membership -1
+Relation updates
+```
+
+在用户视角：
+
+这是一个操作。
+
+所以应属于一个 ChangeSet。
+
+---
+
+## 17.2 为什么不能只记录 SQL
+
+用户不关心：
+
+```text
+UPDATE table_a
+INSERT table_b
+```
+
+Recovery 需要理解：
+
+> “撤销这次油画课记录。”
+
+因此 ChangeSet 应保留逻辑含义。
+
+---
+
+# 18. Soft Delete 与 Trash
+
+Canonical Data 默认不应该：
+
+```text
+DELETE FROM ...
+```
+
+直接消失。
+
+一般删除应该先：
+
+```text
+soft deleted
+```
+
+进入：
+
+```text
+Trash
+```
+
+只有真正永久删除时：
+
+- 明确确认；
+- 检查关联；
+- 处理 media；
+- 处理 sync；
+- 处理 backup policy。
+
+---
+
+# 19. Evidence 删除与 Fact 删除分离
+
+删除 Evidence：
+
+不自动删除已确认 Fact。
+
+删除 Fact：
+
+也不一定必须删除 Evidence。
+
+例如：
+
+用户发现一条 Purchase 识别错误。
+
+可以：
+
+```text
+Delete / correct Purchase
+```
+
+但原截图仍然可以保留在 Evidence / Capture History。
+
+因此两者生命周期独立。
+
+---
+
+# 20. Undo
+
+对于可安全撤销的操作：
+
+应尽可能：
+
+> 先执行，再提供 Undo。
+
+而不是每次都弹：
+
+> “确定吗？”
+
+Undo 应操作：
+
+```text
+Logical ChangeSet
+```
+
+而不是用户逐个模块恢复。
+
+---
+
+# 21. Correction History
+
+Canonical Fact 被纠正时：
+
+不应表现成“旧值从未存在”。
+
+例如：
+
+```text
+09/30
+Trip date = 10/01
+
+10/03
+Corrected to 10/02
+```
+
+这对：
+
+- Audit；
+- 用户信任；
+- AI explanation；
+- Sync conflict；
+- Research / long-term history；
+
+都很重要。
+
+---
+
+# 22. Conflict Preservation
+
+Semantic Conflict 不应该通过：
+
+```text
+last write wins
+```
+
+静默解决。
+
+例如：
+
+```text
+Phone:
+Concert 19:30
+
+Tablet:
+Concert 20:00
+```
+
+如果系统无法安全判断：
+
+应保留：
+
+```text
+both candidate values
+```
+
+并形成：
+
+```text
+Conflict Proposal
+```
+
+直到用户或 Domain Policy 解决。
+
+---
+
+# 23. Proposal 与 Recovery 的关系
+
+Proposal 被 Confirm 后：
+
+会生成正式 ChangeSet。
+
+如果用户后来发现确认错了：
+
+通过 Recovery / Undo 撤销。
+
+因此：
+
+```text
+Proposal
+   ↓ confirmed
+Command
+   ↓
+ChangeSet
+   ↓
+Truth
+```
+
+Proposal 本身不是历史恢复单位。
+
+ChangeSet 才是。
+
+---
+
+# 24. Import Rollback
+
+一次大 Import 应拥有：
+
+```text
+ImportBatch ID
+```
+
+由它产生的 Canonical Changes 应可追踪。
+
+例如：
+
+```text
+ImportBatch_2026_09
+→ 2,381 objects
+→ 5,921 relations
+```
+
+如果用户发现：
+
+> 这批导入错了。
+
+应该能够：
+
+> 回滚整个 Batch。
+
+但如果其中某些对象导入后又被用户手动修改：
+
+不能盲目删除。
+
+需要根据后续 ChangeSet 判断：
+
+> 哪些仍可安全 rollback，哪些需要保留并提示。
+
+---
+
+# 25. Migration Recovery
+
+大 Schema Migration 应遵循：
+
+```text
+Preflight
+    ↓
+Recovery Snapshot
+    ↓
+Migration
+    ↓
+Validation
+    ↓
+Commit New Schema Version
+```
+
+失败：
+
+```text
+Stop
+↓
+Restore
+↓
+Old App-compatible State
+```
+
+Canonical Data 不允许 destructive fallback。
+
+---
+
+# 26. Restore Epoch
+
+Disaster Restore 不只是：
+
+> 把数据库换成旧文件。
+
+Restore 后必须建立新的：
+
+```text
+Recovery / Sync Epoch
+```
+
+否则旧云端状态可能认为：
+
+> 本地只是落后。
+
+然后重新把坏数据同步回来。
+
+所以：
+
+> Restore 是一次有语义的 Canonical Re-baseline。
+
+---
+
+# 27. Attention Data 不属于 Truth
+
+Attention Candidate 例如：
+
+> “这个会员快到期。”
+
+不是新的 Canonical Fact。
+
+它来源于：
+
+```text
+Truth / Derived Signal
+```
+
+进入：
+
+```text
+Attention Layer
+```
+
+然后由 Central Attention Gate 决定：
+
+- Home；
+- Inbox；
+- Companion；
+- Digest；
+- Live Surface；
+- Push；
+- Ignore。
+
+Attention Item 的生命周期与 Fact 不同。
+
+---
+
+# 28. Resurfacing 也不是 Truth
+
+例如：
+
+> “三年前今天去了杭州。”
+
+底层 Fact 是：
+
+```text
+Trip / Event / Media
+```
+
+“今天值得重新出现”只是：
+
+```text
+Resurfacing Candidate
+```
+
+属于 Derived + Attention。
+
+所以：
+
+> Fact existence ≠ Resurfacing preference。
+
+---
+
+# 29. AI Memory 不属于 Life OS Truth
+
+Ombre Brain 可以保存：
+
+- conversation memory；
+- relationship memory；
+- context summary；
+- recall cue；
+- inferred memory context。
+
+但这些不能自动成为：
+
+```text
+Life OS Canonical Fact
+```
+
+如果 Ombre 发现：
+
+> “用户似乎很喜欢 A。”
+
+最多通过 Context Gateway 或 Tool 形成：
+
+```text
+Proposal
+```
+
+不能直接修改：
+
+```text
+Person relationship state
+```
+
+---
+
+# 30. Conversation Archive 也不属于 Canonical World Truth
+
+完整 Companion 历史应该长期保存。
+
+但：
+
+```text
+Conversation Archive
+```
+
+和：
+
+```text
+Life OS Canonical World
+```
+
+仍然不同。
+
+聊天中的一句话只有在：
+
+- 用户明确要求记录；
+- AI 生成 Proposal；
+- 用户确认；
+- Domain Command Commit；
+
+之后，相关事实才进入 Life OS。
+
+---
+
+# 31. Composition Data 属于用户内容，不属于 Derived
+
+这一点需要特别区分。
+
+Plog Layout、Travel Book、Portfolio 等 Composition：
+
+虽然是“由其他内容组合出来”，但它是：
+
+> 用户明确创建、需要长期保存的内容工程。
+
+所以它不能因为“可以重新排版”就被当成 cache。
+
+Composition 是 Canonical User Content。
+
+而：
+
+```text
+PDF Render
+Preview Image
+Export Cache
+```
+
+才是 Derived / disposable output。
+
+---
+
+# 32. Media Original 也不是 Derived
+
+Media 层必须区分：
+
+```text
+Original
+Metadata
+Derived
+```
+
+Original：
+
+不可替代的原始媒体。
+
+Metadata：
+
+Canonical media identity 与长期信息。
+
+Derived：
+
+- Thumbnail；
+- Preview；
+- OCR；
+- Embedding；
+- Render Cache。
+
+因此：
+
+> Thumbnail 可以删，Original 不可以因为清 cache 被删。
+
+---
+
+# 33. 数据层与 Backup 优先级
+
+Backup 优先级：
+
+## 必须保护
+
+```text
+Canonical Truth
+User Content
+Composition
+Original Media
+Critical Provenance
+Change/Recovery metadata
+Vault encrypted content
+```
+
+## 可以重新生成
+
+```text
+FTS
+Embedding
+Thumbnail
+OCR cache
+Summary cache
+Recommendation cache
+Temporary render
+```
+
+这可以显著减少长期 Backup 成本。
+
+---
+
+# 34. 数据层与 Sync 优先级
+
+Sync 默认应同步：
+
+```text
+Canonical Truth
+Relations
+User Content
+Composition
+Essential Provenance
+Media Manifest
+Cross-device Settings
+Necessary Recovery Metadata
+```
+
+根据策略同步：
+
+```text
+Proposal
+Encrypted ML Index
+Some Derived metadata
+```
+
+通常无需同步：
+
+```text
+Temporary cache
+Thumbnail cache
+Local render
+Device-specific transient state
+```
+
+---
+
+# 35. 数据层与 Search
+
+Search 可能同时查询：
+
+```text
+Truth
+Artifact
+Evidence
+Authorized External Reference
+Derived Index
+```
+
+但结果展示前：
+
+必须经过：
+
+```text
+Canonical state
++
+Permission state
++
+Deletion state
++
+Privacy / resurfacing rules
+```
+
+Search 本身不能因为 index 中有记录就突破权限。
+
+---
+
+# 36. 数据层与 AI Context
+
+AI Context 不是一个长期数据层。
+
+它是：
+
+> 当前请求临时组装出来的 Context。
+
+来源可能包括：
+
+```text
+Recent Conversation
+Ombre Memory
+Authorized Life OS Truth
+Authorized Evidence
+Task Context
+```
+
+组装后发送给模型。
+
+请求结束后：
+
+Context 本身不应被误认为新的 Truth。
+
+---
+
+# 37. 数据层与 Privacy
+
+一个 Fact 存在，不意味着所有系统都能看到。
+
+需要区分：
+
+```text
+Existence
+Search Permission
+AI Permission
+Resurfacing Preference
+Export Permission
+```
+
+例如一条 Health Fact：
+
+可以存在于 Truth。
+
+但：
+
+- Global Search 可不显示；
+- AI 默认 ASK；
+- Home 不 resurfacing；
+- Export 需要特定范围；
+- Vault 数据则完全不进入普通系统。
+
+因此：
+
+> **Data existence ≠ Visibility ≠ AI access ≠ Resurfacing。**
+
+---
+
+# 38. 数据层与 Creative Vault
+
+Creative Vault 是独立安全域。
+
+它拥有自己的：
+
+```text
+Truth
+User Content
+Recovery
+Sync
+Search
+```
+
+但不参与普通 Life OS：
+
+```text
+Global Search
+AI Context
+Normal Relation Graph
+Attention Resurfacing
+Ordinary Audit surfaces
+```
+
+普通 Life OS 不应知道 Vault 内部 object ID。
+
+---
+
+# 39. 一个完整事实生命周期示例：购物截图
+
+```text
+1. 用户保存购物截图
+   ↓
+Evidence
+
+2. OCR / Vision
+   ↓
+Extraction
+
+3. 系统识别：
+   商品 / 价格 / 商家
+   ↓
+Proposal
+
+4. 关联已有银行 Transaction
+   ↓
+Proposal Correlation
+
+5. 用户确认
+   ↓
+Domain Command
+
+6. Canonical Commit
+   ↓
+Purchase
+Product
+Transaction relation
+optional Item
+
+7. ChangeSet
+   ↓
+Recovery History
+
+8. Outbox
+   ↓
+Search index
+Home summary
+Sync
+Attention evaluation
+
+9. 后续发现商品退货
+   ↓
+新的 Event / ChangeSet
+
+10. 需要时重新 OCR
+   ↓
+只更新 Derived Extraction
+```
+
+整个过程中：
+
+原截图一直是 Evidence。
+
+OCR 不是 Truth。
+
+AI 判断不是 Truth。
+
+只有合法 Commit 后的 Domain Object 才是 Truth。
+
+---
+
+# 40. 一个完整事实生命周期示例：聊天记录
+
+用户说：
+
+> “下个月准备去看演唱会。”
+
+流程：
+
+```text
+Conversation Message
+    ↓
+Evidence / Context
+
+AI Interpretation
+    ↓
+Proposal:
+Create Planned Concert Intent
+
+User Confirm
+    ↓
+Command
+
+Canonical Intent
+    ↓
+Calendar / Home projection
+```
+
+以后真的参加：
+
+```text
+Observed Concert Event
+```
+
+再建立：
+
+```text
+Intent → fulfilled_by → Event
+```
+
+而不是把原 Intent 直接偷偷改成 Event。
+
+---
+
+# 41. 一个完整事实生命周期示例：Health
+
+用户说：
+
+> “昨天晚上忘记记录睡眠了，我大概 1 点睡，8 点起。”
+
+系统：
+
+```text
+Conversation
+    ↓
+Evidence
+
+Time extraction
+    ↓
+Extraction
+
+Sleep Event Proposal
+    ↓
+User confirm
+    ↓
+Truth
+```
+
+如果用户只说：
+
+> “昨天状态很差。”
+
+AI 不能自动推断：
+
+```text
+sleep_duration = 4h
+```
+
+只能形成：
+
+```text
+subjective note / proposal
+```
+
+因为：
+
+> 推断不是 observation。
+
+---
+
+# 42. Layer Transition Rules
+
+允许的主要方向：
+
+```text
+Evidence → Extraction
+Extraction → Proposal
+Proposal → Truth
+Truth → Derived
+Truth → Recovery History
+Truth → Attention Candidate
+Truth → Sync
+Truth → Backup
+```
+
+---
+
+# 43. 禁止的主要方向
+
+## AI Inference → Truth
+
+禁止绕过 Proposal / Command。
+
+## Derived → Truth
+
+Search Index / Embedding 不能直接改变 Canonical Fact。
+
+## Cache → Backup Authority
+
+Cache 不能成为灾难恢复唯一来源。
+
+## Attention → Fact
+
+一次提醒不等于事件真的发生。
+
+## Intent → Event
+
+不能仅因为日期到了就自动认定计划已完成。
+
+## External Import → Truth
+
+未经 staging / resolution 的外部数据不能静默进入 Canonical World。
+
+## Vault → Normal AI Context
+
+禁止。
+
+---
+
+# 44. Data Layer Invariants
+
+以下规则作为本文核心不变量。
+
+## DL-1 Truth Is Canonical
+
+正式跨模块共享的数据只来自 Canonical Truth。
+
+## DL-2 Proposal Is Non-canonical
+
+Proposal 不得被其他模块当成已发生事实。
+
+## DL-3 Draft Is User-owned Incomplete Content
+
+Draft 不属于系统待处理债务。
+
+## DL-4 Evidence Is Preserved Separately
+
+Evidence 不能被 OCR / AI Summary 取代。
+
+## DL-5 Extraction Is Derived
+
+机器提取可以重建、替换、升级。
+
+## DL-6 Imported Data Is Staged
+
+Import 不直接等于 Truth。
+
+## DL-7 Derived Is Rebuildable
+
+Derived Data 损坏不能损害 Canonical World。
+
+## DL-8 Derived Cannot Authorize Truth
+
+Embedding / Search / AI ranking 不具备写入权限。
+
+## DL-9 Proposal Must Revalidate
+
+Proposal Commit 前必须检查当前 Revision 和 Context。
+
+## DL-10 Recovery Tracks Logical Operations
+
+恢复围绕 ChangeSet，而不是零散 SQL。
+
+## DL-11 Evidence Lifecycle Is Independent
+
+Evidence 删除不自动删除已确认 Fact。
+
+## DL-12 Composition Is Canonical User Content
+
+Composition 不是 cache。
+
+## DL-13 Original Media Is Not Derived
+
+Original Media 与 Thumbnail / OCR / Preview 分层。
+
+## DL-14 Attention Is Non-canonical
+
+提醒与 resurfacing 不属于人生事实。
+
+## DL-15 AI Context Is Ephemeral
+
+模型 Context 是临时组装，不是事实库。
+
+## DL-16 Existence Is Not Permission
+
+数据存在不等于 Search / AI / resurfacing 可以访问。
+
+---
+
+# 45. 与其他架构文档的关系
+
+本文定义：
+
+> Life OS 的数据分别属于哪一层，以及各层如何流动。
+
+后续文档：
+
+```text
+03-command-query-flow.md
+→ Proposal 怎样通过 Command 成为 Truth
+
+05-control-plane.md
+→ 谁有权执行、谁有权打扰
+
+06-ai-ombre-boundary.md
+→ AI 能读取哪些层、怎样形成 Proposal
+
+07-storage-api-boundary.md
+→ 每层怎样落到 Storage / API
+
+08-sync-backup-recovery.md
+→ Truth / Recovery 如何跨设备与恢复
+
+09-media-architecture.md
+→ Original / Metadata / Derived 的媒体实现
+
+10-security-privacy.md
+→ 不同层如何受到权限和安全域保护
+```
+
+---
+
+# 46. 核心总结
+
+Life OS 数据层可以压缩成：
+
+> **Evidence 保存来源。**
+
+> **Extraction 保存机器提取。**
+
+> **Proposal 保存尚未确认的变化。**
+
+> **Truth 保存正式接受的世界。**
+
+> **Draft 保存用户尚未完成的内容。**
+
+> **Derived 保存可以重新计算的能力。**
+
+> **Recovery 保存“如果错了怎样回来”。**
+
+以及：
+
+> **AI 可以产生 Proposal，但不能直接产生 Truth。**
+
+> **Imported Data 不等于 Truth。**
+
+> **Search Index 不等于 Truth。**
+
+> **没有记录不等于没有发生。**
+
+> **Derived 可以丢，Canonical 不能丢。**
+
+> **用户的人生事实只能通过明确的 Canonical Commit 流程进入正式世界。**

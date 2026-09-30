@@ -1,0 +1,1486 @@
+---
+Title: Life OS 世界模型与核心数据语义
+Version: 0.1
+Status: DRAFT
+Authority: Canonical Architecture Detail
+Last Updated: 2026-09-30
+Owner: Product Owner
+Scope: Life OS
+Parent Document: 00-architecture-overview.md
+Recommended Path: docs/life-os/04-architecture/01-world-model.md
+---
+
+# Life OS 世界模型与核心数据语义
+
+## 1. 文档目的
+
+本文定义 Life OS 的 **Canonical Personal World Model**。
+
+它回答的不是“数据库有几张表”，而是更根本的问题：
+
+- Life OS 认为世界里有哪些基本对象？
+- “计划发生”与“已经发生”怎样区分？
+- 人、地点、物品、事件、媒体、知识和作品之间怎样建立关系？
+- 同一事实如何在多个模块中共享而不复制？
+- 什么是正式事实，什么只是证据、候选或推断？
+- 当前状态如何与历史变化共存？
+- 同一个对象如何在十年后仍保持身份连续？
+- 新模块未来如何接入，而不破坏旧数据？
+
+本文是后续 Domain Schema、Storage Schema、Sync、Import、Search、AI Context 和 UI View Composition 的共同语义基础。
+
+---
+
+# 2. 核心定义
+
+Life OS 不是“模块集合”。
+
+Life OS 的底层是一个：
+
+> **Canonical Personal World**
+
+也就是：
+
+> 用户长期生活中，被正式接受并持续维护的个人世界模型。
+
+它包含：
+
+- 人；
+- 地点；
+- 组织；
+- 产品；
+- 用户拥有的物品；
+- 真实发生的事件；
+- 尚未发生的计划与意图；
+- 对象之间的关系；
+- 信息来源与证据；
+- 照片、文档、作品等内容；
+- 用户基于已有内容创建的叙事与排版工程。
+
+模块只是从这个世界模型中读取不同切面。
+
+例如：
+
+```text
+同一次演唱会
+
+Hobbies
+→ 兴趣经历
+
+Travel
+→ 旅行中的一个活动
+
+Calendar
+→ 时间轴上的事件
+
+Place
+→ 某场馆的一次访问
+
+Finance
+→ 相关消费
+
+Plog
+→ 可引用到当天故事
+
+Home
+→ 当天或回忆中的内容
+```
+
+但底层只能有一个 Canonical Event。
+
+---
+
+# 3. 世界模型的七类核心原语
+
+Life OS 当前定义七类核心世界原语：
+
+```text
+Entity
+Event
+Intent
+Relation
+Evidence
+Artifact
+Composition
+```
+
+它们是领域概念。
+
+不代表最终数据库必须对应七张物理表。
+
+---
+
+# 4. Entity：谁 / 什么东西
+
+## 4.1 定义
+
+Entity 表示：
+
+> 相对持续存在，并且值得拥有独立身份的对象。
+
+它通常能够被：
+
+- 多次引用；
+- 独立编辑；
+- 建立长期关系；
+- 参与多个 Event；
+- 被 Search；
+- 拥有自己的生命周期。
+
+常见 Entity：
+
+```text
+Person
+Place
+Organization
+Brand
+Product
+Item
+Plant
+Book
+MembershipAccount
+Artwork
+```
+
+## 4.2 Stable Identity
+
+Entity 的身份与显示名称分离。
+
+例如：
+
+```text
+person_01J...
+```
+
+是 Canonical ID。
+
+而：
+
+```text
+小王
+王明
+王老师
+Wang Ming
+```
+
+可以是 display name、alias、nickname 或 external label。
+
+名称可以变化。
+
+Canonical ID 不应该因为名称变化而变化。
+
+核心原则：
+
+> **名字可以变，身份不能变。**
+
+## 4.3 External Identity 不等于 Canonical Identity
+
+外部系统可能提供：
+
+```text
+Google Contact ID
+Calendar UID
+Bank Transaction ID
+Merchant ID
+MediaStore URI
+ISBN
+SKU
+External Account ID
+```
+
+这些只能作为 External Identity / Provenance / Locator，不能直接成为 Life OS 内部 Canonical ID。
+
+例如：
+
+```text
+Life OS Person
+person_123
+   │
+   ├── Google Contacts ID: A91...
+   ├── phone: ...
+   └── aliases: 小王 / 王明
+```
+
+即使以后 Google Contacts 断开，`person_123` 仍然存在。
+
+## 4.4 Not Everything Needs Entityhood
+
+不是任何字段都应该被升格成 Entity。
+
+例如：
+
+```text
+¥29.9
+蓝色
+M 码
+30 分钟
+```
+
+通常只是 Value。
+
+一个对象值得成为 Entity，通常至少满足一个条件：
+
+- 会被重复引用；
+- 有独立生命周期；
+- 需要独立编辑；
+- 需要独立 Search；
+- 会参与多个 Relation / Event；
+- 需要自己的历史。
+
+因此：
+
+> **Everything can be described, but not everything needs identity.**
+
+---
+
+# 5. Type ≠ Role
+
+这是 Life OS 世界模型的重要规则。
+
+例如“王老师”是什么？她是 `Person`。
+
+“我的油画老师”是什么？这是一个 Role / Relation。
+
+以后她也可能成为 `friend_of Me`。
+
+不能因为角色变化创建多个 Person。
+
+错误：
+
+```text
+Teacher 王老师
+Friend 王老师
+Contact 王老师
+```
+
+正确：
+
+```text
+Person 王老师
+   │
+   ├── teacher_of → Me
+   └── friend_of  → Me
+```
+
+核心原则：
+
+> **Type 表达“它是什么”；Role 表达“它在某个关系中扮演什么角色”。**
+
+---
+
+# 6. Event：发生了什么
+
+Event 表示：
+
+> 现实中已经发生、并被 Life OS 记录的一次经历、行为、变化或过程。
+
+常见 Event：
+
+```text
+Purchase
+Payment
+Meal
+Wear
+Wash
+ClassSession
+Concert
+Visit
+MedicalVisit
+MedicationIntake
+Sleep
+TravelLeg
+GardenCare
+Repot
+Recharge
+Refund
+Resale
+```
+
+Event 是 Life OS 人生时间线的主要事实载体。
+
+现实中的很多事情不是简单二元关系。
+
+例如：
+
+```text
+                    王老师
+                      ↑
+                  instructor
+                      │
+Me ─ participant → ClassSession ← location ─ 画室
+                      │
+                   consumes
+                      ↓
+                 Membership
+```
+
+所以：
+
+> **Event 是人生中 n-ary relation 的主要承载体。**
+
+---
+
+# 7. Event Time 与 Recorded Time
+
+Life OS 必须区分：
+
+- Event Time：现实中什么时候发生；
+- Recorded Time：系统什么时候知道。
+
+例如 9 月 30 日补录“前两天换盆了”：
+
+```text
+event_time   = 2026-09-28
+recorded_at  = 2026-09-30
+```
+
+这个区别对 Timeline、Calendar、Travel、Health、Life Marks、Analytics 和 AI 回顾都非常重要。
+
+---
+
+# 8. Composite Event
+
+Composite Event 表示：
+
+> 一个较大的现实经历，由多个仍然拥有独立身份的子 Event 构成。
+
+例如旅行：
+
+```text
+Trip
+ ├── Flight
+ ├── HotelStay
+ ├── Meal
+ └── Concert
+```
+
+Concert 加入 Trip 后仍然是同一个 Concert，只建立 `Concert part_of Trip`。
+
+只有真正存在 part-of 语义时才使用，不应为了方便强行把所有 Event 放进父 Event。
+
+---
+
+# 9. Intent：准备发生，但还没有发生
+
+Intent 表示：
+
+> 用户计划、希望、准备或安排发生的事情，但尚未成为已发生事实。
+
+Intent family 可以包括：
+
+```text
+Goal
+Project
+Task
+PlannedEvent
+RecurringPlan
+```
+
+核心原则：
+
+```text
+Intent ≠ Event
+```
+
+“准备下个月去看演唱会”不是“已经参加演唱会”。
+
+任务完成状态也不等于现实中一定产生了一个独立 Event。
+
+---
+
+# 10. Unknown ≠ Observed None
+
+这是 Health、Plans、Life Marks 等模块都必须遵守的语义。
+
+系统没有一条 MedicationIntake，只能说明“没有记录”，不能自动推断“用户没吃药”。
+
+同理，没有 Food Event 不等于没吃饭；没有 Travel Event 不等于没出门。
+
+所以：
+
+```text
+Unknown
+≠
+Observed None
+```
+
+只有用户明确记录“今天没吃药”之类的内容，才可以形成明确未发生的事实或 Observation。
+
+---
+
+# 11. Relation：为什么两个对象有关
+
+Relation 表示：
+
+> 两个 Canonical Object 之间具有明确语义的持续或结构化关系。
+
+例如：
+
+```text
+Person A friend_of Me
+Person B teacher_of Me
+Item instance_of Product
+Store belongs_to Brand
+Artwork created_by Me
+```
+
+不要依赖万能 `related_to`。
+
+核心原则：
+
+> **关系必须知道“为什么相关”。**
+
+如果关系发生在一个明确时刻、一次活动或具体上下文中，优先 Event；如果关系长期持续，更适合 Relation。
+
+---
+
+# 12. Relationship State
+
+有些状态属于“用户与 Entity 之间的关系”，而不是 Entity 自己的属性。
+
+例如 Book 本身没有“读完”，更准确的是：
+
+```text
+Me ↔ Book
+reading_state = finished
+```
+
+同样：
+
+```text
+Me ↔ Product
+purchase_preference
+
+Me ↔ Place
+favorite / want_to_visit
+
+Me ↔ Brand
+experience / preference
+```
+
+因此 Life OS 允许 Relation / Domain Relationship State 带自己的属性和历史。
+
+---
+
+# 13. Evidence：我们为什么知道
+
+Evidence 表示：
+
+> 某个事实、Proposal 或 Extraction 的来源。
+
+常见 Evidence：
+
+```text
+Screenshot
+Photo
+PDF
+URL
+Invoice
+BankFeed
+CalendarImport
+Conversation
+UserInput
+ExternalFile
+ImportedRecord
+```
+
+标准链路：
+
+```text
+Evidence
+→ Extraction
+→ Proposal
+→ Truth
+```
+
+例如截图里出现“这家店周一休息”：截图是 Evidence，OCR 是 Extraction，AI 理解是 Proposal，用户确认后才成为 Accepted Fact。
+
+---
+
+# 14. Provenance
+
+Canonical Fact 应尽量知道“这条信息从哪里来”。
+
+例如：
+
+```text
+direct_user_input
+external_import
+screenshot_evidence
+bank_feed
+calendar_source
+AI_extraction
+confirmed_conversation
+```
+
+Provenance 不应该藏在 free-text note 中，而应是结构化能力。
+
+它将服务于 Audit、Revalidation、Import rollback、AI explanation、Conflict resolution 和 Entity merge。
+
+---
+
+# 15. Evidence 生命周期与 Fact 生命周期不同
+
+用户删除截图，不代表已确认事实自动消失。
+
+例如用户确认生日后，原 Evidence 被删除，Fact 可以继续存在，只需要 Provenance 标记 original evidence unavailable。
+
+因此：
+
+> **Evidence lifecycle ≠ Fact lifecycle。**
+
+---
+
+# 16. Artifact：长期内容对象
+
+Artifact 表示：
+
+> 具有内容意义、可以长期保存和引用的产物。
+
+例如：
+
+```text
+Photo
+Video
+KnowledgeDocument
+Artwork
+Plog
+BookNote
+GeneratedReport
+```
+
+Artifact 可以来源于 Event，也可以被 Event 引用。
+
+例如：
+
+```text
+PaintingSession
+   ↓ contributes_to
+Artwork
+
+Artwork
+   ↓ represented_by
+MediaAsset
+```
+
+---
+
+# 17. Narrative 不是 Event
+
+Plog 是典型的 Narrative Artifact。
+
+同一天的 ClassSession、Meal、Concert、Purchase 可以被 Plog 组织成故事，但 Plog 不拥有这些 Event。
+
+所以：
+
+```text
+Event
+≠
+Narrative
+```
+
+---
+
+# 18. Composition：怎样呈现已有内容
+
+Composition 表示：
+
+> 一个可编辑的展示工程，它引用已有 Canonical Content，而不是复制原始事实。
+
+例如：Travel Book、Garden Yearbook、Plog Layout、Portfolio、Annual Review、Outfit Canvas。
+
+Composition 与 Render 分开：
+
+```text
+Composition
+     ↓
+Render
+     ↓
+PDF / Image / Video
+```
+
+Composition 可继续编辑，Render 只是输出。
+
+---
+
+# 19. Live Reference 与 Snapshot Reference
+
+Composition 引用 Canonical Data 时，需要两种模式。
+
+## Live Reference
+
+源 Fact 更新后 View 可以跟着更新。
+
+适合 Dashboard、Search、Calendar、Auto summary。
+
+## Snapshot Reference
+
+创作时保存当时的呈现状态。
+
+源 Fact 后来更新，Composition 不自动重排，只提示“引用的源内容已经更新”。
+
+适合 Plog、Travel Book、Portfolio、Yearbook、手工排版作品。
+
+原则：
+
+> **事实更新不应偷偷改写用户已经排好的作品。**
+
+---
+
+# 20. Product / Item / Purchase / Transaction 必须分开
+
+这是 Life OS 最重要的跨模块数据边界之一。
+
+```text
+Product
+   ↑ instance_of
+Item
+   ↑ acquired_in
+Purchase Event
+   ↓ paid_by
+Transaction
+```
+
+- Product：外部世界中的商品概念；
+- Item：用户实际拥有的那一件；
+- Purchase Event：什么时候买的；
+- Transaction：钱发生了什么变化。
+
+这四个对象不能压缩成一条 Shopping Record。
+
+---
+
+# 21. Place / Brand / Store 的边界
+
+例如：
+
+```text
+Starbucks
+```
+
+可能是 Brand / Organization。
+
+而：
+
+```text
+Starbucks 某商场店
+```
+
+是 Place / Store Location。
+
+银行账单里的 `STARBUCKS 78291` 只是 Merchant External Identity。
+
+系统可以提出匹配 Proposal，但不能因为字符串相似就自动视为同一个 Canonical Entity。
+
+---
+
+# 22. Person：不是 CRM 对象
+
+Person 是全局 Entity。
+
+Person 页面主要从已有 Canonical Data 投影：Shared Events、Shared Places、Shared Media、Gifts、Trips、Hobbies、Food 和重要 Relations。
+
+不需要另建一套 interaction_log 把所有互动复制一次。
+
+---
+
+# 23. Place：不是第二套 Visit 数据库
+
+Place 是 Entity。
+
+“去过这个地方”通常已经体现在 Meal at Restaurant、Concert at Venue、Purchase at Store、Class at Studio 或 Travel Event 中。
+
+所以 Place 页面主要是 Place-centric Projection。
+
+只有没有专业 Event 的简单到访，才需要 GenericVisitEvent。
+
+---
+
+# 24. Artwork：长期 Artifact / Entity
+
+Artwork 是长期创作对象。
+
+```text
+PaintingSession 1
+PaintingSession 2
+PaintingSession 3
+        ↓
+      Artwork
+        ↓
+    Portfolio
+```
+
+多个 Session 可以共同推进同一个 Artwork。
+
+---
+
+# 25. MediaAsset 的世界模型位置
+
+MediaAsset 是全局共享对象。
+
+同一张照片可以同时出现在 Travel、Person、Hobbies、Plog、Portfolio，但底层只有一个 MediaAsset Identity。
+
+不同模块只保存 Crop、Caption、Order、Display preference 等呈现信息。
+
+---
+
+# 26. Media Identity 与 Locator 分开
+
+MediaAsset ID 不能直接等于 Android URI、File Path、Cloud URL 或 SHA Hash。
+
+这些只是 Locator / Integrity Evidence。
+
+Android 原相册 URI 失效时，MediaAsset 仍然可以通过 cloud original、private backup 或 alternate locator 存活。
+
+---
+
+# 27. Domain Ownership Registry
+
+所有 Canonical Fact Type 必须有唯一语义 Owner。
+
+概念示例：
+
+```text
+finance.transaction
+→ Finance Domain
+
+commerce.purchase
+→ Commerce Domain
+
+items.item
+→ Items Domain
+
+closet.wear_event
+→ Closet Domain
+
+hobbies.class_session
+→ Hobbies Domain
+
+health.medication_intake
+→ Health Domain
+```
+
+其他 Domain 可以 query、reference、react、propose，但不能定义第二份同义事实。
+
+---
+
+# 28. Shared Fact Invariant
+
+正式不变量：
+
+> **同一个现实事实只允许有一个 Canonical Identity。**
+
+例如一次演唱会：
+
+```text
+ConcertEvent
+```
+
+可以：
+
+```text
+part_of → Trip
+at → Place
+paid_by → Transaction
+participants → Person
+media → MediaAsset
+referenced_by → Plog
+shown_in → Calendar projection
+```
+
+但不能创建 HobbiesConcert、TravelConcert、CalendarConcert、HomeConcert 四份互相同步。
+
+---
+
+# 29. View Composition
+
+模块差异主要发生在 View Composition。
+
+例如 Closet Detail：
+
+```text
+Item
++ Product
++ Purchase
++ Transaction
++ WearEvent
++ WashEvent
++ Media
++ ClosetExtension
+       ↓
+ClosetItemView
+```
+
+`ClosetItemView` 不是新的 Canonical Object，只是查询结果。
+
+---
+
+# 30. Life Marks 在世界模型中的位置
+
+Life Marks 不是一个新的事实世界。
+
+它是：
+
+> Cross-domain Event Projection + Quick Entry Surface。
+
+例如：
+
+```text
+上次画画？
+→ query Hobbies Session
+
+上次上油画课？
+→ query Hobbies ClassSession
+
+上次洗头？
+→ 如果没有专业 Domain，创建 GenericMarkEvent
+```
+
+原则：有专业 Event 就复用专业 Event；没有才创建 GenericMarkEvent。
+
+---
+
+# 31. Calendar 在世界模型中的位置
+
+Calendar 不是 Canonical Event Owner。
+
+它投影：
+
+```text
+Event
+Intent
+External Calendar Reference
+```
+
+Calendar 中 Planned Event 和 Actual Event 必须视觉上区分。
+
+---
+
+# 32. Home 在世界模型中的位置
+
+Home 是 Daily Composition / Projection Surface。
+
+它读取 Today Event、Future Intent、Recent Media、Resurfacing Candidate、Attention Item 和 Derived Summary。
+
+Home 本身原则上不拥有新的生活事实。
+
+---
+
+# 33. Search 在世界模型中的位置
+
+Search 读取 Canonical Object、Artifact、Evidence、Authorized External Source 和 Derived Index。
+
+Derived Index 返回候选 ID，最终结果必须回查 Canonical Layer。
+
+```text
+Search Index
+   ↓ candidate IDs
+Canonical read
+   ↓
+permission / tombstone / current state
+   ↓
+Search Result
+```
+
+---
+
+# 34. Knowledge 在世界模型中的位置
+
+Knowledge 常同时涉及 Evidence、Artifact、Relation 和 Derived Data。
+
+```text
+Source Article
+   ↓
+Evidence / Source Artifact
+
+OCR / Transcript
+   ↓
+Derived
+
+AI Organizer Draft
+   ↓
+Proposal / Derived Draft
+
+My Note
+   ↓
+Knowledge Artifact
+```
+
+Knowledge Relation 可以表达 supports、contradicts、derived_from、uses、references。
+
+AI Summary 不替代 Source。
+
+---
+
+# 35. Truth 的语义
+
+Truth Layer 表示：
+
+> 当前被正式接受的 Canonical State。
+
+不是绝对真理，也不是不可修改。
+
+修改以后，当前值改变，Recovery History 保留旧值。
+
+因此：
+
+> **Confirmed ≠ Immutable。**
+
+---
+
+# 36. Proposal 不属于 Truth
+
+Proposal 可以包含 confidence、evidence、explanation、inferred relation、merge suggestion、classification、AI interpretation。
+
+但在确认前，不进入 Canonical Truth。
+
+Proposal 是 Change Plan，不是预留的事实。
+
+---
+
+# 37. Proposal Revalidation
+
+Proposal 在真正 Commit 前必须重新检查当前世界。
+
+例如三个月前的 Shopping Proposal，在今天确认时可能已经发生 Product 更新、Transaction 关联、退货或 Evidence 消失。
+
+因此：
+
+```text
+Proposal
+   ↓
+Revalidate against current revision
+   ↓
+Commit / Update / Stale / Superseded
+```
+
+不能机械执行旧 Proposal。
+
+---
+
+# 38. Entity Resolution
+
+AI 可以判断“小王”和“王明”可能是同一个 Person，但只能创建 Merge Proposal，不能自动合并。
+
+错误 Merge 会污染大量历史关系。
+
+---
+
+# 39. Merge 必须可逆
+
+Merge 不应通过替换所有 ID 然后删除旧对象实现。
+
+至少需要保留：
+
+- 原 source identity；
+- pre-merge mapping；
+- affected relation；
+- ChangeSet。
+
+未来必须支持 Split。
+
+所以：
+
+> **Entity Resolution 是可恢复操作。**
+
+---
+
+# 40. Lifecycle Event 与 Current State
+
+很多对象的当前状态是历史的 Projection。
+
+例如 Item：
+
+```text
+Purchased
+Opened
+Repaired
+Finished
+Resold
+```
+
+当前可以显示 `state = RESOLD`。
+
+为了性能可以 Materialize，但历史 Event 才是长期依据。
+
+---
+
+# 41. Ledger Pattern
+
+Finance / Membership 等 Domain 常需要 Initial / Credit / Debit / Adjustment，然后得到 Current Balance。
+
+例如：
+
+```text
+Membership
+
++40 sessions
+-1
+-1
++1 correction
+
+current = 39
+```
+
+这属于共享 Ledger Pattern，但不同 Domain 仍然保持强语义。
+
+---
+
+# 42. Observation Pattern
+
+Health 等 Domain 常需要“某个时间观察到一个值”。
+
+例如：
+
+```text
+temperature = 37.8°C
+pain_level = ...
+lab_result = ...
+```
+
+它可以使用 Event 子型 / Observation Pattern，不需要升格成新的世界原语。
+
+---
+
+# 43. Schema Evolution 对世界模型的要求
+
+世界模型中的身份和语义必须比数据库字段更稳定。
+
+因此 Stable ID、Stable Type identity、Stable Property identity、Stable Relation semantics 都不能因为 UI 文案变化而重建。
+
+---
+
+# 44. Unknown Preservation
+
+新版本可能引入旧客户端无法理解的新 Event Type、Relation Type、Domain Extension、Plugin Extension、Field。
+
+旧客户端必须保留，而不是“不认识就删除”。
+
+因此：
+
+```text
+Unknown
+≠
+Invalid
+≠
+Delete
+```
+
+---
+
+# 45. Core Ontology 与用户体验分离
+
+系统内部可以存在 Person、Place、Item、Event、Relation、Artifact 等统一概念。
+
+用户不需要学习 Node、Predicate、Ontology、Graph Schema。
+
+Life OS 不应该让普通用户维护 ontology。
+
+上层仍然是自然的人类概念：人、地方、衣服、演唱会、旅行、阅读、植物。
+
+---
+
+# 46. Progressive Structuring
+
+新生活领域不需要第一天就拥有复杂 Schema。
+
+例如用户第一次记录陶艺，可以先使用 Hobby Event。
+
+未来积累很多以后，才出现 Ceramics Extension、Artwork、Firing Event、Glaze Relation。
+
+原则：
+
+> **Ontology 应随着真实重复需求增长，而不是提前幻想完整世界。**
+
+---
+
+# 47. Graph 是能力，不是主 UI
+
+Life OS 的底层具有 Entity Graph / Event Graph / Relation Graph 能力。
+
+但这不意味着用户首页需要显示大型关系蜘蛛网。
+
+Graph 主要用于 Search、Query、AI context、Person page、Place projection、cross-domain relation、multi-hop question。
+
+UI 仍然使用专业页面。
+
+---
+
+# 48. Graph ≠ Graph Database
+
+世界模型是图状的，不代表工程上必须采用 Neo4j 等 Graph Database。
+
+Android local-first 初期完全可以用：
+
+```text
+SQLite / Room
++
+typed tables
++
+junctions
++
+relation table
++
+indexes
+```
+
+实现。
+
+以后如果出现真正的大规模多跳 Graph Query，再决定是否增加专门图存储。
+
+---
+
+# 49. Core 与 Domain Extension 的关系
+
+Core 只保存跨模块真正稳定的语义。
+
+Domain Extension 保存专业字段。
+
+例如：
+
+```text
+Core Item
+    │
+    ├── Shopping relations
+    ├── Finance relations
+    └── Closet Extension
+          size
+          fabric
+          measurements
+```
+
+未来增加 Insurance Extension，也可以继续附着 Item，而无需复制 Item。
+
+---
+
+# 50. Plugin Extension 的世界模型边界
+
+Plugin 可以给 Canonical Object 附加自己的扩展数据。
+
+但：
+
+- Plugin 不拥有 Core Entity；
+- Plugin 不修改 Core Schema；
+- Core Fact 有效性不能依赖 Plugin；
+- Plugin 卸载不能删除用户扩展数据；
+- Unknown Plugin Data 必须可保留。
+
+---
+
+# 51. Creative Vault 的世界模型隔离
+
+Creative Vault 不参与普通 Canonical World Graph。
+
+普通 Life OS 不允许保存：
+
+```text
+normal_object → vault_object
+```
+
+这种 Relation。
+
+否则即使看不到内容，也会泄漏 Vault 对象存在、创建时间、关系和 metadata。
+
+用户显式导出时，生成新的普通 Artifact，而不是普通世界直接引用 Vault 原对象。
+
+---
+
+# 52. 建议的 Canonical Type Registry
+
+后续应维护一个正式 Registry。
+
+概念示例：
+
+```text
+core.person
+core.place
+core.organization
+core.media_asset
+
+items.item
+commerce.product
+commerce.purchase
+
+finance.account
+finance.transaction
+
+hobbies.session
+hobbies.class_session
+hobbies.concert
+hobbies.artwork
+
+health.medication_intake
+health.medical_visit
+
+garden.plant
+garden.care_event
+
+travel.trip
+travel.travel_leg
+```
+
+每个 Canonical Type 至少定义：
+
+- Type ID；
+- Owner Domain；
+- Parent World Primitive；
+- lifecycle；
+- allowed relations；
+- extension policy；
+- merge policy；
+- deletion policy；
+- conflict policy；
+- export identity。
+
+---
+
+# 53. Domain Contract
+
+每个 Domain 后续应定义自己的 Contract。
+
+例如 Hobbies Domain：
+
+```text
+Owns:
+HobbySession
+ClassSession
+ConcertEvent
+Artwork
+
+References:
+Person
+Place
+Membership
+Transaction
+Media
+
+Accepts Proposal from:
+Companion
+Capture
+Import
+Calendar
+
+Emits:
+SessionCreated
+ArtworkUpdated
+```
+
+这种 Contract 可以阻止模块之间偷偷复制事实。
+
+---
+
+# 54. 世界模型不变量
+
+## WM-1 Stable Identity
+
+Canonical ID 不因名称、UI、外部 Provider 改变而改变。
+
+## WM-2 One Fact, One Canonical Identity
+
+同一个现实事实不能按模块复制。
+
+## WM-3 Type ≠ Role
+
+角色通过 Relation 表达，不通过复制 Entity Type 表达。
+
+## WM-4 Intent ≠ Event
+
+计划和实际发生永远分开。
+
+## WM-5 Unknown ≠ Observed None
+
+无记录不等于明确未发生。
+
+## WM-6 Fact ≠ Evidence
+
+证据不是正式事实。
+
+## WM-7 Narrative ≠ Event
+
+故事和经历事实分开。
+
+## WM-8 Composition ≠ Canonical Content
+
+排版工程引用事实，不复制事实。
+
+## WM-9 Relation Must Be Semantic
+
+关系必须表达意义，不依赖万能 related_to。
+
+## WM-10 Domain Ownership Is Singular
+
+每类 Canonical Fact 只有一个语义 Owner。
+
+## WM-11 Merge Must Be Reversible
+
+Entity Resolution 不能不可逆破坏历史。
+
+## WM-12 Current State May Be Projection
+
+当前状态可以由历史 Event / Ledger 得出。
+
+## WM-13 Unknown Data Must Survive
+
+旧客户端看不懂的数据也必须保留。
+
+## WM-14 Graph Is Conceptual Capability
+
+世界模型图结构不强制工程采用 Graph Database。
+
+## WM-15 Vault Is Outside Normal World Graph
+
+普通世界不能观察或引用 Vault 内部对象。
+
+---
+
+# 55. 一个完整示例
+
+用户说：
+
+> “今天和小王去上海画室上了一节油画课，课后吃饭，还买了一件衣服。”
+
+Canonical World 中可能形成：
+
+```text
+Person
+- 小王
+
+Place
+- 上海画室
+- 餐厅
+- 商店
+
+Product
+- 某款衣服
+
+Item
+- 用户实际拥有的那件衣服
+
+Events
+- ClassSession
+- MealEvent
+- PurchaseEvent
+- Transaction(s)
+
+Media
+- Photos
+
+Relations
+- participant
+- instructor
+- location
+- paid_by
+- acquired_in
+
+Ledger
+- Membership -1
+```
+
+然后：
+
+```text
+Calendar
+→ 看时间
+
+Hobbies
+→ 看 ClassSession
+
+Membership
+→ 看剩余课时
+
+Life Marks
+→ 看“上次画画”
+
+Food
+→ 看 MealEvent
+
+Place
+→ 看去过哪里
+
+Shopping
+→ 看 Purchase
+
+Closet
+→ 看 Item
+
+Finance
+→ 看 Transaction
+
+Home
+→ 看今天发生了什么
+
+Plog
+→ 把这些内容编成一个故事
+```
+
+底层事实没有被复制十遍。
+
+这就是 Life OS World Model 的核心价值。
+
+---
+
+# 56. 本文与后续文档的关系
+
+本文定义：
+
+> 世界是什么。
+
+后续文档分别定义：
+
+```text
+02-data-layers.md
+→ Truth / Proposal / Evidence / Derived / Recovery 的层次
+
+03-command-query-flow.md
+→ 世界怎样被读写
+
+04-domain-ownership.md
+→ 哪个 Domain 拥有哪些事实
+
+07-storage-api-boundary.md
+→ 世界怎样落到 SQLite / API
+
+08-sync-backup-recovery.md
+→ 世界怎样跨设备和恢复
+
+11-extension-versioning.md
+→ 世界模型怎样长期进化
+```
+
+如果后续需要改变 Canonical Primitive、Identity Model、Domain Ownership、Intent/Event 边界或 Vault 边界，应通过正式 ADR 记录。
+
+---
+
+# 57. 核心总结
+
+Life OS 世界模型可以压缩成以下几句话：
+
+> **Entity 描述“谁 / 什么”。**
+
+> **Event 描述“发生了什么”。**
+
+> **Intent 描述“准备发生什么”。**
+
+> **Relation 描述“为什么彼此有关”。**
+
+> **Evidence 描述“我们为什么知道”。**
+
+> **Artifact 保存长期内容。**
+
+> **Composition 决定怎样呈现这些内容。**
+
+以及：
+
+> **名字可以变，身份不能变。**
+
+> **一个事实只能有一个正式身份。**
+
+> **计划不等于发生。**
+
+> **没有记录不等于没有发生。**
+
+> **来源、推断、候选和事实必须分层。**
+
+> **模块共享世界，而不是复制世界。**
+
+> **Life OS 保存现实；专业模块只是从不同角度看现实。**
