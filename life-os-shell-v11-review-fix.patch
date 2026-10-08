@@ -1,0 +1,2719 @@
+From 99be69f594da2aa8817ff9a8dac7f76ba4da141b Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Thu, 8 Oct 2026 13:46:11 +0200
+Subject: [PATCH] feat(android): establish Life OS shell and V11 home
+
+---
+ app/build.gradle.kts                          |   3 +
+ app/src/main/AndroidManifest.xml              |   2 +-
+ .../com/xiaoming/closie/ClosieApplication.kt  |   2 +
+ .../java/com/xiaoming/closie/MainActivity.kt  |  57 ++++---
+ .../closie/data/appearance/Appearance.kt      |  50 ++++++
+ .../data/appearance/AppearanceRepository.kt   |  81 ++++++++++
+ .../closie/data/appearance/ThemeTokens.kt     |  85 ++++++++++
+ .../closie/navigation/ClosieNavigation.kt     |  51 +++---
+ .../navigation/ExternalCommandResolver.kt     |  38 +++++
+ .../closie/navigation/LifeOsNavigation.kt     |  78 ++++++++++
+ .../xiaoming/closie/ui/lifeos/LifeOsRoot.kt   |  89 +++++++++++
+ .../closie/ui/lifeos/LifeOsShellViewModel.kt  |  27 ++++
+ .../ui/lifeos/calendar/CalendarUiState.kt     |  24 +++
+ .../ui/lifeos/calendar/LifeCalendarScreen.kt  | 105 +++++++++++++
+ .../closie/ui/lifeos/calendar/MonthGrid.kt    |  20 +++
+ .../ui/lifeos/chat/CompanionShellScreen.kt    |  42 +++++
+ .../ui/lifeos/components/ColorSwatch.kt       |  21 +++
+ .../ui/lifeos/components/CompanionEntry.kt    |  43 ++++++
+ .../ui/lifeos/components/LifeEmptyState.kt    |  17 ++
+ .../ui/lifeos/components/LifeGestures.kt      |  48 ++++++
+ .../ui/lifeos/components/LifeMediaImage.kt    |  35 +++++
+ .../closie/ui/lifeos/components/LifePage.kt   |  29 ++++
+ .../ui/lifeos/components/LifePhotoStack.kt    | 131 ++++++++++++++++
+ .../ui/lifeos/components/LifePhotoViewer.kt   |  63 ++++++++
+ .../components/PhotoStackInteraction.kt       |  12 ++
+ .../closie/ui/lifeos/drawer/LifeModules.kt    |  34 ++++
+ .../closie/ui/lifeos/drawer/LifeOsDrawer.kt   |  55 +++++++
+ .../closie/ui/lifeos/home/HomeUiState.kt      |  26 ++++
+ .../closie/ui/lifeos/home/LifeOsHomeScreen.kt | 113 ++++++++++++++
+ .../closie/ui/lifeos/map/LifeMapScreen.kt     |  34 ++++
+ .../closie/ui/lifeos/media/LifeMediaUi.kt     |  12 ++
+ .../ui/lifeos/modules/ModuleLandingScreen.kt  |  33 ++++
+ .../lifeos/settings/AppearanceEditorState.kt  |  34 ++++
+ .../settings/AppearanceSettingsScreen.kt      | 100 ++++++++++++
+ .../ui/lifeos/settings/AppearanceViewModel.kt |  84 ++++++++++
+ .../closie/ui/lifeos/theme/LifeOsTheme.kt     |  46 ++++++
+ .../ui/lifeos/theme/LifeOsTypography.kt       |  28 ++++
+ app/src/main/res/values/strings.xml           |   3 +
+ .../closie/AppearanceRepositoryTest.kt        |  66 ++++++++
+ .../closie/AppearanceViewModelTest.kt         | 145 ++++++++++++++++++
+ .../com/xiaoming/closie/CalendarStateTest.kt  |  40 +++++
+ .../java/com/xiaoming/closie/HomeStateTest.kt |  41 +++++
+ .../xiaoming/closie/LifeOsNavigationTest.kt   |  42 +++++
+ .../java/com/xiaoming/closie/MonthGridTest.kt |  50 ++++++
+ .../closie/PhotoStackInteractionTest.kt       |  19 +++
+ .../xiaoming/closie/ThemeValidationTest.kt    |  62 ++++++++
+ 46 files changed, 2175 insertions(+), 45 deletions(-)
+ create mode 100644 app/src/main/java/com/xiaoming/closie/data/appearance/Appearance.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/data/appearance/AppearanceRepository.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/data/appearance/ThemeTokens.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/navigation/ExternalCommandResolver.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/navigation/LifeOsNavigation.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsRoot.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsShellViewModel.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/CalendarUiState.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/LifeCalendarScreen.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/MonthGrid.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/chat/CompanionShellScreen.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/ColorSwatch.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/CompanionEntry.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeEmptyState.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeGestures.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeMediaImage.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePage.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoStack.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoViewer.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/components/PhotoStackInteraction.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeModules.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeOsDrawer.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/home/HomeUiState.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/home/LifeOsHomeScreen.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/map/LifeMapScreen.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/media/LifeMediaUi.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/modules/ModuleLandingScreen.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceEditorState.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceViewModel.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTheme.kt
+ create mode 100644 app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTypography.kt
+ create mode 100644 app/src/main/res/values/strings.xml
+ create mode 100644 app/src/test/java/com/xiaoming/closie/AppearanceRepositoryTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/AppearanceViewModelTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/CalendarStateTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/HomeStateTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/LifeOsNavigationTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/MonthGridTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/PhotoStackInteractionTest.kt
+ create mode 100644 app/src/test/java/com/xiaoming/closie/ThemeValidationTest.kt
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 4fed8a1..bd1bb63 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -33,6 +33,8 @@ dependencies {
+     implementation("androidx.core:core-ktx:1.15.0")
+     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
++    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
++    implementation("androidx.datastore:datastore-preferences:1.1.1")
+     implementation("androidx.activity:activity-compose:1.10.0")
+     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+     implementation("androidx.compose.ui:ui")
+@@ -47,4 +49,5 @@ dependencies {
+     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+     debugImplementation("androidx.compose.ui:ui-tooling")
+     testImplementation("junit:junit:4.13.2")
++    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+ }
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index c6ac8ac..6462dc4 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -3,7 +3,7 @@
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+-    <application android:name=".ClosieApplication" android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:label="Closie" android:theme="@style/Theme.Closie" android:supportsRtl="true">
++    <application android:name=".ClosieApplication" android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:label="@string/app_name" android:theme="@style/Theme.Closie" android:supportsRtl="true" android:enableOnBackInvokedCallback="true">
+         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+diff --git a/app/src/main/java/com/xiaoming/closie/ClosieApplication.kt b/app/src/main/java/com/xiaoming/closie/ClosieApplication.kt
+index 6e9a29e..5df2981 100644
+--- a/app/src/main/java/com/xiaoming/closie/ClosieApplication.kt
++++ b/app/src/main/java/com/xiaoming/closie/ClosieApplication.kt
+@@ -2,6 +2,7 @@ package com.xiaoming.closie
+ 
+ import android.app.Application
+ import com.xiaoming.closie.data.repository.LocalWardrobeRepository
++import com.xiaoming.closie.data.appearance.AppearanceRepository
+ import com.xiaoming.closie.ui.quickcapture.QuickCaptureTempFiles
+ 
+ /**
+@@ -12,6 +13,7 @@ import com.xiaoming.closie.ui.quickcapture.QuickCaptureTempFiles
+ class ClosieApplication : Application() {
+ 
+     val wardrobeRepository by lazy { LocalWardrobeRepository(this) }
++    val appearanceRepository by lazy { AppearanceRepository.create(this) }
+ 
+     override fun onCreate() {
+         super.onCreate()
+diff --git a/app/src/main/java/com/xiaoming/closie/MainActivity.kt b/app/src/main/java/com/xiaoming/closie/MainActivity.kt
+index dda007c..909ad77 100644
+--- a/app/src/main/java/com/xiaoming/closie/MainActivity.kt
++++ b/app/src/main/java/com/xiaoming/closie/MainActivity.kt
+@@ -8,12 +8,23 @@ import androidx.activity.ComponentActivity
+ import androidx.activity.SystemBarStyle
+ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
++import androidx.lifecycle.compose.collectAsStateWithLifecycle
++import androidx.lifecycle.viewmodel.compose.viewModel
++import androidx.compose.runtime.remember
+ import androidx.compose.material3.Surface
++import androidx.compose.material3.CircularProgressIndicator
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.core.view.WindowCompat
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.setValue
+-import com.xiaoming.closie.navigation.ClosieNavHost
+-import com.xiaoming.closie.ui.theme.ClosieTheme
++import com.xiaoming.closie.navigation.ExternalCommandResolver
++import com.xiaoming.closie.ui.lifeos.LifeOsRoot
++import com.xiaoming.closie.ui.lifeos.LifeOsShellViewModel
++import com.xiaoming.closie.ui.lifeos.settings.AppearanceViewModel
+ 
+ /**
+  * A single one-shot external navigation request. At most one command exists at a time; a new
+@@ -40,14 +51,13 @@ class MainActivity : ComponentActivity() {
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+-        // Closie is intentionally light-only. Keep dark system-bar icons on the light
+-        // Porcelain background regardless of the device's system dark/light setting.
++        // Start with light paper; the loaded Life OS appearance updates the icon contrast.
+         enableEdgeToEdge(
+             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+         )
+         // Android 10+ three-button nav draws a translucent scrim over the nav bar by default;
+-        // Closie extends its bottom bar with navigationBarsPadding(), so disable that scrim.
++        // The shell draws its paper behind the navigation bar, so disable that scrim.
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+             window.isNavigationBarContrastEnforced = false
+         }
+@@ -55,14 +65,19 @@ class MainActivity : ComponentActivity() {
+         handleIntent(intent)
+ 
+         setContent {
+-            val repository = (application as ClosieApplication).wardrobeRepository
+-            ClosieTheme {
+-                Surface {
+-                    ClosieNavHost(
+-                        repository = repository,
+-                        externalCommand = externalCommand,
+-                        onExternalCommandConsumed = { externalCommand = null }
+-                    )
++            val app = application as ClosieApplication
++            val shell: LifeOsShellViewModel = viewModel()
++            val appearanceViewModel: AppearanceViewModel = viewModel(factory = remember(app) { AppearanceViewModel.Factory(app.appearanceRepository) })
++            val appearance by appearanceViewModel.appearance.collectAsStateWithLifecycle()
++            val ready = appearance
++            if (ready == null) {
++                Surface { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
++            } else {
++                LifeOsRoot(app.wardrobeRepository, ready, shell, appearanceViewModel, externalCommand, ::consumeExternalCommand) { dark ->
++                    WindowCompat.getInsetsController(window, window.decorView).apply {
++                        isAppearanceLightStatusBars = !dark
++                        isAppearanceLightNavigationBars = !dark
++                    }
+                 }
+             }
+         }
+@@ -85,11 +100,15 @@ class MainActivity : ComponentActivity() {
+         val openAdd = intent?.getBooleanExtra(EXTRA_OPEN_ADD, false) == true
+ 
+         // Replace, never accumulate: a new intent always wins over any stale command.
+-        externalCommand = when {
+-            !text.isNullOrBlank() -> ExternalNavCommand.Import(text, nextNonce())
+-            editId != null -> ExternalNavCommand.Edit(editId, nextNonce())
+-            openAdd -> ExternalNavCommand.Add(nextNonce())
+-            else -> externalCommand
+-        }
++        externalCommand = ExternalCommandResolver.parse(intent?.action, text, editId, openAdd, nextNonce())
++            ?: externalCommand
++    }
++
++    private fun consumeExternalCommand() {
++        externalCommand = null
++        // Prevent configuration recreation from replaying a command already consumed by navigation.
++        intent?.removeExtra(Intent.EXTRA_TEXT)
++        intent?.removeExtra(EXTRA_EDIT_ITEM_ID)
++        intent?.removeExtra(EXTRA_OPEN_ADD)
+     }
+ }
+diff --git a/app/src/main/java/com/xiaoming/closie/data/appearance/Appearance.kt b/app/src/main/java/com/xiaoming/closie/data/appearance/Appearance.kt
+new file mode 100644
+index 0000000..ebd8603
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/data/appearance/Appearance.kt
+@@ -0,0 +1,50 @@
++package com.xiaoming.closie.data.appearance
++
++/** Appearance preferences only. These values are never canonical life facts. */
++enum class ThemePreset(
++    val id: String,
++    val displayName: String,
++    val accent: String,
++    val paper: String,
++    val secondary: String,
++    val soft: String,
++    val warm: String
++) {
++    // Source: V11Theme.presets in the supplied life_os_v11.html.
++    ORIGINAL("original", "暮山紫原色", "#6F67A8", "#F6F5F9", "#B6C2CF", "#C6B7CF", "#E2DEEC"),
++    LAVENDER("lavender", "薰衣草信笺", "#755493", "#F8F4FA", "#9FC5E6", "#B69CD2", "#EBC5CF"),
++    WATER_LILY("waterlily", "睡莲花园", "#495A7B", "#F2F6F4", "#648665", "#A6BF86", "#E2C9CE"),
++    PEARL("pearl", "珍珠与旧纸", "#2D3E56", "#F5F3EB", "#5A6E8E", "#B4B0A0", "#D8D2C0"),
++    JELLYFISH("jellyfish", "水母来信", "#4A535C", "#F1F5F6", "#7F95AC", "#BECCCD", "#987D67");
++
++    companion object {
++        fun fromId(id: String?) = entries.firstOrNull { it.id == id }
++    }
++}
++
++data class CustomTheme(val accent: String, val paper: String, val secondary: String) {
++    fun normalized() = CustomTheme(
++        HexColor.requireValid(accent), HexColor.requireValid(paper), HexColor.requireValid(secondary)
++    )
++}
++
++data class AppearanceSettings(
++    val selectedThemeId: String = ThemePreset.ORIGINAL.id,
++    val custom: CustomTheme? = null
++) {
++    fun selectedColors(): CustomTheme {
++        if (selectedThemeId == CUSTOM_ID && custom != null) return custom.normalized()
++        val preset = ThemePreset.fromId(selectedThemeId) ?: ThemePreset.ORIGINAL
++        return CustomTheme(preset.accent, preset.paper, preset.secondary)
++    }
++
++    companion object { const val CUSTOM_ID = "custom" }
++}
++
++object HexColor {
++    private val pattern = Regex("^#[0-9a-fA-F]{6}$")
++    fun normalizeOrNull(value: String?): String? = value?.trim()?.takeIf(pattern::matches)?.uppercase()
++    fun requireValid(value: String): String = requireNotNull(normalizeOrNull(value)) {
++        "颜色请填写六位 HEX，例如 #6F67A8"
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/data/appearance/AppearanceRepository.kt b/app/src/main/java/com/xiaoming/closie/data/appearance/AppearanceRepository.kt
+new file mode 100644
+index 0000000..7d4aaed
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/data/appearance/AppearanceRepository.kt
+@@ -0,0 +1,81 @@
++package com.xiaoming.closie.data.appearance
++
++import android.content.Context
++import androidx.datastore.core.DataStore
++import androidx.datastore.preferences.core.Preferences
++import androidx.datastore.preferences.core.edit
++import androidx.datastore.preferences.core.emptyPreferences
++import androidx.datastore.preferences.core.stringPreferencesKey
++import androidx.datastore.preferences.preferencesDataStore
++import java.io.IOException
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.flow.SharingStarted
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.catch
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.flow.map
++import kotlinx.coroutines.flow.stateIn
++
++private val Context.lifeOsAppearanceStore by preferencesDataStore(name = "life_os_appearance")
++
++/** The only new persistent store in Task 1: UI appearance preferences, outside Closet storage. */
++class AppearanceRepository(
++    private val store: DataStore<Preferences>,
++    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++) {
++    private val records = store.data.catch { error ->
++        if (error is IOException) emit(emptyPreferences()) else throw error
++    }.map(AppearanceCodec::decode)
++
++    val settings: StateFlow<AppearanceSettings?> = records.stateIn(scope, SharingStarted.Eagerly, null)
++
++    suspend fun read(): AppearanceSettings = records.first()
++
++    suspend fun selectPreset(preset: ThemePreset) {
++        store.edit { it[AppearanceCodec.selected] = preset.id }
++    }
++
++    suspend fun selectSavedCustom() {
++        store.edit { preferences ->
++            requireNotNull(AppearanceCodec.decode(preferences).custom) { "还没有保存自定义配色" }
++            preferences[AppearanceCodec.selected] = AppearanceSettings.CUSTOM_ID
++        }
++    }
++
++    suspend fun saveCustom(custom: CustomTheme) {
++        val valid = custom.normalized() // Reject invalid HEX before any storage mutation.
++        store.edit {
++            it[AppearanceCodec.customAccent] = valid.accent
++            it[AppearanceCodec.customPaper] = valid.paper
++            it[AppearanceCodec.customSecondary] = valid.secondary
++            it[AppearanceCodec.selected] = AppearanceSettings.CUSTOM_ID
++        }
++    }
++
++    companion object {
++        fun create(context: Context) = AppearanceRepository(context.applicationContext.lifeOsAppearanceStore)
++    }
++}
++
++internal object AppearanceCodec {
++    val selected = stringPreferencesKey("selectedThemeId")
++    val customAccent = stringPreferencesKey("customAccent")
++    val customPaper = stringPreferencesKey("customPaper")
++    val customSecondary = stringPreferencesKey("customSecondary")
++
++    fun decode(values: Preferences): AppearanceSettings {
++        val accent = HexColor.normalizeOrNull(values[customAccent])
++        val paper = HexColor.normalizeOrNull(values[customPaper])
++        val secondary = HexColor.normalizeOrNull(values[customSecondary])
++        val custom = if (accent != null && paper != null && secondary != null) CustomTheme(accent, paper, secondary) else null
++        val rawId = values[selected]
++        val id = when {
++            rawId == AppearanceSettings.CUSTOM_ID && custom != null -> rawId
++            ThemePreset.fromId(rawId) != null -> rawId!!
++            else -> ThemePreset.ORIGINAL.id
++        }
++        return AppearanceSettings(id, custom)
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/data/appearance/ThemeTokens.kt b/app/src/main/java/com/xiaoming/closie/data/appearance/ThemeTokens.kt
+new file mode 100644
+index 0000000..b0c9e86
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/data/appearance/ThemeTokens.kt
+@@ -0,0 +1,85 @@
++package com.xiaoming.closie.data.appearance
++
++import kotlin.math.pow
++import kotlin.math.roundToInt
++
++/** Pure semantic palette resolver, ported from V11Theme.resolve (no Android Color parser). */
++data class ThemeTokens(
++    val paper: String, val paperSecondary: String, val paperTertiary: String,
++    val card: String, val ink: String, val inkSecondary: String, val muted: String,
++    val accent: String, val accentDeep: String, val secondary: String,
++    val line: String, val onAccent: String, val shade: String, val isDark: Boolean
++)
++
++object ThemePalette {
++    private fun rgb(hex: String) = listOf(1, 3, 5).map {
++        HexColor.requireValid(hex).substring(it, it + 2).toInt(16)
++    }
++
++    fun mix(a: String, b: String, weight: Double): String {
++        val aa = rgb(a); val bb = rgb(b)
++        return "#" + aa.indices.joinToString("") {
++            (aa[it] * (1 - weight) + bb[it] * weight).roundToInt().coerceIn(0, 255)
++                .toString(16).padStart(2, '0')
++        }.uppercase()
++    }
++
++    private fun luminance(hex: String): Double {
++        val channels = rgb(hex).map { it / 255.0 }.map {
++            if (it <= .04045) it / 12.92 else ((it + .055) / 1.055).pow(2.4)
++        }
++        return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722
++    }
++
++    fun contrast(a: String, b: String): Double {
++        val aa = luminance(a); val bb = luminance(b)
++        return (maxOf(aa, bb) + .05) / (minOf(aa, bb) + .05)
++    }
++
++    private fun readable(color: String, background: String, minimum: Double): String {
++        var value = HexColor.requireValid(color)
++        val end = if (contrast("#000000", background) > contrast("#FFFFFF", background)) "#000000" else "#FFFFFF"
++        repeat(100) { if (contrast(value, background) < minimum) value = mix(value, end, .09) }
++        // Integer RGB mixing can stop one channel short of the endpoint. Mid-tone paper may
++        // also make the requested ratio impossible; use the most readable endpoint in that case.
++        return if (contrast(value, background) < minimum) end else value
++    }
++
++    fun resolve(settings: AppearanceSettings): ThemeTokens {
++        val choice = settings.selectedColors()
++        val paper = choice.paper
++        val dark = contrast("#FFFFFF", paper) > contrast("#000000", paper)
++        val inkBase = if (dark) "#F5F4F1" else "#3A3748"
++        var card = mix(paper, if (dark) "#181C22" else "#FFFFFF", .72)
++        var paper2 = mix(paper, choice.secondary, .11)
++        var paper3 = mix(paper, choice.accent, .15)
++        var ink = readable(inkBase, paper, 7.0)
++        var ink2 = readable(mix(inkBase, choice.accent, .2), paper, 6.0)
++        val muted = readable(mix(inkBase, paper, .38), paper, 4.7)
++        var accent = readable(choice.accent, if (dark) card else "#FFFFFF", 4.8)
++        var deep = readable(accent, paper, 6.0)
++        var line = mix(paper, choice.accent, .19)
++        if (settings.selectedThemeId == ThemePreset.ORIGINAL.id) {
++            paper2 = "#ECEAF3"; paper3 = "#E2DEEC"; card = "#FCFBFE"
++            ink = "#3A3748"; ink2 = "#565270"; accent = "#6F67A8"; deep = "#575091"; line = "#DEDAE8"
++        }
++        if (settings.selectedThemeId == AppearanceSettings.CUSTOM_ID) {
++            accent = readable(choice.accent, paper, 4.7)
++            deep = readable(accent, paper, 6.0)
++            val foregrounds = listOf(ink, ink2, muted, accent, deep)
++            fun safeSurface(initial: String): String {
++                var surface = initial
++                repeat(100) {
++                    if (foregrounds.any { contrast(it, surface) < 4.5 }) surface = mix(surface, paper, .14)
++                }
++                return if (foregrounds.any { contrast(it, surface) < 4.5 }) paper else surface
++            }
++            card = safeSurface(card); paper2 = safeSurface(paper2); paper3 = safeSurface(paper3)
++        }
++        return ThemeTokens(
++            paper, paper2, paper3, card, ink, ink2, muted, accent, deep, choice.secondary, line,
++            if (contrast(accent, "#FFFFFF") >= 4.5) "#FFFFFF" else "#000000",
++            mix(inkBase, choice.accent, .3), dark
++        )
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+index 967989e..d731fad 100644
+--- a/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
++++ b/app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt
+@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.graphics.vector.ImageVector
+ import androidx.compose.ui.unit.dp
+ import androidx.navigation.NavDestination.Companion.hasRoute
+-import androidx.navigation.NavGraph.Companion.findStartDestination
+ import androidx.navigation.NavHostController
+ import androidx.navigation.NavType
+ import androidx.navigation.compose.NavHost
+@@ -69,56 +68,57 @@ sealed class Route(val route: String) {
+ fun ClosieNavHost(
+     repository: WardrobeRepository,
+     externalCommand: ExternalNavCommand? = null,
+-    onExternalCommandConsumed: () -> Unit = {}
++    onExternalCommandConsumed: () -> Unit = {},
++    moduleMode: Boolean = false,
++    onExitModule: () -> Unit = {}
+ ) {
+     val nav = rememberNavController()
+     val current by nav.currentBackStackEntryAsState()
+     val currentRoute = current?.destination?.route
++    val startRoute = if (moduleMode) TopLevel.Closet.route else TopLevel.Home.route
+     val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
+ 
+     // Handle "分享至 Closie" and quick-capture "保存并继续编辑" deep links. The command is a
+     // one-shot: once navigated it is consumed and cleared by the host activity.
+     LaunchedEffect(externalCommand) {
+-        when (val cmd = externalCommand) {
+-            null -> Unit
+-            is ExternalNavCommand.Import -> {
+-                PendingImport.text = cmd.text
+-                nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
+-                onExternalCommandConsumed()
+-            }
+-            is ExternalNavCommand.Edit -> {
+-                nav.navigate(Route.Edit.route.replace("{id}", cmd.itemId))
+-                onExternalCommandConsumed()
+-            }
+-            is ExternalNavCommand.Add -> {
+-                nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
+-                onExternalCommandConsumed()
+-            }
++        externalCommand?.let { command ->
++            if (command is ExternalNavCommand.Import) PendingImport.text = command.text
++            nav.navigate(ExternalCommandResolver.closetDestination(command))
++            onExternalCommandConsumed()
+         }
+     }
+ 
+     Scaffold(
+         containerColor = ClosieColor.Canvas,
++        topBar = {
++            // Compatibility navigation belongs only to the Closet module, never to Life OS Home.
++            if (moduleMode && showBottomBar) {
++                TextButton(onClick = onExitModule, modifier = Modifier.heightIn(min = 48.dp)) {
++                    Text("‹ 返回 Life OS")
++                }
++            }
++        },
+         bottomBar = {
+             if (showBottomBar) {
+                 ClosieBottomNavigation(
+                     currentRoute = currentRoute,
+-                    onSelect = { nav.navigateTopLevel(it) }
++                    onSelect = { nav.navigateTopLevel(it, startRoute) },
++                    moduleMode = moduleMode
+                 )
+             }
+         }
+     ) { padding ->
+         NavHost(
+             navController = nav,
+-            startDestination = TopLevel.Home.route,
++            startDestination = startRoute,
+             modifier = Modifier.padding(padding)
+         ) {
+             composable(TopLevel.Home.route) {
+                 HomeScreen(
+                     repository,
+                     onSettings = { nav.navigate(Route.Settings.route) },
+-                    onOpenCloset = { nav.navigateTopLevel(TopLevel.Closet) },
+-                    onOpenOotd = { nav.navigateTopLevel(TopLevel.Ootd) }
++                    onOpenCloset = { nav.navigateTopLevel(TopLevel.Closet, startRoute) },
++                    onOpenOotd = { nav.navigateTopLevel(TopLevel.Ootd, startRoute) }
+                 )
+             }
+ 
+@@ -197,9 +197,9 @@ fun ClosieNavHost(
+     }
+ }
+ 
+-private fun NavHostController.navigateTopLevel(tab: TopLevel) {
++private fun NavHostController.navigateTopLevel(tab: TopLevel, startRoute: String = TopLevel.Home.route) {
+     navigate(tab.route) {
+-        popUpTo(graph.findStartDestination().id) { saveState = true }
++        popUpTo(startRoute) { saveState = true }
+         launchSingleTop = true
+         restoreState = true
+     }
+@@ -209,7 +209,8 @@ private fun NavHostController.navigateTopLevel(tab: TopLevel) {
+ private fun ClosieBottomNavigation(
+     currentRoute: String?,
+     onSelect: (TopLevel) -> Unit,
+-    modifier: Modifier = Modifier
++    modifier: Modifier = Modifier,
++    moduleMode: Boolean = false
+ ) {
+     Surface(
+         modifier = modifier.fillMaxWidth(),
+@@ -242,7 +243,7 @@ private fun ClosieBottomNavigation(
+                         tint = tint,
+                         modifier = Modifier.size(22.dp)
+                     )
+-                    Text(tab.label, style = MaterialTheme.typography.labelSmall, color = tint)
++                    Text(if (moduleMode && tab == TopLevel.Home) "衣橱回顾" else tab.label, style = MaterialTheme.typography.labelSmall, color = tint)
+                     Box(
+                         modifier = Modifier
+                             .width(if (selected) 16.dp else 0.dp)
+diff --git a/app/src/main/java/com/xiaoming/closie/navigation/ExternalCommandResolver.kt b/app/src/main/java/com/xiaoming/closie/navigation/ExternalCommandResolver.kt
+new file mode 100644
+index 0000000..e0dd0eb
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/navigation/ExternalCommandResolver.kt
+@@ -0,0 +1,38 @@
++package com.xiaoming.closie.navigation
++
++import com.xiaoming.closie.ExternalNavCommand
++import java.net.URLEncoder
++
++/** Pure resolution shared by the Activity, the Closet adapter, and JVM tests. */
++object ExternalCommandResolver {
++    fun parse(action: String?, sharedText: String?, editId: String?, openAdd: Boolean, nonce: Long): ExternalNavCommand? = when {
++        action == "android.intent.action.SEND" && !sharedText.isNullOrBlank() -> ExternalNavCommand.Import(sharedText, nonce)
++        !editId.isNullOrBlank() -> ExternalNavCommand.Edit(editId, nonce)
++        openAdd -> ExternalNavCommand.Add(nonce)
++        else -> null
++    }
++
++    fun closetDestination(command: ExternalNavCommand): String = when (command) {
++        is ExternalNavCommand.Import, is ExternalNavCommand.Add -> "add/OWNED"
++        is ExternalNavCommand.Edit -> "edit/" + URLEncoder.encode(command.itemId, "UTF-8").replace("+", "%20")
++    }
++
++    fun rootDestination(command: ExternalNavCommand) = when (command) {
++        is ExternalNavCommand.Import, is ExternalNavCommand.Edit, is ExternalNavCommand.Add -> LifeOsRoute.CLOSET
++    }
++}
++
++object LifeOsRoute {
++    const val HOME = "life/home"
++    const val CLOSET = "life/closet"
++    const val CALENDAR = "life/calendar"
++    const val MAP = "life/map"
++    const val COMPANION = "life/companion"
++    const val APPEARANCE = "life/appearance"
++    const val CAPTURE = "life/capture"
++    const val BACKUP = "life/backup"
++    const val MODULE = "life/module/{moduleId}"
++    const val DEFAULT = HOME
++
++    fun module(id: String) = "life/module/$id"
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/navigation/LifeOsNavigation.kt b/app/src/main/java/com/xiaoming/closie/navigation/LifeOsNavigation.kt
+new file mode 100644
+index 0000000..622382b
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/navigation/LifeOsNavigation.kt
+@@ -0,0 +1,78 @@
++package com.xiaoming.closie.navigation
++
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
++import androidx.navigation.NavHostController
++import androidx.navigation.NavType
++import androidx.navigation.navArgument
++import androidx.navigation.compose.NavHost
++import androidx.navigation.compose.composable
++import com.xiaoming.closie.ExternalNavCommand
++import com.xiaoming.closie.data.repository.WardrobeRepository
++import com.xiaoming.closie.ui.lifeos.home.LifeOsHomeScreen
++import com.xiaoming.closie.ui.lifeos.home.HomeUiState
++import com.xiaoming.closie.ui.lifeos.settings.AppearanceViewModel
++import java.time.LocalDate
++import com.xiaoming.closie.ui.lifeos.calendar.LifeCalendarScreen
++import com.xiaoming.closie.ui.lifeos.map.LifeMapScreen
++import com.xiaoming.closie.ui.lifeos.chat.CompanionShellScreen
++import com.xiaoming.closie.ui.lifeos.modules.ModuleLandingScreen
++import com.xiaoming.closie.ui.lifeos.modules.CaptureLandingScreen
++import com.xiaoming.closie.ui.lifeos.settings.AppearanceSettingsRoute
++import com.xiaoming.closie.ui.settings.DataSettingsScreen
++import com.xiaoming.closie.ui.theme.ClosieTheme
++
++@Composable
++fun LifeOsNavHost(
++    repository: WardrobeRepository,
++    externalCommand: ExternalNavCommand?,
++    onExternalCommandConsumed: () -> Unit,
++    nav: NavHostController,
++    home: HomeUiState,
++    onHomeDateSelected: (LocalDate) -> Unit,
++    appearanceViewModel: AppearanceViewModel,
++    onDrawer: () -> Unit
++) {
++    LaunchedEffect(externalCommand) {
++        externalCommand?.let {
++            nav.navigate(ExternalCommandResolver.rootDestination(it)) { launchSingleTop = true }
++        }
++    }
++    NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT) {
++        composable(LifeOsRoute.HOME) {
++            LifeOsHomeScreen(home, onDrawer,
++                onCalendar = { nav.navigate(LifeOsRoute.CALENDAR) },
++                onMap = { nav.navigate(LifeOsRoute.MAP) },
++                onCompanion = { nav.navigate(LifeOsRoute.COMPANION) },
++                onCapture = { nav.navigate(LifeOsRoute.CAPTURE) })
++        }
++        composable(LifeOsRoute.CLOSET) {
++            // Keep the existing light Closet theme while Life OS supports custom dark paper.
++            ClosieTheme {
++                ClosieNavHost(repository, externalCommand, onExternalCommandConsumed,
++                    moduleMode = true, onExitModule = { nav.popBackStack() })
++            }
++        }
++        composable(LifeOsRoute.BACKUP) {
++            ClosieTheme { DataSettingsScreen(repository) { nav.popBackStack() } }
++        }
++        composable(LifeOsRoute.CALENDAR) {
++            LifeCalendarScreen(initialDate = home.date, onBack = { nav.popBackStack() }, onOpenHomeDate = {
++                onHomeDateSelected(it)
++                nav.popBackStack(LifeOsRoute.HOME, inclusive = false)
++            })
++        }
++        composable(LifeOsRoute.MAP) { LifeMapScreen { nav.popBackStack() } }
++        composable(LifeOsRoute.COMPANION) { CompanionShellScreen { nav.popBackStack() } }
++        composable(LifeOsRoute.CAPTURE) {
++            CaptureLandingScreen(onBack = { nav.popBackStack() },
++                onOpenExistingCapture = { nav.navigate(LifeOsRoute.BACKUP) })
++        }
++        composable(LifeOsRoute.APPEARANCE) {
++            AppearanceSettingsRoute(appearanceViewModel) { nav.popBackStack() }
++        }
++        composable(LifeOsRoute.MODULE, arguments = listOf(navArgument("moduleId") { type = NavType.StringType })) { entry ->
++            ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.popBackStack() }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsRoot.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsRoot.kt
+new file mode 100644
+index 0000000..ab3423f
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsRoot.kt
+@@ -0,0 +1,89 @@
++package com.xiaoming.closie.ui.lifeos
++
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.safeDrawingPadding
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.SideEffect
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.unit.dp
++import androidx.lifecycle.compose.collectAsStateWithLifecycle
++import androidx.navigation.compose.currentBackStackEntryAsState
++import androidx.navigation.compose.rememberNavController
++import com.xiaoming.closie.ExternalNavCommand
++import com.xiaoming.closie.data.appearance.AppearanceSettings
++import com.xiaoming.closie.data.repository.WardrobeRepository
++import com.xiaoming.closie.navigation.LifeOsNavHost
++import com.xiaoming.closie.ui.lifeos.theme.LifeOsTheme
++import com.xiaoming.closie.ui.lifeos.settings.AppearanceViewModel
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++import com.xiaoming.closie.ui.lifeos.drawer.LifeOsDrawer
++import com.xiaoming.closie.ui.lifeos.components.reducedLifeMotion
++import com.xiaoming.closie.navigation.LifeOsRoute
++import com.xiaoming.closie.ui.theme.ClosieColor
++import kotlinx.coroutines.launch
++
++/** Product root. Closet is a destination inside this shell, with its original storage owner. */
++@Composable
++fun LifeOsRoot(
++    repository: WardrobeRepository,
++    appearance: AppearanceSettings,
++    shellViewModel: LifeOsShellViewModel,
++    appearanceViewModel: AppearanceViewModel,
++    externalCommand: ExternalNavCommand?,
++    onExternalCommandConsumed: () -> Unit,
++    onDarkAppearance: (Boolean) -> Unit = {}
++) {
++    LifeOsTheme(appearance) {
++        val colors = LocalLifeOsColors.current
++        val nav = rememberNavController()
++        val entry by nav.currentBackStackEntryAsState()
++        val legacySurface = entry?.destination?.route in setOf(LifeOsRoute.CLOSET, LifeOsRoute.BACKUP)
++        val home by shellViewModel.home.collectAsStateWithLifecycle()
++        val drawer = rememberDrawerState(DrawerValue.Closed)
++        val reduced = reducedLifeMotion()
++        val scope = rememberCoroutineScope()
++        val drawerWidth = (LocalConfiguration.current.screenWidthDp * .79f).coerceAtMost(380f).dp
++        suspend fun closeDrawer() {
++            if (reduced) drawer.snapTo(DrawerValue.Closed) else drawer.close()
++        }
++        fun openDrawer() {
++            scope.launch { if (reduced) drawer.snapTo(DrawerValue.Open) else drawer.open() }
++        }
++        LaunchedEffect(entry?.destination?.route) {
++            if (entry?.destination?.route != LifeOsRoute.HOME && drawer.isOpen) closeDrawer()
++        }
++        SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
++        Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
++            Box(Modifier.safeDrawingPadding()) {
++                ModalNavigationDrawer(
++                    drawerState = drawer,
++                    // Closed drawers never claim Android's edge/back gesture to open.
++                    gesturesEnabled = drawer.isOpen,
++                    scrimColor = colors.shade.copy(alpha = .16f),
++                    drawerContent = {
++                        // State overload supplies native predictive-back handling (Material3 1.3.1).
++                        ModalDrawerSheet(drawerState = drawer, modifier = Modifier.width(drawerWidth),
++                            drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
++                            drawerContainerColor = colors.paperSecondary, drawerContentColor = colors.ink) {
++                            LifeOsDrawer(
++                                onOpenModule = { module -> nav.navigate(module.route) { launchSingleTop = true } },
++                                onClose = { scope.launch { closeDrawer() } }
++                            )
++                        }
++                    }
++                ) {
++                    LifeOsNavHost(repository, externalCommand, onExternalCommandConsumed, nav, home,
++                        shellViewModel::selectDate, appearanceViewModel, ::openDrawer)
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsShellViewModel.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsShellViewModel.kt
+new file mode 100644
+index 0000000..55d6810
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/LifeOsShellViewModel.kt
+@@ -0,0 +1,27 @@
++package com.xiaoming.closie.ui.lifeos
++
++import androidx.lifecycle.ViewModel
++import androidx.lifecycle.viewModelScope
++import com.xiaoming.closie.ui.lifeos.home.DefaultHomeStateProvider
++import com.xiaoming.closie.ui.lifeos.home.HomeStateProvider
++import com.xiaoming.closie.ui.lifeos.home.HomeUiState
++import java.time.LocalDate
++import kotlinx.coroutines.ExperimentalCoroutinesApi
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.SharingStarted
++import kotlinx.coroutines.flow.flatMapLatest
++import kotlinx.coroutines.flow.stateIn
++
++/** Shell wiring for Home's date projection only. Domain state belongs to each module. */
++@OptIn(ExperimentalCoroutinesApi::class)
++class LifeOsShellViewModel(
++    provider: HomeStateProvider = DefaultHomeStateProvider()
++) : ViewModel() {
++    private val selectedDate = MutableStateFlow(LocalDate.now())
++    val home = selectedDate.flatMapLatest(provider::stateFor).stateIn(
++        viewModelScope, SharingStarted.WhileSubscribed(5_000),
++        HomeUiState(selectedDate.value, isLoading = true)
++    )
++
++    fun selectDate(date: LocalDate) { selectedDate.value = date }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/CalendarUiState.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/CalendarUiState.kt
+new file mode 100644
+index 0000000..310ac00
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/CalendarUiState.kt
+@@ -0,0 +1,24 @@
++package com.xiaoming.closie.ui.lifeos.calendar
++
++import com.xiaoming.closie.ui.lifeos.media.LifeMediaUi
++import java.time.LocalDate
++import java.time.YearMonth
++
++data class CalendarEventUi(val sourceId: String, val title: String, val domainLabel: String)
++data class CalendarIntentUi(val sourceId: String, val title: String, val domainLabel: String)
++data class TimeBearingContentUi(val sourceId: String, val title: String, val kindLabel: String)
++data class CalendarDayUi(
++    val date: LocalDate,
++    val photos: List<LifeMediaUi> = emptyList(),
++    val events: List<CalendarEventUi> = emptyList(),
++    val intents: List<CalendarIntentUi> = emptyList(),
++    val timedContent: List<TimeBearingContentUi> = emptyList()
++) {
++    val hasContent: Boolean
++        get() = photos.isNotEmpty() || events.isNotEmpty() || intents.isNotEmpty() || timedContent.isNotEmpty()
++}
++/** Query projection contract: this screen never creates events or owns a calendar database. */
++data class CalendarUiState(val month: YearMonth, val days: Map<LocalDate, CalendarDayUi> = emptyMap()) {
++    fun hasContentIn(displayedMonth: YearMonth): Boolean =
++        days.any { (date, day) -> YearMonth.from(date) == displayedMonth && day.hasContent }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/LifeCalendarScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/LifeCalendarScreen.kt
+new file mode 100644
+index 0000000..0a7dca1
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/LifeCalendarScreen.kt
+@@ -0,0 +1,105 @@
++package com.xiaoming.closie.ui.lifeos.calendar
++
++import androidx.compose.foundation.BorderStroke
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
++import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
++import androidx.compose.material.icons.outlined.Close
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.window.Dialog
++import androidx.compose.ui.window.DialogProperties
++import com.xiaoming.closie.ui.lifeos.components.*
++import com.xiaoming.closie.ui.lifeos.theme.*
++import java.time.LocalDate
++import java.time.YearMonth
++
++@Composable
++fun LifeCalendarScreen(
++    initialDate: LocalDate,
++    onBack: () -> Unit,
++    onOpenHomeDate: (LocalDate) -> Unit,
++    state: CalendarUiState = CalendarUiState(YearMonth.from(initialDate)),
++    onMonthChanged: (YearMonth) -> Unit = {}
++) {
++    val colors = LocalLifeOsColors.current
++    var monthText by rememberSaveable { mutableStateOf(state.month.toString()) }
++    var selectedText by rememberSaveable { mutableStateOf<String?>(null) }
++    val month = YearMonth.parse(monthText)
++    LifePage("生活日历", onBack) {
++        Row(verticalAlignment = Alignment.CenterVertically) {
++            IconButton(onClick = { monthText = MonthGrid.previous(month).toString(); onMonthChanged(MonthGrid.previous(month)) }) {
++                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "上一个月")
++            }
++            Text("${month.year} 年 ${month.monthValue} 月", Modifier.weight(1f), style = LifeText.title)
++            IconButton(onClick = { monthText = MonthGrid.next(month).toString(); onMonthChanged(MonthGrid.next(month)) }) {
++                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "下一个月")
++            }
++        }
++        Surface(color = colors.card, shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, colors.line)) {
++            Column(Modifier.padding(8.dp)) {
++                Row(Modifier.fillMaxWidth()) {
++                    listOf("日", "一", "二", "三", "四", "五", "六").forEach {
++                        Box(Modifier.weight(1f).heightIn(min = 36.dp), contentAlignment = Alignment.Center) { Text(it, style = LifeText.caption, color = colors.muted) }
++                    }
++                }
++                MonthGrid.cells(month).chunked(7).forEach { week ->
++                    Row(Modifier.fillMaxWidth()) {
++                        week.forEach { date ->
++                            if (date == null) Spacer(Modifier.weight(1f).height(48.dp))
++                            else {
++                                val day = state.days[date]
++                                TextButton(onClick = { selectedText = date.toString() }, Modifier.weight(1f).heightIn(min = 48.dp),
++                                    contentPadding = PaddingValues(2.dp)) {
++                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
++                                        Text(date.dayOfMonth.toString(), style = LifeText.caption, color = if (date == LocalDate.now()) colors.accentDeep else colors.ink)
++                                        if (day?.photos?.isNotEmpty() == true) LifeMediaImage(day.photos.first(), Modifier.height(24.dp).fillMaxWidth())
++                                        if (day?.intents?.isNotEmpty() == true) Text("预计", style = LifeText.caption)
++                                        if (day?.events?.isNotEmpty() == true) Text("经历", style = LifeText.caption)
++                                        if (day?.timedContent?.isNotEmpty() == true) Text("内容", style = LifeText.caption)
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++        if (!state.hasContentIn(month)) {
++            LifeEmptyState("照片、经历和预计安排，会按真实日期留在这里。")
++        }
++    }
++    selectedText?.let { text ->
++        val date = LocalDate.parse(text)
++        val day = state.days[date] ?: CalendarDayUi(date)
++        val config = LocalConfiguration.current
++        Dialog(onDismissRequest = { selectedText = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
++            Surface(Modifier.width((config.screenWidthDp * .90f).dp).heightIn(max = (config.screenHeightDp * .76f).dp),
++                shape = RoundedCornerShape(18.dp), color = colors.card) {
++                Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
++                    Row(verticalAlignment = Alignment.CenterVertically) {
++                        Text(text, Modifier.weight(1f), style = LifeText.title)
++                        IconButton(onClick = { selectedText = null }) { Icon(Icons.Outlined.Close, "关闭日期浮层") }
++                    }
++                    day.events.forEach { Text("经历 · ${it.title}", style = LifeText.body) }
++                    day.intents.forEach { Text("预计 · ${it.title}", style = LifeText.body) }
++                    day.timedContent.forEach { Text("${it.kindLabel} · ${it.title}", style = LifeText.body) }
++                    day.photos.forEach { LifeMediaImage(it, Modifier.fillMaxWidth().height(160.dp)) }
++                    if (!day.hasContent) {
++                        LifeEmptyState("这一天还没有留下记录。")
++                    }
++                    TextButton(onClick = { selectedText = null; onOpenHomeDate(date) }) { Text("翻到这一天的首页") }
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/MonthGrid.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/MonthGrid.kt
+new file mode 100644
+index 0000000..974d962
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/calendar/MonthGrid.kt
+@@ -0,0 +1,20 @@
++package com.xiaoming.closie.ui.lifeos.calendar
++
++import java.time.LocalDate
++import java.time.YearMonth
++
++/** Pure Sunday-first date math for the Life Calendar projection, independent of feature UI. */
++object MonthGrid {
++    fun cells(month: YearMonth): List<LocalDate?> {
++        val offset = month.atDay(1).dayOfWeek.value % 7
++        val length = month.lengthOfMonth()
++        val cellCount = ((offset + length + 6) / 7) * 7
++        return List(cellCount) { index ->
++            val day = index - offset + 1
++            if (day in 1..length) month.atDay(day) else null
++        }
++    }
++
++    fun previous(month: YearMonth): YearMonth = month.minusMonths(1)
++    fun next(month: YearMonth): YearMonth = month.plusMonths(1)
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/chat/CompanionShellScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/chat/CompanionShellScreen.kt
+new file mode 100644
+index 0000000..ff90574
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/chat/CompanionShellScreen.kt
+@@ -0,0 +1,42 @@
++package com.xiaoming.closie.ui.lifeos.chat
++
++import androidx.compose.foundation.layout.*
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.outlined.ArrowBack
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.tooling.preview.Preview
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.theme.*
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun CompanionShellScreen(onBack: () -> Unit) {
++    val colors = LocalLifeOsColors.current
++    Scaffold(containerColor = colors.paperSecondary, topBar = {
++        TopAppBar(title = { Column { Text("伙伴", style = LifeText.title); Text("日常，慢慢聊", style = LifeText.caption, color = colors.muted) } },
++            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回 Life OS 首页") } },
++            colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.paper))
++    }) { pad ->
++        Column(Modifier.padding(pad).fillMaxSize()) {
++            Row(Modifier.padding(horizontal = 16.dp)) {
++                TextButton(onClick = {}, enabled = false) { Text("历史 · 待接入") }
++                TextButton(onClick = {}, enabled = false) { Text("新话题 · 待接入") }
++            }
++            Box(Modifier.weight(1f).fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
++                Text("伙伴连接将在后续工程接入", style = LifeText.body, color = colors.muted)
++            }
++            Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
++                OutlinedTextField(value = "", onValueChange = {}, enabled = false, modifier = Modifier.weight(1f),
++                    placeholder = { Text("连接后，在这里聊天") }, label = { Text("消息输入 · 待连接") })
++                TextButton(onClick = {}, enabled = false) { Text("发送") }
++            }
++        }
++    }
++}
++
++@Preview(name = "Companion · Unconnected shell", showBackground = true)
++@Composable
++private fun CompanionShellPreview() { LifeOsTheme { CompanionShellScreen {} } }
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/ColorSwatch.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/ColorSwatch.kt
+new file mode 100644
+index 0000000..74e538a
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/ColorSwatch.kt
+@@ -0,0 +1,21 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.border
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.data.appearance.HexColor
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++
++@Composable
++fun ColorSwatch(hex: String, modifier: Modifier = Modifier) {
++    val valid = HexColor.normalizeOrNull(hex)
++    val color = valid?.let { Color(0xFF000000L or it.substring(1).toLong(16)) } ?: LocalLifeOsColors.current.paperSecondary
++    Box(modifier.size(30.dp).background(color, RoundedCornerShape(5.dp))
++        .border(1.dp, LocalLifeOsColors.current.line, RoundedCornerShape(5.dp)))
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/CompanionEntry.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/CompanionEntry.kt
+new file mode 100644
+index 0000000..2b60323
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/CompanionEntry.kt
+@@ -0,0 +1,43 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.gestures.detectVerticalDragGestures
++import androidx.compose.foundation.layout.*
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.KeyboardArrowUp
++import androidx.compose.material3.Icon
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.rememberUpdatedState
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.theme.LifeText
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++
++/** Only this fixed entry owns upward drag; the Home scroll area is independent. */
++@Composable
++fun CompanionEntry(onOpen: () -> Unit, modifier: Modifier = Modifier) {
++    val open = rememberUpdatedState(onOpen)
++    val threshold = with(LocalDensity.current) { 32.dp.toPx() }
++    val colors = LocalLifeOsColors.current
++    Column(
++        modifier.fillMaxWidth().heightIn(min = 56.dp)
++            .clickable(role = Role.Button, onClickLabel = "进入伙伴聊天", onClick = onOpen)
++            .pointerInput(threshold) {
++                var distance = 0f
++                detectVerticalDragGestures(
++                    onDragStart = { distance = 0f },
++                    onDragEnd = { if (distance < -threshold) open.value(); distance = 0f },
++                    onDragCancel = { distance = 0f },
++                    onVerticalDrag = { change, delta -> distance += delta; change.consume() }
++                )
++            }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally
++    ) {
++        Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = null, tint = colors.accent)
++        Text("上滑 · 和伙伴聊聊", style = LifeText.caption, color = colors.muted)
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeEmptyState.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeEmptyState.kt
+new file mode 100644
+index 0000000..b55d8b7
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeEmptyState.kt
+@@ -0,0 +1,17 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.padding
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.theme.LifeText
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++
++@Composable
++fun LifeEmptyState(text: String, modifier: Modifier = Modifier) {
++    Column(modifier.padding(vertical = 18.dp)) {
++        Text(text, style = LifeText.body, color = LocalLifeOsColors.current.muted)
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeGestures.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeGestures.kt
+new file mode 100644
+index 0000000..f39ccb8
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeGestures.kt
+@@ -0,0 +1,48 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import android.animation.ValueAnimator
++import androidx.compose.foundation.gestures.awaitEachGesture
++import androidx.compose.foundation.gestures.awaitFirstDown
++import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
++import androidx.compose.foundation.gestures.horizontalDrag
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.rememberUpdatedState
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.MotionDurationScale
++import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.unit.dp
++
++@Composable
++fun reducedLifeMotion(): Boolean {
++    val scope = rememberCoroutineScope()
++    return scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f || !ValueAnimator.areAnimatorsEnabled()
++}
++
++/** Content swipes, excluding both Android system-back edges. */
++@Composable
++fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: () -> Unit = {}, onRight: () -> Unit = {}): Modifier {
++    val left = rememberUpdatedState(onLeft)
++    val right = rememberUpdatedState(onRight)
++    val threshold = with(LocalDensity.current) { 56.dp.toPx() }
++    val edge = with(LocalDensity.current) { 24.dp.toPx() }
++    return if (!enabled) this else pointerInput(threshold, edge) {
++        awaitEachGesture {
++            val down = awaitFirstDown(requireUnconsumed = false)
++            // Check the original down position before consuming even the touch-slop event.
++            if (down.position.x <= edge || down.position.x >= size.width - edge) return@awaitEachGesture
++            var distance = 0f
++            val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
++                change.consume()
++                distance = overSlop
++            } ?: return@awaitEachGesture
++            val released = horizontalDrag(drag.id) { change ->
++                distance += change.position.x - change.previousPosition.x
++                change.consume()
++            }
++            if (released && distance < -threshold) left.value()
++            if (released && distance > threshold) right.value()
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeMediaImage.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeMediaImage.kt
+new file mode 100644
+index 0000000..ca3ab1c
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifeMediaImage.kt
+@@ -0,0 +1,35 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.padding
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.unit.dp
++import coil.compose.SubcomposeAsyncImage
++import com.xiaoming.closie.ui.lifeos.media.LifeMediaUi
++import com.xiaoming.closie.ui.lifeos.media.MediaSourceState
++import com.xiaoming.closie.ui.lifeos.theme.LifeText
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++
++@Composable
++fun LifeMediaImage(photo: LifeMediaUi, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
++    val colors = LocalLifeOsColors.current
++    @Composable fun Placeholder(text: String) {
++        Box(Modifier.fillMaxSize().background(colors.paperSecondary).padding(12.dp), contentAlignment = Alignment.Center) {
++            Text(text, style = LifeText.caption, color = colors.muted)
++        }
++    }
++    val source = photo.uri.takeIf { photo.sourceState == MediaSourceState.AVAILABLE }
++    SubcomposeAsyncImage(
++        model = source,
++        contentDescription = photo.title ?: photo.caption ?: "生活照片",
++        modifier = modifier, contentScale = contentScale,
++        loading = { Placeholder("照片载入中") },
++        error = { Placeholder(if (photo.sourceState == MediaSourceState.PENDING_RESTORE) "原件待恢复" else "原件暂不可用") }
++    )
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePage.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePage.kt
+new file mode 100644
+index 0000000..da90c87
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePage.kt
+@@ -0,0 +1,29 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.ColumnScope
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.outlined.ArrowBack
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.theme.LifeText
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun LifePage(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
++    val colors = LocalLifeOsColors.current
++    Scaffold(containerColor = colors.paper, topBar = {
++        TopAppBar(title = { Text(title, style = LifeText.title) },
++            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回上一页") } },
++            colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.paper))
++    }) { pad ->
++        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), content = content)
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoStack.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoStack.kt
+new file mode 100644
+index 0000000..2df6c8e
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoStack.kt
+@@ -0,0 +1,131 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.animation.core.Animatable
++import androidx.compose.animation.core.Spring
++import androidx.compose.animation.core.spring
++import androidx.compose.foundation.BorderStroke
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.gestures.detectHorizontalDragGestures
++import androidx.compose.foundation.gestures.detectVerticalDragGestures
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
++import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.graphicsLayer
++import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.semantics.clearAndSetSemantics
++import androidx.compose.ui.tooling.preview.Preview
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.zIndex
++import com.xiaoming.closie.ui.lifeos.media.LifeMediaUi
++import com.xiaoming.closie.ui.lifeos.theme.*
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.launch
++import kotlin.math.abs
++
++/** UI interaction only. No storage knowledge and no production sample images. */
++@Composable
++fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Unit, modifier: Modifier = Modifier) {
++    if (photos.isEmpty()) { LifeEmptyState("今天还没有照片。", modifier); return }
++    val colors = LocalLifeOsColors.current
++    val reduced = reducedLifeMotion()
++    val scope = rememberCoroutineScope()
++    val density = LocalDensity.current
++    val threshold = with(density) { 48.dp.toPx() }
++    val lift = with(density) { 8.dp.toPx() }
++    var index by rememberSaveable { mutableIntStateOf(0) }
++    var vertical by rememberSaveable { mutableStateOf(false) }
++    var drag by remember { mutableFloatStateOf(0f) }
++    var dragging by remember { mutableStateOf(false) }
++    var busy by remember { mutableStateOf(false) }
++    val settling = remember { Animatable(0f) }
++    var animationJob by remember { mutableStateOf<Job?>(null) }
++    val current = PhotoStackInteraction.nextIndex(index, 0, photos.size)
++
++    fun settle(step: Int, distance: Float, extent: Float) {
++        animationJob?.cancel()
++        dragging = false
++        animationJob = scope.launch {
++            busy = true
++            try {
++                settling.snapTo(distance)
++                if (!reduced) settling.animateTo(
++                    if (step == 0) 0f else (if (step > 0) -1 else 1) * (extent + threshold),
++                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
++                )
++                if (step != 0) index = PhotoStackInteraction.nextIndex(current, step, photos.size)
++                settling.snapTo(0f)
++                drag = 0f
++            } finally { busy = false }
++        }
++    }
++
++    Column(modifier) {
++        BoxWithConstraints(Modifier.fillMaxWidth().height(272.dp).padding(horizontal = 8.dp, vertical = 12.dp)) {
++            val extent = with(density) { (if (vertical) maxHeight else maxWidth).toPx() }
++            val offset = if (dragging) drag else settling.value
++            val dragModifier = Modifier.pointerInput(photos.map { it.id }, vertical, reduced, busy) {
++                if (busy || photos.size < 2) return@pointerInput
++                val start: (androidx.compose.ui.geometry.Offset) -> Unit = {
++                    animationJob?.cancel(); drag = 0f; dragging = true
++                }
++                val end: () -> Unit = { settle(PhotoStackInteraction.releaseStep(drag, threshold, photos.size), drag, extent) }
++                val cancel: () -> Unit = { settle(0, drag, extent) }
++                if (vertical) detectVerticalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
++                else detectHorizontalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
++            }
++            (minOf(3, photos.size) - 1 downTo 0).forEach { depth ->
++                val photo = photos[PhotoStackInteraction.nextIndex(current, depth, photos.size)]
++                val top = depth == 0
++                Surface(
++                    Modifier.fillMaxWidth().height(238.dp).zIndex((3 - depth).toFloat())
++                        .graphicsLayer {
++                            val progress = (abs(offset) / extent.coerceAtLeast(1f)).coerceIn(0f, 1f)
++                            translationX = if (top && !vertical) offset else if (depth == 1) lift * .75f else -lift * .4f
++                            translationY = if (top && vertical) offset else depth * lift * (1 - progress * .5f)
++                            rotationZ = if (reduced) 0f else if (top) -1.4f + offset / 45f else if (depth == 1) 3.2f else -3f
++                            scaleX = 1f - depth * .03f + if (top && dragging && !reduced) .012f else 0f
++                            scaleY = scaleX
++                            shadowElevation = if (reduced) 0f else (if (top && dragging) 16.dp else 6.dp).toPx()
++                        }.then(if (top) dragModifier.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) onPhotoClick(photo) }) else Modifier.clearAndSetSemantics {}),
++                    shape = RoundedCornerShape(5.dp), color = colors.card,
++                    border = BorderStroke(1.dp, colors.line)
++                ) {
++                    Column(Modifier.padding(9.dp)) {
++                        LifeMediaImage(photo, Modifier.weight(1f).fillMaxWidth())
++                        Text(photo.caption ?: photo.title ?: "生活的一页", Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp),
++                            style = LifeText.caption, color = colors.inkSecondary, maxLines = 2)
++                    }
++                }
++            }
++        }
++        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
++            IconButton(onClick = { settle(-1, 0f, 0f) }, enabled = photos.size > 1 && !busy) {
++                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "上一张照片")
++            }
++            Text("${current + 1} / ${photos.size}", style = LifeText.caption, color = colors.muted)
++            IconButton(onClick = { settle(1, 0f, 0f) }, enabled = photos.size > 1 && !busy) {
++                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "下一张照片")
++            }
++            TextButton(onClick = { vertical = !vertical }, enabled = !busy) { Text(if (vertical) "左右翻" else "上下翻", style = LifeText.caption) }
++        }
++    }
++}
++
++@Preview(name = "Photo Stack · PreviewOnly fixture", showBackground = true)
++@Composable
++private fun LifePhotoStackPreview() {
++    LifeOsTheme {
++        LifePhotoStack(listOf(LifeMediaUi("preview-only-1", null, caption = "PreviewOnly · 第一张"),
++            LifeMediaUi("preview-only-2", null, caption = "PreviewOnly · 第二张"),
++            LifeMediaUi("preview-only-3", null, caption = "PreviewOnly · 第三张")), {})
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoViewer.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoViewer.kt
+new file mode 100644
+index 0000000..0af51c8
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/LifePhotoViewer.kt
+@@ -0,0 +1,63 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import androidx.compose.foundation.BorderStroke
++import androidx.compose.animation.core.Animatable
++import androidx.compose.animation.core.spring
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.Close
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.graphicsLayer
++import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.window.Dialog
++import androidx.compose.ui.window.DialogProperties
++import com.xiaoming.closie.ui.lifeos.media.LifeMediaUi
++import com.xiaoming.closie.ui.lifeos.theme.*
++
++/** A native dialog window over Home. Back dismisses this window before the root/navigation stack. */
++@Composable
++fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss: () -> Unit) {
++    if (photos.isEmpty()) return
++    var index by rememberSaveable(initialPhotoId) { mutableIntStateOf(photos.indexOfFirst { it.id == initialPhotoId }.coerceAtLeast(0)) }
++    val current = PhotoStackInteraction.nextIndex(index, 0, photos.size)
++    val photo = photos[current]
++    val colors = LocalLifeOsColors.current
++    val config = LocalConfiguration.current
++    val reduced = reducedLifeMotion()
++    val reveal = remember { Animatable(if (reduced) 1f else 0f) }
++    LaunchedEffect(reduced) {
++        if (reduced) reveal.snapTo(1f) else reveal.animateTo(1f, spring(dampingRatio = 1f, stiffness = 500f))
++    }
++    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
++        Surface(
++            Modifier.width((config.screenWidthDp * .90f).dp).height((config.screenHeightDp * .78f).dp)
++                .graphicsLayer { alpha = reveal.value; scaleX = .97f + .03f * reveal.value; scaleY = scaleX },
++            shape = RoundedCornerShape(16.dp), color = colors.card, border = BorderStroke(1.dp, colors.line)
++        ) {
++            Column(Modifier.padding(12.dp)) {
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    Text("${current + 1} / ${photos.size}", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
++                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭照片浮层") }
++                }
++                LifeMediaImage(photo, Modifier.weight(1f).fillMaxWidth().lifeHorizontalSwipe(
++                    onLeft = { index = PhotoStackInteraction.nextIndex(current, 1, photos.size) },
++                    onRight = { index = PhotoStackInteraction.nextIndex(current, -1, photos.size) }
++                ), ContentScale.Fit)
++                Text(photo.caption ?: photo.title ?: "生活照片", Modifier.padding(top = 12.dp), style = LifeText.body, color = colors.ink, maxLines = 3)
++                // Future playback adapter will consume pairedVideoUri/mediaKind; Task 1 never simulates motion.
++                if (photo.motionAvailable) Text("动态组件已关联 · 播放将在后续接入", style = LifeText.caption, color = colors.muted)
++                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                    TextButton(onClick = { index = PhotoStackInteraction.nextIndex(current, -1, photos.size) }, enabled = photos.size > 1) { Text("上一张") }
++                    TextButton(onClick = { index = PhotoStackInteraction.nextIndex(current, 1, photos.size) }, enabled = photos.size > 1) { Text("下一张") }
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/PhotoStackInteraction.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/PhotoStackInteraction.kt
+new file mode 100644
+index 0000000..27e4b59
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/components/PhotoStackInteraction.kt
+@@ -0,0 +1,12 @@
++package com.xiaoming.closie.ui.lifeos.components
++
++import kotlin.math.abs
++
++object PhotoStackInteraction {
++    fun releaseStep(distance: Float, threshold: Float, count: Int): Int = when {
++        count < 2 || abs(distance) <= threshold -> 0
++        distance < 0 -> 1
++        else -> -1
++    }
++    fun nextIndex(index: Int, step: Int, count: Int) = if (count <= 0) 0 else Math.floorMod(index + step, count)
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeModules.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeModules.kt
+new file mode 100644
+index 0000000..b932e7b
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeModules.kt
+@@ -0,0 +1,34 @@
++package com.xiaoming.closie.ui.lifeos.drawer
++
++import com.xiaoming.closie.navigation.LifeOsRoute
++
++data class LifeModule(val id: String, val label: String, val route: String = LifeOsRoute.module(id))
++data class LifeModuleGroup(val label: String, val modules: List<LifeModule>)
++
++object LifeModules {
++    val groups = listOf(
++        LifeModuleGroup("随手与回看", listOf(
++            LifeModule("capture", "Capture · 记一下", LifeOsRoute.CAPTURE),
++            LifeModule("inbox", "Inbox · 稍后整理"),
++            LifeModule("calendar", "生活日历", LifeOsRoute.CALENDAR), LifeModule("search", "搜索")
++        )),
++        LifeModuleGroup("生活的一格一格", listOf(
++            LifeModule("closet", "衣橱", LifeOsRoute.CLOSET), LifeModule("shopping", "购物"),
++            LifeModule("items", "物品"), LifeModule("food", "吃喝"), LifeModule("skincare", "护肤"),
++            LifeModule("garden", "园艺"), LifeModule("reading", "阅读"), LifeModule("hobbies", "兴趣"),
++            LifeModule("travel", "旅行"), LifeModule("place", "地点"), LifeModule("plans", "计划"),
++            LifeModule("marks", "生活印记"), LifeModule("map", "生活地图", LifeOsRoute.MAP)
++        )),
++        LifeModuleGroup("记录与作品", listOf(
++            LifeModule("plog", "Plog · 生活手账"), LifeModule("gallery", "作品集"),
++            LifeModule("knowledge", "知识"), LifeModule("media", "媒体"),
++            LifeModule("companion", "伙伴聊天", LifeOsRoute.COMPANION), LifeModule("vault", "创作库")
++        )),
++        LifeModuleGroup("只属于自己的设置", listOf(
++            LifeModule("finance", "账目"), LifeModule("membership", "会员"), LifeModule("health", "健康"),
++            LifeModule("privacy", "隐私"), LifeModule("backup", "衣橱备份", LifeOsRoute.BACKUP),
++            LifeModule("settings", "设置与主题", LifeOsRoute.APPEARANCE)
++        ))
++    )
++    fun label(id: String) = groups.flatMap { it.modules }.firstOrNull { it.id == id }?.label ?: "生活模块"
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeOsDrawer.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeOsDrawer.kt
+new file mode 100644
+index 0000000..eeffcb0
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/drawer/LifeOsDrawer.kt
+@@ -0,0 +1,55 @@
++package com.xiaoming.closie.ui.lifeos.drawer
++
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.Close
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.tooling.preview.Preview
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.components.lifeHorizontalSwipe
++import com.xiaoming.closie.ui.lifeos.theme.*
++
++@Composable
++fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
++    val colors = LocalLifeOsColors.current
++    LazyColumn(modifier.fillMaxHeight().lifeHorizontalSwipe(onRight = onClose),
++        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp)) {
++        item {
++            Row(verticalAlignment = Alignment.CenterVertically) {
++                Text("生活的抽屉", Modifier.weight(1f), style = LifeText.title, color = colors.ink)
++                IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, "收起生活的抽屉") }
++            }
++            Text("把日子放回自己的位置", style = LifeText.caption, color = colors.muted)
++            Spacer(Modifier.height(20.dp))
++        }
++        LifeModules.groups.forEach { group ->
++            item(key = group.label) {
++                Text(group.label, Modifier.padding(top = 16.dp, bottom = 8.dp), style = LifeText.caption, color = colors.muted)
++                HorizontalDivider(color = colors.line)
++            }
++            group.modules.forEach { module ->
++                item(key = module.id) {
++                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
++                        .clickable(role = Role.Button, onClick = { onOpenModule(module) })
++                        .padding(vertical = 10.dp, horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
++                        Text(module.label, Modifier.weight(1f), style = LifeText.body, color = colors.ink)
++                        Text("›", style = LifeText.title, color = colors.accentDeep)
++                    }
++                }
++            }
++        }
++        item { Text("右滑或点击露出的首页，收起抽屉。", Modifier.padding(top = 26.dp), style = LifeText.caption, color = colors.muted) }
++    }
++}
++
++@Preview(name = "Life OS · Drawer", showBackground = true, widthDp = 310, heightDp = 820)
++@Composable
++private fun LifeOsDrawerPreview() {
++    LifeOsTheme { Surface(color = LocalLifeOsColors.current.paperSecondary) { LifeOsDrawer({}, {}) } }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/home/HomeUiState.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/home/HomeUiState.kt
+new file mode 100644
+index 0000000..52b3200
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/home/HomeUiState.kt
+@@ -0,0 +1,26 @@
++package com.xiaoming.closie.ui.lifeos.home
++
++import com.xiaoming.closie.ui.lifeos.media.LifeMediaUi
++import java.time.LocalDate
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.flowOf
++
++data class HomeFactUi(val sourceId: String, val title: String, val domainLabel: String)
++data class HistoryItemUi(val sourceId: String, val date: LocalDate, val title: String)
++data class FutureIntentUi(val sourceId: String, val expectedDate: LocalDate?, val title: String)
++
++data class HomeUiState(
++    val date: LocalDate,
++    val eligibleMedia: List<LifeMediaUi> = emptyList(),
++    val todayFacts: List<HomeFactUi> = emptyList(),
++    val historyItems: List<HistoryItemUi> = emptyList(),
++    val futureIntents: List<FutureIntentUi> = emptyList(),
++    val isLoading: Boolean = false
++)
++
++interface HomeStateProvider { fun stateFor(date: LocalDate): Flow<HomeUiState> }
++
++/** Task 1 production provider: no seeds, media scan, or WardrobeRepository dependency. */
++class DefaultHomeStateProvider : HomeStateProvider {
++    override fun stateFor(date: LocalDate): Flow<HomeUiState> = flowOf(HomeUiState(date))
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/home/LifeOsHomeScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/home/LifeOsHomeScreen.kt
+new file mode 100644
+index 0000000..c5b5e4e
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/home/LifeOsHomeScreen.kt
+@@ -0,0 +1,113 @@
++package com.xiaoming.closie.ui.lifeos.home
++
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.*
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.tooling.preview.Preview
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.components.*
++import com.xiaoming.closie.ui.lifeos.theme.*
++import java.time.LocalDate
++import java.time.format.DateTimeFormatter
++import java.util.Locale
++
++@Composable
++fun LifeOsHomeScreen(
++    state: HomeUiState,
++    onDrawer: () -> Unit, onCalendar: () -> Unit, onMap: () -> Unit,
++    onCompanion: () -> Unit, onCapture: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    val colors = LocalLifeOsColors.current
++    var viewerPhotoId by remember { mutableStateOf<String?>(null) }
++    Column(modifier.fillMaxSize()) {
++        LazyColumn(
++            Modifier.weight(1f).fillMaxWidth().lifeHorizontalSwipe(onLeft = onDrawer),
++            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
++        ) {
++            item {
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    IconButton(onClick = onDrawer) { Icon(Icons.Outlined.Menu, "打开生活的抽屉", tint = colors.inkSecondary) }
++                    Column(Modifier.weight(1f)) {
++                        Text("Life OS", style = LifeText.display, color = colors.ink)
++                        Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
++                    }
++                    IconButton(onClick = onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", tint = colors.inkSecondary) }
++                    IconButton(onClick = onMap) { Icon(Icons.Outlined.Map, "生活地图", tint = colors.inkSecondary) }
++                }
++                TextButton(onClick = onCompanion) { Text("伙伴 · 聊一会儿", style = LifeText.caption) }
++                Spacer(Modifier.height(10.dp))
++                Text(state.date.format(DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)), style = LifeText.caption, color = colors.muted)
++                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)), style = LifeText.title, color = colors.ink)
++                Text("把今天轻轻收好", style = LifeText.caption, color = colors.inkSecondary)
++            }
++            item {
++                HomeSectionLabel("今天的一小叠", "TODAY")
++                if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.accent)
++                else if (state.eligibleMedia.isEmpty()) {
++                    LifeEmptyState("今天还没有照片。\n留白，也是一页生活。", Modifier.heightIn(min = 150.dp))
++                } else LifePhotoStack(state.eligibleMedia, onPhotoClick = { viewerPhotoId = it.id })
++            }
++            item {
++                HomeSectionLabel("历史 · 旧日的一页", "MEMORY")
++                if (state.historyItems.isEmpty()) LifeEmptyState("以后，这里会慢慢留下以前的日子。")
++                else state.historyItems.forEach {
++                    Text(it.date.toString(), style = LifeText.caption, color = colors.muted)
++                    Text(it.title, style = LifeText.body, color = colors.ink)
++                    Spacer(Modifier.height(12.dp))
++                }
++            }
++            item {
++                HomeSectionLabel("未来 · 盼着的日子", "AHEAD")
++                if (state.futureIntents.isEmpty()) LifeEmptyState("想去的地方、想做的事，记下后会在这里等你。")
++                else state.futureIntents.forEach {
++                    Text(it.title, style = LifeText.body, color = colors.ink)
++                    Text("预计 · ${it.expectedDate ?: "日期未定"}", style = LifeText.caption, color = colors.inkSecondary)
++                    Spacer(Modifier.height(12.dp))
++                }
++            }
++            item {
++                HomeSectionLabel("今天留下的事", "")
++                if (state.todayFacts.isEmpty()) LifeEmptyState("今天还没有写下的经历。")
++                else state.todayFacts.forEach {
++                    Text(it.title, style = LifeText.body, color = colors.ink)
++                    Text(it.domainLabel, style = LifeText.caption, color = colors.muted)
++                }
++                Spacer(Modifier.height(24.dp))
++            }
++        }
++        HorizontalDivider(color = colors.line)
++        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
++            CompanionEntry(onCompanion, Modifier.weight(1f))
++            TextButton(onClick = onCapture, modifier = Modifier.heightIn(min = 48.dp)) {
++                Icon(Icons.Outlined.Add, contentDescription = null)
++                Text("记一下")
++            }
++        }
++    }
++    val selected = state.eligibleMedia.firstOrNull { it.id == viewerPhotoId }
++    if (selected != null) LifePhotoViewer(state.eligibleMedia, selected.id, onDismiss = { viewerPhotoId = null })
++}
++
++@Composable
++private fun HomeSectionLabel(title: String, english: String) {
++    val colors = LocalLifeOsColors.current
++    Row(Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
++        Text(title, style = LifeText.caption.copy(fontWeight = FontWeight.Medium), color = colors.inkSecondary)
++        Spacer(Modifier.width(10.dp))
++        if (english.isNotEmpty()) Text(english, style = LifeText.caption, color = colors.muted)
++        HorizontalDivider(Modifier.weight(1f).padding(start = 12.dp), color = colors.line)
++    }
++}
++
++@Preview(name = "Life OS · Production empty", showBackground = true)
++@Composable
++private fun LifeOsHomePreview() {
++    LifeOsTheme { LifeOsHomeScreen(HomeUiState(LocalDate.of(2026, 10, 8)), {}, {}, {}, {}, {}) }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/map/LifeMapScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/map/LifeMapScreen.kt
+new file mode 100644
+index 0000000..cdc46f8
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/map/LifeMapScreen.kt
+@@ -0,0 +1,34 @@
++package com.xiaoming.closie.ui.lifeos.map
++
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.height
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.components.LifeEmptyState
++import com.xiaoming.closie.ui.lifeos.components.LifePage
++import com.xiaoming.closie.ui.lifeos.theme.*
++
++data class MapPlaceUi(
++    val sourceId: String, val name: String,
++    val latitude: Double? = null, val longitude: Double? = null,
++    val linkedDomainLabels: List<String> = emptyList()
++)
++data class LifeMapUiState(val places: List<MapPlaceUi> = emptyList())
++
++@Composable
++fun LifeMapScreen(state: LifeMapUiState = LifeMapUiState(), onBack: () -> Unit) {
++    LifePage("生活地图", onBack) {
++        Text("生活，散落在这些地方", style = LifeText.title)
++        LifeEmptyState("吃喝、购物、衣橱、兴趣、旅行……同一个地点，把相关的记录放在一起。")
++        if (state.places.isEmpty()) {
++            Spacer(Modifier.height(48.dp))
++            Text("地图会从真实地点慢慢展开。", style = LifeText.body, color = LocalLifeOsColors.current.inkSecondary)
++            LifeEmptyState("当前还没有接入地点记录。地图展示将在后续 Task 接入。")
++        } else state.places.forEach {
++            Text(it.name, style = LifeText.body)
++            Text(it.linkedDomainLabels.joinToString(" · "), style = LifeText.caption)
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/media/LifeMediaUi.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/media/LifeMediaUi.kt
+new file mode 100644
+index 0000000..88a4e37
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/media/LifeMediaUi.kt
+@@ -0,0 +1,12 @@
++package com.xiaoming.closie.ui.lifeos.media
++
++enum class LifeMediaKind { PHOTO, MOTION_PHOTO, VIDEO }
++enum class MediaSourceState { AVAILABLE, SOURCE_MISSING, PENDING_RESTORE }
++
++/** Shared presentation DTO. id is supplied by a projection; uri is only a source locator. */
++data class LifeMediaUi(
++    val id: String, val uri: String?, val title: String? = null, val caption: String? = null,
++    val mediaKind: LifeMediaKind = LifeMediaKind.PHOTO,
++    val motionAvailable: Boolean = false, val pairedVideoUri: String? = null,
++    val sourceState: MediaSourceState = MediaSourceState.AVAILABLE
++)
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/modules/ModuleLandingScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/modules/ModuleLandingScreen.kt
+new file mode 100644
+index 0000000..6f4b517
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/modules/ModuleLandingScreen.kt
+@@ -0,0 +1,33 @@
++package com.xiaoming.closie.ui.lifeos.modules
++
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.height
++import androidx.compose.material3.OutlinedButton
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.xiaoming.closie.ui.lifeos.components.LifePage
++import com.xiaoming.closie.ui.lifeos.components.LifeEmptyState
++import com.xiaoming.closie.ui.lifeos.drawer.LifeModules
++import com.xiaoming.closie.ui.lifeos.theme.LifeText
++import com.xiaoming.closie.ui.lifeos.theme.LocalLifeOsColors
++
++@Composable
++fun ModuleLandingScreen(moduleId: String, onBack: () -> Unit) {
++    LifePage(LifeModules.label(moduleId), onBack) {
++        Text("尚待后续 Task", style = LifeText.title, color = LocalLifeOsColors.current.ink)
++        LifeEmptyState("这里的入口已经留好，正式功能尚未接入。")
++    }
++}
++
++@Composable
++fun CaptureLandingScreen(onBack: () -> Unit, onOpenExistingCapture: () -> Unit) {
++    LifePage("Capture · 记一下", onBack) {
++        Text("先把看到的收下来", style = LifeText.title)
++        LifeEmptyState("现在可使用已有的商品页快速采集：开启悬浮球，识别后审核，再加入衣橱或继续编辑。")
++        OutlinedButton(onClick = onOpenExistingCapture) { Text("管理现有快速采集") }
++        Spacer(Modifier.height(24.dp))
++        Text("更多生活内容的 Capture 将在后续 Task 接入。", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceEditorState.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceEditorState.kt
+new file mode 100644
+index 0000000..dd15af1
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceEditorState.kt
+@@ -0,0 +1,34 @@
++package com.xiaoming.closie.ui.lifeos.settings
++
++import com.xiaoming.closie.data.appearance.*
++
++enum class ThemeField(val label: String) { ACCENT("主色"), PAPER("纸张色"), SECONDARY("点缀色") }
++
++/** Unsaved edits never reach DataStore. Invalid input preserves the last valid live preview. */
++data class AppearanceEditorState(
++    val selectedId: String,
++    val accent: String, val paper: String, val secondary: String,
++    val preview: AppearanceSettings,
++    val validationError: String? = null,
++    val isSaving: Boolean = false,
++    val message: String? = null
++) {
++    fun edit(field: ThemeField, text: String): AppearanceEditorState {
++        val changed = when (field) {
++            ThemeField.ACCENT -> copy(accent = text)
++            ThemeField.PAPER -> copy(paper = text)
++            ThemeField.SECONDARY -> copy(secondary = text)
++        }
++        val custom = runCatching { CustomTheme(changed.accent, changed.paper, changed.secondary).normalized() }.getOrNull()
++        return changed.copy(selectedId = AppearanceSettings.CUSTOM_ID,
++            preview = custom?.let { preview.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID, custom = it) } ?: preview,
++            validationError = if (custom == null) "颜色请填写六位 HEX，例如 #6F67A8" else null, message = null)
++    }
++
++    companion object {
++        fun from(settings: AppearanceSettings): AppearanceEditorState {
++            val c = settings.selectedColors()
++            return AppearanceEditorState(settings.selectedThemeId, c.accent, c.paper, c.secondary, settings)
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+new file mode 100644
+index 0000000..0f9ed73
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+@@ -0,0 +1,100 @@
++package com.xiaoming.closie.ui.lifeos.settings
++
++import androidx.compose.foundation.BorderStroke
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.text.KeyboardOptions
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.semantics.selected
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.text.input.KeyboardCapitalization
++import androidx.compose.ui.tooling.preview.Preview
++import androidx.compose.ui.unit.dp
++import androidx.lifecycle.compose.collectAsStateWithLifecycle
++import com.xiaoming.closie.data.appearance.*
++import com.xiaoming.closie.ui.lifeos.components.ColorSwatch
++import com.xiaoming.closie.ui.lifeos.components.LifePage
++import com.xiaoming.closie.ui.lifeos.theme.*
++
++@Composable
++fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit) {
++    val editor by viewModel.editor.collectAsStateWithLifecycle()
++    val stored by viewModel.savedAppearance.collectAsStateWithLifecycle()
++    LaunchedEffect(viewModel) { viewModel.beginAppearanceEdit() }
++    DisposableEffect(viewModel) { onDispose { viewModel.cancelAppearanceEdit() } }
++    editor?.let { draft ->
++        AppearanceSettingsScreen(draft, stored?.custom != null, viewModel::previewPreset,
++            viewModel::previewSavedCustom, viewModel::editThemeField,
++            onSave = { viewModel.saveAppearance() },
++            onCancel = { viewModel.cancelAppearanceEdit(); onBack() },
++            onRestore = viewModel::restoreOriginal)
++    }
++}
++
++@Composable
++fun AppearanceSettingsScreen(
++    state: AppearanceEditorState,
++    hasSavedCustom: Boolean,
++    onPreset: (ThemePreset) -> Unit, onCustom: () -> Unit,
++    onField: (ThemeField, String) -> Unit,
++    onSave: () -> Unit, onCancel: () -> Unit, onRestore: () -> Unit
++) {
++    val colors = LocalLifeOsColors.current
++    LifePage("主题与配色", onCancel) {
++        Text("给日子换一种颜色", style = LifeText.title)
++        Text("四份画里的灵感，还有最初的暮山紫。照片保留原来的颜色。", Modifier.padding(vertical = 12.dp), style = LifeText.body, color = colors.muted)
++        ThemePreset.entries.chunked(2).forEach { row ->
++            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
++                row.forEach { preset ->
++                    val chosen = state.selectedId == preset.id
++                    Surface(onClick = { onPreset(preset) }, enabled = !state.isSaving,
++                        modifier = Modifier.weight(1f).semantics { selected = chosen },
++                        color = colors.card, shape = RoundedCornerShape(12.dp),
++                        border = BorderStroke(if (chosen) 2.dp else 1.dp, if (chosen) colors.accent else colors.line)) {
++                        Column(Modifier.padding(12.dp)) {
++                            Text(preset.displayName, style = LifeText.body)
++                            Text(if (chosen) "已选" else "试试这份", style = LifeText.caption, color = colors.inkSecondary)
++                            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
++                                ColorSwatch(preset.accent); ColorSwatch(preset.paper); ColorSwatch(preset.secondary)
++                            }
++                        }
++                    }
++                }
++                if (row.size == 1) Spacer(Modifier.weight(1f))
++            }
++        }
++        if (hasSavedCustom) OutlinedButton(onClick = onCustom, enabled = !state.isSaving) {
++            Text(if (state.selectedId == AppearanceSettings.CUSTOM_ID) "我的配色 · 已选" else "恢复上次的我的配色")
++        }
++        Surface(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = colors.paperSecondary, shape = RoundedCornerShape(12.dp)) {
++            Column(Modifier.padding(18.dp)) {
++                Text("实时试色", style = LifeText.caption, color = colors.muted)
++                Text("今天，也值得收好。", Modifier.padding(vertical = 10.dp), style = LifeText.title)
++                Text("给自己留一句很轻的话。", style = LifeText.body, color = colors.inkSecondary)
++                Text("正文与边线会随配色调整。", Modifier.padding(top = 10.dp), style = LifeText.caption, color = colors.muted)
++            }
++        }
++        Text("自定义主题色", style = LifeText.title)
++        listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary).forEach { (field, value) ->
++            OutlinedTextField(value, { onField(field, it) }, Modifier.fillMaxWidth().padding(vertical = 5.dp),
++                label = { Text(field.label) }, leadingIcon = { ColorSwatch(value) }, singleLine = true,
++                enabled = !state.isSaving, isError = HexColor.normalizeOrNull(value) == null,
++                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
++        }
++        Text(state.validationError ?: "文字和按钮会自动调整，以保持可读。", style = LifeText.caption, color = colors.inkSecondary)
++        state.message?.let { Text(it, Modifier.padding(top = 10.dp), style = LifeText.body) }
++        Button(onClick = onSave, enabled = !state.isSaving && state.validationError == null, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
++            Text(if (state.isSaving) "正在保存…" else "保存当前主题")
++        }
++        OutlinedButton(onClick = onCancel, enabled = !state.isSaving, modifier = Modifier.fillMaxWidth()) { Text("取消试色") }
++        TextButton(onClick = onRestore, enabled = !state.isSaving, modifier = Modifier.fillMaxWidth()) { Text("恢复暮山紫原色") }
++    }
++}
++
++@Preview(name = "Appearance · PreviewOnly", showBackground = true)
++@Composable
++private fun AppearanceSettingsPreview() {
++    LifeOsTheme { AppearanceSettingsScreen(AppearanceEditorState.from(AppearanceSettings()), false, {}, {}, { _, _ -> }, {}, {}, {}) }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceViewModel.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceViewModel.kt
+new file mode 100644
+index 0000000..0776305
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/settings/AppearanceViewModel.kt
+@@ -0,0 +1,84 @@
++package com.xiaoming.closie.ui.lifeos.settings
++
++import androidx.lifecycle.ViewModel
++import androidx.lifecycle.ViewModelProvider
++import androidx.lifecycle.viewModelScope
++import com.xiaoming.closie.data.appearance.AppearanceRepository
++import com.xiaoming.closie.data.appearance.AppearanceSettings
++import com.xiaoming.closie.data.appearance.CustomTheme
++import com.xiaoming.closie.data.appearance.ThemePreset
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.SharingStarted
++import kotlinx.coroutines.flow.stateIn
++import kotlinx.coroutines.flow.combine
++import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.launch
++
++/** Appearance owns its saved preferences and temporary editor; only Save persists edits. */
++class AppearanceViewModel(
++    private val appearanceRepository: AppearanceRepository
++) : ViewModel() {
++    private val _editor = MutableStateFlow<AppearanceEditorState?>(null)
++    val editor = _editor.asStateFlow()
++    private var editGeneration = 0
++    val savedAppearance = appearanceRepository.settings
++    val appearance = combine(savedAppearance, editor) { stored, draft ->
++        stored?.let { draft?.preview ?: it }
++    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
++    fun beginAppearanceEdit() {
++        editGeneration++
++        _editor.value = AppearanceEditorState.from(appearanceRepository.settings.value ?: AppearanceSettings())
++    }
++
++    fun cancelAppearanceEdit() { editGeneration++; _editor.value = null }
++
++    fun previewPreset(preset: ThemePreset) {
++        if (_editor.value == null || _editor.value?.isSaving == true) return
++        val saved = appearanceRepository.settings.value ?: AppearanceSettings()
++        _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = preset.id))
++    }
++
++    fun previewSavedCustom() {
++        if (_editor.value == null || _editor.value?.isSaving == true) return
++        val saved = appearanceRepository.settings.value ?: return
++        if (saved.custom != null) _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID))
++    }
++
++    fun editThemeField(field: ThemeField, value: String) {
++        _editor.value?.takeUnless { it.isSaving }?.let { _editor.value = it.edit(field, value) }
++    }
++
++    fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
++
++    fun saveAppearance() {
++        val draft = _editor.value ?: return
++        if (draft.isSaving || draft.validationError != null) return
++        val generation = editGeneration
++        _editor.value = draft.copy(isSaving = true, message = null)
++        viewModelScope.launch {
++            runCatching {
++                when {
++                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveCustom(CustomTheme(draft.accent, draft.paper, draft.secondary))
++                    else -> appearanceRepository.selectPreset(requireNotNull(ThemePreset.fromId(draft.selectedId)))
++                }
++                appearanceRepository.read()
++            }.onSuccess { saved ->
++                if (generation == editGeneration && _editor.value != null) {
++                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已保存")
++                }
++            }.onFailure {
++                if (generation == editGeneration && _editor.value != null) {
++                    _editor.value = draft.copy(isSaving = false, message = "主题保存失败，请重试")
++                }
++            }
++        }
++    }
++
++    class Factory(private val repository: AppearanceRepository) : ViewModelProvider.Factory {
++        @Suppress("UNCHECKED_CAST")
++        override fun <T : ViewModel> create(modelClass: Class<T>): T {
++            require(modelClass.isAssignableFrom(AppearanceViewModel::class.java))
++            return AppearanceViewModel(repository) as T
++        }
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTheme.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTheme.kt
+new file mode 100644
+index 0000000..1ec631b
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTheme.kt
+@@ -0,0 +1,46 @@
++package com.xiaoming.closie.ui.lifeos.theme
++
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.darkColorScheme
++import androidx.compose.material3.lightColorScheme
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.staticCompositionLocalOf
++import androidx.compose.ui.graphics.Color
++import com.xiaoming.closie.data.appearance.AppearanceSettings
++import com.xiaoming.closie.data.appearance.ThemePalette
++import com.xiaoming.closie.data.appearance.ThemeTokens
++
++data class LifeOsColors(
++    val paper: Color, val paperSecondary: Color, val paperTertiary: Color,
++    val card: Color, val ink: Color, val inkSecondary: Color, val muted: Color,
++    val accent: Color, val accentDeep: Color, val secondary: Color,
++    val line: Color, val onAccent: Color, val shade: Color, val isDark: Boolean
++)
++
++private fun String.color() = Color(0xFF000000L or substring(1).toLong(16))
++private fun ThemeTokens.colors() = LifeOsColors(
++    paper.color(), paperSecondary.color(), paperTertiary.color(), card.color(), ink.color(),
++    inkSecondary.color(), muted.color(), accent.color(), accentDeep.color(), secondary.color(),
++    line.color(), onAccent.color(), shade.color(), isDark
++)
++
++val LocalLifeOsColors = staticCompositionLocalOf { ThemePalette.resolve(AppearanceSettings()).colors() }
++
++@Composable
++fun LifeOsTheme(settings: AppearanceSettings = AppearanceSettings(), content: @Composable () -> Unit) {
++    val colors = ThemePalette.resolve(settings).colors()
++    val base = if (colors.isDark) darkColorScheme() else lightColorScheme()
++    val scheme = base.copy(
++        primary = colors.accent, onPrimary = colors.onAccent,
++        primaryContainer = colors.paperTertiary, onPrimaryContainer = colors.accentDeep,
++        secondary = colors.accentDeep, onSecondary = colors.paper,
++        background = colors.paper, onBackground = colors.ink,
++        surface = colors.card, onSurface = colors.ink,
++        surfaceVariant = colors.paperSecondary, onSurfaceVariant = colors.inkSecondary,
++        outline = colors.line, outlineVariant = colors.line, scrim = colors.shade
++    )
++    CompositionLocalProvider(LocalLifeOsColors provides colors) {
++        MaterialTheme(colorScheme = scheme, typography = LifeOsTypography, content = content)
++    }
++}
+diff --git a/app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTypography.kt b/app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTypography.kt
+new file mode 100644
+index 0000000..d82a986
+--- /dev/null
++++ b/app/src/main/java/com/xiaoming/closie/ui/lifeos/theme/LifeOsTypography.kt
+@@ -0,0 +1,28 @@
++package com.xiaoming.closie.ui.lifeos.theme
++
++import androidx.compose.material3.Typography
++import androidx.compose.ui.text.TextStyle
++import androidx.compose.ui.text.font.FontFamily
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.sp
++
++/** System serif titles and sans text: no downloaded or unlicensed fonts in the APK. */
++object LifeText {
++    val display = TextStyle(fontFamily = FontFamily.Serif, fontSize = 26.sp, lineHeight = 34.sp)
++    val title = TextStyle(fontFamily = FontFamily.Serif, fontSize = 20.sp, lineHeight = 29.sp)
++    val body = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 15.sp, lineHeight = 24.sp)
++    val caption = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 19.sp)
++}
++
++val LifeOsTypography = Typography(
++    displaySmall = LifeText.display,
++    headlineSmall = LifeText.title,
++    titleLarge = LifeText.title,
++    titleMedium = LifeText.body.copy(fontWeight = FontWeight.Medium),
++    bodyLarge = LifeText.body,
++    bodyMedium = LifeText.body.copy(fontSize = 14.sp, lineHeight = 22.sp),
++    bodySmall = LifeText.caption,
++    labelLarge = LifeText.body.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
++    labelMedium = LifeText.caption,
++    labelSmall = LifeText.caption
++)
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+new file mode 100644
+index 0000000..8bfc8c6
+--- /dev/null
++++ b/app/src/main/res/values/strings.xml
+@@ -0,0 +1,3 @@
++<resources>
++    <string name="app_name">Life OS</string>
++</resources>
+diff --git a/app/src/test/java/com/xiaoming/closie/AppearanceRepositoryTest.kt b/app/src/test/java/com/xiaoming/closie/AppearanceRepositoryTest.kt
+new file mode 100644
+index 0000000..7344243
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/AppearanceRepositoryTest.kt
+@@ -0,0 +1,66 @@
++package com.xiaoming.closie
++
++import androidx.datastore.preferences.core.PreferenceDataStoreFactory
++import androidx.datastore.preferences.core.edit
++import com.xiaoming.closie.data.appearance.*
++import java.io.File
++import kotlinx.coroutines.*
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++
++class AppearanceRepositoryTest {
++    @get:Rule val temporary = TemporaryFolder()
++
++    @Test
++    fun `preset and custom survive a new repository and original preserves custom`() = runBlocking {
++        val file = File(temporary.root, "appearance.preferences_pb")
++        val firstJob = SupervisorJob()
++        val firstScope = CoroutineScope(firstJob + Dispatchers.IO)
++        val first = AppearanceRepository(PreferenceDataStoreFactory.create(scope = firstScope) { file }, firstScope)
++        val custom = CustomTheme("#ab12cd", "#f0eadc", "#98ab76")
++        try {
++            assertEquals(ThemePreset.ORIGINAL.id, first.read().selectedThemeId)
++            first.saveCustom(custom)
++            assertEquals(custom.normalized(), first.read().custom)
++            first.selectPreset(ThemePreset.WATER_LILY)
++            assertEquals(ThemePreset.WATER_LILY.id, first.read().selectedThemeId)
++        } finally { firstJob.cancelAndJoin() }
++
++        // A second DataStore reads the file from disk, rather than the first StateFlow's cache.
++        val secondJob = SupervisorJob()
++        val secondScope = CoroutineScope(secondJob + Dispatchers.IO)
++        val second = AppearanceRepository(PreferenceDataStoreFactory.create(scope = secondScope) { file }, secondScope)
++        try {
++            val reloaded = second.read()
++            assertEquals(ThemePreset.WATER_LILY.id, reloaded.selectedThemeId)
++            assertEquals(custom.normalized(), reloaded.custom)
++            second.selectSavedCustom()
++            assertEquals(AppearanceSettings.CUSTOM_ID, second.read().selectedThemeId)
++            second.selectPreset(ThemePreset.ORIGINAL)
++            assertEquals(ThemePreset.ORIGINAL.id, second.read().selectedThemeId)
++            assertEquals(custom.normalized(), second.read().custom)
++            second.selectSavedCustom()
++            assertEquals(custom.normalized(), second.read().selectedColors())
++        } finally { secondJob.cancelAndJoin() }
++    }
++
++    @Test
++    fun `invalid save leaves the previously persisted palette untouched`() = runBlocking {
++        val job = SupervisorJob()
++        val scope = CoroutineScope(job + Dispatchers.IO)
++        val store = PreferenceDataStoreFactory.create(scope = scope) { File(temporary.root, "invalid.preferences_pb") }
++        val repository = AppearanceRepository(store, scope)
++        try {
++            repository.saveCustom(CustomTheme("#765432", "#EFEFEF", "#BBAADD"))
++            val before = repository.read()
++            assertTrue(runCatching { repository.saveCustom(CustomTheme("oops", "#FFFFFF", "#FFFFFF")) }.isFailure)
++            assertEquals(before, repository.read())
++            store.edit { it[AppearanceCodec.customPaper] = "broken" }
++            val repaired = repository.read()
++            assertEquals(ThemePreset.ORIGINAL.id, repaired.selectedThemeId)
++            assertNull(repaired.custom)
++        } finally { job.cancelAndJoin() }
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/AppearanceViewModelTest.kt b/app/src/test/java/com/xiaoming/closie/AppearanceViewModelTest.kt
+new file mode 100644
+index 0000000..7448216
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/AppearanceViewModelTest.kt
+@@ -0,0 +1,145 @@
++package com.xiaoming.closie
++
++import androidx.datastore.preferences.core.PreferenceDataStoreFactory
++import androidx.lifecycle.ViewModelStore
++import com.xiaoming.closie.data.appearance.AppearanceRepository
++import com.xiaoming.closie.data.appearance.AppearanceSettings
++import com.xiaoming.closie.data.appearance.CustomTheme
++import com.xiaoming.closie.data.appearance.ThemePreset
++import com.xiaoming.closie.ui.lifeos.settings.AppearanceViewModel
++import com.xiaoming.closie.ui.lifeos.settings.ThemeField
++import java.io.File
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.ExperimentalCoroutinesApi
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.cancelAndJoin
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.test.TestScope
++import kotlinx.coroutines.test.UnconfinedTestDispatcher
++import kotlinx.coroutines.test.resetMain
++import kotlinx.coroutines.test.runTest
++import kotlinx.coroutines.test.setMain
++import org.junit.After
++import org.junit.Assert.*
++import org.junit.Before
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++
++@OptIn(ExperimentalCoroutinesApi::class)
++class AppearanceViewModelTest {
++    @get:Rule val temporary = TemporaryFolder()
++    private val main = UnconfinedTestDispatcher()
++    private val custom = CustomTheme("#AB12CD", "#F0EADC", "#98AB76")
++    private val saved = AppearanceSettings(ThemePreset.WATER_LILY.id, custom)
++
++    @Before fun setMain() { Dispatchers.setMain(main) }
++    @After fun resetMain() { Dispatchers.resetMain() }
++
++    @Test
++    fun `restore previews original but cancel keeps the entire saved appearance`() = runTest {
++        withEditor(saved) { repository, model ->
++            model.restoreOriginal()
++            assertEquals(ThemePreset.ORIGINAL.id, model.editor.value!!.selectedId)
++            assertEquals(ThemePreset.ORIGINAL.id, model.appearance.first { it?.selectedThemeId == ThemePreset.ORIGINAL.id }!!.selectedThemeId)
++            assertEquals(saved, repository.read())
++
++            model.cancelAppearanceEdit()
++            assertNull(model.editor.value)
++            assertEquals(saved, model.appearance.first { it == saved })
++            assertEquals(saved, repository.read())
++        }
++    }
++
++    @Test
++    fun `restore is persisted only after save and retains custom values`() = runTest {
++        withEditor(saved) { repository, model ->
++            model.restoreOriginal()
++            assertEquals(saved, repository.read())
++            saveAndAwait(model)
++            val expected = saved.copy(selectedThemeId = ThemePreset.ORIGINAL.id)
++            assertEquals(expected, repository.read())
++            model.cancelAppearanceEdit()
++            assertEquals(expected, model.appearance.first { it == expected })
++        }
++    }
++
++    @Test
++    fun `custom survives a preset save and is available in a new editor`() = runTest {
++        withEditor(AppearanceSettings()) { repository, model ->
++            model.editThemeField(ThemeField.ACCENT, custom.accent)
++            model.editThemeField(ThemeField.PAPER, custom.paper)
++            model.editThemeField(ThemeField.SECONDARY, custom.secondary)
++            saveAndAwait(model)
++            assertEquals(custom, repository.read().custom)
++            repository.settings.first { it?.selectedThemeId == AppearanceSettings.CUSTOM_ID }
++
++            model.previewPreset(ThemePreset.WATER_LILY)
++            saveAndAwait(model)
++            val preset = AppearanceSettings(ThemePreset.WATER_LILY.id, custom)
++            assertEquals(preset, repository.read())
++            repository.settings.first { it == preset }
++
++            model.cancelAppearanceEdit()
++            model.beginAppearanceEdit()
++            model.previewSavedCustom()
++            val draft = model.editor.value!!
++            assertEquals(AppearanceSettings.CUSTOM_ID, draft.selectedId)
++            assertEquals(custom, draft.preview.selectedColors())
++            assertEquals(preset, repository.read())
++            saveAndAwait(model)
++            assertEquals(AppearanceSettings(AppearanceSettings.CUSTOM_ID, custom), repository.read())
++        }
++    }
++
++    @Test
++    fun `invalid hex retains last valid preview and cannot persist`() = runTest {
++        withEditor(saved) { repository, model ->
++            model.editThemeField(ThemeField.ACCENT, "#123456")
++            val validPreview = model.editor.value!!.preview
++            model.editThemeField(ThemeField.ACCENT, "not a hex")
++            assertNotNull(model.editor.value!!.validationError)
++            assertEquals(validPreview, model.editor.value!!.preview)
++            model.saveAppearance()
++            assertFalse(model.editor.value!!.isSaving)
++            assertEquals(saved, repository.read())
++            model.cancelAppearanceEdit()
++            assertEquals(saved, model.appearance.first { it == saved })
++        }
++    }
++
++    private suspend fun saveAndAwait(model: AppearanceViewModel) {
++        model.saveAppearance()
++        val result = model.editor.first { it != null && !it.isSaving }
++        assertEquals("主题已保存", result!!.message)
++    }
++
++    /** Real Preferences DataStore; the test dispatcher controls ViewModel and store collection. */
++    private suspend fun TestScope.withEditor(
++        initial: AppearanceSettings,
++        block: suspend (AppearanceRepository, AppearanceViewModel) -> Unit
++    ) {
++        val job = SupervisorJob()
++        val scope = CoroutineScope(job + UnconfinedTestDispatcher(testScheduler))
++        val repository = AppearanceRepository(PreferenceDataStoreFactory.create(scope = scope) {
++            File(temporary.root, "editor.preferences_pb")
++        }, scope)
++        val models = ViewModelStore()
++        try {
++            initial.custom?.let { repository.saveCustom(it) }
++            if (initial.selectedThemeId != AppearanceSettings.CUSTOM_ID) {
++                repository.selectPreset(requireNotNull(ThemePreset.fromId(initial.selectedThemeId)))
++            }
++            repository.settings.first { it == initial }
++            val model = AppearanceViewModel(repository)
++            models.put("appearance", model)
++            model.appearance.first { it == initial }
++            model.beginAppearanceEdit()
++            block(repository, model)
++        } finally {
++            models.clear()
++            job.cancelAndJoin()
++        }
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/CalendarStateTest.kt b/app/src/test/java/com/xiaoming/closie/CalendarStateTest.kt
+new file mode 100644
+index 0000000..12733cc
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/CalendarStateTest.kt
+@@ -0,0 +1,40 @@
++package com.xiaoming.closie
++
++import com.xiaoming.closie.ui.lifeos.calendar.*
++import com.xiaoming.closie.ui.lifeos.media.LifeMediaUi
++import com.xiaoming.closie.ui.lifeos.media.MediaSourceState
++import java.time.YearMonth
++import org.junit.Assert.*
++import org.junit.Test
++
++class CalendarStateTest {
++    private val month = YearMonth.of(2026, 10)
++    private val date = month.atDay(8)
++
++    @Test
++    fun `empty days and content outside the displayed month keep the month empty`() {
++        assertFalse(CalendarUiState(month).hasContentIn(month))
++        val otherDate = month.plusMonths(1).atDay(8)
++        val state = CalendarUiState(month, mapOf(
++            date to CalendarDayUi(date),
++            otherDate to CalendarDayUi(otherDate, events = listOf(CalendarEventUi("test", "TestOnly", "Test")))
++        ))
++        assertFalse(state.hasContentIn(month))
++        assertTrue(state.hasContentIn(month.plusMonths(1)))
++    }
++
++    @Test
++    fun `each projection content kind independently suppresses empty state`() {
++        val days = listOf(
++            CalendarDayUi(date, photos = listOf(LifeMediaUi("test-photo", null, sourceState = MediaSourceState.SOURCE_MISSING))),
++            CalendarDayUi(date, events = listOf(CalendarEventUi("test-event", "TestOnly", "Test"))),
++            CalendarDayUi(date, intents = listOf(CalendarIntentUi("test-intent", "TestOnly", "Test"))),
++            CalendarDayUi(date, timedContent = listOf(TimeBearingContentUi("test-content", "TestOnly", "Test")))
++        )
++        days.forEach { day ->
++            assertTrue(day.hasContent)
++            assertTrue(CalendarUiState(month, mapOf(date to day)).hasContentIn(month))
++        }
++        assertFalse(CalendarDayUi(date).hasContent)
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/HomeStateTest.kt b/app/src/test/java/com/xiaoming/closie/HomeStateTest.kt
+new file mode 100644
+index 0000000..17cb51b
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/HomeStateTest.kt
+@@ -0,0 +1,41 @@
++package com.xiaoming.closie
++
++import com.xiaoming.closie.ui.lifeos.home.*
++import com.xiaoming.closie.ui.lifeos.media.*
++import com.xiaoming.closie.ui.lifeos.calendar.CalendarUiState
++import java.time.LocalDate
++import java.time.YearMonth
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.*
++import org.junit.Test
++
++class HomeStateTest {
++    @Test
++    fun `production provider has no demo media facts history or future`() = runBlocking {
++        val provider = DefaultHomeStateProvider()
++        for (date in listOf(LocalDate.of(2026, 10, 8), LocalDate.of(2024, 2, 29), LocalDate.of(2030, 1, 1))) {
++            val state = provider.stateFor(date).first()
++            assertEquals(date, state.date)
++            assertFalse(state.isLoading)
++            assertTrue(state.eligibleMedia.isEmpty())
++            assertTrue(state.todayFacts.isEmpty())
++            assertTrue(state.historyItems.isEmpty())
++            assertTrue(state.futureIntents.isEmpty())
++        }
++        assertTrue(CalendarUiState(YearMonth.of(2026, 10)).days.isEmpty())
++    }
++
++    @Test
++    fun `missing source keeps presentation identity and motion contract`() {
++        val photo = LifeMediaUi("source-id", null, mediaKind = LifeMediaKind.MOTION_PHOTO,
++            motionAvailable = true, pairedVideoUri = "content://paired/video", sourceState = MediaSourceState.SOURCE_MISSING)
++        val state = HomeUiState(LocalDate.of(2026, 10, 8), eligibleMedia = listOf(photo),
++            futureIntents = listOf(FutureIntentUi("intent-id", null, "待定的打算")))
++        assertEquals("source-id", state.eligibleMedia.single().id)
++        assertEquals("content://paired/video", state.eligibleMedia.single().pairedVideoUri)
++        assertTrue(state.todayFacts.isEmpty())
++        assertTrue(state.historyItems.isEmpty())
++        assertEquals("intent-id", state.futureIntents.single().sourceId)
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/LifeOsNavigationTest.kt b/app/src/test/java/com/xiaoming/closie/LifeOsNavigationTest.kt
+new file mode 100644
+index 0000000..f8ae691
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/LifeOsNavigationTest.kt
+@@ -0,0 +1,42 @@
++package com.xiaoming.closie
++
++import com.xiaoming.closie.navigation.*
++import com.xiaoming.closie.ui.lifeos.drawer.LifeModules
++import org.junit.Assert.*
++import org.junit.Test
++
++class LifeOsNavigationTest {
++    @Test
++    fun `root defaults to Home and drawer connects real Closet Capture and Backup`() {
++        assertEquals("life/home", LifeOsRoute.DEFAULT)
++        val modules = LifeModules.groups.flatMap { it.modules }.associateBy { it.id }
++        assertEquals(LifeOsRoute.CLOSET, modules.getValue("closet").route)
++        assertEquals(LifeOsRoute.CAPTURE, modules.getValue("capture").route)
++        assertEquals(LifeOsRoute.BACKUP, modules.getValue("backup").route)
++        assertEquals(4, LifeModules.groups.size)
++        assertEquals(LifeOsRoute.module("food"), modules.getValue("food").route)
++    }
++
++    @Test
++    fun `share import edit and capture add resolve through Closet`() {
++        val imported = ExternalCommandResolver.parse("android.intent.action.SEND", "分享的商品", "ignored", true, 1)
++        assertEquals(ExternalNavCommand.Import("分享的商品", 1), imported)
++        val edited = ExternalCommandResolver.parse(null, null, "item /中文", true, 2)
++        assertEquals(ExternalNavCommand.Edit("item /中文", 2), edited)
++        val added = ExternalCommandResolver.parse(null, null, null, true, 3)
++        assertEquals(ExternalNavCommand.Add(3), added)
++        for (command in listOf(imported!!, edited!!, added!!)) {
++            assertEquals(LifeOsRoute.CLOSET, ExternalCommandResolver.rootDestination(command))
++        }
++        assertEquals("add/OWNED", ExternalCommandResolver.closetDestination(imported))
++        assertEquals("add/OWNED", ExternalCommandResolver.closetDestination(added))
++        assertEquals("edit/item%20%2F%E4%B8%AD%E6%96%87", ExternalCommandResolver.closetDestination(edited))
++    }
++
++    @Test
++    fun `ordinary launch and empty share do not create an external command`() {
++        assertNull(ExternalCommandResolver.parse("android.intent.action.MAIN", null, null, false, 1))
++        assertNull(ExternalCommandResolver.parse("android.intent.action.SEND", "  ", "", false, 2))
++        assertNull(ExternalCommandResolver.parse(null, "text without SEND", null, false, 3))
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/MonthGridTest.kt b/app/src/test/java/com/xiaoming/closie/MonthGridTest.kt
+new file mode 100644
+index 0000000..b4ece5c
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/MonthGridTest.kt
+@@ -0,0 +1,50 @@
++package com.xiaoming.closie
++
++import com.xiaoming.closie.ui.lifeos.calendar.MonthGrid
++import java.time.YearMonth
++import org.junit.Assert.*
++import org.junit.Test
++
++class MonthGridTest {
++    @Test
++    fun `Sunday starts in the first cell without leading blanks`() {
++        val month = YearMonth.of(2026, 3)
++        val cells = MonthGrid.cells(month)
++        assertEquals(month.atDay(1), cells.first())
++        assertEquals(0, cells.indexOf(month.atDay(1)))
++        assertEquals(0, cells.size % 7)
++    }
++
++    @Test
++    fun `Monday and Saturday starts have correct leading offsets`() {
++        for ((month, offset) in listOf(YearMonth.of(2026, 6) to 1, YearMonth.of(2026, 8) to 6)) {
++            val cells = MonthGrid.cells(month)
++            assertEquals(offset, cells.indexOf(month.atDay(1)))
++            assertTrue(cells.take(offset).all { it == null })
++            assertEquals((1..month.lengthOfMonth()).map(month::atDay), cells.filterNotNull())
++            assertEquals(0, cells.size % 7)
++            assertTrue(cells.drop(offset + month.lengthOfMonth()).all { it == null })
++        }
++    }
++
++    @Test
++    fun `leap year and century boundaries retain the correct month length`() {
++        for ((year, length) in listOf(2024 to 29, 2025 to 28, 2000 to 29, 2100 to 28)) {
++            val month = YearMonth.of(year, 2)
++            val dates = MonthGrid.cells(month).filterNotNull()
++            assertEquals(length, dates.size)
++            assertEquals(month.atDay(1), dates.first())
++            assertEquals(month.atDay(length), dates.last())
++        }
++    }
++
++    @Test
++    fun `previous and next cross year boundaries and are inverse`() {
++        val january = YearMonth.of(2026, 1)
++        val december = YearMonth.of(2025, 12)
++        assertEquals(december, MonthGrid.previous(january))
++        assertEquals(january, MonthGrid.next(december))
++        assertEquals(january, MonthGrid.next(MonthGrid.previous(january)))
++        assertEquals(december, MonthGrid.previous(MonthGrid.next(december)))
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/PhotoStackInteractionTest.kt b/app/src/test/java/com/xiaoming/closie/PhotoStackInteractionTest.kt
+new file mode 100644
+index 0000000..e613373
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/PhotoStackInteractionTest.kt
+@@ -0,0 +1,19 @@
++package com.xiaoming.closie
++
++import com.xiaoming.closie.ui.lifeos.components.PhotoStackInteraction
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class PhotoStackInteractionTest {
++    @Test
++    fun `short drags cancel while threshold crossings cycle in either direction`() {
++        assertEquals(0, PhotoStackInteraction.releaseStep(-47f, 48f, 3))
++        assertEquals(0, PhotoStackInteraction.releaseStep(48f, 48f, 3))
++        assertEquals(1, PhotoStackInteraction.releaseStep(-49f, 48f, 3))
++        assertEquals(-1, PhotoStackInteraction.releaseStep(49f, 48f, 3))
++        assertEquals(0, PhotoStackInteraction.nextIndex(2, 1, 3))
++        assertEquals(2, PhotoStackInteraction.nextIndex(0, -1, 3))
++        assertEquals(0, PhotoStackInteraction.releaseStep(-100f, 48f, 1))
++        assertEquals(0, PhotoStackInteraction.nextIndex(5, 1, 0))
++    }
++}
+diff --git a/app/src/test/java/com/xiaoming/closie/ThemeValidationTest.kt b/app/src/test/java/com/xiaoming/closie/ThemeValidationTest.kt
+new file mode 100644
+index 0000000..2119d9e
+--- /dev/null
++++ b/app/src/test/java/com/xiaoming/closie/ThemeValidationTest.kt
+@@ -0,0 +1,62 @@
++package com.xiaoming.closie
++
++import com.xiaoming.closie.data.appearance.*
++import com.xiaoming.closie.ui.lifeos.settings.AppearanceEditorState
++import com.xiaoming.closie.ui.lifeos.settings.ThemeField
++import org.junit.Assert.*
++import org.junit.Test
++
++class ThemeValidationTest {
++    @Test
++    fun `invalid HEX is rejected and edit retains last valid preview`() {
++        for (value in listOf(null, "", "#FFF", "123456", "#GG00FF", "#12345678")) {
++            assertNull(HexColor.normalizeOrNull(value))
++        }
++        assertEquals("#ABCDEF", HexColor.normalizeOrNull(" #abcdef "))
++        val original = AppearanceSettings()
++        val edited = AppearanceEditorState.from(original).edit(ThemeField.ACCENT, "#123456")
++        val invalid = edited.edit(ThemeField.PAPER, "unfinished")
++        assertEquals(edited.preview, invalid.preview)
++        assertNotNull(invalid.validationError)
++        assertEquals(ThemePreset.ORIGINAL.id, original.selectedThemeId) // Editing does not mutate saved settings.
++        val corrected = invalid.edit(ThemeField.PAPER, "#ffffff")
++        assertNull(corrected.validationError)
++        assertEquals("#FFFFFF", corrected.preview.custom!!.paper)
++    }
++
++    @Test
++    fun `V11 preset values and original semantic overrides are retained`() {
++        assertEquals(5, ThemePreset.entries.size)
++        val expected = listOf(
++            listOf("#6F67A8", "#F6F5F9", "#B6C2CF"), listOf("#755493", "#F8F4FA", "#9FC5E6"),
++            listOf("#495A7B", "#F2F6F4", "#648665"), listOf("#2D3E56", "#F5F3EB", "#5A6E8E"),
++            listOf("#4A535C", "#F1F5F6", "#7F95AC")
++        )
++        ThemePreset.entries.zip(expected).forEach { (preset, colors) ->
++            assertEquals(colors, listOf(preset.accent, preset.paper, preset.secondary))
++        }
++        val original = ThemePalette.resolve(AppearanceSettings())
++        assertEquals("#FCFBFE", original.card)
++        assertEquals("#ECEAF3", original.paperSecondary)
++        assertEquals("#575091", original.accentDeep)
++        assertEquals("#DEDAE8", original.line)
++    }
++
++    @Test
++    fun `custom light dark and mid-tone palettes keep text and buttons readable`() {
++        val choices = listOf(
++            CustomTheme("#FFFFFF", "#FFFFFF", "#000000"), CustomTheme("#000000", "#000000", "#FFFFFF"),
++            CustomTheme("#777777", "#777777", "#FF00FF"), CustomTheme("#FFFF00", "#223344", "#00FF00"),
++            CustomTheme("#ABCDEF", "#F0EADC", "#FF0000")
++        )
++        choices.forEach { custom ->
++            val tokens = ThemePalette.resolve(AppearanceSettings(AppearanceSettings.CUSTOM_ID, custom))
++            for (surface in listOf(tokens.paper, tokens.card, tokens.paperSecondary, tokens.paperTertiary)) {
++                for (text in listOf(tokens.ink, tokens.inkSecondary, tokens.muted, tokens.accent, tokens.accentDeep)) {
++                    assertTrue("$text on $surface for $custom", ThemePalette.contrast(text, surface) >= 4.5)
++                }
++            }
++            assertTrue(ThemePalette.contrast(tokens.onAccent, tokens.accent) >= 4.5)
++        }
++    }
++}
+-- 
+2.51.1
+
