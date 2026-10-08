@@ -8,3 +8,7 @@ app/build/
 server/.env
 server/data/
 web/dist/
+
+*.jks
+*.keystore
+keystore.properties
