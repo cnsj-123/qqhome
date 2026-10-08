@@ -2,6 +2,7 @@ package com.xiaoming.closie
 
 import android.app.Application
 import com.xiaoming.closie.data.repository.LocalWardrobeRepository
+import com.xiaoming.closie.data.appearance.AppearanceRepository
 import com.xiaoming.closie.ui.quickcapture.QuickCaptureTempFiles
 
 /**
@@ -12,6 +13,7 @@ import com.xiaoming.closie.ui.quickcapture.QuickCaptureTempFiles
 class ClosieApplication : Application() {
 
     val wardrobeRepository by lazy { LocalWardrobeRepository(this) }
+    val appearanceRepository by lazy { AppearanceRepository.create(this) }
 
     override fun onCreate() {
         super.onCreate()

@@ -8,12 +8,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.remember
 import androidx.compose.material3.Surface
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.xiaoming.closie.navigation.ClosieNavHost
-import com.xiaoming.closie.ui.theme.ClosieTheme
+import com.xiaoming.closie.navigation.ExternalCommandResolver
+import com.xiaoming.closie.ui.lifeos.LifeOsRoot
+import com.xiaoming.closie.ui.lifeos.LifeOsShellViewModel
+import com.xiaoming.closie.ui.lifeos.settings.AppearanceViewModel
 
 /**
  * A single one-shot external navigation request. At most one command exists at a time; a new
@@ -40,14 +51,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Closie is intentionally light-only. Keep dark system-bar icons on the light
-        // Porcelain background regardless of the device's system dark/light setting.
+        // Start with light paper; the loaded Life OS appearance updates the icon contrast.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
         )
         // Android 10+ three-button nav draws a translucent scrim over the nav bar by default;
-        // Closie extends its bottom bar with navigationBarsPadding(), so disable that scrim.
+        // The shell draws its paper behind the navigation bar, so disable that scrim.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
@@ -55,14 +65,19 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            val repository = (application as ClosieApplication).wardrobeRepository
-            ClosieTheme {
-                Surface {
-                    ClosieNavHost(
-                        repository = repository,
-                        externalCommand = externalCommand,
-                        onExternalCommandConsumed = { externalCommand = null }
-                    )
+            val app = application as ClosieApplication
+            val shell: LifeOsShellViewModel = viewModel()
+            val appearanceViewModel: AppearanceViewModel = viewModel(factory = remember(app) { AppearanceViewModel.Factory(app.appearanceRepository) })
+            val appearance by appearanceViewModel.appearance.collectAsStateWithLifecycle()
+            val ready = appearance
+            if (ready == null) {
+                Surface { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            } else {
+                LifeOsRoot(app.wardrobeRepository, ready, shell, appearanceViewModel, externalCommand, ::consumeExternalCommand) { dark ->
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !dark
+                        isAppearanceLightNavigationBars = !dark
+                    }
                 }
             }
         }
@@ -85,11 +100,15 @@ class MainActivity : ComponentActivity() {
         val openAdd = intent?.getBooleanExtra(EXTRA_OPEN_ADD, false) == true
 
         // Replace, never accumulate: a new intent always wins over any stale command.
-        externalCommand = when {
-            !text.isNullOrBlank() -> ExternalNavCommand.Import(text, nextNonce())
-            editId != null -> ExternalNavCommand.Edit(editId, nextNonce())
-            openAdd -> ExternalNavCommand.Add(nextNonce())
-            else -> externalCommand
-        }
+        externalCommand = ExternalCommandResolver.parse(intent?.action, text, editId, openAdd, nextNonce())
+            ?: externalCommand
+    }
+
+    private fun consumeExternalCommand() {
+        externalCommand = null
+        // Prevent configuration recreation from replaying a command already consumed by navigation.
+        intent?.removeExtra(Intent.EXTRA_TEXT)
+        intent?.removeExtra(EXTRA_EDIT_ITEM_ID)
+        intent?.removeExtra(EXTRA_OPEN_ADD)
     }
 }

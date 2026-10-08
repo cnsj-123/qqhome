@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -69,56 +68,57 @@ sealed class Route(val route: String) {
 fun ClosieNavHost(
     repository: WardrobeRepository,
     externalCommand: ExternalNavCommand? = null,
-    onExternalCommandConsumed: () -> Unit = {}
+    onExternalCommandConsumed: () -> Unit = {},
+    moduleMode: Boolean = false,
+    onExitModule: () -> Unit = {}
 ) {
     val nav = rememberNavController()
     val current by nav.currentBackStackEntryAsState()
     val currentRoute = current?.destination?.route
+    val startRoute = if (moduleMode) TopLevel.Closet.route else TopLevel.Home.route
     val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
 
     // Handle "分享至 Closie" and quick-capture "保存并继续编辑" deep links. The command is a
     // one-shot: once navigated it is consumed and cleared by the host activity.
     LaunchedEffect(externalCommand) {
-        when (val cmd = externalCommand) {
-            null -> Unit
-            is ExternalNavCommand.Import -> {
-                PendingImport.text = cmd.text
-                nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
-                onExternalCommandConsumed()
-            }
-            is ExternalNavCommand.Edit -> {
-                nav.navigate(Route.Edit.route.replace("{id}", cmd.itemId))
-                onExternalCommandConsumed()
-            }
-            is ExternalNavCommand.Add -> {
-                nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
-                onExternalCommandConsumed()
-            }
+        externalCommand?.let { command ->
+            if (command is ExternalNavCommand.Import) PendingImport.text = command.text
+            nav.navigate(ExternalCommandResolver.closetDestination(command))
+            onExternalCommandConsumed()
         }
     }
 
     Scaffold(
         containerColor = ClosieColor.Canvas,
+        topBar = {
+            // Compatibility navigation belongs only to the Closet module, never to Life OS Home.
+            if (moduleMode && showBottomBar) {
+                TextButton(onClick = onExitModule, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("‹ 返回 Life OS")
+                }
+            }
+        },
         bottomBar = {
             if (showBottomBar) {
                 ClosieBottomNavigation(
                     currentRoute = currentRoute,
-                    onSelect = { nav.navigateTopLevel(it) }
+                    onSelect = { nav.navigateTopLevel(it, startRoute) },
+                    moduleMode = moduleMode
                 )
             }
         }
     ) { padding ->
         NavHost(
             navController = nav,
-            startDestination = TopLevel.Home.route,
+            startDestination = startRoute,
             modifier = Modifier.padding(padding)
         ) {
             composable(TopLevel.Home.route) {
                 HomeScreen(
                     repository,
                     onSettings = { nav.navigate(Route.Settings.route) },
-                    onOpenCloset = { nav.navigateTopLevel(TopLevel.Closet) },
-                    onOpenOotd = { nav.navigateTopLevel(TopLevel.Ootd) }
+                    onOpenCloset = { nav.navigateTopLevel(TopLevel.Closet, startRoute) },
+                    onOpenOotd = { nav.navigateTopLevel(TopLevel.Ootd, startRoute) }
                 )
             }
 
@@ -197,9 +197,9 @@ fun ClosieNavHost(
     }
 }
 
-private fun NavHostController.navigateTopLevel(tab: TopLevel) {
+private fun NavHostController.navigateTopLevel(tab: TopLevel, startRoute: String = TopLevel.Home.route) {
     navigate(tab.route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        popUpTo(startRoute) { saveState = true }
         launchSingleTop = true
         restoreState = true
     }
@@ -209,7 +209,8 @@ private fun NavHostController.navigateTopLevel(tab: TopLevel) {
 private fun ClosieBottomNavigation(
     currentRoute: String?,
     onSelect: (TopLevel) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    moduleMode: Boolean = false
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -242,7 +243,7 @@ private fun ClosieBottomNavigation(
                         tint = tint,
                         modifier = Modifier.size(22.dp)
                     )
-                    Text(tab.label, style = MaterialTheme.typography.labelSmall, color = tint)
+                    Text(if (moduleMode && tab == TopLevel.Home) "衣橱回顾" else tab.label, style = MaterialTheme.typography.labelSmall, color = tint)
                     Box(
                         modifier = Modifier
                             .width(if (selected) 16.dp else 0.dp)
