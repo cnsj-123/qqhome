@@ -1,0 +1,31 @@
+From 8f30d14fea1b77d20b162ba0454a9d91214f1dd2 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 9 Oct 2026 12:55:54 +0900
+Subject: [PATCH] fix(test): wait for gate-aware emission lease release
+
+---
+ .../java/com/qq/closie/data/backup/GateAwareFlowTest.kt   | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt b/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
+index 5fd2996..fc33392 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
+@@ -353,6 +353,14 @@ class GateAwareFlowTest {
+ 
+             assertThat(firstEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+ 
++            // firstEmission is counted down from inside the downstream collector.
++            // emitUnderBusinessLease still owns its emission lease until that collector
++            // returns, so wait for the delivery to be fully complete before asking a
++            // restore to take ownership.
++            awaitTrue("the first emission lease was never released") {
++                RestoreStartupGate.activeBusinessOps == 0
++            }
++
+             // ---- The gate closes underneath the running collector. ----
+             assertThat(RestoreStartupGate.beginRestore()).isTrue()
+             db.lifeEntityDao().insert(
+-- 
+2.51.1
+
