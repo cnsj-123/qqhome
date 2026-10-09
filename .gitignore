@@ -9,6 +9,7 @@ server/.env
 server/data/
 web/dist/
 
+# Signing material never belongs in source control.
 *.jks
 *.keystore
 keystore.properties
