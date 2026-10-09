@@ -28,7 +28,7 @@ fun LifeOsHomeScreen(
     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
     Column(modifier.fillMaxSize()) {
         LazyColumn(
-            Modifier.weight(1f).fillMaxWidth().lifeHorizontalSwipe(onLeft = onDrawer),
+            Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
         ) {
             item {

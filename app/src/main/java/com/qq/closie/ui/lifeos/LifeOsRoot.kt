@@ -35,6 +35,7 @@ import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import com.qq.closie.ui.lifeos.drawer.LifeOsDrawer
+import com.qq.closie.ui.lifeos.components.lifeHorizontalSwipe
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
 import com.qq.closie.navigation.navigateLifeTopLevel
 import com.qq.closie.navigation.LifeOsRoute
@@ -66,7 +67,7 @@ fun LifeOsRoot(
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
         val intakeError by intake.error.collectAsStateWithLifecycle()
-        val drawerWidth = (LocalConfiguration.current.screenWidthDp * .79f).coerceAtMost(380f).dp
+        val drawerWidth = (LocalConfiguration.current.screenWidthDp * .82f).dp
         suspend fun closeDrawer() {
             if (reduced) drawer.snapTo(DrawerValue.Closed) else drawer.close()
         }
@@ -119,9 +120,15 @@ fun LifeOsRoot(
                         }
                     }
                 ) {
-                    LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
-                        shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
-                        onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                    Box(Modifier.fillMaxSize().lifeHorizontalSwipe(
+                        enabled = entry?.destination?.route == LifeOsRoute.HOME &&
+                            drawer.currentValue == DrawerValue.Closed && drawer.targetValue == DrawerValue.Closed,
+                        onLeft = ::openDrawer
+                    )) {
+                        LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
+                            shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
+                            onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                    }
                 }
             }
         }
