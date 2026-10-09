@@ -36,6 +36,7 @@ import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import com.qq.closie.ui.lifeos.drawer.LifeOsDrawer
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
+import com.qq.closie.navigation.navigateLifeTopLevel
 import com.qq.closie.navigation.LifeOsRoute
 import com.qq.closie.ui.theme.ClosieColor
 import kotlinx.coroutines.launch
@@ -81,14 +82,14 @@ fun LifeOsRoot(
                 scope.launch { closeDrawer() }
                 if (ExternalCommandResolver.isClosetCommand(command)) {
                     intake.supersede()
-                    nav.navigate(LifeOsRoute.CLOSET) { launchSingleTop = true }
+                    nav.navigateLifeTopLevel(LifeOsRoute.CLOSET)
                 } else intake.accept(command)
             }
         }
         LaunchedEffect(intakeNavigation) {
             intakeNavigation?.let { result ->
                 if (result.externalNonce == null || result.externalNonce == externalCommand?.nonce) {
-                    nav.navigate(result.route) { launchSingleTop = true }
+                    nav.navigateLifeTopLevel(result.route)
                     result.externalNonce?.let(onExternalCommandConsumed)
                 }
                 intake.acknowledge(result)
@@ -111,7 +112,7 @@ fun LifeOsRoot(
                             LifeOsDrawer(
                                 onOpenModule = { module ->
                                     if (module.id == "capture") scope.launch { closeDrawer(); captureMenu = true }
-                                    else nav.navigate(module.route) { launchSingleTop = true }
+                                    else nav.navigateLifeTopLevel(module.route)
                                 },
                                 onClose = { scope.launch { closeDrawer() } }
                             )
@@ -125,7 +126,7 @@ fun LifeOsRoot(
             }
         }
         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
-            onManual = { nav.navigate(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
+            onManual = { nav.navigateLifeTopLevel(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
         intakeError?.let { message ->
             AlertDialog(onDismissRequest = intake::clearError, title = { Text("采集未完成") },
                 text = { Text(message) }, confirmButton = {

@@ -16,11 +16,11 @@ fun NavGraphBuilder.closetRoutes(nav: NavHostController, repository: WardrobeRep
             ClosieNavHost(repository = repository, externalCommand = command,
                 onExternalCommandConsumed = { command?.let { onConsumed(it.nonce) } },
                 startDestination = TopLevel.Closet.route,
-                onExit = { nav.popBackStack() }, lifeDatabase = container.lifeDatabase)
+                onExit = { nav.returnToLifeHome() }, lifeDatabase = container.lifeDatabase)
         }
     }
     composable(LifeOsRoute.BACKUP) {
         ClosieTheme { DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
-            back = { nav.popBackStack() }) }
+            back = { nav.returnToLifeHome() }) }
     }
 }
