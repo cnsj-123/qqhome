@@ -137,4 +137,15 @@ class ClosetSmokeTest {
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
     }
 
+    @Test
+    fun drawerFinanceOpensRealLedgerAndReturnsToStableHome() {
+        openDrawer()
+        compose.onNodeWithTag("life-drawer").performScrollToIndex(16)
+        compose.onNodeWithTag("drawer-finance").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("账户与余额")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回首页").performClick()
+        compose.onNodeWithText("Life OS").assertIsDisplayed()
+    }
+
 }

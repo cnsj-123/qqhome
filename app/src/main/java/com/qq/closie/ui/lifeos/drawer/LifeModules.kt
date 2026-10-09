@@ -25,7 +25,7 @@ object LifeModules {
             LifeModule("companion", "伙伴聊天", LifeOsRoute.COMPANION), LifeModule("vault", "创作库")
         )),
         LifeModuleGroup("只属于自己的设置", listOf(
-            LifeModule("finance", "账目"), LifeModule("membership", "会员"), LifeModule("health", "健康"),
+            LifeModule("finance", "账目", LifeOsRoute.FINANCE), LifeModule("membership", "会员"), LifeModule("health", "健康"),
             LifeModule("privacy", "隐私"), LifeModule("backup", "备份与恢复", LifeOsRoute.BACKUP),
             LifeModule("settings", "设置与主题", LifeOsRoute.SETTINGS)
         ))

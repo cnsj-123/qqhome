@@ -132,6 +132,88 @@ object LifeMigrations {
         }
     }
 
+    /** Additive Finance F1 tables. Existing v2 rows, keys and indexes are untouched. */
+    val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS `finance_accounts` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `currencyCode` TEXT NOT NULL,
+                    `openingBalanceMinor` INTEGER NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    `archivedAt` INTEGER,
+                    PRIMARY KEY(`id`)
+                )""".trimIndent()
+            )
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS `finance_categories` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    PRIMARY KEY(`id`)
+                )""".trimIndent()
+            )
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS `finance_tags` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    PRIMARY KEY(`id`)
+                )""".trimIndent()
+            )
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS `finance_entries` (
+                    `id` TEXT NOT NULL,
+                    `accountId` TEXT NOT NULL,
+                    `direction` TEXT NOT NULL,
+                    `amountMinor` INTEGER NOT NULL,
+                    `description` TEXT NOT NULL,
+                    `occurredAt` INTEGER NOT NULL,
+                    `recordedAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    `categoryId` TEXT,
+                    `voidedAt` INTEGER,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    FOREIGN KEY(`categoryId`) REFERENCES `finance_categories`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                )""".trimIndent()
+            )
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS `finance_transfers` (
+                    `id` TEXT NOT NULL,
+                    `outflowEntryId` TEXT NOT NULL,
+                    `inflowEntryId` TEXT NOT NULL,
+                    `recordedAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    `voidedAt` INTEGER,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`outflowEntryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    FOREIGN KEY(`inflowEntryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                )""".trimIndent()
+            )
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS `finance_entry_tags` (
+                    `entryId` TEXT NOT NULL,
+                    `tagId` TEXT NOT NULL,
+                    PRIMARY KEY(`entryId`,
+                    `tagId`),
+                    FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    FOREIGN KEY(`tagId`) REFERENCES `finance_tags`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                )""".trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_categories_name` ON `finance_categories` (`name`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_tags_name` ON `finance_tags` (`name`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_entries_accountId` ON `finance_entries` (`accountId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_entries_categoryId` ON `finance_entries` (`categoryId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_entries_occurredAt` ON `finance_entries` (`occurredAt`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_entries_voidedAt` ON `finance_entries` (`voidedAt`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_finance_transfers_outflowEntryId` ON `finance_transfers` (`outflowEntryId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_finance_transfers_inflowEntryId` ON `finance_transfers` (`inflowEntryId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_finance_entry_tags_tagId` ON `finance_entry_tags` (`tagId`)")
+        }
+    }
+
     /** Every migration the database must be able to run, in version order. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

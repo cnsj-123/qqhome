@@ -10,6 +10,7 @@ import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.data.LifeContainer
 import com.qq.closie.navigation.modules.*
 import com.qq.closie.ui.lifeos.home.LifeOsHomeScreen
+import com.qq.closie.ui.lifeos.finance.FinanceRoute
 import com.qq.closie.ui.lifeos.home.HomeUiState
 import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 import com.qq.closie.ui.lifeos.calendar.LifeCalendarScreen
@@ -37,6 +38,9 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         captureRoutes(nav, container, onCapture, onFileToLibrary)
         referenceRoutes(nav, container, onCapture)
         planRoutes(nav, container)
+        composable(LifeOsRoute.FINANCE) {
+            FinanceRoute(container.financeRepository) { nav.returnToLifeHome() }
+        }
         composable(LifeOsRoute.CALENDAR) {
             LifeCalendarScreen(initialDate = home.date, onBack = { nav.returnToLifeHome() }, onOpenHomeDate = {
                 onHomeDateSelected(it)

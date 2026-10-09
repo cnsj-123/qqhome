@@ -7,6 +7,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LifeDrawerStructureTest {
+    @Test fun financeOpensItsOwnedLedgerInsteadOfGenericPlaceholder() {
+        assertEquals(LifeOsRoute.FINANCE, LifeModules.find("finance").route)
+        assertNotEquals(LifeOsRoute.module("finance"), LifeModules.find("finance").route)
+    }
     @Test fun quickActionsKeepRealIntakeAndCalendarRoutes() {
         assertEquals(listOf("capture", "inbox", "calendar", "search"), LifeModules.quickActions.map { it.id })
         assertEquals(listOf("记一下", "收件匣", "日历", "搜索"), LifeModules.quickActions.map { it.label })
