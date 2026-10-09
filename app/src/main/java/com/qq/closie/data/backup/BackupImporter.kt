@@ -40,10 +40,10 @@ internal class StagedRestore(
 internal object BackupImporter {
 
     /**
-     * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 2):
+     * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 3):
      * v1 archives from before v0.3.0 remain restorable forever.
      */
-    val SUPPORTED_RESTORE_FORMATS = setOf(1, 2)
+    val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3)
 
     /**
      * Unpacks [inputUri] and builds the complete, validated staging directories.
@@ -84,6 +84,10 @@ internal object BackupImporter {
         } else {
             null
         }
+        if (manifest.formatVersion >= 3 && hasLifeSection && lifePayload?.finance == null) {
+            throw IllegalStateException("备份的 Finance 数据缺失，原数据未修改")
+        }
+        lifePayload?.finance?.let(com.qq.closie.life.finance.FinanceIntegrity::validate)
         // Reject hostile entry names up front, rather than discovering them at the moment one particular
         // file happens to be copied. The archive's own `life/media` directory is the containment root,
         // because that is what the names are used to read from.

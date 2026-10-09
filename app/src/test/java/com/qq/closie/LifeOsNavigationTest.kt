@@ -15,7 +15,7 @@ class LifeOsNavigationTest {
             "inbox" to LifeOsRoute.CAPTURE, "backup" to LifeOsRoute.BACKUP,
             "knowledge" to LifeOsRoute.REFERENCE, "reading" to LifeOsRoute.READING,
             "plans" to LifeOsRoute.PLAN).forEach { (id, route) -> assertEquals(route, modules.getValue(id).route) }
-        assertEquals(LifeOsRoute.module("finance"), modules.getValue("finance").route)
+        assertEquals(LifeOsRoute.FINANCE, modules.getValue("finance").route)
     }
     @Test fun sharedContentKeepsItsIntakeSemantics() {
         val product = ExternalCommandResolver.parse("android.intent.action.SEND", "https://item.taobao.com/item.htm?id=1", null, false, 1)

@@ -1,5 +1,7 @@
 package com.qq.closie.life.data.database
 
+import com.qq.closie.life.finance.*
+import com.qq.closie.life.data.database.dao.FinanceDao
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -30,7 +32,7 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
 /**
  * The single Room database for Life OS.
  *
- * Version 2 as of Life OS v0.3.0. Schema changes MUST ship an explicit
+ * Version 3 (Finance F1), following Life OS v0.3.0. Schema changes MUST ship an explicit
  * [androidx.room.migration.Migration] (see [LifeMigrations]) — `fallbackToDestructiveMigration()`
  * is forbidden. Life OS is a long-lived personal database and must never lose user data on a schema
  * change.
@@ -39,7 +41,7 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
  * (`room.schemaLocation` → app/schemas/), which is committed to the repository.
  */
 @Database(
-    version = 2,
+    version = 3,
     exportSchema = true,
     entities = [
         LifeEntityEntity::class,
@@ -53,9 +55,17 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
         // --- v2 (v0.3.0) ---
         ReferenceItemEntity::class,
         PlanItemEntity::class,
+        // --- v3 (Finance F1) ---
+        FinanceAccountEntity::class,
+        FinanceEntryEntity::class,
+        FinanceTransferEntity::class,
+        FinanceCategoryEntity::class,
+        FinanceTagEntity::class,
+        FinanceEntryTagCrossRef::class,
     ]
 )
 @TypeConverters(
+    FinanceConverters::class,
     MediaTypeConverter::class,
     MediaResourceRoleConverter::class,
     CaptureSourceConverter::class,
@@ -71,6 +81,7 @@ abstract class LifeDatabase : RoomDatabase() {
     abstract fun mediaDao(): MediaDao
     abstract fun captureDao(): CaptureDao
     abstract fun referenceDao(): ReferenceDao
+    abstract fun financeDao(): FinanceDao
     abstract fun planDao(): PlanDao
 
     companion object {
@@ -97,6 +108,6 @@ abstract class LifeDatabase : RoomDatabase() {
         const val DATABASE_NAME = "life_os.db"
 
         /** Current schema version — kept in sync with the @Database annotation by test. */
-        const val VERSION = 2
+        const val VERSION = 3
     }
 }

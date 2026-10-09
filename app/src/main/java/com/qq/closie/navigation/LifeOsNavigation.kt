@@ -10,6 +10,7 @@ import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.data.LifeContainer
 import com.qq.closie.navigation.modules.*
 import com.qq.closie.ui.lifeos.home.LifeOsHomeScreen
+import com.qq.closie.ui.lifeos.finance.FinanceRoute
 import com.qq.closie.ui.lifeos.home.HomeUiState
 import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 import com.qq.closie.ui.lifeos.calendar.LifeCalendarScreen
@@ -29,29 +30,32 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
     onCapture: () -> Unit, onFileToLibrary: (String) -> Unit) {
     NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH) {
         composable(LifeOsRoute.HOME) {
-            LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigate(LifeOsRoute.CALENDAR) },
-                onMap = { nav.navigate(LifeOsRoute.MAP) }, onCompanion = { nav.navigate(LifeOsRoute.COMPANION) },
+            LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
+                onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
                 onCapture = onCapture)
         }
         closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed)
         captureRoutes(nav, container, onCapture, onFileToLibrary)
         referenceRoutes(nav, container, onCapture)
         planRoutes(nav, container)
+        composable(LifeOsRoute.FINANCE) {
+            FinanceRoute(container.financeRepository) { nav.returnToLifeHome() }
+        }
         composable(LifeOsRoute.CALENDAR) {
-            LifeCalendarScreen(initialDate = home.date, onBack = { nav.popBackStack() }, onOpenHomeDate = {
+            LifeCalendarScreen(initialDate = home.date, onBack = { nav.returnToLifeHome() }, onOpenHomeDate = {
                 onHomeDateSelected(it)
-                nav.popBackStack(LifeOsRoute.HOME, inclusive = false)
+                nav.returnToLifeHome()
             })
         }
-        composable(LifeOsRoute.MAP) { LifeMapScreen { nav.popBackStack() } }
-        composable(LifeOsRoute.COMPANION) { CompanionShellScreen { nav.popBackStack() } }
-        composable(LifeOsRoute.APPEARANCE) { AppearanceSettingsRoute(appearanceViewModel) { nav.popBackStack() } }
+        composable(LifeOsRoute.MAP) { LifeMapScreen { nav.returnToLifeHome() } }
+        composable(LifeOsRoute.COMPANION) { CompanionShellScreen { nav.returnToLifeHome() } }
+        composable(LifeOsRoute.APPEARANCE) { AppearanceSettingsRoute(appearanceViewModel) { nav.returnWithinLifeModule() } }
         composable(LifeOsRoute.SETTINGS) {
-            LifeSettingsScreen(onBack = { nav.popBackStack() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
-                onBackup = { nav.navigate(LifeOsRoute.BACKUP) })
+            LifeSettingsScreen(onBack = { nav.returnToLifeHome() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
+                onBackup = { nav.navigateLifeTopLevel(LifeOsRoute.BACKUP) })
         }
         composable(LifeOsRoute.MODULE, arguments = listOf(navArgument("moduleId") { type = NavType.StringType })) { entry ->
-            ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.popBackStack() }
+            ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.returnToLifeHome() }
         }
     }
 }

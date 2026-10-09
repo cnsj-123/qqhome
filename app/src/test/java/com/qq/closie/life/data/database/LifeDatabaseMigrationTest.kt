@@ -367,11 +367,11 @@ class LifeDatabaseMigrationTest {
     @Test
     fun migratedSchema_matchesFreshlyCreatedSchema() {
         helper.createDatabase(TEST_DB, 1).close()
-        val migrated = helper.runMigrationsAndValidate(TEST_DB, 2, true, *LifeMigrations.ALL)
+        val migrated = helper.runMigrationsAndValidate(TEST_DB, LifeDatabase.VERSION, true, *LifeMigrations.ALL)
         val migratedSchema = schemaFingerprint(migrated)
         migrated.close()
 
-        // A brand-new v2 database, built by Room itself from the current entities.
+        // Compare the full registered migration chain against a fresh current database.
         val fresh = Room.databaseBuilder(context, LifeDatabase::class.java, FRESH_DB)
             .allowMainThreadQueries()
             .build()
