@@ -1,6 +1,7 @@
 package com.qq.closie
 
 import android.app.Application
+import com.qq.closie.data.appearance.AppearanceRepository
 import com.qq.closie.data.backup.RecoveryOutcome
 import com.qq.closie.data.backup.RestoreRecoveryManager
 import com.qq.closie.data.backup.RestoreRecoveryPendingException
@@ -25,7 +26,7 @@ class ClosieApplication : Application() {
      *
      * [LocalWardrobeRepository] throws when the recovery gate is blocked, and this property is on a
      * hot path that has **no exception handling anywhere above it**: `MainActivity.onCreate` reads it
-     * inside `setContent { … LifeShellNavHost(wardrobeRepository = app.wardrobeRepository …) }`, a
+     * inside `setContent { … LifeOsRoot(wardrobeRepository = app.wardrobeRepository …) }`, a
      * `catch (e: Throwable)` is not available inside a composable lambda, and the crash would land in
      * the Compose recomposer rather than anywhere a caller could recover from.
      *
@@ -64,6 +65,9 @@ class ClosieApplication : Application() {
 
     /** Life OS layer: Room database + repositories. Opened lazily on first access. */
     val lifeContainer by lazy { LifeContainer.getInstance(this) }
+
+    /** UI preferences only; this owner never opens Room or wardrobe storage. */
+    val appearanceRepository by lazy { AppearanceRepository.create(this) }
 
     override fun onCreate() {
         super.onCreate()

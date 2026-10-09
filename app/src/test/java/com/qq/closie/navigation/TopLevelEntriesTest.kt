@@ -1,7 +1,6 @@
 package com.qq.closie.navigation
 
 import com.google.common.truth.Truth.assertThat
-import com.qq.closie.life.ui.shell.LifeDestination
 import org.junit.Test
 
 /**
@@ -10,7 +9,7 @@ import org.junit.Test
  * The crash was a JVM circular class-initialization bug, not a Compose or data bug:
  *
  *  1. The first static touch of the `TopLevel` family in a cold process is
- *     `TopLevel.Closet.INSTANCE` — LifeShell passes `TopLevel.Closet.route` as the Closie
+ *     `TopLevel.Closet.INSTANCE` — LifeOsRoot passes `TopLevel.Closet.route` as the Closie
  *     NavHost's startDestination, and that expression is evaluated the moment the user taps
  *     衣橱 in 生活.
  *  2. `Closet.<clinit>` runs, which must first run its superclass `TopLevel.<clinit>`, which
@@ -33,7 +32,7 @@ class TopLevelEntriesTest {
     @Test
     fun entries_areComplete_evenWhenClosetIsTheFirstTouch() {
         // Simulates the real device: the family's FIRST static access is the Closet instance
-        // (LifeShell → ClosieNavHost startDestination), before any other family member or the
+        // (LifeOsRoot → ClosieNavHost startDestination), before any other family member or the
         // companion is touched. The JVM class-init order triggered here is the crash's exact
         // trigger. Do not "clean up" this line order.
         val closet: TopLevel = TopLevel.Closet
@@ -59,18 +58,8 @@ class TopLevelEntriesTest {
     }
 
     @Test
-    fun tabRoutes_areComplete_evenWhenClosetIsTheFirstTouch() {
-        // LifeDestination's companion list has the identical pattern — pinned for the same
-        // reason. Its cold path starts at Home, but Closet being first must also be safe.
-        val closet: LifeDestination = LifeDestination.Closet
-
-        assertThat(LifeDestination.tabRoutes).doesNotContain(null)
-        assertThat(LifeDestination.tabs).containsExactly(
-            LifeDestination.Home,
-            LifeDestination.Timeline,
-            LifeDestination.Modules,
-            LifeDestination.Me
-        ).inOrder()
-        assertThat(closet.route).isEqualTo("life_closet")
+    fun productRootIsHomeAndClosetIsAModule() {
+        assertThat(LifeOsRoute.DEFAULT).isEqualTo(LifeOsRoute.HOME)
+        assertThat(LifeOsRoute.CLOSET).isNotEqualTo(LifeOsRoute.HOME)
     }
 }

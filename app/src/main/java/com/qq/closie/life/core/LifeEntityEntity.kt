@@ -6,7 +6,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Universal identity anchor for every Life OS domain object.
+ * Ordinary-world identity metadata for registered typed domain objects.
+ * This registry is not a universal business store and does not enroll future secure Vault content.
  *
  * Business-specific fields belong in dedicated typed entities that reference this row via [id].
  * Do NOT stuff arbitrary JSON into a single column — LifeEntity only carries identity, revision,

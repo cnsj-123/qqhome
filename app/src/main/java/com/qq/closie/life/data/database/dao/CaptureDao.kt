@@ -1,7 +1,6 @@
 package com.qq.closie.life.data.database.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -23,9 +22,6 @@ interface CaptureDao {
 
     @Update
     suspend fun update(item: CaptureItemEntity)
-
-    @Delete
-    suspend fun delete(item: CaptureItemEntity)
 
     @Query("SELECT * FROM capture_items WHERE id = :id")
     suspend fun getById(id: String): CaptureItemEntity?

@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
  * moves 20 → 24dp so the two breakpoints keep a consistent 2dp relationship instead of crossing over.
  *
  * The important part is what did NOT change: the shell's Scaffold remains the *only* system-bar
- * inset owner, and `consumeWindowInsets(padding)` in [com.qq.closie.life.ui.shell.LifeShellNavHost]
+ * inset owner, and `consumeWindowInsets(padding)` in [com.qq.closie.ui.lifeos.LifeOsRoot]
  * still zeroes the inset for nested content. So `pageTop` is purely the visual gap below the status
  * bar — never a second safety margin. The v0.1 bug was three layers stacking
  * (`Scaffold inset + statusBarsPadding + pageTop` ≈ 60dp); re-adding a `statusBarsPadding()` here to

@@ -24,7 +24,7 @@ import com.qq.closie.life.ui.reference.ReferenceViewModel
 import com.qq.closie.life.ui.reference.typeLabel
 import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeSpacing
-import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import androidx.compose.material.icons.Icons
@@ -191,7 +191,7 @@ private fun previewReading(
 @Preview(showBackground = true, widthDp = 411, heightDp = 891, name = "阅读 — 411x891")
 @Composable
 private fun ReadingPreview() {
-    LifeTheme {
+    LifeOsTheme {
         ReadingContent(
             items = listOf(
                 previewReading("a1", "为什么纸质的清单更容易被完成", ReferenceType.ARTICLE, "少数派"),
@@ -205,7 +205,7 @@ private fun ReadingPreview() {
 @Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "阅读 — empty 393x852")
 @Composable
 private fun ReadingEmptyPreview() {
-    LifeTheme {
+    LifeOsTheme {
         ReadingContent(items = emptyList(), onOpenItem = {}, onAddReading = {}, onBack = {})
     }
 }

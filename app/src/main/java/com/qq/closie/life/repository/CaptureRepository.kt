@@ -115,13 +115,6 @@ class CaptureRepository(private val database: LifeDatabase) {
         true
     }
 
-    suspend fun updateRawText(id: String, rawText: String?): Boolean =
-        RestoreStartupGate.withBusinessAccessSuspending {
-            val current = dao.getById(id) ?: return@withBusinessAccessSuspending false
-            dao.update(current.copy(rawText = rawText, updatedAt = System.currentTimeMillis()))
-            true
-        }
-
     /**
      * The record editor's save.
      *
@@ -191,10 +184,6 @@ class CaptureRepository(private val database: LifeDatabase) {
         }
 
     suspend fun dismiss(id: String): Boolean = transition(id, CaptureStatus.DISMISSED)
-
-    suspend fun delete(id: String) = RestoreStartupGate.withBusinessAccessSuspending {
-        dao.getById(id)?.let { dao.delete(it) }
-    }
 
     /**
      * A gate-checked transaction boundary: `gate -> transaction -> first-line check -> block ->

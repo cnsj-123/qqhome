@@ -134,7 +134,6 @@ class LifeContainerStartupGateTest {
             "captureRepository" to { container.captureRepository },
             "referenceRepository" to { container.referenceRepository },
             "planRepository" to { container.planRepository },
-            "mediaStoreImporter" to { container.mediaStoreImporter },
             "referenceImporter" to { container.referenceImporter }
         )
 
@@ -239,7 +238,6 @@ class LifeContainerStartupGateTest {
         assertThat(container.captureRepository).isNotNull()
         assertThat(container.referenceRepository).isNotNull()
         assertThat(container.planRepository).isNotNull()
-        assertThat(container.mediaStoreImporter).isNotNull()
         assertThat(container.referenceImporter).isNotNull()
     }
 }

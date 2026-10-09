@@ -41,7 +41,7 @@ import com.qq.closie.life.ui.components.LifeTopBarAction
 import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeShape
 import com.qq.closie.life.ui.theme.LifeSpacing
-import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import java.time.Instant
@@ -317,7 +317,7 @@ private fun TypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun ReferenceEditPreview() {
     val stamp = Instant.parse("2026-09-24T01:20:00Z").toEpochMilli()
-    LifeTheme {
+    LifeOsTheme {
         ReferenceEditContent(
             item = ReferenceItemEntity(
                 id = "r1",

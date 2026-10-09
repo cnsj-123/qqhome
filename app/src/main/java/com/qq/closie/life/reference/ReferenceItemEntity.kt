@@ -75,12 +75,13 @@ data class ReferenceItemEntity(
     @ColumnInfo(name = "referenceType")
     val referenceType: ReferenceType,
 
-    /** One or two lines the user (or OCR) wrote to remember why this was worth keeping. */
+    /** User-authored note/summary only. Automatic extraction never writes this field. */
     @ColumnInfo(name = "summary")
     val summary: String? = null,
 
     /**
-     * Full extracted text — OCR output for screenshots, article body for pages.
+     * Raw extracted source text — OCR output or fetched page metadata/body.
+     * This is not an AI summary and is not a user note. Original share evidence remains in Capture.
      *
      * Kept separate from [summary] on purpose: a summary is what is *shown*, this is what is
      * *searched*. v0.3 stores ML Kit's flat `visionText.text`; the column exists so a future

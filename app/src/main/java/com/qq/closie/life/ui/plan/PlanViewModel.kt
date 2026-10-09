@@ -34,7 +34,7 @@ enum class PlanSection(val label: String) {
 }
 
 /**
- * State holder for 计划 (and for the home page's 接下来 block).
+ * State holder for the Plans module only. Global Home queries have a separate projection owner.
  *
  * Like [com.qq.closie.life.ui.reference.ReferenceViewModel], this is a real ViewModel over
  * [PlanRepository] so no composable has to touch a DAO and the day-window logic stays in one place.
@@ -79,13 +79,6 @@ class PlanViewModel(
         }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    /** Debug/telemetry-friendly open count, also used by the home page's summary line. */
-    val openCount: StateFlow<Int> = repository.observeOpenCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
-    val todayOpenCount: StateFlow<Int> = repository.observeTodayOpenCount(zone)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
     fun create(title: String, note: String?, dueAt: Long?) {
         if (title.isBlank()) return
         viewModelScope.launch { repository.create(title = title, note = note, dueAt = dueAt) }
@@ -116,34 +109,5 @@ class PlanViewModel(
         viewModelScope.launch { repository.delete(item.id) }
     }
 
-    /**
-     * Home page hook: at most [limit] open items, in urgency order.
-     *
-     * A single query over "all open plans", not a merge of a past-due flow and an upcoming flow. The
-     * merge looked reasonable and was wrong twice over:
-     *
-     *  - **Today was missing.** `observeUpcoming`'s SQL is `dueAt IS NULL OR dueAt >= endOfDay` and
-     *    `observeOverdue`'s is `dueAt < startOfDay`, so a plan due today satisfied neither. The one
-     *    item a user is most likely to be looking for was the one item the home screen could not
-     *    show. Concatenating two of the three groups cannot produce the third.
-     *  - **The limit was applied twice, incorrectly.** Taking `limit` from each side and then
-     *    truncating the concatenation can let a long overdue list crowd out everything upcoming, even
-     *    though the block is supposed to show a *spread*.
-     *
-     * The DAO query orders `dueAt IS NULL ASC, dueAt ASC, …`, which yields 过去 → 今天 → 未来 → 无日期
-     * and applies the limit once, to the already-correct list.
-     */
-    fun observeUpcomingForHome(limit: Int): StateFlow<List<PlanItemEntity>> =
-        repository.observeOpenLimited(limit)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /**
-     * A single plan, for the editor.
-     *
-     * Exposed as a cold [kotlinx.coroutines.flow.Flow] rather than a StateFlow because the editor
-     * needs it for exactly one plan id and for exactly as long as it is on screen. A StateFlow here
-     * would cache the last edited plan forever and hand it to the next editor route that forgot to
-     * re-subscribe — the classic "I opened a new item and saw the previous one" bug.
-     */
     fun observeItem(id: String): Flow<PlanItemEntity?> = repository.observeById(id)
 }

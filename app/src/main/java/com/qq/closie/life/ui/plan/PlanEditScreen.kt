@@ -37,7 +37,7 @@ import com.qq.closie.life.ui.components.LifeTopBarAction
 import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeShape
 import com.qq.closie.life.ui.theme.LifeSpacing
-import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import java.time.LocalDate
@@ -342,7 +342,7 @@ private fun DateChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "新增计划 — 360x800")
 @Composable
 private fun PlanEditPreview() {
-    LifeTheme {
+    LifeOsTheme {
         PlanEditContent(
             title = "把上个月的截图整理进资料库",
             note = "先处理待整理的几条",

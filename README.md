@@ -1,51 +1,22 @@
-# qqhome · Life OS v0.1（开发中）
+# Life OS Android · 0.3.0
 
-一个本地优先的私人生活记录 Android App。所有数据只保存在手机本地，不会上传到服务器。
+本地优先的私人生活档案。统一入口是 Life OS Home：照片堆、历史、未来、生活抽屉、日历、地图与伙伴入口。Home / Calendar / Map 当前为原生表现层，空用户不会导入示例人生记录。伙伴连接尚未接入。
 
-包名：`com.qq.closie`（namespace）；`applicationId` 仍为 `com.xiaoming.closie`，
-以保证老用户覆盖安装时数据不丢。
+Drawer 可进入真实衣橱、Capture 收件箱、资料库、计划、已保存阅读资料及备份恢复。其余专业领域仍是明确标记的模块入口。衣橱保留局部兼容导航；它不是顶层产品壳。
 
-## App Shell
+- 源码 namespace：`com.qq.closie`
+- 正式 release 安装身份：`com.qqhome.lifeos`
+- CI/debug 安装身份：`com.qqhome.lifeos.debug`，标准 debug key
+- 显示名称：Life OS
+- Room v2 保存当前 typed 能力；衣橱仍由既有 JSON repository 拥有。
+- Appearance 使用 DataStore，临时预览与保存分离。
+- 相册 canonical intake 暂未开放：不得默认复制第二份原图。现有截图证据/衣橱图片不作为最终全局 Media 契约。
 
-启动后进入 **Life OS**：首页 / 记录 / ＋ / 生活 / 我的。
-
-- **首页**：日期、Today、最近记录，留白优先，点空状态即可开始采集
-- **记录**：采集收件箱时间线
-- **＋**：快速采集 / 从相册（Coming soon）/ 粘贴文本 / 链接 / 手动记录
-- **生活**：衣橱（进入下面已有的 Closie）、饮食、健康、阅读、出行（Coming soon）
-- **我的**：设置、备份与恢复、媒体库（Coming soon）、同步（尚未实现）、版本
-
-Life OS 的持久化基于 Room（`LifeDatabase` v1，8 张表）。
-详见 [`docs/LIFE_OS_ARCHITECTURE.md`](docs/LIFE_OS_ARCHITECTURE.md) 与
-[`docs/LIFE_OS_DATA_MODEL.md`](docs/LIFE_OS_DATA_MODEL.md)。
-
-## 衣橱（Closie）
-
-从「生活 → 衣橱」进入。当前已支持：
-
-- **衣橱管理**：Owned（拥有）/ Returned（试过·退货）两套衣橱，支持多图片（平铺 / 本人 / 模特 / 商品图）
-- **商品链接导入**：粘贴商品链接自动解析标题、价格、原价、品牌、店铺、平台与主图（Open Graph + JSON-LD）
-- **搜索 / 筛选 / 排序**：多字段搜索、动态类别筛选、多种排序、只看未穿过
-- **单品资料**：名称、分类、子类别、品牌、店铺、平台、商品链接、价格、原价、购买日期、尺码、安全类别、评分（0–5 星）、评价、面料成分、具体尺寸（含单位）
-- **使用记录**：穿着 / 洗涤记录，历史列表、补录历史日期、误操作可删除，自动计算单次穿着成本
-- **OOTD 日历**：按日期记录每日穿搭（含照片），保存后自动联动穿着记录
-- **搭配室（Outfit Studio）**：画布拖拽、缩放、层级调整，支持试穿照片
-- **本地备份与恢复**：导出 / 恢复完整备份（ZIP，含图片），以及导出衣橱 CSV
-
-## 数据说明
-
-- 数据仍是 **local-only**：只存在设备本地（`filesDir/closie/`）。
-- **Web / server 同步尚未实现**，暂不支持云同步。
-
-## 手机上构建 APK
-
-把项目上传到 GitHub 的 `main` 分支后，打开仓库 **Actions → Android CI**，下载 `qqhome-debug-apk`，解压并安装其中的 APK。首次安装时请允许浏览器或文件管理器安装未知来源应用。
-
-## 本地构建
+参阅 [工程基线审查](docs/LIFE_OS_ARCHITECTURE.md)、[当前存储范围](docs/LIFE_OS_DATA_MODEL.md)、[构建与安装](docs/ANDROID_BUILDS.md)。已确认产品/统一架构文档位于独立 `life-os-docs` 分支，本分支工程说明不替代它。
 
 ```bash
-./gradlew :app:assembleDebug      # 打 debug APK
-./gradlew :app:testDebugUnitTest  # 跑 Room / Repository 测试
+./gradlew :app:testDebugUnitTest --stacktrace
+./gradlew :app:assembleDebug --stacktrace
 ```
 
-需要 JDK 17 与 Android SDK（compileSdk 35）。Room schema 会导出到 `app/schemas/`，请一并提交。
+需要 JDK 17、Android SDK 35。debug artifact `lifeos-ci-debug-apk` 仅供 CI/开发；Owner 长期安装应使用 main 上稳定签名的 `lifeos-update-release-apk`。旧 prototype package 不做跨包数据迁移。

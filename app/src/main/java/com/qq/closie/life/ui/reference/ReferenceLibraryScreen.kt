@@ -52,7 +52,7 @@ import com.qq.closie.life.ui.components.LifeTopBarIconAction
 import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeShape
 import com.qq.closie.life.ui.theme.LifeSpacing
-import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import java.time.Instant
@@ -387,7 +387,7 @@ private fun previewReferences(): List<ReferenceItemEntity> = listOf(
 @Preview(showBackground = true, widthDp = 411, heightDp = 891, name = "资料库 — 411x891")
 @Composable
 private fun ReferenceLibraryPreview() {
-    LifeTheme {
+    LifeOsTheme {
         ReferenceLibraryContent(
             items = previewReferences(),
             query = "",
@@ -404,7 +404,7 @@ private fun ReferenceLibraryPreview() {
 @Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "资料库 — empty 393x852")
 @Composable
 private fun ReferenceLibraryEmptyPreview() {
-    LifeTheme {
+    LifeOsTheme {
         ReferenceLibraryContent(
             items = emptyList(),
             query = "",
@@ -421,7 +421,7 @@ private fun ReferenceLibraryEmptyPreview() {
 @Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "资料库 — 搜索无结果 393x852")
 @Composable
 private fun ReferenceLibraryNoResultPreview() {
-    LifeTheme {
+    LifeOsTheme {
         ReferenceLibraryContent(
             items = emptyList(),
             query = "不存在的关键词",

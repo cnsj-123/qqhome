@@ -98,6 +98,7 @@ enum class CaptureSource {
     MANUAL,
 }
 
+/** Intake workflow status only; CONFIRMED never implies a domain truth was committed. */
 enum class CaptureStatus {
     NEW,
     PROCESSING,

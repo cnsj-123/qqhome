@@ -43,7 +43,7 @@ object ShareRouter {
      * A user sharing a 小红书 note is overwhelmingly telling the app "save this", not "I am buying
      * this". So the platform defaults to 资料库, and product detection for it is deferred until a
      * genuine product-card share format can be recognised (documented in
-     * `docs/LIFE_OS_ROADMAP.md`). Erring toward 资料库 is the cheap mistake — a misfiled product is a
+     * `docs/LIFE_OS_ARCHITECTURE.md`). Erring toward 资料库 is the cheap mistake — a misfiled product is a
      * link the user can still open, whereas a misfiled tutorial is a wardrobe entry with no meaning.
      *
      * ### Matching

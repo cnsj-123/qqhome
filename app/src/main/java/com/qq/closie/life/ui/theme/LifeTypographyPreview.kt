@@ -147,7 +147,7 @@ private fun Specimen(role: String, sample: String, style: TextStyle, gap: Dp) {
 @Preview(showBackground = true, widthDp = 411, heightDp = 2000, name = "LifeType — 411x891 regular")
 @Composable
 private fun LifeTypographyPreview() {
-    LifeTheme {
+    com.qq.closie.ui.lifeos.theme.LifeOsTheme {
         LifeTypeSpecimen()
     }
 }

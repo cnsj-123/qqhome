@@ -137,34 +137,4 @@ class LifeFontRulesTest {
         assertThat(LifeType.ModuleTitle.fontSize.value).isWithin(1f).of(21f)
     }
 
-    /**
-     * The Material3 fallback is the second half of the containment: every role Material could
-     * reach for must resolve to Serif or Sans, never to the platform default.
-     */
-    @Test
-    fun materialTypographyFallback_neverFallsBackToThePlatformFont() {
-        val t = LifeMaterialTypography
-        val allowed = setOf(LifeFonts.Serif, LifeFonts.Sans)
-
-        listOf(
-            t.displayLarge, t.displayMedium, t.displaySmall,
-            t.headlineLarge, t.headlineMedium, t.headlineSmall,
-            t.titleLarge, t.titleMedium, t.titleSmall,
-            t.bodyLarge, t.bodyMedium, t.bodySmall,
-            t.labelLarge, t.labelMedium, t.labelSmall
-        ).forEach { style ->
-            assertThat(style.fontFamily).isNotNull()
-            assertThat(allowed).contains(style.fontFamily)
-        }
-    }
-
-    /** Titles take the serif voice, body/label take the sans voice — the design's split. */
-    @Test
-    fun materialTypographyFallback_splitsTitlesFromBody() {
-        val t = LifeMaterialTypography
-        assertThat(t.titleLarge.fontFamily).isEqualTo(LifeFonts.Serif)
-        assertThat(t.headlineLarge.fontFamily).isEqualTo(LifeFonts.Serif)
-        assertThat(t.bodyLarge.fontFamily).isEqualTo(LifeFonts.Sans)
-        assertThat(t.labelLarge.fontFamily).isEqualTo(LifeFonts.Sans)
-    }
 }

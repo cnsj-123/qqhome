@@ -13,7 +13,6 @@ import com.qq.closie.life.data.database.LifeMigrations
 import com.qq.closie.life.media.MediaAssetEntity
 import com.qq.closie.life.media.MediaLinkEntity
 import com.qq.closie.life.media.MediaResourceEntity
-import com.qq.closie.life.media.MediaStoreImporter
 import com.qq.closie.life.plan.PlanItemEntity
 import com.qq.closie.life.reference.ReferenceImporter
 import com.qq.closie.life.reference.ReferenceItemEntity
@@ -33,18 +32,7 @@ import com.qq.closie.life.web.WebMetadataReader
  * by the Application, which is exactly what the existing [com.qq.closie.data.repository.LocalWardrobeRepository]
  * pattern already does for the Closie side.
  */
-class LifeContainer private constructor(
-    private val database: LifeDatabase,
-    /**
-     * Application context, held only for the collaborators that genuinely need one —
-     * [MediaStoreImporter] and [ReferenceImporter] both decode bitmaps and read content URIs.
-     *
-     * The *application* context, never an Activity: a container outlives every Activity in the
-     * process, and holding an Activity here would leak it for the lifetime of the app. The
-     * container is a process singleton, so this single long-lived reference is expected and safe.
-     */
-    private val appContext: Context,
-) {
+class LifeContainer private constructor(private val database: LifeDatabase) {
 
     /**
      * The Life OS database, exposed so 备份与恢复 can snapshot it.
@@ -91,14 +79,8 @@ class LifeContainer private constructor(
         ReferenceRepository(database, lifeRepository, mediaRepository, captureRepository)
     }
 
-    /** 计划 — the lightweight plan list (v0.3.0). */
+    /** Typed minimal Plan Intent owner, not an Event store or final Plans tree model. */
     val planRepository: PlanRepository by lazy { gate(); PlanRepository(database, lifeRepository) }
-
-    /** Copies a picked gallery image into Life OS-managed storage and records it as media. */
-    val mediaStoreImporter: MediaStoreImporter by lazy {
-        gate()
-        MediaStoreImporter(database, mediaRepository)
-    }
 
     /**
      * Fetches a page's title/description/site name for link capture. Never throws.
@@ -109,22 +91,14 @@ class LifeContainer private constructor(
      */
     val webMetadataReader: WebMetadataReader by lazy { WebMetadataReader() }
 
-    /**
-     * Turns a screenshot / photo / link / record into a 资料库 entry, OCR and metadata included.
-     *
-     * Needs the Application context because it decodes bitmaps and reads content URIs; that is why
-     * the container keeps it rather than letting a ViewModel construct one.
-     */
+    /** Archives existing Capture evidence and raw extraction; never copies picked gallery originals. */
     val referenceImporter: ReferenceImporter by lazy {
         gate()
         ReferenceImporter(
-            context = appContext,
-            database = database,
-            mediaStoreImporter = mediaStoreImporter,
             referenceRepository = referenceRepository,
             captureRepository = captureRepository,
             mediaRepository = mediaRepository,
-            webMetadataReader = webMetadataReader
+            readMetadata = webMetadataReader::read
         )
     }
 
@@ -158,7 +132,7 @@ class LifeContainer private constructor(
                     )
                         .addMigrations(*LifeMigrations.ALL)
                         .build()
-                    LifeContainer(db, context.applicationContext).also { instance = it }
+                    LifeContainer(db).also { instance = it }
                 }
             }
         }
@@ -177,8 +151,9 @@ class LifeContainer private constructor(
          * accessors are gated the same way regardless of how the container was built.
          */
         @androidx.annotation.VisibleForTesting
+        @Suppress("UNUSED_PARAMETER")
         internal fun createForTesting(context: Context, database: LifeDatabase): LifeContainer =
-            LifeContainer(database, context.applicationContext)
+            LifeContainer(database)
 
         /**
          * The database filename, aliased to [LifeDatabase.DATABASE_NAME].

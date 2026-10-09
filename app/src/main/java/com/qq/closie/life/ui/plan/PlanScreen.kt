@@ -46,7 +46,7 @@ import com.qq.closie.life.ui.components.LifeTopAppBar
 import com.qq.closie.life.ui.components.LifeTopBarIconAction
 import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeSpacing
-import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 
@@ -431,7 +431,7 @@ private fun previewPlan(
 @Composable
 private fun PlanPreview() {
     val today = System.currentTimeMillis()
-    LifeTheme {
+    LifeOsTheme {
         PlanContent(
             today = listOf(
                 previewPlan("p1", "把上个月的截图整理进资料库", today, note = "先处理待整理的几条"),
@@ -455,7 +455,7 @@ private fun PlanPreview() {
 @Preview(showBackground = true, widthDp = 393, heightDp = 852, name = "计划 — empty 393x852")
 @Composable
 private fun PlanEmptyPreview() {
-    LifeTheme {
+    LifeOsTheme {
         PlanContent(
             today = emptyList(), overdue = emptyList(), upcoming = emptyList(), completed = emptyList(),
             isEmpty = true,
@@ -474,7 +474,7 @@ private fun PlanEmptyPreview() {
 @Composable
 private fun PlanOverduePreview() {
     val today = System.currentTimeMillis()
-    LifeTheme {
+    LifeOsTheme {
         PlanContent(
             today = emptyList(),
             overdue = listOf(

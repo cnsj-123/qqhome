@@ -3076,13 +3076,14 @@ class RestoreCoordinatorTest {
         val closieDir = File(filesDir, "closie")
 
         // ---- 1. The pre-restore ("OLD") state, and the snapshot taken from it. --------------------
-        val oldCaptureId = seedCapture(OLD_CAPTURE_TEXT)
+        seedCapture(OLD_CAPTURE_TEXT)
         val snapFile = File(filesDir, ".closie_restore_dbsnap_contradiction.json")
         LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
 
         // ---- 2. The live state is now the BACKUP's, on all three surfaces. ------------------------
         // Database: the OLD row is gone and a NEW one is in its place.
-        captureRepo.delete(oldCaptureId)
+        // Controlled restore-fixture replacement, not a user Capture action.
+        db.captureDao().deleteAll()
         seedCapture(NEW_CAPTURE_TEXT)
         assertThat(db.captureDao().getAllOnce().map { it.rawText }).containsExactly(NEW_CAPTURE_TEXT)
 
@@ -3159,10 +3160,11 @@ class RestoreCoordinatorTest {
 
         // Put the database into a visibly different state first, so "the database was not replayed" is a
         // real assertion rather than a tautology over an unchanged database.
-        val oldCaptureId = seedCapture(OLD_CAPTURE_TEXT)
+        seedCapture(OLD_CAPTURE_TEXT)
         val snapFile = File(filesDir, ".closie_restore_dbsnap_contradiction.json")
         LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
-        captureRepo.delete(oldCaptureId)
+        // Controlled restore-fixture replacement, not a user Capture action.
+        db.captureDao().deleteAll()
         seedCapture(NEW_CAPTURE_TEXT)
 
         RestoreIntentStore.write(
@@ -3215,10 +3217,11 @@ class RestoreCoordinatorTest {
         writeWardrobeFiles(closetOld, itemsJson = """[{"id":"$OLD_ITEM_ID","name":"用户原有的衣服"}]""")
         writeWardrobeFiles(closieDir, itemsJson = """[{"id":"$NEW_ITEM_ID","name":"备份里的衣服"}]""")
 
-        val oldCaptureId = seedCapture(OLD_CAPTURE_TEXT)
+        seedCapture(OLD_CAPTURE_TEXT)
         val snapFile = File(filesDir, ".closie_restore_dbsnap_flagtrue.json")
         LifeBackupApplier.writeSnapshot(snapFile, LifeBackupApplier.snapshot(db))
-        captureRepo.delete(oldCaptureId)
+        // Controlled restore-fixture replacement, not a user Capture action.
+        db.captureDao().deleteAll()
         seedCapture(NEW_CAPTURE_TEXT)
 
         RestoreIntentStore.write(

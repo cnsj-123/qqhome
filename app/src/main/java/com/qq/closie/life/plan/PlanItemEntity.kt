@@ -6,17 +6,11 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * One thing the user intends to do.
- *
- * Deliberately minimal, and deliberately without any of the usual productivity-app machinery:
- * no points, no streaks, no recurring schedules, no reminders, no overdue shame metrics. Life OS
- * records what the user is planning; it does not supervise them. [dueAt] is optional precisely
- * because "someday" is a legitimate plan, and an app that refuses to accept it just teaches people
- * to lie to it.
- *
- * Like every Life OS domain object, a plan is backed by a
- * [com.qq.closie.life.core.LifeEntityEntity] row ([lifeEntityId], entityType
- * [PlanEntityType.PLAN]) so it can be tagged and related to anything else in the graph.
+ * Current typed Plans capability: a user intention with an optional soft planned date.
+ * [dueAt] is the legacy column name for that date, NOT a hard deadline or an Event.
+ * This is not the final Plans model: Goal/Project/Task trees, waiting/paused state,
+ * hard deadlines and recurrence belong to future typed Plans extensions.
+ * Business fields remain here; LifeEntity is only shared metadata/index support.
  */
 @Entity(
     tableName = "plan_items",

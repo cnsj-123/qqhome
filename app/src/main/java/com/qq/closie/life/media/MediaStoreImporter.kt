@@ -35,22 +35,12 @@ sealed interface MediaImportResult {
  */
 private enum class PublishOutcome { Reused, NeedsRewrite }
 
-/**
- * Copies a user-picked image into Life OS-managed storage and records it as media.
- *
- * **Why copying is not optional.** `Photo Picker` / `ACTION_OPEN_DOCUMENT` grants are revocable: a
- * persisted URI permission can be dropped when the user clears the app's data, when the provider
- * app is uninstalled, or when the underlying file is deleted from the gallery. A "reference" that
- * stored only that URI would render as a broken thumbnail some weeks later, with no way to tell the
- * difference between "the image is gone" and "we lost permission". Copying the bytes into
- * `filesDir/media/` on the day the user saved the item is what makes a saved screenshot still there
- * next year — which is the entire promise of the 资料库.
- *
- * The original file in the gallery is **never** touched. Nothing here deletes, moves or edits the
- * user's photo library; deletion is a separate, explicitly-confirmed action elsewhere, and only
- * after this copy has been written and re-read successfully.
- */
-class MediaStoreImporter(
+/** Experimental managed-copy backend, not a public gallery intake contract.
+ * No application container or user-facing gallery picker invokes this importer.
+ * Future gallery intake must reference original resources with stable Media identity;
+ * revoked grants or missing sources are reconciliation states, not reasons to copy by default.
+ * This experiment's managed-resource behavior must not define the production media contract. */
+internal class MediaStoreImporter(
     private val database: LifeDatabase,
     private val mediaRepository: MediaRepository,
 ) {

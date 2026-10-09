@@ -30,7 +30,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.qq.closie.ExternalNavCommand
+import com.qq.closie.navigation.ExternalNavCommand
 import com.qq.closie.data.PendingImport
 import com.qq.closie.data.model.ItemStatus
 import com.qq.closie.data.repository.WardrobeRepository
@@ -60,7 +60,7 @@ sealed class TopLevel(
         // by lazy is NOT cosmetic. `val entries = listOf(Home, Closet, …)` runs inside
         // Companion's <clinit>, and that clinit can be entered *from a child object's own
         // clinit* — e.g. the first static touch of the process is TopLevel.Closet.INSTANCE
-        // (LifeShell passes TopLevel.Closet.route as ClosieNavHost's startDestination):
+        // (LifeOsRoot passes TopLevel.Closet.route as ClosieNavHost's startDestination):
         //
         //   Closet.<clinit> → super TopLevel.<clinit> → Companion.<clinit>
         //     → listOf(... Closet.INSTANCE ...)  ← Closet's <clinit> is still on the stack,
@@ -87,55 +87,17 @@ sealed class Route(val route: String) {
 }
 
 /**
- * How Closie was opened — which decides whether it draws its own bottom bar and whether it owes the
- * user an explicit way back out.
- *
- * Before v0.3.0 the answer was implicit: Closie always drew its bottom bar and its only exit was the
- * Android back key or the 生活 tab. Entered from Life OS (生活 → 衣橱) that is a dead end in
- * practice — the user is two taps deep inside a *different* product's UI, on a screen whose chrome
- * looks nothing like the page they left, with no visible way back. Users do not guess that the
- * system back gesture is the return path; they look for an affordance and conclude the app is stuck.
- *
- * Modelling the mode explicitly is what fixes §7 properly. [EmbeddedInLifeOs] is the only mode that
- * owes a return affordance, and it is the only one whose back press is handed back to the shell
- * rather than finishing the Activity.
- */
-enum class ClosieHostMode {
-    /**
-     * Closie entered from Life OS (生活 → 衣橱 / 我的 → 设置). Draws a "‹ Life OS" return affordance
-     * on its root screen; system back also returns to Life OS rather than closing the app.
-     */
-    EmbeddedInLifeOs,
-
-    /**
-     * Closie standing on its own — the original product, launched without the Life OS shell. Keeps
-     * its own bottom navigation and never shows a "Life OS" affordance, because there is no Life OS
-     * beneath it to return to.
-     */
-    Standalone
-}
-
-/**
- * @param startDestination lets the Life OS shell open Closie directly on a specific screen
- *   (衣橱 or 设置) instead of always landing on its own home tab.
- * @param onExit is invoked when the user backs out of a screen that was opened as the start
- *   destination — at that point the Closie back stack is empty and `popBackStack()` would return
- *   false, leaving a blank screen. The shell uses it to return to the Life OS bottom navigation.
- * @param mode whether Closie is embedded in Life OS or running standalone. See [ClosieHostMode]:
- *   this is what decides if the "‹ Life OS" return affordance exists at all. It defaults to
- *   [ClosieHostMode.Standalone] so any caller that does not pass it keeps the pre-v0.3 behaviour
- *   exactly — no new chrome appears anywhere by accident.
- * @param onExitLabel text on the return affordance. Defaults to "Life OS"; the shell passes it
- *   through so the wording lives with the shell's own vocabulary, not inside Closie.
+ * Legacy Closet module graph inside Life OS. Local Closet/OOTD/outfit pages retain their
+ * repository and navigation; this graph is never a standalone product root.
+ * [onExit] returns to the owning Life OS graph once the module stack is exhausted.
  */
 @Composable
 fun ClosieNavHost(
     repository: WardrobeRepository,
     externalCommand: ExternalNavCommand? = null,
     onExternalCommandConsumed: () -> Unit = {},
-    startDestination: String = TopLevel.Home.route,
-    onExit: () -> Unit = {},
-    mode: ClosieHostMode = ClosieHostMode.Standalone,
+    startDestination: String = TopLevel.Closet.route,
+    onExit: () -> Unit,
     onExitLabel: String = "Life OS",
     /**
      * The Life OS database, threaded down to 设置 so 备份与恢复 can include the Life OS half.
@@ -153,19 +115,8 @@ fun ClosieNavHost(
     val currentRoute = current?.destination?.route
     val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
 
-    /**
-     * The return affordance exists only when Closie was entered from Life OS. Two guard rails,
-     * both deliberate:
-     *
-     *  - [mode] must be EmbeddedInLifeOs. A standalone Closie has no Life OS above it, so offering
-     *    "return to Life OS" would navigate nowhere.
-     *  - The screen on top must be a Closie *root* (one of [TopLevel.entries]). On a detail, editor
-     *    or outfit screen the correct way back is "up one Closie page", which those screens already
-     *    own; a second, differently-worded back control in the same top bar would be ambiguous.
-     */
-    val showReturnAffordance =
-        mode == ClosieHostMode.EmbeddedInLifeOs &&
-            TopLevel.entries.any { it.route == currentRoute }
+    // At module roots, always offer an explicit return to the single Life OS shell.
+    val showReturnAffordance = TopLevel.entries.any { it.route == currentRoute }
 
     /**
      * The single back rule for everything inside Closie.
@@ -177,8 +128,8 @@ fun ClosieNavHost(
      *
      * Owning this in one place (rather than per screen) is what makes the chain work:
      *
-     *   Life OS → 衣橱 → OOTD → back → 衣橱 → back → Life OS 生活
-     *   Life OS → 我的 → 设置 → back → 我的
+     *   Life OS → 衣橱 → OOTD → back → 衣橱 → back → Life OS Home
+     *   Life OS → 设置 → back → Home
      *
      * and it is also what stops a back press at the Closie root from finishing the Activity — the
      * default behaviour when the NavHost has nothing to pop.
@@ -193,7 +144,7 @@ fun ClosieNavHost(
     // one-shot: once navigated it is consumed and cleared by the host activity.
     //
     // Only the three Closie-owned commands appear here. `ReferenceLink` and `CaptureText` are
-    // consumed by LifeShell instead — they belong to 资料库 / 记录, not the wardrobe, and this
+    // consumed by LifeOsRoot instead — they belong to 资料库 / 记录, not the wardrobe, and this
     // NavHost is never reached for them. That split is the point: previously every share arrived
     // here as `Import`, so a shared article opened the "add a garment" form.
     LaunchedEffect(externalCommand) {
@@ -212,7 +163,7 @@ fun ClosieNavHost(
                 nav.navigate(Route.Add.route.replace("{status}", ItemStatus.OWNED.name))
                 onExternalCommandConsumed()
             }
-            // Not this NavHost's business — LifeShell consumes it. Consuming here as well would
+            // Not this NavHost's business — LifeOsRoot consumes it. Consuming here as well would
             // clear the command before the shell ever saw it.
             is ExternalNavCommand.ReferenceLink,
             is ExternalNavCommand.CaptureText -> Unit
@@ -227,7 +178,7 @@ fun ClosieNavHost(
     // screens can be composed from two different generations. See [WardrobeRepository.snapshot]
     // for why five per-surface StateFlows could not give this guarantee.
     //
-    // The collection lives in ClosieNavHost, not in LifeShell: Life OS does not read the wardrobe,
+    // The collection lives in ClosieNavHost, not in LifeOsRoot: Life OS does not read the wardrobe,
     // and the snapshot is only meaningful while a Closie NavHost is actually composed. When the
     // user navigates back to Life OS, this composition leaves and the collector stops — there is
     // no stale subscription keeping a snapshot alive that nobody renders.

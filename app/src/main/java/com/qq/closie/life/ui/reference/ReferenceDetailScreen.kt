@@ -53,7 +53,7 @@ import com.qq.closie.life.ui.components.LifeTopBarIconAction
 import com.qq.closie.life.ui.theme.LifeColors
 import com.qq.closie.life.ui.theme.LifeShape
 import com.qq.closie.life.ui.theme.LifeSpacing
-import com.qq.closie.life.ui.theme.LifeTheme
+import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import java.time.Instant
@@ -474,7 +474,7 @@ private fun previewDetailItem(): ReferenceItemEntity {
 @Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "资料详情 — 360x800")
 @Composable
 private fun ReferenceDetailPreview() {
-    LifeTheme {
+    LifeOsTheme {
         ReferenceDetailContent(
             item = previewDetailItem(),
             tags = listOf(
