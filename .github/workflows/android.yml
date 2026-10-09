@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,8 +15,52 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - run: ./gradlew :app:assembleDebug
-      - uses: actions/upload-artifact@v4
+      - name: Verify tests and CI debug build
+        run: ./gradlew test :app:assembleDebug
+      - name: Upload CI debug APK (com.qqhome.lifeos.debug; development only)
+        uses: actions/upload-artifact@v4
         with:
-          name: closie-debug-apk
+          name: lifeos-ci-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Check release signing availability
+        id: signing
+        # Only main can receive release signing material; feature dispatches use CI/debug.
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          LIFEOS_SIGNING_KEYSTORE_BASE64: ${{ secrets.LIFEOS_SIGNING_KEYSTORE_BASE64 }}
+          LIFEOS_SIGNING_STORE_PASSWORD: ${{ secrets.LIFEOS_SIGNING_STORE_PASSWORD }}
+          LIFEOS_SIGNING_KEY_ALIAS: ${{ secrets.LIFEOS_SIGNING_KEY_ALIAS }}
+          LIFEOS_SIGNING_KEY_PASSWORD: ${{ secrets.LIFEOS_SIGNING_KEY_PASSWORD }}
+        run: |
+          if [[ -n "${LIFEOS_SIGNING_KEYSTORE_BASE64//[[:space:]]/}" && -n "${LIFEOS_SIGNING_STORE_PASSWORD//[[:space:]]/}" &&
+                -n "${LIFEOS_SIGNING_KEY_ALIAS//[[:space:]]/}" && -n "${LIFEOS_SIGNING_KEY_PASSWORD//[[:space:]]/}" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets incomplete; signed update artifact skipped."
+          fi
+      - name: Build signed Life OS update APK
+        if: github.ref == 'refs/heads/main' && steps.signing.outputs.available == 'true'
+        env:
+          LIFEOS_SIGNING_KEYSTORE_BASE64: ${{ secrets.LIFEOS_SIGNING_KEYSTORE_BASE64 }}
+          LIFEOS_KEYSTORE_PASSWORD: ${{ secrets.LIFEOS_SIGNING_STORE_PASSWORD }}
+          LIFEOS_KEY_ALIAS: ${{ secrets.LIFEOS_SIGNING_KEY_ALIAS }}
+          LIFEOS_KEY_PASSWORD: ${{ secrets.LIFEOS_SIGNING_KEY_PASSWORD }}
+          LIFEOS_VERSION_CODE: ${{ github.run_number }}
+          LIFEOS_VERSION_NAME: 0.1.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keystore_path="$(mktemp "$RUNNER_TEMP/lifeos-signing-XXXXXX.jks")"
+          trap 'rm -f "$keystore_path"' EXIT
+          printf '%s' "$LIFEOS_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          export LIFEOS_KEYSTORE_PATH="$keystore_path"
+          ./gradlew :app:assembleRelease
+      - name: Upload signed update release APK
+        if: github.ref == 'refs/heads/main' && steps.signing.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-update-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

@@ -3,16 +3,54 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Installation identity is stable; namespace remains the existing Kotlin implementation.
+// Only an unset version code uses the development fallback; invalid overrides fail.
+val lifeOsVersionCode = providers.environmentVariable("LIFEOS_VERSION_CODE").orNull?.let { supplied ->
+    requireNotNull(supplied.trim().toIntOrNull()?.takeIf { it > 0 }) {
+        "LIFEOS_VERSION_CODE must be a positive Int (1..2147483647)"
+    }
+} ?: 1
+val lifeOsVersionName = providers.environmentVariable("LIFEOS_VERSION_NAME").orNull
+    ?.trim()?.takeIf { it.isNotEmpty() } ?: "0.1.0"
+
+val lifeOsKeystorePath = providers.environmentVariable("LIFEOS_KEYSTORE_PATH").orNull?.takeIf { it.isNotBlank() }
+val lifeOsKeystorePassword = providers.environmentVariable("LIFEOS_KEYSTORE_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+val lifeOsKeyAlias = providers.environmentVariable("LIFEOS_KEY_ALIAS").orNull?.takeIf { it.isNotBlank() }
+val lifeOsKeyPassword = providers.environmentVariable("LIFEOS_KEY_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+val lifeOsSigningConfigured = listOf(lifeOsKeystorePath, lifeOsKeystorePassword, lifeOsKeyAlias, lifeOsKeyPassword)
+    .all { it != null }
+
 android {
     namespace = "com.xiaoming.closie"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.xiaoming.closie"
+        applicationId = "com.qqhome.lifeos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = lifeOsVersionCode
+        versionName = lifeOsVersionName
+    }
+
+    signingConfigs {
+        if (lifeOsSigningConfigured) {
+            create("lifeOsRelease") {
+                storeFile = file(requireNotNull(lifeOsKeystorePath))
+                storePassword = lifeOsKeystorePassword
+                keyAlias = lifeOsKeyAlias
+                keyPassword = lifeOsKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
+        getByName("release") {
+            if (lifeOsSigningConfigured) signingConfig = signingConfigs.getByName("lifeOsRelease")
+            // No debug-key or generated-key fallback for release builds.
+        }
     }
 
     compileOptions {
@@ -33,6 +71,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
@@ -47,4 +87,5 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
