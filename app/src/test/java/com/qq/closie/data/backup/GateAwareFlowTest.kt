@@ -353,6 +353,14 @@ class GateAwareFlowTest {
 
             assertThat(firstEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
 
+            // firstEmission is counted down from inside the downstream collector.
+            // emitUnderBusinessLease still owns its emission lease until that collector
+            // returns, so wait for the delivery to be fully complete before asking a
+            // restore to take ownership.
+            awaitTrue("the first emission lease was never released") {
+                RestoreStartupGate.activeBusinessOps == 0
+            }
+
             // ---- The gate closes underneath the running collector. ----
             assertThat(RestoreStartupGate.beginRestore()).isTrue()
             db.lifeEntityDao().insert(
