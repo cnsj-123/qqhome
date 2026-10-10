@@ -55,7 +55,7 @@ class FinanceSmokeTest {
         input("期初余额", "1000.00")
         click("保存账户"); saved()
         assertEquals(100_000L, snapshot().accounts.single().openingBalanceMinor)
-        compose.onNodeWithTag("finance-add").performScrollTo().performClick()
+        compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
         input("金额 · CNY", "12.34")
         input("具体事由 · 买了什么 / 为了什么", "早餐豆浆")
         input("分类（可自定义）", "餐饮")
@@ -88,7 +88,7 @@ class FinanceSmokeTest {
             repository.saveAccount(name = "微信", kind = FinanceAccountKind.WECHAT)
         }
         launch()
-        compose.onNodeWithTag("finance-add").performScrollTo().performClick()
+        compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
         click("转账")
         input("金额 · CNY", "200.00")
         click("保存记录"); saved()

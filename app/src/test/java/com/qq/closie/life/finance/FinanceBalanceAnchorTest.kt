@@ -157,15 +157,26 @@ class FinanceBalanceAnchorTest {
         val bank = account()
         flow(bank.id, FinanceDirection.OUTFLOW, "100", yesterday, "旧支出")
         flow(bank.id, FinanceDirection.OUTFLOW, "200", time(19), "新支出")
+        val savedBusiness = repo.snapshot()
         val saved = LifeBackupApplier.snapshot(db)
+        val savedV4 = requireNotNull(saved.finance?.v4)
+        assertTrue(savedV4.changes.isNotEmpty())
         now = time(21)
         repo.saveAccount(bank.id, "改名", bank.kind, openingBalanceMinor = FinanceMoney.parse("20000"))
+        val journalBeforeRestore = requireNotNull(LifeBackupApplier.snapshot(db).finance?.v4).changes
         LifeBackupApplier.restoreSnapshot(db, saved)
         val restored = repo.snapshot()
         assertEquals(anchor, restored.accounts.single().createdAt)
+        assertEquals(anchor, restored.accounts.single().balanceAnchorAt)
         assertEquals(FinanceMoney.parse("9800"), FinanceProjection.balance(restored.accounts.single(), restored.entries))
-        assertEquals(saved.finance, restored)
+        assertEquals(savedBusiness, restored)
         assertEquals(2, restored.entries.size)
         assertTrue(restored.entries.all { it.voidedAt == null })
+        // Full backup state includes intake/config/history, unlike the ordinary business snapshot.
+        val restoredV4 = requireNotNull(LifeBackupApplier.snapshot(db).finance?.v4)
+        assertEquals(savedV4.copy(changes = journalBeforeRestore), restoredV4)
+        // Recovery retains the journal, including later changes; entity equality checks IDs,
+        // objectId, operation, authority and both revisions, not just the number of rows.
+        assertEquals(journalBeforeRestore.associateBy { it.id }, restoredV4.changes.associateBy { it.id })
     }
 }
