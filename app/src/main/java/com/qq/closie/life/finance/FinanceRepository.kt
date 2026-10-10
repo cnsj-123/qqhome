@@ -141,6 +141,22 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
                 dao.updateEntry(entry.copy(voidedAt = now, updatedAt = now, revision = entry.revision + 1))
             }
             dao.updateTransfer(transfer.copy(voidedAt = now, updatedAt = now))
+            val feeEvents = intake.events().filter { it.relatedTransferId == id && it.voidedAt == null }
+            val links = intake.links()
+            for (event in feeEvents) {
+                val fees = links.filter { it.eventId == event.id }
+                for (link in fees) {
+                    require(links.count { it.entryId == link.entryId } == 1 && link.role == FinanceFlowRole.FEE) {
+                        "手续费已关联其他事件，请先调整手续费关联"
+                    }
+                    val fee = requireNotNull(dao.entry(link.entryId))
+                    if (fee.voidedAt == null) {
+                        dao.updateEntry(fee.copy(voidedAt = now, updatedAt = now, revision = fee.revision + 1))
+                        journal(fee.id, "TRANSFER_FEE_VOID", before = fee.revision, after = fee.revision + 1)
+                    }
+                }
+                intake.updateEvent(event.copy(voidedAt = now, updatedAt = now))
+            }
             journal(id, "TRANSFER_VOID")
             validateBalances()
         }
@@ -170,7 +186,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         val event = target?.copy(updatedAt = maxOf(now, target.updatedAt + 1)) ?: priorEvent?.copy(description = entry.description, nature = input.nature,
             personalShareMinor = input.personalShareMinor, updatedAt = maxOf(now, priorEvent.updatedAt + 1)) ?: FinanceEventEntity(
             newId(), entry.description, input.nature, requireNotNull(dao.account(entry.accountId)).currencyCode,
-            entry.occurredAt, now, now, input.personalShareMinor)
+            entry.occurredAt, now, now, input.personalShareMinor, relatedTransferId = input.relatedTransferId)
         require(event.currencyCode == dao.account(entry.accountId)?.currencyCode) { "不能关联不同币种的事件" }
         require(input.personalShareMinor == null || input.personalShareMinor in 0..entry.amountMinor) { "个人承担不能超过付款" }
         if (priorEvent?.id == event.id || target != null) intake.updateEvent(event) else intake.insertEvent(event)

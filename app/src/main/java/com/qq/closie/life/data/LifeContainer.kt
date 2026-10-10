@@ -71,6 +71,7 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
     private fun gate() = RestoreStartupGate.requireReady()
 
     val financeRepository: FinanceRepository by lazy { gate(); FinanceRepository(database) }
+    val financeImportRepository: FinanceImportRepository by lazy { gate(); FinanceImportRepository(database, financeRepository) }
 
     val lifeRepository: LifeRepository by lazy { gate(); LifeRepository(database) }
     val mediaRepository: MediaRepository by lazy { gate(); MediaRepository(database) }

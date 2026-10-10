@@ -27,10 +27,14 @@ import java.time.Instant
 import java.time.ZoneId
 
 @Composable
-fun FinanceRoute(repository: FinanceRepository, onBack: () -> Unit) {
+fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportRepository? = null, onBack: () -> Unit) {
     val vm: FinanceViewModel = viewModel(factory = PresentationFactory(FinanceViewModel::class.java) { FinanceViewModel(repository) })
     val state by vm.state.collectAsStateWithLifecycle()
-    FinanceModuleScreen(state, vm, onBack)
+    var importOpen by rememberSaveable { mutableStateOf(false) }
+    if (importOpen && importRepository != null) FinanceImportScreen(importRepository, state.snapshot.accounts) { importOpen = false }
+    else FinanceModuleScreen(state, vm, onBack) {
+        if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账") }
+    }
 }
 
 @Composable

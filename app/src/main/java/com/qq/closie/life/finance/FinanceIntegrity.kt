@@ -65,6 +65,7 @@ object FinanceIntegrity {
                         entries.getValue(id).amountMinor.toBigInteger()) { "事件分配与实际流水不一致" }
             }
             v4.events.forEach {
+                require(it.relatedTransferId == null || data.transfers.any { transfer -> transfer.id == it.relatedTransferId }) { "手续费对应的转账缺失" }
                 require(it.description.isNotBlank() && (it.personalShareMinor == null || it.personalShareMinor >= 0)) { "事件信息无效" }
                 FinanceMoney.fractionDigits(it.currencyCode)
             }

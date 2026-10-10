@@ -17,7 +17,8 @@ data class FinanceEventEntity(
     @PrimaryKey val id: String, val description: String, val nature: FinanceNature,
     val currencyCode: String, val occurredAt: Long, val createdAt: Long, val updatedAt: Long,
     /** Confirmed total personal share; null means not yet classified, never guessed as zero. */
-    val personalShareMinor: Long? = null, val voidedAt: Long? = null
+    val personalShareMinor: Long? = null, val voidedAt: Long? = null,
+    val relatedTransferId: String? = null
 )
 
 @Entity(tableName = "finance_event_entries", primaryKeys = ["eventId", "entryId"], foreignKeys = [
@@ -42,5 +43,6 @@ data class FinanceEventInput(
     val role: FinanceFlowRole = FinanceFlowRole.PAYMENT, val existingEventId: String? = null,
     val expectedMinor: Long? = null, val expectedRole: FinanceFlowRole = FinanceFlowRole.SETTLEMENT,
     val statPolicy: FinanceStatPolicy = FinanceStatPolicy.INCLUDE,
-    val budgetPolicy: FinanceBudgetPolicy = FinanceBudgetPolicy.INCLUDE
+    val budgetPolicy: FinanceBudgetPolicy = FinanceBudgetPolicy.INCLUDE,
+    val relatedTransferId: String? = null
 )

@@ -19,7 +19,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS finance_events (
             id TEXT NOT NULL PRIMARY KEY, description TEXT NOT NULL, nature TEXT NOT NULL,
             currencyCode TEXT NOT NULL, occurredAt INTEGER NOT NULL, createdAt INTEGER NOT NULL,
-            updatedAt INTEGER NOT NULL, personalShareMinor INTEGER, voidedAt INTEGER)""")
+            updatedAt INTEGER NOT NULL, personalShareMinor INTEGER, voidedAt INTEGER, relatedTransferId TEXT)""")
         db.execSQL("CREATE INDEX index_finance_events_occurredAt ON finance_events(occurredAt)")
         db.execSQL("CREATE INDEX index_finance_events_voidedAt ON finance_events(voidedAt)")
         db.execSQL("""CREATE TABLE IF NOT EXISTS finance_event_entries (
