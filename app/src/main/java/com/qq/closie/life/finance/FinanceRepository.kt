@@ -27,7 +27,8 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         saveAccountInTransaction(id, name, kind, currencyCode, openingBalanceMinor).also { validateBalances() }
     }
     internal suspend fun saveAccountInTransaction(id: String?, name: String, kind: FinanceAccountKind,
-        currencyCode: String, openingBalanceMinor: Long, anchor: Long? = null, batchId: String? = null): FinanceAccountEntity {
+        currencyCode: String, openingBalanceMinor: Long, anchor: Long? = null, batchId: String? = null,
+        importSourceName: String? = null): FinanceAccountEntity {
         require(name.isNotBlank()) { "请填写账户名称" }
         FinanceMoney.fractionDigits(currencyCode)
         val old = id?.let { requireNotNull(dao.account(it)) { "账户已不存在" } }
@@ -36,7 +37,8 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         }
         val now = clock()
         val row = FinanceAccountEntity(old?.id ?: newId(), name.trim(), kind, currencyCode, openingBalanceMinor,
-            old?.createdAt ?: now, if (old == null) now else maxOf(now, old.updatedAt + 1), old?.archivedAt, old?.balanceAnchorAt ?: anchor ?: now, old?.importBatchId ?: batchId)
+            old?.createdAt ?: now, if (old == null) now else maxOf(now, old.updatedAt + 1), old?.archivedAt,
+            old?.balanceAnchorAt ?: anchor ?: now, old?.importBatchId ?: batchId, old?.importSourceName ?: importSourceName)
         if (old == null) dao.insertAccount(row) else dao.updateAccount(row)
         journal(row.id, "ACCOUNT_SAVE", batchId)
         return row
@@ -64,7 +66,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     internal suspend fun saveEntryInTransaction(id: String?, accountId: String, direction: FinanceDirection,
         amountMinor: Long, description: String, occurredAt: Long, category: String, tags: List<String>,
         subcategory: String = "", event: FinanceEventInput? = null, expectedRevision: Long? = null,
-        batchId: String? = null): FinanceEntryEntity {
+        batchId: String? = null, authority: String? = null): FinanceEntryEntity {
         require(amountMinor > 0) { "金额必须大于 0" }
         require(description.isNotBlank()) { "请写下具体事由" }
         val old = id?.let { requireNotNull(dao.entry(it)) { "流水已不存在" } }
@@ -86,20 +88,23 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         }
         dao.insertEntryTags(tagIds.map { FinanceEntryTagCrossRef(row.id, it) })
         if (event != null) attachEvent(row, event)
-        journal(row.id, "ENTRY_SAVE", batchId, old?.revision, row.revision)
+        journal(row.id, "ENTRY_SAVE", batchId, old?.revision, row.revision, authority)
         return row
     }
 
     suspend fun saveTransfer(id: String? = null, sourceAccountId: String, targetAccountId: String,
-        amountMinor: Long, description: String, occurredAt: Long): FinanceTransferEntity = transaction {
-        saveTransferInTransaction(id, sourceAccountId, targetAccountId, amountMinor, description, occurredAt).also { validateBalances() }
+        amountMinor: Long, description: String, occurredAt: Long, expectedUpdatedAt: Long? = null): FinanceTransferEntity = transaction {
+        saveTransferInTransaction(id, sourceAccountId, targetAccountId, amountMinor, description, occurredAt,
+            expectedUpdatedAt = expectedUpdatedAt).also { validateBalances() }
     }
     internal suspend fun saveTransferInTransaction(id: String?, sourceAccountId: String, targetAccountId: String,
-        amountMinor: Long, description: String, occurredAt: Long, batchId: String? = null): FinanceTransferEntity {
+        amountMinor: Long, description: String, occurredAt: Long, batchId: String? = null,
+        authority: String? = null, expectedUpdatedAt: Long? = null): FinanceTransferEntity {
         require(amountMinor > 0) { "金额必须大于 0" }
         require(sourceAccountId != targetAccountId) { "转出与转入账户必须不同" }
         val old = id?.let { requireNotNull(dao.transfer(it)) { "转账已不存在" } }
         require(old?.voidedAt == null) { "已作废转账不能修改" }
+        require(expectedUpdatedAt == null || old?.updatedAt == expectedUpdatedAt) { "转账已改变，请重新打开" }
         val oldOut = old?.let { requireNotNull(dao.entry(it.outflowEntryId)) }
         val oldIn = old?.let { requireNotNull(dao.entry(it.inflowEntryId)) }
         val source = usableAccount(sourceAccountId, oldOut?.accountId)
@@ -112,13 +117,14 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         val inflow = FinanceEntryEntity(oldIn?.id ?: newId(), targetAccountId, FinanceDirection.INFLOW, amountMinor,
             description.trim(), occurredAt, oldIn?.recordedAt ?: now, now,
             revision = (oldIn?.revision ?: 0) + 1, importBatchId = oldIn?.importBatchId ?: batchId)
-        val transfer = FinanceTransferEntity(old?.id ?: newId(), out.id, inflow.id, old?.recordedAt ?: now, now)
+        val transfer = FinanceTransferEntity(old?.id ?: newId(), out.id, inflow.id, old?.recordedAt ?: now,
+            if (old == null) now else maxOf(now, old.updatedAt + 1))
         if (old == null) {
             dao.insertEntry(out); dao.insertEntry(inflow); dao.insertTransfer(transfer)
         } else {
             dao.updateEntry(out); dao.updateEntry(inflow); dao.updateTransfer(transfer)
         }
-        journal(transfer.id, "TRANSFER_SAVE", batchId)
+        journal(transfer.id, "TRANSFER_SAVE", batchId, authority = authority)
         return transfer
     }
 
@@ -128,6 +134,17 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         if (entry.voidedAt == null) {
             val now = clock()
             dao.updateEntry(entry.copy(voidedAt = now, updatedAt = now, revision = entry.revision + 1))
+            val links = intake.links()
+            for (link in links.filter { it.entryId == id }) {
+                val event = requireNotNull(intake.event(link.eventId))
+                val active = links.filter { it.eventId == event.id }.any { dao.entry(it.entryId)?.voidedAt == null }
+                if (!active) {
+                    intake.updateEvent(event.copy(voidedAt = now, updatedAt = maxOf(now, event.updatedAt + 1)))
+                    intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }.forEach {
+                        intake.updateExpected(it.copy(cancelledAt = now))
+                    }
+                }
+            }
             journal(id, "ENTRY_VOID", before = entry.revision, after = entry.revision + 1)
             validateBalances()
         }
@@ -181,6 +198,9 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         val target = input.existingEventId?.let { id ->
             requireNotNull(intake.event(id)?.takeIf { it.voidedAt == null }) { "关联事件已不可用" }
         }
+        require(input.expectedEventUpdatedAt == null || (target ?: priorEvent)?.updatedAt == input.expectedEventUpdatedAt) {
+            "关联事件已改变，请重新打开记录"
+        }
         require(input.role !in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK, FinanceFlowRole.REIMBURSEMENT)
             || target != null || priorEvent != null) { "请选择这笔到账对应的原事件" }
         val event = target?.copy(updatedAt = maxOf(now, target.updatedAt + 1)) ?: priorEvent?.copy(description = entry.description, nature = input.nature,
@@ -188,10 +208,16 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
             newId(), entry.description, input.nature, requireNotNull(dao.account(entry.accountId)).currencyCode,
             entry.occurredAt, now, now, input.personalShareMinor, relatedTransferId = input.relatedTransferId)
         require(event.currencyCode == dao.account(entry.accountId)?.currencyCode) { "不能关联不同币种的事件" }
-        require(input.personalShareMinor == null || input.personalShareMinor in 0..entry.amountMinor) { "个人承担不能超过付款" }
+        require(input.personalShareMinor == null || input.personalShareMinor >= 0) { "个人承担不能为负数" }
         if (priorEvent?.id == event.id || target != null) intake.updateEvent(event) else intake.insertEvent(event)
         intake.clearLinks(entry.id)
         intake.insertLinks(listOf(FinanceEventEntryLinkEntity(event.id, entry.id, input.role, entry.amountMinor)))
+        if (input.cancelExpected) {
+            require(input.expectedMinor == null)
+            intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }.forEach {
+                intake.updateExpected(it.copy(cancelledAt = now))
+            }
+        }
         if (input.expectedMinor != null) {
             require(input.expectedMinor > 0) { "预计金额必须大于 0" }
             val existing = intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }
@@ -212,14 +238,19 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         }
         intake.clearLinks(entryId)
         intake.insertLinks(allocations.map { FinanceEventEntryLinkEntity(it.eventId, entryId, it.role, it.amountMinor) })
+        allocations.forEach {
+            val event = requireNotNull(intake.event(it.eventId))
+            intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
+        }
         dao.updateEntry(entry.copy(revision = entry.revision + 1, updatedAt = clock()))
         journal(entryId, "ENTRY_ALLOCATE", before = entry.revision, after = entry.revision + 1)
         validateBalances()
     }
 
-    internal suspend fun journal(id: String, operation: String, batchId: String? = null, before: Long? = null, after: Long? = null) {
+    internal suspend fun journal(id: String, operation: String, batchId: String? = null, before: Long? = null, after: Long? = null,
+        authority: String? = null) {
         intake.insertChange(FinanceChangeEntity(newId(), id, operation,
-            if (batchId == null) "USER_DIRECT" else "USER_CONFIRMED_IMPORT", clock(), batchId, before, after))
+            authority ?: if (batchId == null) "USER_DIRECT" else "USER_CONFIRMED_IMPORT", clock(), batchId, before, after))
     }
 
     private suspend fun usableAccount(id: String, existingAccountId: String?): FinanceAccountEntity {

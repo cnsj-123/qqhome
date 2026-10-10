@@ -41,10 +41,23 @@ class MainActivity : ComponentActivity() {
         receiveIntent(intent, initial = false)
     }
     private fun receiveIntent(intent: Intent?, initial: Boolean) {
+        intent?.getStringExtra(com.qq.closie.life.finance.FinanceReviewRequests.EXTRA_PROPOSAL)?.let {
+            com.qq.closie.life.finance.FinanceReviewRequests.open(it)
+            intent.removeExtra(com.qq.closie.life.finance.FinanceReviewRequests.EXTRA_PROPOSAL)
+            return
+        }
         val action = intent?.action
         val text = if (action == Intent.ACTION_SEND) intent?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() else null
         val edit = intent?.getStringExtra(EXTRA_EDIT_ITEM_ID)
         val add = intent?.getBooleanExtra(EXTRA_OPEN_ADD, false) == true
         if (initial) external.receiveInitial(action, text, edit, add) else external.receive(action, text, edit, add)
+    }
+    override fun onResume() {
+        super.onResume()
+        com.qq.closie.life.finance.FinanceReviewRequests.foreground = true
+    }
+    override fun onPause() {
+        com.qq.closie.life.finance.FinanceReviewRequests.foreground = false
+        super.onPause()
     }
 }

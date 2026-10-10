@@ -46,4 +46,3 @@ private val moduleIcons = mapOf(
     ).build()
 }
 fun LifeModule.icon(): ImageVector = moduleIcons.getValue(id)
-

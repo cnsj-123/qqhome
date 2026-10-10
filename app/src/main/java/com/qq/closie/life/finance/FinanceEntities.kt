@@ -25,7 +25,8 @@ data class FinanceAccountEntity(
     val updatedAt: Long,
     val archivedAt: Long? = null,
     @ColumnInfo(defaultValue = "0") val balanceAnchorAt: Long = createdAt,
-    val importBatchId: String? = null
+    val importBatchId: String? = null,
+    val importSourceName: String? = null
 )
 
 @Entity(tableName = "finance_categories", indices = [Index(value = ["name"]), Index("parentId")])

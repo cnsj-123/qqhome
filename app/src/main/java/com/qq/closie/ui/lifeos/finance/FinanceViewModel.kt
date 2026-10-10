@@ -16,7 +16,8 @@ enum class FinancePeriod(val label: String) { ALL("全部"), MONTH("本月"), YE
 enum class FinanceEditorKind(val label: String) { EXPENSE("支出"), INCOME("收入"), TRANSFER("转账") }
 data class FinanceFilter(val query: String = "", val period: FinancePeriod = FinancePeriod.ALL,
     val range: FinanceDateRange = FinanceDateRange(), val customLabel: String = "",
-    val accountId: String? = null, val categoryId: String? = null, val tagId: String? = null)
+    val accountId: String? = null, val categoryId: String? = null, val tagId: String? = null,
+    val nature: FinanceNature? = null)
 data class FinanceUiState(
     val snapshot: FinanceSnapshot = FinanceSnapshot(), val filter: FinanceFilter = FinanceFilter(),
     val ledger: List<FinanceLedgerRow> = emptyList(), val balances: Map<String, Long> = emptyMap(),
@@ -56,10 +57,15 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         if (data == null) FinanceUiState(filter = selection, loading = message == null, busy = saving, error = message)
         else {
             val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
+            val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
+            val natureEntries = data.v4?.links.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
+            val linkedEntries = data.v4?.links.orEmpty().map { it.entryId }.toSet()
             val rows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
                 (selection.accountId == null || row.account.id == selection.accountId || row.targetAccount?.id == selection.accountId) &&
                 (selection.categoryId == null || row.entry.categoryId == selection.categoryId || data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }) &&
-                (selection.tagId == null || row.entry.id in tagEntries)
+                (selection.tagId == null || row.entry.id in tagEntries) &&
+                (selection.nature == null || row.entry.id in natureEntries ||
+                    (selection.nature == FinanceNature.PERSONAL && row.transfer == null && row.entry.id !in linkedEntries))
             }
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
@@ -85,6 +91,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     fun filterAccount(id: String?) { filter.value = filter.value.copy(accountId = id) }
     fun filterCategory(id: String?) { filter.value = filter.value.copy(categoryId = id) }
     fun filterTag(id: String?) { filter.value = filter.value.copy(tagId = id) }
+    fun filterNature(nature: FinanceNature?) { filter.value = filter.value.copy(nature = nature) }
     fun search(query: String) { filter.value = filter.value.copy(query = query) }
     fun selectPeriod(period: FinancePeriod) {
         if (period == FinancePeriod.CUSTOM) return
@@ -120,16 +127,26 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         val occurred = FinanceTime.resolve(draft.occurredAt, draft.preservedOccurredAt)
         if (draft.kind == FinanceEditorKind.TRANSFER) {
             require(row == null || row.transfer != null) { "普通流水不能变更为转账，请先作废后另记" }
-            repository.saveTransfer(row?.transfer?.id, draft.accountId, draft.targetAccountId, amount, draft.description, occurred)
+            repository.saveTransfer(row?.transfer?.id, draft.accountId, draft.targetAccountId, amount, draft.description, occurred,
+                expectedUpdatedAt = row?.transfer?.updatedAt)
         } else {
             require(row?.transfer == null) { "转账需要整体编辑" }
+            val multiple = snapshot.value?.v4?.links.orEmpty().count { it.entryId == row?.entry?.id } > 1
+            require(!multiple || (amount == row?.entry?.amountMinor &&
+                draft.kind.name == if (row?.entry?.direction == FinanceDirection.INFLOW) "INCOME" else "EXPENSE")) {
+                "此流水分配给多个事件，请先调整事件分配再改变整笔金额或方向"
+            }
             repository.saveEntry(row?.entry?.id, draft.accountId,
                 if (draft.kind == FinanceEditorKind.INCOME) FinanceDirection.INFLOW else FinanceDirection.OUTFLOW,
-                amount, draft.description, occurred, draft.category, draft.tags.split(Regex("[,，\\n]")), draft.subcategory, draft.relationship.resolve(account.currencyCode), row?.entry?.revision)
+                amount, draft.description, occurred, draft.category, draft.tags.split(Regex("[,，\\n]")), draft.subcategory,
+                if (multiple) null else draft.relationship.resolve(account.currencyCode), row?.entry?.revision)
         }
     }
     fun voidRecord(row: FinanceLedgerRow, onSaved: () -> Unit) = mutate(onSaved) {
         if (row.transfer != null) repository.voidTransfer(row.transfer.id) else repository.voidEntry(row.entry.id)
+    }
+    fun allocate(row: FinanceLedgerRow, parts: List<FinanceAllocation>, done: () -> Unit) = mutate(done) {
+        repository.allocateEntry(row.entry.id, parts, row.entry.revision)
     }
     private fun mutate(onSaved: () -> Unit, operation: suspend () -> Unit) {
         if (busy.value || snapshot.value == null) return

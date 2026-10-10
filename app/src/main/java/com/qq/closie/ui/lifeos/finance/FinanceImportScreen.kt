@@ -70,7 +70,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                             TextButton(onClick = { state.mappings.firstOrNull()?.let(vm::map) }, enabled = !state.busy) { Text("修改账户映射") }
                             Row { Checkbox(state.splitTags, vm::tags, enabled = !state.busy); Text("将标签按空格拆开（默认保留原单元格）") }
                             Row { Checkbox(state.fees, vm::fees, enabled = !state.busy); Text("确认手续费为转账金额之外的实际支出") }
-                            Text("普通记录默认选中。待检查和重复项需逐条勾选；勾选重复项表示仍要导入。退款／报销附属金额仅保留作依据，不生成到账。")
+                            Text("普通记录默认选中。待检查和重复项需逐条勾选；勾选重复项表示仍要导入。退款／报销附属金额仅保留作依据，不生成到账。无效或不支持的类型请在文件副本中修正后重新选择。")
                         }
                         items(preview.rows, key = { it.id }) { row ->
                             val enabled = !state.busy && row.canonicalId == null && row.kind != null &&
@@ -130,7 +130,7 @@ private fun ImportAccountMapping(mapping: FinanceAccountMapping, accounts: List<
         }
         if (mapping.existingId == null) {
             OutlinedTextField(mapping.name, { onChange(mapping.copy(name = it)) }, enabled = enabled, label = { Text("账户名称") })
-            EnumChoice("类型", mapping.kind, FinanceAccountKind.entries.map { it to it.name }, enabled) { onChange(mapping.copy(kind = it)) }
+            EnumChoice("类型", mapping.kind, FinanceAccountKind.entries.map { it to it.label }, enabled) { onChange(mapping.copy(kind = it)) }
             EnumChoice("余额起点", mapping.fromHistory, listOf(true to "从历史重建", false to "以当前余额为准"), enabled) {
                 onChange(mapping.copy(fromHistory = it, openingMinor = 0, anchorAt = System.currentTimeMillis(), openingValid = true))
                 opening = "0"; error = null

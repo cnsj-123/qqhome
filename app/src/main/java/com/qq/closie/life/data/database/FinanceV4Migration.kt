@@ -9,6 +9,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE finance_accounts ADD COLUMN balanceAnchorAt INTEGER NOT NULL DEFAULT 0")
         db.execSQL("UPDATE finance_accounts SET balanceAnchorAt = createdAt")
         db.execSQL("ALTER TABLE finance_accounts ADD COLUMN importBatchId TEXT")
+        db.execSQL("ALTER TABLE finance_accounts ADD COLUMN importSourceName TEXT")
         db.execSQL("ALTER TABLE finance_categories ADD COLUMN parentId TEXT")
         db.execSQL("CREATE INDEX index_finance_categories_parentId ON finance_categories(parentId)")
         db.execSQL("ALTER TABLE finance_entries ADD COLUMN statPolicy TEXT NOT NULL DEFAULT 'INCLUDE'")

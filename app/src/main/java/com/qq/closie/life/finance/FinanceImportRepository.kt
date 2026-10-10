@@ -11,7 +11,8 @@ data class FinanceAccountMapping(val source: String, val existingId: String? = n
     val name: String = source, val kind: FinanceAccountKind = FinanceAccountKind.OTHER,
     val fromHistory: Boolean = true, val openingMinor: Long = 0, val anchorAt: Long = System.currentTimeMillis(),
     val openingValid: Boolean = true)
-data class FinanceImportPreview(val batch: FinanceImportBatchEntity, val rows: List<FinanceImportRowEntity>)
+data class FinanceImportPreview(val batch: FinanceImportBatchEntity, val rows: List<FinanceImportRowEntity>,
+    val createdMappings: List<FinanceAccountMapping> = emptyList())
 data class FinanceUndoResult(val voided: Int, val retained: Int)
 
 /** Import owns staging; only a user-confirmed batch may invoke the Finance domain commands. */
@@ -22,7 +23,9 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
 
     suspend fun history(): List<FinanceImportBatchEntity> = transaction { dao.batches() }
     suspend fun open(id: String): FinanceImportPreview = transaction {
-        FinanceImportPreview(requireNotNull(dao.batches().find { it.id == id }), dao.rows(id))
+        FinanceImportPreview(requireNotNull(dao.batches().find { it.id == id }), dao.rows(id),
+            database.financeDao().accounts().filter { it.importBatchId == id && it.importSourceName != null }
+                .map { FinanceAccountMapping(it.importSourceName!!, existingId = it.id, name = it.name, kind = it.kind) })
     }
     suspend fun stage(file: File, name: String): FinanceImportPreview = withContext(Dispatchers.IO) {
         val digest = LegacyLedgerReader.digest(file)
@@ -69,16 +72,17 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
             require(rows.none { it.feeMinor > 0 } || feesAreAdditional) { "请先确认手续费为转账金额之外的实际支出" }
             val now = System.currentTimeMillis()
             val mapped = mutableMapOf<String, String>()
+            val previousAccounts = database.financeDao().accounts().filter { it.importBatchId == id }.associateBy { it.importSourceName }
             val usedNames = rows.flatMap { listOf(it.sourceAccount, it.targetAccount) }.filter(String::isNotBlank).toSet()
             for (mapping in mappings.filter { it.source in usedNames }) {
-                val existing = mapping.existingId?.let { database.financeDao().account(it) }
-                if (mapping.existingId != null) {
+                val existing = if (mapping.existingId != null) database.financeDao().account(mapping.existingId) else previousAccounts[mapping.source]
+                if (mapping.existingId != null || existing != null) {
                     require(existing != null && existing.archivedAt == null && existing.currencyCode == "CNY") { "映射账户已不可用或币种不符，请重新选择" }
                     mapped[mapping.source] = existing.id
                 } else {
-                    val earliest = rows.filter { it.sourceAccount == mapping.source || it.targetAccount == mapping.source }.minOf { it.occurredAt!! }
+                    val earliest = allRows.filter { it.sourceAccount == mapping.source || it.targetAccount == mapping.source }.mapNotNull { it.occurredAt }.min()
                     mapped[mapping.source] = finance.saveAccountInTransaction(null, mapping.name, mapping.kind, "CNY",
-                        mapping.openingMinor, if (mapping.fromHistory) earliest else mapping.anchorAt, id).id
+                        if (mapping.fromHistory) 0 else mapping.openingMinor, if (mapping.fromHistory) earliest else mapping.anchorAt, id, mapping.source).id
                 }
             }
             for (row in rows) {
@@ -170,7 +174,8 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
     }
 
     private fun duplicateIds(rows: List<FinanceImportRowEntity>, mappings: List<FinanceAccountMapping>, snapshot: FinanceSnapshot): Set<String> {
-        val map = mappings.associate { it.source to (it.existingId ?: "new:${it.source}") }
+        val created = snapshot.accounts.filter { it.importBatchId == rows.firstOrNull()?.batchId }.associateBy { it.importSourceName }
+        val map = mappings.associate { it.source to (it.existingId ?: created[it.source]?.id ?: "new:${it.source}") }
         fun key(account: String, target: String?, kind: FinanceProposalKind?, amount: Long?, time: Long?, text: String) =
             listOf(account, target.orEmpty(), kind?.name.orEmpty(), amount.toString(), time.toString(), text.trim())
         val known = FinanceProjection.ledger(snapshot).map { row -> key(row.account.id, row.targetAccount?.id,

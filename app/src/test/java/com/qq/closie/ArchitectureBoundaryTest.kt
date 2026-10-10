@@ -25,7 +25,7 @@ class ArchitectureBoundaryTest {
         assertFalse(dao.contains("@Delete"))
         assertFalse(dao.contains("OnConflictStrategy.REPLACE"))
         assertFalse(Regex("DELETE FROM finance_(accounts|entries|transfers|categories|tags)\\b").containsMatchIn(dao))
-        assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 3"))
+        assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 4"))
         assertTrue(File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/3.json").exists())
         assertEquals("life_os.db", com.qq.closie.life.data.database.LifeDatabase.DATABASE_NAME)
         assertEquals(com.qq.closie.navigation.LifeOsRoute.FINANCE,

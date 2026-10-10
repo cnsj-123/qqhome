@@ -18,10 +18,15 @@ object LifeText {
 }
 
 val LifeOsTypography = Typography(
+    displayLarge = LifeText.display.copy(fontSize = 36.sp, lineHeight = 44.sp),
+    displayMedium = LifeText.display.copy(fontSize = 30.sp, lineHeight = 38.sp),
     displaySmall = LifeText.display,
+    headlineLarge = LifeText.display,
+    headlineMedium = LifeText.title.copy(fontSize = 24.sp, lineHeight = 32.sp),
     headlineSmall = LifeText.title,
     titleLarge = LifeText.title,
     titleMedium = LifeText.body.copy(fontWeight = FontWeight.Medium),
+    titleSmall = LifeText.body,
     bodyLarge = LifeText.body,
     bodyMedium = LifeText.body.copy(fontSize = 14.sp, lineHeight = 22.sp),
     bodySmall = LifeText.caption,

@@ -61,7 +61,8 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
     fun open(id: String) = run { show(repository.open(id)) }
     private suspend fun show(preview: FinanceImportPreview) {
         val mappings = preview.rows.flatMap { listOf(it.sourceAccount, it.targetAccount) }
-            .filter(String::isNotBlank).distinct().map { FinanceAccountMapping(it, kind = FinanceImportRepository.suggestKind(it)) }
+            .filter(String::isNotBlank).distinct().map { source -> preview.createdMappings.find { it.source == source }
+                ?: FinanceAccountMapping(source, kind = FinanceImportRepository.suggestKind(source)) }
         mutable.update { it.copy(preview = preview, mappings = mappings, reviewed = false, selected = emptySet(),
             fees = false, splitTags = false, history = repository.history()) }
     }
@@ -87,8 +88,11 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
         val count = repository.commit(id, current.mappings, current.selected,
             current.preview.rows.filter { it.status == FinanceRowStatus.DUPLICATE && it.id in current.selected }.map { it.id }.toSet(),
             current.splitTags, current.fees)
-        mutable.update { it.copy(preview = repository.open(id), selected = emptySet(),
-            history = repository.history(), message = "已导入 $count 条记录") }
+        val refreshed = repository.open(id)
+        val history = repository.history()
+        mutable.update { it.copy(preview = refreshed, selected = emptySet(),
+            mappings = it.mappings.map { mapping -> refreshed.createdMappings.find { it.source == mapping.source } ?: mapping },
+            history = history, message = "已导入 $count 条记录") }
     }
     fun undo(id: String) = run {
         val result = repository.undo(id)
@@ -96,4 +100,3 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
             history = repository.history(), message = "已作废 ${result.voided} 条流水；保留 ${result.retained} 条后来修改或关联的流水") }
     }
 }
-

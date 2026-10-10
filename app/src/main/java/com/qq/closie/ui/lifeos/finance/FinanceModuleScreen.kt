@@ -123,11 +123,12 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         MoneySummary("支出", state.selected, true)
                         MoneySummary("收入", state.selected, false)
                         DimensionSummary("分类", state.categories)
+                        DimensionSummary("主分类", FinanceProjection.parentCategoryTotals(FinancePersonalProjection.rows(state.snapshot, state.ledger), state.snapshot.categories))
                         DimensionSummary("标签", state.tags)
                         DimensionSummary("账户", FinanceProjection.accountTotals(FinancePersonalProjection.rows(state.snapshot, state.ledger)))
                         Text("账户真实流入 / 流出", style = LifeText.title)
-                        MoneySummary("真实流出", FinancePersonalProjection.realTotals(state.ledger), true)
-                        MoneySummary("真实流入", FinancePersonalProjection.realTotals(state.ledger), false)
+                        MoneySummary("真实流出", FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId), true)
+                        MoneySummary("真实流入", FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId), false)
                         Text("转账仅改变账户余额，不计入个人收支。", style = LifeText.caption)
                     } else {
                         item { Text("流水 · ${state.ledger.size} 笔", style = LifeText.title) }
@@ -152,6 +153,7 @@ private fun FinanceFilters(state: FinanceUiState, vm: FinanceViewModel) {
     ChoiceFilter("账户", state.filter.accountId, state.snapshot.accounts.map { it.id to it.name }, vm::filterAccount)
     ChoiceFilter("分类", state.filter.categoryId, state.snapshot.categories.map { it.id to it.name }, vm::filterCategory)
     ChoiceFilter("标签", state.filter.tagId, state.snapshot.tags.map { it.id to it.name }, vm::filterTag)
+    ChoiceFilter("性质", state.filter.nature?.name, FinanceNature.entries.map { it.name to it.label }) { vm.filterNature(it?.let(FinanceNature::valueOf)) }
 }
 
 @Composable

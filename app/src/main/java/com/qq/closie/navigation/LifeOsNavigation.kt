@@ -39,7 +39,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         referenceRoutes(nav, container, onCapture)
         planRoutes(nav, container)
         composable(LifeOsRoute.FINANCE) {
-            FinanceRoute(container.financeRepository, container.financeImportRepository) { nav.returnToLifeHome() }
+            FinanceRoute(container.financeRepository, container.financeImportRepository, container.financeAutomationRepository) { nav.returnToLifeHome() }
         }
         composable(LifeOsRoute.CALENDAR) {
             LifeCalendarScreen(initialDate = home.date, onBack = { nav.returnToLifeHome() }, onOpenHomeDate = {

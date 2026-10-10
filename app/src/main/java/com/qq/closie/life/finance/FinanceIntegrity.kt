@@ -42,6 +42,7 @@ object FinanceIntegrity {
         data.v4?.let { v4 ->
             unique(v4.events) { it.id }; unique(v4.expected) { it.id }
             val events = v4.events.associateBy { it.id }
+            val eventLinks = v4.links.groupBy { it.eventId }
             val transferLegs = legs.toSet()
             require(v4.links.map { it.eventId to it.entryId }.distinct().size == v4.links.size) { "事件关联重复" }
             v4.links.forEach { link ->
@@ -49,6 +50,7 @@ object FinanceIntegrity {
                 val entry = requireNotNull(entries[link.entryId]) { "关联流水缺失" }
                 require(link.allocatedMinor > 0 && entry.id !in transferLegs) { "分配金额或流水类型无效" }
                 require(accounts.getValue(entry.accountId).currencyCode == event.currencyCode) { "事件币种不一致" }
+                require(event.relatedTransferId == null || link.role == FinanceFlowRole.FEE) { "转账手续费事件只能关联手续费" }
                 if (entry.voidedAt == null) {
                     require(event.voidedAt == null) { "有效流水不能关联已作废事件" }
                     when (link.role) {
@@ -68,6 +70,12 @@ object FinanceIntegrity {
                 require(it.relatedTransferId == null || data.transfers.any { transfer -> transfer.id == it.relatedTransferId }) { "手续费对应的转账缺失" }
                 require(it.description.isNotBlank() && (it.personalShareMinor == null || it.personalShareMinor >= 0)) { "事件信息无效" }
                 FinanceMoney.fractionDigits(it.currencyCode)
+                if (it.voidedAt == null && it.personalShareMinor != null) {
+                    val paid = eventLinks[it.id].orEmpty().filter { link ->
+                        entries[link.entryId]?.voidedAt == null && link.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE)
+                    }.fold(java.math.BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
+                    require(it.personalShareMinor.toBigInteger() <= paid) { "个人承担超过当前有效付款，请先调整事件承担额" }
+                }
             }
             v4.expected.forEach { require(it.eventId in events && (it.amountMinor == null || it.amountMinor > 0)) { "预计关系无效" } }
             unique(v4.batches) { it.id }; unique(v4.staging) { it.id }; unique(v4.proposals) { it.id }; unique(v4.rules) { it.id }
@@ -80,6 +88,16 @@ object FinanceIntegrity {
             v4.proposalTags.forEach { require(it.proposalId in proposalIds) }
             v4.conditions.forEach { require(it.ruleId in ruleIds) }
             v4.actions.forEach { require(it.ruleId in ruleIds) }
+            val canonicalIds = entries.keys + data.transfers.map { it.id }
+            v4.proposals.forEach {
+                require(it.amountMinor == null || it.amountMinor > 0)
+                if (it.status == FinanceProposalStatus.CONFIRMED) require(it.canonicalId in canonicalIds) { "确认记录的正式流水缺失" }
+            }
+            val conditions = v4.conditions.groupBy { it.ruleId }
+            val actions = v4.actions.groupBy { it.ruleId }
+            v4.rules.filter { it.deletedAt == null }.forEach {
+                FinanceRuleEngine.validate(FinanceRuleSet(it, conditions[it.id].orEmpty(), actions[it.id].orEmpty()))
+            }
         }
         FinanceProjection.totals(FinanceProjection.ledger(data))
     }

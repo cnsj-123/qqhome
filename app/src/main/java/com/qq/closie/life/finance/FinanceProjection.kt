@@ -77,6 +77,13 @@ object FinanceProjection {
             sum(values.filter { it.entry.direction == FinanceDirection.OUTFLOW }),
             sum(values.filter { it.entry.direction == FinanceDirection.INFLOW })) }
     fun categoryTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.category ?: "未分类") }
+    fun parentCategoryTotals(rows: List<FinanceLedgerRow>, categories: List<FinanceCategoryEntity>): List<FinanceDimensionTotal> {
+        val byId = categories.associateBy { it.id }
+        return dimensions(rows) { row ->
+            val leaf = byId[row.entry.categoryId]
+            listOf(leaf?.parentId?.let { byId[it]?.name } ?: leaf?.name ?: "未分类")
+        }
+    }
     fun accountTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.account.name) }
     fun tagTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { it.tags }
     private fun dimensions(rows: List<FinanceLedgerRow>, names: (FinanceLedgerRow) -> List<String>): List<FinanceDimensionTotal> =

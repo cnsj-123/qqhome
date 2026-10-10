@@ -113,6 +113,7 @@ fun LifeOsRoot(
                 }
             }
         }
+        com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
             onManual = { nav.navigateLifeTopLevel(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
         intakeError?.let { message ->

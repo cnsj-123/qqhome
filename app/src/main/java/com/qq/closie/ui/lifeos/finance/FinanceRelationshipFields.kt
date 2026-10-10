@@ -14,15 +14,18 @@ import com.qq.closie.ui.lifeos.theme.LifeText
 data class FinanceRelationshipDraft(
     val nature: FinanceNature = FinanceNature.PERSONAL, val role: FinanceFlowRole = FinanceFlowRole.PAYMENT,
     val eventId: String? = null, val share: String = "", val expected: String = "",
-    val excluded: Boolean = false, val excludedBudget: Boolean = false
+    val excluded: Boolean = false, val excludedBudget: Boolean = false,
+    val expectedRole: FinanceFlowRole? = null, val cancelExpected: Boolean = false,
+    val eventUpdatedAt: Long? = null
 ) {
     fun resolve(currency: String): FinanceEventInput = FinanceEventInput(
         nature = nature, role = role, existingEventId = eventId,
         personalShareMinor = share.takeIf { it.isNotBlank() }?.let { FinanceMoney.parse(it, currency, allowNegative = true).also { n -> require(n >= 0) } },
         expectedMinor = expected.takeIf { it.isNotBlank() }?.let { FinanceMoney.parse(it, currency) },
-        expectedRole = if (nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT,
+        expectedRole = expectedRole ?: if (nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT,
         statPolicy = if (excluded) FinanceStatPolicy.EXCLUDE else FinanceStatPolicy.INCLUDE,
-        budgetPolicy = if (excludedBudget) FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE
+        budgetPolicy = if (excludedBudget) FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE,
+        cancelExpected = cancelExpected, expectedEventUpdatedAt = eventUpdatedAt
     )
     companion object {
         fun from(snapshot: FinanceSnapshot, row: FinanceLedgerRow?): FinanceRelationshipDraft {
@@ -35,7 +38,9 @@ data class FinanceRelationshipDraft(
                 event?.personalShareMinor?.let { FinanceMoney.input(it, event.currencyCode) }.orEmpty(),
                 snapshot.v4?.expected?.firstOrNull { it.eventId == event?.id && it.cancelledAt == null }?.amountMinor
                     ?.let { FinanceMoney.input(it, event!!.currencyCode) }.orEmpty(),
-                row?.entry?.statPolicy == FinanceStatPolicy.EXCLUDE, row?.entry?.budgetPolicy == FinanceBudgetPolicy.EXCLUDE)
+                row?.entry?.statPolicy == FinanceStatPolicy.EXCLUDE, row?.entry?.budgetPolicy == FinanceBudgetPolicy.EXCLUDE,
+                snapshot.v4?.expected?.firstOrNull { it.eventId == event?.id && it.cancelledAt == null }?.role,
+                eventUpdatedAt = event?.updatedAt)
         }
     }
 }
@@ -53,13 +58,20 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
                 label = { Text(nature.label) })
         }
     }
-    if (draft.nature == FinanceNature.SPLIT) {
+    if (draft.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE)) {
         OutlinedTextField(draft.share, { onChange(draft.copy(share = it)) }, Modifier.fillMaxWidth(),
             label = { Text("我承担的总额（未知可留空）") }, enabled = enabled)
     }
-    if (draft.nature in setOf(FinanceNature.SPLIT, FinanceNature.PROXY_PURCHASE, FinanceNature.REIMBURSABLE)) {
-        OutlinedTextField(draft.expected, { onChange(draft.copy(expected = it)) }, Modifier.fillMaxWidth(),
+    run {
+        OutlinedTextField(draft.expected, { onChange(draft.copy(expected = it, cancelExpected = false)) }, Modifier.fillMaxWidth(),
             label = { Text("预计后续到账（可留空）") }, enabled = enabled)
+        EnumChoice("预计用途", draft.expectedRole ?: if (draft.nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT,
+            listOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT, FinanceFlowRole.SETTLEMENT, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK).map { it to it.label }, enabled) {
+            onChange(draft.copy(expectedRole = it))
+        }
+        TextButton(onClick = { onChange(draft.copy(expected = "", cancelExpected = true)) }, enabled = enabled) {
+            Text(if (draft.cancelExpected) "保存时取消预计款项" else "取消此事件的预计款项")
+        }
         Text("预计款项不改变余额；实际到账后再确认关联。", style = LifeText.caption)
     }
     ChoiceFilter("资金用途", draft.role.name, FinanceFlowRole.entries.map { it.name to it.label }) {
@@ -69,7 +81,7 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
     val events = snapshot.v4?.events.orEmpty().filter { it.voidedAt == null }
     draft.eventId?.let { id ->
         Text(events.find { it.id == id }?.description ?: "原事件暂不可用", style = LifeText.caption)
-        TextButton({ onChange(draft.copy(eventId = null)) }, enabled = enabled) { Text("取消选择") }
+        TextButton({ onChange(draft.copy(eventId = null, eventUpdatedAt = null)) }, enabled = enabled) { Text("取消选择") }
     }
     OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("搜事由、日期或付款金额") }, enabled = enabled)
     if (search.isNotBlank()) {
@@ -80,7 +92,7 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
             (event.description + " " + FinanceTime.input(event.occurredAt) + " " +
                 FinanceMoney.input(amounts[event.id] ?: 0, event.currencyCode)).contains(search, true)
         }.take(12).forEach { event ->
-            TextButton({ onChange(draft.copy(eventId = event.id, nature = event.nature)); search = "" }, enabled = enabled) {
+            TextButton({ onChange(draft.copy(eventId = event.id, nature = event.nature, eventUpdatedAt = event.updatedAt)); search = "" }, enabled = enabled) {
                 Text(FinanceTime.input(event.occurredAt) + " · " + event.description)
             }
         }

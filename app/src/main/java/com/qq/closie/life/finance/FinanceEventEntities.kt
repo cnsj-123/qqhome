@@ -44,5 +44,6 @@ data class FinanceEventInput(
     val expectedMinor: Long? = null, val expectedRole: FinanceFlowRole = FinanceFlowRole.SETTLEMENT,
     val statPolicy: FinanceStatPolicy = FinanceStatPolicy.INCLUDE,
     val budgetPolicy: FinanceBudgetPolicy = FinanceBudgetPolicy.INCLUDE,
-    val relatedTransferId: String? = null
+    val relatedTransferId: String? = null, val cancelExpected: Boolean = false,
+    val expectedEventUpdatedAt: Long? = null
 )

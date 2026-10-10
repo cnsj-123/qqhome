@@ -184,6 +184,8 @@ object LegacyLedgerReader {
             val time = runCatching { date(v("日期"), table.date1904) }.getOrNull()
             val fee = runCatching { amount("转账手续费").also { require(it >= 0) } }.getOrNull()
             val invalid = values.size != 22 || minor == null || time == null || fee == null || v("账户").isBlank() ||
+                ((fee ?: 0) > 0 && kind != FinanceProposalKind.TRANSFER) ||
+                listOf("不计入收支", "不计入预算", "是否为报销").any { v(it) !in setOf("", "是", "否") } ||
                 (kind == FinanceProposalKind.TRANSFER && (v("转入账户").isBlank() || v("转入账户") == v("账户"))) ||
                 index + 2 in table.formulaRows
             if (invalid) issues += "金额、日期、账户、列数或公式需要检查"

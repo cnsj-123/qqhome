@@ -11,7 +11,7 @@ object FinancePersonalProjection {
         val links = v4.links.groupBy { it.entryId }
         val eventLinks = v4.links.groupBy { it.eventId }
         val shares = mutableMapOf<Pair<String, String>, Long>()
-        for (event in v4.events.filter { it.voidedAt == null && it.nature == FinanceNature.SPLIT }) {
+        for (event in v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE) }) {
             val paymentLinks = eventLinks[event.id].orEmpty().filter {
                 it.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE) &&
                     entries[it.entryId]?.voidedAt == null && entries[it.entryId]?.direction == FinanceDirection.OUTFLOW
@@ -32,8 +32,8 @@ object FinancePersonalProjection {
             allocations.mapNotNull { link ->
                 val event = events[link.eventId]?.takeIf { it.voidedAt == null } ?: return@mapNotNull null
                 val expense: Long? = when (event.nature) {
-                    FinanceNature.PROXY_PURCHASE, FinanceNature.REIMBURSABLE, FinanceNature.OTHER -> null
-                    FinanceNature.SPLIT -> shares[event.id to row.entry.id]
+                    FinanceNature.PROXY_PURCHASE, FinanceNature.OTHER -> null
+                    FinanceNature.SPLIT, FinanceNature.REIMBURSABLE -> shares[event.id to row.entry.id]
                     FinanceNature.PERSONAL, FinanceNature.STORED_VALUE -> when {
                         link.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK) -> -link.allocatedMinor
                         row.entry.direction == FinanceDirection.OUTFLOW -> link.allocatedMinor
@@ -47,11 +47,11 @@ object FinancePersonalProjection {
     }
 
     /** These are real flows including transfers and excluded-stat rows; never personal income. */
-    fun realTotals(rows: List<FinanceLedgerRow>): Map<String, FinanceTotals> = rows
+    fun realTotals(rows: List<FinanceLedgerRow>, accountId: String? = null): Map<String, FinanceTotals> = rows
         .flatMap { row -> if (row.transfer == null) listOf(row) else listOf(
             row.copy(transfer = null),
-            row.copy(transfer = null, entry = row.entry.copy(direction = FinanceDirection.INFLOW))
-        ) }.groupBy { it.currencyCode }.mapValues { (_, group) ->
+            row.copy(transfer = null, account = requireNotNull(row.targetAccount), entry = row.entry.copy(direction = FinanceDirection.INFLOW))
+        ) }.filter { accountId == null || it.account.id == accountId }.groupBy { it.currencyCode }.mapValues { (_, group) ->
             fun sum(direction: FinanceDirection) = group.filter { it.entry.direction == direction }
                 .fold(BigInteger.ZERO) { sum, it -> sum + it.entry.amountMinor.toBigInteger() }.longValueExact()
             FinanceTotals(sum(FinanceDirection.OUTFLOW), sum(FinanceDirection.INFLOW))

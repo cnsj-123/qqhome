@@ -34,6 +34,8 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     var relationship by remember(row?.id) { mutableStateOf(FinanceRelationshipDraft.from(state.snapshot, row)) }
     var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
     var confirmVoid by remember { mutableStateOf(false) }
+    var allocationOpen by remember { mutableStateOf(false) }
+    val multiple = state.snapshot.v4?.links.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
     FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -64,7 +66,10 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             }
             OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), label = { Text("标签 · 用逗号分隔，可自定义") }, enabled = !state.busy)
         }
-        if (kind != FinanceEditorKind.TRANSFER) FinanceRelationshipFields(state.snapshot, relationship, !state.busy) { relationship = it }
+        if (kind != FinanceEditorKind.TRANSFER && !multiple) FinanceRelationshipFields(state.snapshot, relationship, !state.busy) { relationship = it }
+        if (row != null && row.transfer == null) TextButton(onClick = { allocationOpen = true }, enabled = !state.busy) {
+            Text(if (multiple) "查看与修改多个事件分配" else "分配到多个事件")
+        }
         Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship), onClose) },
             enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
         if (row != null) {
@@ -72,6 +77,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             TextButton(onClick = { confirmVoid = true }, enabled = !state.busy) { Text("作废这笔记录") }
         }
     }
+    if (allocationOpen && row != null) FinanceAllocationSheet(state, row, vm) { allocationOpen = false; onClose() }
     if (confirmVoid && row != null) AlertDialog(onDismissRequest = { if (!state.busy) confirmVoid = false },
         title = { Text(if (row.transfer != null) "作废整笔转账？" else "作废这笔记录？") },
         text = { Text("记录仍会保留，余额和统计将不再计入它。${if (row.transfer != null) "转出、转入流水会同时作废。" else ""}") },
