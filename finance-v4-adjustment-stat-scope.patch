@@ -1,0 +1,87 @@
+From 0a1875160889063426a39296eed4a4950df2848b Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Sat, 10 Oct 2026 23:55:24 +0800
+Subject: [PATCH] fix(finance): exclude nonpersonal adjustments from cost cap
+
+---
+ .../life/finance/FinancePersonalProjection.kt |  3 +-
+ .../finance/FinancePersonalProjectionTest.kt  | 44 ++++++++++++++++++-
+ 2 files changed, 44 insertions(+), 3 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt b/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt
+index 088729ac595b62557618190a027dd7e63780802b..9605194a0923a6c99d293b71470e49bd22298940 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt
+@@ -28,7 +28,8 @@ object FinancePersonalProjection {
+             v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.PERSONAL, FinanceNature.STORED_VALUE) }.forEach { event ->
+                 val links = byEvent[event.id].orEmpty()
+                 val adjustments = links.filter { link -> link.role in adjustmentRoles &&
+-                    ledger[link.entryId]?.let { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW } == true }
++                    ledger[link.entryId]?.let { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW &&
++                        it.entry.statPolicy == FinanceStatPolicy.INCLUDE } == true }
+                 if (adjustments.isEmpty()) return@forEach
+                 val cost = links.filter { activePayment(it, ledger, event.currencyCode)?.entry?.statPolicy == FinanceStatPolicy.INCLUDE }
+                     .fold(BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt
+index e0a2934c8202375e7447fc8bba61d1ed8aa66138..a1330b6d20777da4a45cf5f0430049aad10398d3 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt
+@@ -120,13 +120,53 @@ class FinancePersonalProjectionTest {
+         assertEquals(-200L, FinanceProjection.balance(account, data.entries))
+     }
+ 
++    @Test fun excludedCashbackCannotMakeIncludedRefundUnassigned() {
++        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
++            entry("refund", 10_000, FinanceDirection.INFLOW, "refund"),
++            entry("cashback", 25_000, FinanceDirection.INFLOW).copy(statPolicy = FinanceStatPolicy.EXCLUDE)),
++            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND, FinanceFlowRole.CASHBACK))
++        FinanceIntegrity.validate(data)
++        val ledger = FinanceProjection.ledger(data)
++        val projected = rows(data)
++        assertEquals(FinanceTotals(20_000, 0), FinanceProjection.totals(projected)["CNY"])
++        assertEquals(setOf("pay", "refund"), projected.map { it.entry.id }.toSet())
++        val refund = projected.single { it.entry.id == "refund" }
++        assertEquals("穿着 / 衣服", refund.category)
++        assertEquals(listOf(FinanceDimensionTotal("穿着 / 衣服", "CNY", FinanceTotals(20_000, 0))),
++            FinanceProjection.categoryTotals(projected))
++        assertEquals(listOf("穿着标签"), FinanceProjection.tagTotals(listOf(refund)).map { it.label })
++        assertTrue(FinancePersonalProjection.unassignedAdjustments(data, ledger).isEmpty())
++        assertEquals(data.entries.single { it.id == "cashback" }, ledger.single { it.entry.id == "cashback" }.entry)
++        assertEquals(FinanceTotals(30_000, 35_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
++        assertEquals(5_000L, FinanceProjection.balance(account, data.entries))
++    }
++
++    @Test fun excludedExcessRefundRemainsRealInflowWithoutPersonalStatisticsOrWarning() {
++        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
++            entry("refund", 38_000, FinanceDirection.INFLOW).copy(statPolicy = FinanceStatPolicy.EXCLUDE)),
++            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND))
++        FinanceIntegrity.validate(data)
++        val ledger = FinanceProjection.ledger(data)
++        val projected = rows(data)
++        assertEquals(FinanceTotals(30_000, 0), FinanceProjection.totals(projected)["CNY"])
++        assertEquals("pay", projected.single().entry.id)
++        assertTrue(FinancePersonalProjection.unassignedAdjustments(data, ledger).isEmpty())
++        assertEquals(data.entries.single { it.id == "refund" }, ledger.single { it.entry.id == "refund" }.entry)
++        assertEquals(FinanceTotals(30_000, 38_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
++        assertEquals(8_000L, FinanceProjection.balance(account, data.entries))
++    }
++
+     @Test fun excludedPaymentCannotProduceNegativeIncludedPersonalCost() {
+         val base = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+             entry("refund", 10_000, FinanceDirection.INFLOW)), roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND))
+         val data = base.copy(entries = base.entries.map { if (it.id == "pay") it.copy(statPolicy = FinanceStatPolicy.EXCLUDE) else it })
++        FinanceIntegrity.validate(data)
++        val ledger = FinanceProjection.ledger(data)
+         assertTrue(rows(data).isEmpty())
+-        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST,
+-            FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).single().issue)
++        val unresolved = FinancePersonalProjection.unassignedAdjustments(data, ledger).single()
++        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST, unresolved.issue)
++        assertEquals(10_000L, unresolved.amountMinor)
++        assertEquals(FinanceTotals(30_000, 10_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
+         assertEquals(-20_000L, FinanceProjection.balance(account, data.entries))
+     }
+ 
+-- 
+2.53.0.windows.3
+

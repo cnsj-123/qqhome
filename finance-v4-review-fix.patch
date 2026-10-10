@@ -1,0 +1,2058 @@
+From d94e78db6fae1ed5bd0c1e5cf56922af42cb4488 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Sat, 10 Oct 2026 23:05:48 +0800
+Subject: [PATCH 1/2] fix(finance): preserve v4 relation history and statistics
+
+---
+ .../data/backup/FinanceBackupRecovery.kt      |   5 +-
+ .../data/backup/FinanceV4BackupRecovery.kt    |   9 +-
+ .../life/data/database/FinanceV4Migration.kt  |  10 +-
+ .../data/database/dao/FinanceIntakeDao.kt     |   9 +-
+ .../life/finance/FinanceEventEntities.kt      |  16 ++-
+ .../life/finance/FinanceImportRepository.kt   |  12 +-
+ .../life/finance/FinanceImportReview.kt       |  43 +++++++
+ .../life/finance/FinanceIntakeEntities.kt     |   8 +-
+ .../closie/life/finance/FinanceIntegrity.kt   |  19 ++-
+ .../life/finance/FinancePersonalProjection.kt |  23 +++-
+ .../closie/life/finance/FinanceProjection.kt  |   4 +-
+ .../closie/life/finance/FinanceRepository.kt  | 118 +++++++++++++-----
+ .../closie/life/finance/FinanceRuleEngine.kt  |   3 +-
+ .../closie/life/finance/LegacyLedgerReader.kt |   3 +-
+ .../lifeos/finance/FinanceAllocationSheet.kt  |   2 +-
+ .../ui/lifeos/finance/FinanceEntrySheet.kt    |   2 +-
+ .../ui/lifeos/finance/FinanceImportScreen.kt  |  27 +++-
+ .../lifeos/finance/FinanceImportViewModel.kt  |  31 ++++-
+ .../ui/lifeos/finance/FinanceModuleScreen.kt  |   4 +-
+ .../ui/lifeos/finance/FinanceProposalSheet.kt |   3 +-
+ .../finance/FinanceRelationshipFields.kt      |  73 ++++++-----
+ .../ui/lifeos/finance/FinanceViewModel.kt     |  28 +++--
+ 22 files changed, 328 insertions(+), 124 deletions(-)
+ create mode 100644 app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt
+
+diff --git a/app/src/main/java/com/qq/closie/data/backup/FinanceBackupRecovery.kt b/app/src/main/java/com/qq/closie/data/backup/FinanceBackupRecovery.kt
+index e5c57aa15cabfab32d2cec954d9b5994b7c261ec..89f744f0012c3ea0b1e687ce83e18c5f0a397fa6 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/FinanceBackupRecovery.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/FinanceBackupRecovery.kt
+@@ -39,7 +39,10 @@ internal object FinanceBackupRecovery {
+             // A pre-v4 restore explicitly restores F1 truth. Retire incompatible later semantics,
+             // but retain pending intake/rules: their absence in an old format is not deletion.
+             val intake = database.financeIntakeDao()
+-            saved.entries.forEach { intake.clearLinks(it.id) }
++            intake.activeLinks().forEach {
++                val retiredAt = maxOf(now, it.updatedAt + 1)
++                intake.updateLink(it.copy(voidedAt = retiredAt, updatedAt = retiredAt, revision = it.revision + 1))
++            }
+             intake.events().filter { it.voidedAt == null }.forEach { intake.updateEvent(it.copy(voidedAt = now, updatedAt = now)) }
+             intake.expected().filter { it.cancelledAt == null }.forEach { intake.updateExpected(it.copy(cancelledAt = now)) }
+         }
+diff --git a/app/src/main/java/com/qq/closie/data/backup/FinanceV4BackupRecovery.kt b/app/src/main/java/com/qq/closie/data/backup/FinanceV4BackupRecovery.kt
+index 1e63763b434cc6b817b32835aaa473bd24fbf4d5..afec56dba941a0614a034fa8c8d1472a5294fee9 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/FinanceV4BackupRecovery.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/FinanceV4BackupRecovery.kt
+@@ -13,8 +13,13 @@ internal object FinanceV4BackupRecovery {
+             dao.updateEvent(it.copy(voidedAt = it.voidedAt ?: now, updatedAt = now))
+         }
+         reconcile(current.events, saved.events, { it.id }, dao::insertEvent, dao::updateEvent)
+-        restoredEntryIds.forEach { dao.clearLinks(it) }
+-        dao.insertLinks(saved.links)
++        require(saved.links.all { it.entryId in restoredEntryIds })
++        val savedLinkIds = saved.links.map { it.id }.toSet()
++        current.activeLinks.filter { it.id !in savedLinkIds }.forEach {
++            val retiredAt = maxOf(now, it.updatedAt + 1)
++            dao.updateLink(it.copy(voidedAt = retiredAt, updatedAt = retiredAt, revision = it.revision + 1))
++        }
++        reconcile(current.links, saved.links, { it.id }, { dao.insertLinks(listOf(it)) }, dao::updateLink)
+         current.expected.filter { old -> saved.expected.none { it.id == old.id } }.forEach {
+             dao.updateExpected(it.copy(cancelledAt = it.cancelledAt ?: now))
+         }
+diff --git a/app/src/main/java/com/qq/closie/life/data/database/FinanceV4Migration.kt b/app/src/main/java/com/qq/closie/life/data/database/FinanceV4Migration.kt
+index 95008f8ddda792fd345a10a7ffd476d8f5f18aa1..86f18a26da2c1bc6d5e61c9a77944cd042931da3 100644
+--- a/app/src/main/java/com/qq/closie/life/data/database/FinanceV4Migration.kt
++++ b/app/src/main/java/com/qq/closie/life/data/database/FinanceV4Migration.kt
+@@ -24,11 +24,13 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+         db.execSQL("CREATE INDEX index_finance_events_occurredAt ON finance_events(occurredAt)")
+         db.execSQL("CREATE INDEX index_finance_events_voidedAt ON finance_events(voidedAt)")
+         db.execSQL("""CREATE TABLE IF NOT EXISTS finance_event_entries (
+-            eventId TEXT NOT NULL, entryId TEXT NOT NULL, role TEXT NOT NULL, allocatedMinor INTEGER NOT NULL,
+-            PRIMARY KEY(eventId, entryId),
++            id TEXT NOT NULL PRIMARY KEY, eventId TEXT NOT NULL, entryId TEXT NOT NULL,
++            role TEXT NOT NULL, allocatedMinor INTEGER NOT NULL, createdAt INTEGER NOT NULL,
++            updatedAt INTEGER NOT NULL, voidedAt INTEGER, revision INTEGER NOT NULL,
+             FOREIGN KEY(eventId) REFERENCES finance_events(id) ON UPDATE NO ACTION ON DELETE NO ACTION,
+             FOREIGN KEY(entryId) REFERENCES finance_entries(id) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
+         db.execSQL("CREATE INDEX index_finance_event_entries_entryId ON finance_event_entries(entryId)")
++        db.execSQL("CREATE INDEX index_finance_event_entries_eventId ON finance_event_entries(eventId)")
+         db.execSQL("""CREATE TABLE IF NOT EXISTS finance_expected_flows (
+             id TEXT NOT NULL PRIMARY KEY, eventId TEXT NOT NULL, role TEXT NOT NULL, amountMinor INTEGER,
+             note TEXT NOT NULL, createdAt INTEGER NOT NULL, cancelledAt INTEGER,
+@@ -44,7 +46,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+             sourceAccount TEXT NOT NULL, targetAccount TEXT NOT NULL, kind TEXT, amountMinor INTEGER,
+             occurredAt INTEGER, description TEXT NOT NULL, category TEXT NOT NULL, subcategory TEXT NOT NULL,
+             tagsText TEXT NOT NULL, feeMinor INTEGER NOT NULL, reimbursable INTEGER NOT NULL, hasRefund INTEGER NOT NULL,
+-            statPolicy TEXT NOT NULL, budgetPolicy TEXT NOT NULL, canonicalId TEXT,
++            statPolicy TEXT NOT NULL, budgetPolicy TEXT NOT NULL, canonicalId TEXT, requiresIndividualReview INTEGER NOT NULL,
+             FOREIGN KEY(batchId) REFERENCES finance_import_batches(id) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
+         db.execSQL("CREATE INDEX index_finance_import_rows_batchId ON finance_import_rows(batchId)")
+         db.execSQL("CREATE INDEX index_finance_import_rows_fingerprint ON finance_import_rows(fingerprint)")
+@@ -52,7 +54,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+             id TEXT NOT NULL PRIMARY KEY, source TEXT NOT NULL, sourceKey TEXT NOT NULL, evidenceText TEXT NOT NULL,
+             createdAt INTEGER NOT NULL, occurredAt INTEGER NOT NULL, kind TEXT NOT NULL, amountMinor INTEGER,
+             description TEXT NOT NULL, accountId TEXT, targetAccountId TEXT, category TEXT NOT NULL,
+-            subcategory TEXT NOT NULL, nature TEXT NOT NULL, status TEXT NOT NULL, canonicalId TEXT, revision INTEGER NOT NULL)""")
++            subcategory TEXT NOT NULL, nature TEXT NOT NULL, status TEXT NOT NULL, canonicalId TEXT, revision INTEGER NOT NULL, role TEXT NOT NULL)""")
+         db.execSQL("CREATE UNIQUE INDEX index_finance_proposals_sourceKey ON finance_proposals(sourceKey)")
+         db.execSQL("CREATE INDEX index_finance_proposals_status ON finance_proposals(status)")
+         db.execSQL("CREATE INDEX index_finance_proposals_createdAt ON finance_proposals(createdAt)")
+diff --git a/app/src/main/java/com/qq/closie/life/data/database/dao/FinanceIntakeDao.kt b/app/src/main/java/com/qq/closie/life/data/database/dao/FinanceIntakeDao.kt
+index a999e35ed9a1838cf3a7f567c7ec5914fcc5a04f..e58367c345f51d55fd4de8cd216550fe754d213c 100644
+--- a/app/src/main/java/com/qq/closie/life/data/database/dao/FinanceIntakeDao.kt
++++ b/app/src/main/java/com/qq/closie/life/data/database/dao/FinanceIntakeDao.kt
+@@ -8,9 +8,13 @@ import kotlinx.coroutines.flow.Flow
+ @Dao
+ interface FinanceIntakeDao {
+     @Query("SELECT * FROM finance_events WHERE id = :id") suspend fun event(id: String): FinanceEventEntity?
+-    @Query("SELECT * FROM finance_event_entries WHERE entryId = :id") suspend fun linksForEntry(id: String): List<FinanceEventEntryLinkEntity>
++    @Query("SELECT * FROM finance_event_entries WHERE entryId = :id AND voidedAt IS NULL") suspend fun linksForEntry(id: String): List<FinanceEventEntryLinkEntity>
+     @Query("SELECT * FROM finance_events") suspend fun events(): List<FinanceEventEntity>
+     @Query("SELECT * FROM finance_event_entries") suspend fun links(): List<FinanceEventEntryLinkEntity>
++    @Query("SELECT * FROM finance_event_entries WHERE eventId = :id AND voidedAt IS NULL")
++    suspend fun activeLinksForEvent(id: String): List<FinanceEventEntryLinkEntity>
++    @Query("SELECT * FROM finance_expected_flows WHERE eventId = :id AND cancelledAt IS NULL")
++    suspend fun activeExpectedForEvent(id: String): List<FinanceExpectedFlowEntity>
+     @Query("SELECT * FROM finance_expected_flows") suspend fun expected(): List<FinanceExpectedFlowEntity>
+     @Query("SELECT * FROM finance_import_batches ORDER BY createdAt DESC") suspend fun batches(): List<FinanceImportBatchEntity>
+     @Query("SELECT * FROM finance_import_rows") suspend fun staging(): List<FinanceImportRowEntity>
+@@ -30,7 +34,8 @@ interface FinanceIntakeDao {
+     @Insert suspend fun insertEvent(row: FinanceEventEntity)
+     @Update suspend fun updateEvent(row: FinanceEventEntity)
+     @Insert suspend fun insertLinks(rows: List<FinanceEventEntryLinkEntity>)
+-    @Query("DELETE FROM finance_event_entries WHERE entryId = :id") suspend fun clearLinks(id: String)
++    @Update suspend fun updateLink(row: FinanceEventEntryLinkEntity)
++    @Query("SELECT * FROM finance_event_entries WHERE voidedAt IS NULL") suspend fun activeLinks(): List<FinanceEventEntryLinkEntity>
+     @Insert suspend fun insertExpected(row: FinanceExpectedFlowEntity)
+     @Update suspend fun updateExpected(row: FinanceExpectedFlowEntity)
+     @Insert suspend fun insertBatch(row: FinanceImportBatchEntity)
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceEventEntities.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceEventEntities.kt
+index 975501916350728d9b8a25945688bc82a7e5c940..11b4045dcce208a86da07827f862d99ef977c459 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceEventEntities.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceEventEntities.kt
+@@ -21,12 +21,15 @@ data class FinanceEventEntity(
+     val relatedTransferId: String? = null
+ )
+ 
+-@Entity(tableName = "finance_event_entries", primaryKeys = ["eventId", "entryId"], foreignKeys = [
++@Entity(tableName = "finance_event_entries", foreignKeys = [
+     ForeignKey(entity = FinanceEventEntity::class, parentColumns = ["id"], childColumns = ["eventId"]),
+     ForeignKey(entity = FinanceEntryEntity::class, parentColumns = ["id"], childColumns = ["entryId"])
+-], indices = [Index("entryId")])
++], indices = [Index("entryId"), Index("eventId")])
+ data class FinanceEventEntryLinkEntity(val eventId: String, val entryId: String,
+-    val role: FinanceFlowRole, val allocatedMinor: Long)
++    val role: FinanceFlowRole, val allocatedMinor: Long,
++    @PrimaryKey val id: String = java.util.UUID.randomUUID().toString(),
++    val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = createdAt,
++    val voidedAt: Long? = null, val revision: Long = 1)
+ 
+ @Entity(tableName = "finance_expected_flows", foreignKeys = [
+     ForeignKey(entity = FinanceEventEntity::class, parentColumns = ["id"], childColumns = ["eventId"])
+@@ -38,12 +41,15 @@ data class FinanceExpectedFlowEntity(
+ 
+ /** One real entry may allocate to several events; amounts must exactly partition that entry. */
+ data class FinanceAllocation(val eventId: String, val role: FinanceFlowRole, val amountMinor: Long)
++data class FinanceExpectedFlowInput(val id: String? = null, val role: FinanceFlowRole,
++    val amountMinor: Long? = null, val note: String = "", val cancelled: Boolean = false)
+ data class FinanceEventInput(
+     val nature: FinanceNature = FinanceNature.PERSONAL, val personalShareMinor: Long? = null,
+     val role: FinanceFlowRole = FinanceFlowRole.PAYMENT, val existingEventId: String? = null,
+-    val expectedMinor: Long? = null, val expectedRole: FinanceFlowRole = FinanceFlowRole.SETTLEMENT,
++    /** null preserves existing expectations; a list explicitly edits the active set. */
++    val expectedFlows: List<FinanceExpectedFlowInput>? = null,
+     val statPolicy: FinanceStatPolicy = FinanceStatPolicy.INCLUDE,
+     val budgetPolicy: FinanceBudgetPolicy = FinanceBudgetPolicy.INCLUDE,
+-    val relatedTransferId: String? = null, val cancelExpected: Boolean = false,
++    val relatedTransferId: String? = null,
+     val expectedEventUpdatedAt: Long? = null
+ )
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceImportRepository.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceImportRepository.kt
+index 00eaec05466c0e63d607a33fd22a238d9d1963c6..1a63a07b68ff4f68e2f92f3efeb86f36c355e3e4 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceImportRepository.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceImportRepository.kt
+@@ -125,7 +125,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
+         val v4 = snapshot.v4!!
+         val batchEntries = snapshot.entries.filter { it.importBatchId == id && it.voidedAt == null }
+         val safe = batchEntries.filter { it.revision == 1L }.map { it.id }.toMutableSet()
+-        val byEvent = v4.links.groupBy { it.eventId }
++        val byEvent = v4.activeLinks.groupBy { it.eventId }
+         for (event in v4.events) {
+             val linked = byEvent[event.id].orEmpty().map { it.entryId }
+             if (event.updatedAt != event.createdAt || linked.any { entryId -> snapshot.entries.any {
+@@ -136,7 +136,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
+         for (transfer in snapshot.transfers) {
+             val feeEvents = v4.events.filter { it.relatedTransferId == transfer.id }.map { it.id }.toSet()
+             val ids = setOf(transfer.outflowEntryId, transfer.inflowEntryId) +
+-                v4.links.filter { it.eventId in feeEvents }.map { it.entryId }
++                v4.activeLinks.filter { it.eventId in feeEvents }.map { it.entryId }
+             if (!safe.containsAll(ids)) safe.removeAll(ids)
+         }
+         val now = System.currentTimeMillis()
+@@ -148,13 +148,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
+         snapshot.transfers.filter { it.outflowEntryId in safe && it.inflowEntryId in safe }.forEach {
+             storage.updateTransfer(it.copy(voidedAt = now, updatedAt = now))
+         }
+-        v4.events.filter { event -> byEvent[event.id].orEmpty().isNotEmpty() &&
+-            byEvent[event.id].orEmpty().all { it.entryId in safe } }.forEach {
+-            dao.updateEvent(it.copy(voidedAt = now, updatedAt = now))
+-            v4.expected.filter { expected -> expected.eventId == it.id && expected.cancelledAt == null }.forEach { expected ->
+-                dao.updateExpected(expected.copy(cancelledAt = now))
+-            }
+-        }
++        finance.retireEntryRelations(safe, id)
+         snapshot.accounts.filter { it.importBatchId == id && it.createdAt == it.updatedAt &&
+             snapshot.entries.none { entry -> entry.accountId == it.id && entry.voidedAt == null && entry.id !in safe } }.forEach {
+             storage.updateAccount(it.copy(archivedAt = now, updatedAt = now))
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..d07be8136f001f0b08434c777369bae8149ac2cf
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt
+@@ -0,0 +1,43 @@
++package com.qq.closie.life.finance
++
++enum class FinanceImportGroup(val label: String) {
++    READY("普通记录"), REIMBURSEMENT("报销相关"), REFUND("退款相关"),
++    FEES("转账手续费"), DUPLICATES("重复候选"), UNSUPPORTED("需单独处理")
++}
++
++data class FinanceImportReviewPolicy(val ready: Boolean = true, val reimbursement: Boolean = false,
++    val refund: Boolean = false, val fees: Boolean = false)
++
++/** Review is a selection policy over staging, never a mutation of canonical facts. */
++object FinanceImportReview {
++    fun groups(row: FinanceImportRowEntity): Set<FinanceImportGroup> = when {
++        row.canonicalId != null || row.status in setOf(FinanceRowStatus.COMMITTED, FinanceRowStatus.UNDONE) -> emptySet()
++        row.status == FinanceRowStatus.DUPLICATE -> setOf(FinanceImportGroup.DUPLICATES)
++        row.requiresIndividualReview || row.status == FinanceRowStatus.INVALID || row.kind == null ->
++            setOf(FinanceImportGroup.UNSUPPORTED)
++        else -> buildSet {
++            if (row.reimbursable) add(FinanceImportGroup.REIMBURSEMENT)
++            if (row.hasRefund) add(FinanceImportGroup.REFUND)
++            if (row.feeMinor > 0) add(FinanceImportGroup.FEES)
++            if (isEmpty()) add(if (row.status == FinanceRowStatus.READY) FinanceImportGroup.READY else FinanceImportGroup.UNSUPPORTED)
++        }
++    }
++
++    fun eligible(row: FinanceImportRowEntity) = row.canonicalId == null && row.kind != null &&
++        row.amountMinor != null && row.amountMinor > 0 && row.occurredAt != null &&
++        row.status !in setOf(FinanceRowStatus.INVALID, FinanceRowStatus.UNDONE, FinanceRowStatus.COMMITTED)
++
++    fun selected(rows: List<FinanceImportRowEntity>, policy: FinanceImportReviewPolicy,
++        overrides: Map<String, Boolean> = emptyMap()): Set<String> = rows.filter { row ->
++        eligible(row) && (overrides[row.id] ?: groups(row).all {
++            when (it) {
++                FinanceImportGroup.READY -> policy.ready
++                FinanceImportGroup.REIMBURSEMENT -> policy.reimbursement
++                FinanceImportGroup.REFUND -> policy.refund
++                FinanceImportGroup.FEES -> policy.fees
++                FinanceImportGroup.DUPLICATES, FinanceImportGroup.UNSUPPORTED -> false
++            }
++        })
++    }.map { it.id }.toSet()
++}
++
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceIntakeEntities.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceIntakeEntities.kt
+index 9e78a18016db08690ba205d69a9ea3b81f1896ef..12a25ca03d935a4b828e52f3b987fa6ea411d37e 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceIntakeEntities.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceIntakeEntities.kt
+@@ -28,7 +28,7 @@ data class FinanceImportRowEntity(
+     val category: String, val subcategory: String, val tagsText: String,
+     val feeMinor: Long, val reimbursable: Boolean, val hasRefund: Boolean,
+     val statPolicy: FinanceStatPolicy, val budgetPolicy: FinanceBudgetPolicy,
+-    val canonicalId: String? = null
++    val canonicalId: String? = null, val requiresIndividualReview: Boolean = false
+ )
+ 
+ @Entity(tableName = "finance_proposals", indices = [
+@@ -42,7 +42,8 @@ data class FinanceProposalEntity(
+     val category: String = "", val subcategory: String = "",
+     val nature: FinanceNature = FinanceNature.PERSONAL,
+     val status: FinanceProposalStatus = FinanceProposalStatus.ACTIVE,
+-    val canonicalId: String? = null, val revision: Long = 0
++    val canonicalId: String? = null, val revision: Long = 0,
++    val role: FinanceFlowRole = if (kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT
+ )
+ 
+ @Entity(tableName = "finance_proposal_tags", primaryKeys = ["proposalId", "name"], foreignKeys = [
+@@ -84,3 +85,6 @@ data class FinanceV4Snapshot(
+     val actions: List<FinanceRuleActionEntity> = emptyList(),
+     val changes: List<FinanceChangeEntity> = emptyList()
+ )
++
++/** Canonical readers use active links; archives retain the complete list. */
++val FinanceV4Snapshot.activeLinks get() = links.filter { it.voidedAt == null }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceIntegrity.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceIntegrity.kt
+index 69b4a0499dfb9e4d3e0d1ff1a19eea08bd178296..7cb31f1e398e3516809c5423fcfb8a37e2ba5a5c 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceIntegrity.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceIntegrity.kt
+@@ -40,15 +40,19 @@ object FinanceIntegrity {
+         data.entryTags.forEach { require(it.entryId in entries && data.tags.any { tag -> tag.id == it.tagId }) { "流水标签关联缺失" } }
+         data.accounts.forEach { FinanceProjection.balance(it, data.entries) }
+         data.v4?.let { v4 ->
+-            unique(v4.events) { it.id }; unique(v4.expected) { it.id }
++            unique(v4.events) { it.id }; unique(v4.expected) { it.id }; unique(v4.links) { it.id }
+             val events = v4.events.associateBy { it.id }
+-            val eventLinks = v4.links.groupBy { it.eventId }
++            val eventLinks = v4.activeLinks.groupBy { it.eventId }
+             val transferLegs = legs.toSet()
+-            require(v4.links.map { it.eventId to it.entryId }.distinct().size == v4.links.size) { "事件关联重复" }
++            require(v4.activeLinks.map { it.eventId to it.entryId }.distinct().size == v4.activeLinks.size) { "事件关联重复" }
+             v4.links.forEach { link ->
+                 val event = requireNotNull(events[link.eventId]) { "关联事件缺失" }
+                 val entry = requireNotNull(entries[link.entryId]) { "关联流水缺失" }
+                 require(link.allocatedMinor > 0 && entry.id !in transferLegs) { "分配金额或流水类型无效" }
++                require(link.revision >= 1 && link.updatedAt >= link.createdAt &&
++                    (link.voidedAt == null || link.voidedAt >= link.createdAt)) { "关系生命周期无效" }
++                if (link.voidedAt != null) return@forEach
++                require(entry.voidedAt == null) { "有效关系不能关联已作废流水" }
+                 require(accounts.getValue(entry.accountId).currencyCode == event.currencyCode) { "事件币种不一致" }
+                 require(event.relatedTransferId == null || link.role == FinanceFlowRole.FEE) { "转账手续费事件只能关联手续费" }
+                 if (entry.voidedAt == null) {
+@@ -61,7 +65,7 @@ object FinanceIntegrity {
+                     }
+                 }
+             }
+-            v4.links.groupBy { it.entryId }.forEach { (id, links) ->
++            v4.activeLinks.groupBy { it.entryId }.forEach { (id, links) ->
+                 if (entries.getValue(id).voidedAt == null) require(
+                     links.fold(java.math.BigInteger.ZERO) { sum, it -> sum + it.allocatedMinor.toBigInteger() } ==
+                         entries.getValue(id).amountMinor.toBigInteger()) { "事件分配与实际流水不一致" }
+@@ -70,6 +74,7 @@ object FinanceIntegrity {
+                 require(it.relatedTransferId == null || data.transfers.any { transfer -> transfer.id == it.relatedTransferId }) { "手续费对应的转账缺失" }
+                 require(it.description.isNotBlank() && (it.personalShareMinor == null || it.personalShareMinor >= 0)) { "事件信息无效" }
+                 FinanceMoney.fractionDigits(it.currencyCode)
++                require(it.voidedAt != null || eventLinks[it.id].orEmpty().isNotEmpty()) { "有效事件缺少有效流水" }
+                 if (it.voidedAt == null && it.personalShareMinor != null) {
+                     val paid = eventLinks[it.id].orEmpty().filter { link ->
+                         entries[link.entryId]?.voidedAt == null && link.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE)
+@@ -77,7 +82,11 @@ object FinanceIntegrity {
+                     require(it.personalShareMinor.toBigInteger() <= paid) { "个人承担超过当前有效付款，请先调整事件承担额" }
+                 }
+             }
+-            v4.expected.forEach { require(it.eventId in events && (it.amountMinor == null || it.amountMinor > 0)) { "预计关系无效" } }
++            v4.expected.forEach {
++                require(it.eventId in events && (it.amountMinor == null || it.amountMinor > 0)) { "预计关系无效" }
++                require(it.cancelledAt != null || (events.getValue(it.eventId).voidedAt == null &&
++                    eventLinks[it.eventId].orEmpty().isNotEmpty())) { "有效预计关系不能依附孤立或已作废事件" }
++            }
+             unique(v4.batches) { it.id }; unique(v4.staging) { it.id }; unique(v4.proposals) { it.id }; unique(v4.rules) { it.id }
+             require(v4.batches.map { it.digest }.distinct().size == v4.batches.size)
+             require(v4.proposals.map { it.sourceKey }.distinct().size == v4.proposals.size)
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt b/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt
+index 62182defbc5c23a4590ababc4de7bf78f060aa7c..960e3956c3c28ad85071b0553e82099817b0ca17 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinancePersonalProjection.kt
+@@ -8,8 +8,9 @@ object FinancePersonalProjection {
+         val v4 = snapshot.v4 ?: return selected.filter { it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
+         val events = v4.events.associateBy { it.id }
+         val entries = snapshot.entries.associateBy { it.id }
+-        val links = v4.links.groupBy { it.entryId }
+-        val eventLinks = v4.links.groupBy { it.eventId }
++        val links = v4.activeLinks.groupBy { it.entryId }
++        val eventLinks = v4.activeLinks.groupBy { it.eventId }
++        val ledgerById = FinanceProjection.ledger(snapshot).associateBy { it.entry.id }
+         val shares = mutableMapOf<Pair<String, String>, Long>()
+         for (event in v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE) }) {
+             val paymentLinks = eventLinks[event.id].orEmpty().filter {
+@@ -41,7 +42,23 @@ object FinancePersonalProjection {
+                         else -> null
+                     }
+                 }
+-                expense?.let { row.copy(entry = row.entry.copy(amountMinor = it, direction = FinanceDirection.OUTFLOW)) }
++                expense?.let { amount ->
++                    var attributed = row
++                    if (link.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)) {
++                        val context = eventLinks[event.id].orEmpty()
++                            .filter { it.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE) }
++                            .mapNotNull { ledgerById[it.entryId] }
++                        val categoryIds = context.map { it.entry.categoryId }.distinct()
++                        attributed = if (context.isNotEmpty() && categoryIds.size == 1) row.copy(
++                            entry = row.entry.copy(categoryId = categoryIds.single()), category = context.first().category)
++                        else row.copy(entry = row.entry.copy(categoryId = null),
++                            category = "调整待归属", categoryOverride = "调整待归属")
++                        val tagSets = context.map { it.tags.toSet() }.distinct()
++                        attributed = attributed.copy(tags = if (context.isNotEmpty() && tagSets.size == 1)
++                            tagSets.single().sorted() else listOf("调整待归属"))
++                    }
++                    attributed.copy(entry = attributed.entry.copy(amountMinor = amount, direction = FinanceDirection.OUTFLOW))
++                }
+             }
+         }
+     }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceProjection.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceProjection.kt
+index 47db143872c6465e3e403e312cf121287c1c52db..f3b6490c9b5920c622ae87aec5f992871f559d07 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceProjection.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceProjection.kt
+@@ -28,7 +28,7 @@ data class FinanceDateRange(val startInclusive: Long? = null, val endExclusive:
+ }
+ data class FinanceLedgerRow(val entry: FinanceEntryEntity, val account: FinanceAccountEntity,
+     val category: String?, val tags: List<String>, val transfer: FinanceTransferEntity? = null,
+-    val targetAccount: FinanceAccountEntity? = null) {
++    val targetAccount: FinanceAccountEntity? = null, val categoryOverride: String? = null) {
+     val id get() = transfer?.id ?: entry.id
+     val currencyCode get() = account.currencyCode
+ }
+@@ -81,7 +81,7 @@ object FinanceProjection {
+         val byId = categories.associateBy { it.id }
+         return dimensions(rows) { row ->
+             val leaf = byId[row.entry.categoryId]
+-            listOf(leaf?.parentId?.let { byId[it]?.name } ?: leaf?.name ?: "未分类")
++            listOf(row.categoryOverride ?: leaf?.parentId?.let { byId[it]?.name } ?: leaf?.name ?: "未分类")
+         }
+     }
+     fun accountTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.account.name) }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceRepository.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceRepository.kt
+index 196c266d3d5f95de7f78e6fa1b58907bf3d92b02..bdd684072ab0851b26b97f256509868a1f39063e 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceRepository.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceRepository.kt
+@@ -87,7 +87,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+             dao.tagNamed(name)?.id ?: newId().also { dao.insertTag(FinanceTagEntity(it, name)) }
+         }
+         dao.insertEntryTags(tagIds.map { FinanceEntryTagCrossRef(row.id, it) })
+-        if (event != null) attachEvent(row, event)
++        if (event != null) attachEvent(row, event, batchId, authority)
+         journal(row.id, "ENTRY_SAVE", batchId, old?.revision, row.revision, authority)
+         return row
+     }
+@@ -134,17 +134,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+         if (entry.voidedAt == null) {
+             val now = clock()
+             dao.updateEntry(entry.copy(voidedAt = now, updatedAt = now, revision = entry.revision + 1))
+-            val links = intake.links()
+-            for (link in links.filter { it.entryId == id }) {
+-                val event = requireNotNull(intake.event(link.eventId))
+-                val active = links.filter { it.eventId == event.id }.any { dao.entry(it.entryId)?.voidedAt == null }
+-                if (!active) {
+-                    intake.updateEvent(event.copy(voidedAt = now, updatedAt = maxOf(now, event.updatedAt + 1)))
+-                    intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }.forEach {
+-                        intake.updateExpected(it.copy(cancelledAt = now))
+-                    }
+-                }
+-            }
++            retireEntryRelations(setOf(id))
+             journal(id, "ENTRY_VOID", before = entry.revision, after = entry.revision + 1)
+             validateBalances()
+         }
+@@ -159,7 +149,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+             }
+             dao.updateTransfer(transfer.copy(voidedAt = now, updatedAt = now))
+             val feeEvents = intake.events().filter { it.relatedTransferId == id && it.voidedAt == null }
+-            val links = intake.links()
++            val links = intake.activeLinks()
+             for (event in feeEvents) {
+                 val fees = links.filter { it.eventId == event.id }
+                 for (link in fees) {
+@@ -172,7 +162,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+                         journal(fee.id, "TRANSFER_FEE_VOID", before = fee.revision, after = fee.revision + 1)
+                     }
+                 }
+-                intake.updateEvent(event.copy(voidedAt = now, updatedAt = now))
++                retireEntryRelations(fees.map { it.entryId }.toSet())
+             }
+             journal(id, "TRANSFER_VOID")
+             validateBalances()
+@@ -190,7 +180,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+         } ?: root
+     }
+ 
+-    private suspend fun attachEvent(entry: FinanceEntryEntity, input: FinanceEventInput) {
++    private suspend fun attachEvent(entry: FinanceEntryEntity, input: FinanceEventInput, batchId: String?, authority: String?) {
+         val oldLinks = if (entry.revision == 1L) emptyList() else intake.linksForEntry(entry.id)
+         require(oldLinks.size <= 1) { "此流水分配到多个事件，请先在关联编辑中调整分配" }
+         val now = clock()
+@@ -210,22 +200,84 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+         require(event.currencyCode == dao.account(entry.accountId)?.currencyCode) { "不能关联不同币种的事件" }
+         require(input.personalShareMinor == null || input.personalShareMinor >= 0) { "个人承担不能为负数" }
+         if (priorEvent?.id == event.id || target != null) intake.updateEvent(event) else intake.insertEvent(event)
+-        intake.clearLinks(entry.id)
+-        intake.insertLinks(listOf(FinanceEventEntryLinkEntity(event.id, entry.id, input.role, entry.amountMinor)))
+-        if (input.cancelExpected) {
+-            require(input.expectedMinor == null)
+-            intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }.forEach {
+-                intake.updateExpected(it.copy(cancelledAt = now))
++        replaceEntryLinks(entry.id, listOf(FinanceAllocation(event.id, input.role, entry.amountMinor)), batchId, authority)
++        input.expectedFlows?.let { editExpectedFlows(event.id, it, batchId, authority) }
++    }
++
++    /** Expectations remain relationships; no entry or balance mutation is made here. */
++    suspend fun saveExpectedFlows(eventId: String, flows: List<FinanceExpectedFlowInput>, expectedUpdatedAt: Long) = transaction {
++        val event = requireNotNull(intake.event(eventId))
++        require(event.voidedAt == null && event.updatedAt == expectedUpdatedAt) { "事件已改变，请重新打开" }
++        require(intake.activeLinksForEvent(eventId).isNotEmpty()) { "事件已没有有效流水" }
++        editExpectedFlows(eventId, flows)
++        intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
++        validateBalances()
++    }
++
++    private suspend fun editExpectedFlows(eventId: String, flows: List<FinanceExpectedFlowInput>,
++        batchId: String? = null, authority: String? = null) {
++        val existing = intake.activeExpectedForEvent(eventId).associateBy { it.id }
++        val ids = flows.mapNotNull { it.id }
++        require(ids.distinct().size == ids.size && ids.all { it in existing }) { "预计关系已改变，请重新打开" }
++        require(flows.all { it.cancelled || it.amountMinor == null || it.amountMinor > 0 }) { "预计金额必须大于 0 或留空" }
++        val now = clock()
++        existing.values.filter { it.id !in ids || flows.any { input -> input.id == it.id && input.cancelled } }.forEach {
++            intake.updateExpected(it.copy(cancelledAt = maxOf(now, it.createdAt)))
++            journal(it.id, "EXPECTED_CANCEL", batchId, authority = authority)
++        }
++        flows.filter { !it.cancelled }.forEach { input ->
++            val old = input.id?.let(existing::getValue)
++            val row = FinanceExpectedFlowEntity(old?.id ?: newId(), eventId, input.role, input.amountMinor,
++                input.note.trim(), old?.createdAt ?: now)
++            if (old == null) intake.insertExpected(row) else intake.updateExpected(row)
++            journal(row.id, "EXPECTED_SAVE", batchId, authority = authority)
++        }
++    }
++
++    private suspend fun retireLinks(links: List<FinanceEventEntryLinkEntity>, batchId: String?, authority: String?) {
++        links.forEach {
++            val now = maxOf(clock(), it.updatedAt + 1)
++            intake.updateLink(it.copy(voidedAt = now, updatedAt = now, revision = it.revision + 1))
++            journal(it.id, "LINK_RETIRE", batchId, it.revision, it.revision + 1, authority)
++        }
++    }
++
++    private suspend fun retireOrphans(eventIds: Set<String>, batchId: String?, authority: String?) {
++        eventIds.forEach { id ->
++            val event = requireNotNull(intake.event(id))
++            if (event.voidedAt == null && intake.activeLinksForEvent(id).isEmpty()) {
++                val now = maxOf(clock(), event.updatedAt + 1)
++                intake.updateEvent(event.copy(voidedAt = now, updatedAt = now))
++                journal(id, "EVENT_RETIRE", batchId, authority = authority)
++                intake.activeExpectedForEvent(id).forEach {
++                    intake.updateExpected(it.copy(cancelledAt = maxOf(now, it.createdAt)))
++                    journal(it.id, "EXPECTED_CANCEL", batchId, authority = authority)
++                }
++            } else if (event.voidedAt == null) {
++                // Shared event remains active, but stale editors must observe the changed relations.
++                intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
+             }
+         }
+-        if (input.expectedMinor != null) {
+-            require(input.expectedMinor > 0) { "预计金额必须大于 0" }
+-            val existing = intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }
+-            require(existing.size <= 1) { "此事件有多项预期，请在关系中分别调整" }
+-            val row = existing.singleOrNull()?.copy(role = input.expectedRole, amountMinor = input.expectedMinor)
+-                ?: FinanceExpectedFlowEntity(newId(), event.id, input.expectedRole, input.expectedMinor, "", now)
+-            if (existing.isEmpty()) intake.insertExpected(row) else intake.updateExpected(row)
++    }
++
++    internal suspend fun retireEntryRelations(entryIds: Set<String>, batchId: String? = null, authority: String? = null) {
++        val old = intake.activeLinks().filter { it.entryId in entryIds }
++        retireLinks(old, batchId, authority)
++        retireOrphans(old.map { it.eventId }.toSet(), batchId, authority)
++    }
++
++    private suspend fun replaceEntryLinks(entryId: String, allocations: List<FinanceAllocation>,
++        batchId: String? = null, authority: String? = null) {
++        val old = intake.linksForEntry(entryId)
++        retireLinks(old, batchId, authority)
++        val now = maxOf(clock(), old.maxOfOrNull { it.updatedAt + 1 } ?: clock())
++        val inserted = allocations.map {
++            FinanceEventEntryLinkEntity(it.eventId, entryId, it.role, it.amountMinor, newId(), now, now)
+         }
++        intake.insertLinks(inserted)
++        inserted.forEach { journal(it.id, "LINK_CREATE", batchId, after = it.revision, authority = authority) }
++        // Only after replacement: a relation to the same event must not retire that event.
++        retireOrphans(old.map { it.eventId }.toSet(), batchId, authority)
+     }
+ 
+     suspend fun allocateEntry(entryId: String, allocations: List<FinanceAllocation>, expectedRevision: Long) = transaction {
+@@ -236,10 +288,12 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
+         require(allocations.fold(java.math.BigInteger.ZERO) { sum, it -> sum + it.amountMinor.toBigInteger() } == entry.amountMinor.toBigInteger()) {
+             "分配金额之和必须等于整笔真实流水"
+         }
+-        intake.clearLinks(entryId)
+-        intake.insertLinks(allocations.map { FinanceEventEntryLinkEntity(it.eventId, entryId, it.role, it.amountMinor) })
+-        allocations.forEach {
+-            val event = requireNotNull(intake.event(it.eventId))
++        require(allocations.all { it.amountMinor > 0 })
++        val targets = allocations.map { requireNotNull(intake.event(it.eventId)) { "关联事件已不可用" } }
++        require(targets.all { it.voidedAt == null }) { "关联事件已不可用" }
++        replaceEntryLinks(entryId, allocations)
++        targets.forEach { target ->
++            val event = requireNotNull(intake.event(target.id))
+             intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
+         }
+         dao.updateEntry(entry.copy(revision = entry.revision + 1, updatedAt = clock()))
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceRuleEngine.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceRuleEngine.kt
+index 6de044c6a3aabb6d077398c4bfed05e7cc80f5f9..6d23a35c70e411a0b5f5ffe944b58e9274cbba94 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceRuleEngine.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceRuleEngine.kt
+@@ -79,6 +79,7 @@ object FinanceNotificationParser {
+         return FinanceProposalEntity(java.util.UUID.randomUUID().toString(), source, sourceKey, text, now, occurredAt,
+             if (inflow) FinanceProposalKind.INCOME else FinanceProposalKind.EXPENSE,
+             amounts.singleOrNull(), title.take(120),
+-            nature = if (text.contains("退款")) FinanceNature.OTHER else FinanceNature.PERSONAL)
++            nature = if (text.contains("退款")) FinanceNature.OTHER else FinanceNature.PERSONAL,
++            role = if (text.contains("退款")) FinanceFlowRole.REFUND else if (inflow) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
+     }
+ }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/LegacyLedgerReader.kt b/app/src/main/java/com/qq/closie/life/finance/LegacyLedgerReader.kt
+index 6ade21268c727ed27daa172115719a88e0a181d3..46aae1909f5e7b35b5bcd68a6cd67019eafa0165 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/LegacyLedgerReader.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/LegacyLedgerReader.kt
+@@ -203,7 +203,8 @@ object LegacyLedgerReader {
+                 issues.joinToString("；"), v("账户"), v("转入账户"), kind, minor, time, v("备注"),
+                 v("分类"), v("子分类"), v("标签"), fee ?: 0, reimbursement, refund,
+                 if (v("不计入收支") == "是") FinanceStatPolicy.EXCLUDE else FinanceStatPolicy.INCLUDE,
+-                if (v("不计入预算") == "是") FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE)
++                if (v("不计入预算") == "是") FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE,
++                requiresIndividualReview = invalid || kind == null || v("债务人").isNotBlank())
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAllocationSheet.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAllocationSheet.kt
+index 0e1cc57dc1c5fd9aa372f23240f7a2e0dab6a42d..eb9191019bbb8016009b74b5b29ae6ca44cf5b67 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAllocationSheet.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAllocationSheet.kt
+@@ -10,7 +10,7 @@ private data class AllocationDraft(val eventId: String, val role: FinanceFlowRol
+ 
+ @Composable
+ internal fun FinanceAllocationSheet(state: FinanceUiState, row: FinanceLedgerRow, vm: FinanceViewModel, close: () -> Unit) {
+-    val parts = remember(row.entry.id) { state.snapshot.v4?.links.orEmpty().filter { it.entryId == row.entry.id }
++    val parts = remember(row.entry.id) { state.snapshot.v4?.activeLinks.orEmpty().filter { it.entryId == row.entry.id }
+         .map { AllocationDraft(it.eventId, it.role, FinanceMoney.input(it.allocatedMinor, row.currencyCode)) }.toMutableStateList() }
+     var query by remember { mutableStateOf("") }
+     var error by remember { mutableStateOf<String?>(null) }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceEntrySheet.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceEntrySheet.kt
+index 91e96e3641f8bfd2ff7178cb721f8f4ec16800ed..0c7bda06c753f1221f78f4305aff17e7b0c72521 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceEntrySheet.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceEntrySheet.kt
+@@ -35,7 +35,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
+     var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
+     var confirmVoid by remember { mutableStateOf(false) }
+     var allocationOpen by remember { mutableStateOf(false) }
+-    val multiple = state.snapshot.v4?.links.orEmpty().count { it.entryId == row?.entry?.id } > 1
++    val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
+     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
+     FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose) {
+         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt
+index 9f5fe715bbbb201c429cbbfeb91ce69da2b25939..822b07af7181770daa68c81f92badb8bf800664d 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt
+@@ -28,6 +28,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts:
+     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.select(context, it) } }
+     var confirmation by remember { mutableStateOf<String?>(null) }
+     var evidence by remember { mutableStateOf<FinanceImportRowEntity?>(null) }
++    var detailGroup by remember { mutableStateOf<FinanceImportGroup?>(null) }
+     BackHandler(enabled = !state.busy, onBack = onBack)
+     Column(Modifier.fillMaxSize().padding(16.dp)) {
+         Row {
+@@ -69,12 +70,28 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts:
+                         item {
+                             TextButton(onClick = { state.mappings.firstOrNull()?.let(vm::map) }, enabled = !state.busy) { Text("修改账户映射") }
+                             Row { Checkbox(state.splitTags, vm::tags, enabled = !state.busy); Text("将标签按空格拆开（默认保留原单元格）") }
+-                            Row { Checkbox(state.fees, vm::fees, enabled = !state.busy); Text("确认手续费为转账金额之外的实际支出") }
+-                            Text("普通记录默认选中。待检查和重复项需逐条勾选；勾选重复项表示仍要导入。退款／报销附属金额仅保留作依据，不生成到账。无效或不支持的类型请在文件副本中修正后重新选择。")
++                            Text("普通记录默认批量选中。报销／退款可批量导入已确认的真实流水，附属金额和关系证据保留，后续再整理；不会生成额外到账。")
++                            FinanceImportGroup.entries.forEach { group ->
++                                val count = preview.rows.count { group in FinanceImportReview.groups(it) }
++                                val checked = when (group) {
++                                    FinanceImportGroup.READY -> state.policy.ready
++                                    FinanceImportGroup.REIMBURSEMENT -> state.policy.reimbursement
++                                    FinanceImportGroup.REFUND -> state.policy.refund
++                                    FinanceImportGroup.FEES -> state.policy.fees
++                                    else -> false
++                                }
++                                Row {
++                                    if (group !in setOf(FinanceImportGroup.DUPLICATES, FinanceImportGroup.UNSUPPORTED))
++                                        Checkbox(checked, { vm.policy(group, it) }, enabled = !state.busy)
++                                    TextButton({ detailGroup = if (detailGroup == group) null else group }) {
++                                        Text(group.label + " · " + count + " 行 · " + if (detailGroup == group) "收起明细" else "查看明细")
++                                    }
++                                }
++                            }
++                            Text("手续费勾选表示确认所有适用行的手续费为转账金额之外的实际支出。重复项默认跳过，可在明细中单独确认；无效记录需修正文件副本后重选。多种问题同时存在时，需要确认各项批量政策。")
+                         }
+-                        items(preview.rows, key = { it.id }) { row ->
+-                            val enabled = !state.busy && row.canonicalId == null && row.kind != null &&
+-                                row.status !in setOf(FinanceRowStatus.INVALID, FinanceRowStatus.UNDONE)
++                        items(preview.rows.filter { detailGroup?.let { group -> group in FinanceImportReview.groups(it) } == true }, key = { it.id }) { row ->
++                            val enabled = !state.busy && FinanceImportReview.eligible(row)
+                             Row {
+                                 Checkbox(row.id in state.selected, { vm.choose(row.id, it) }, enabled = enabled)
+                                 Column(Modifier.weight(1f)) {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportViewModel.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportViewModel.kt
+index 8d00690d15b270aa1ce5cbe8ae9d3aa099b7189d..f022a540bff440dfdfe4d935a08f773a037b1ab4 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportViewModel.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportViewModel.kt
+@@ -16,7 +16,8 @@ internal data class ImportUiState(
+     val preview: FinanceImportPreview? = null,
+     val mappings: List<FinanceAccountMapping> = emptyList(),
+     val reviewed: Boolean = false, val selected: Set<String> = emptySet(),
+-    val splitTags: Boolean = false, val fees: Boolean = false
++    val splitTags: Boolean = false, val fees: Boolean = false,
++    val policy: FinanceImportReviewPolicy = FinanceImportReviewPolicy(), val overrides: Map<String, Boolean> = emptyMap()
+ )
+ 
+ internal class FinanceImportViewModel(private val repository: FinanceImportRepository) : ViewModel() {
+@@ -64,7 +65,7 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
+             .filter(String::isNotBlank).distinct().map { source -> preview.createdMappings.find { it.source == source }
+                 ?: FinanceAccountMapping(source, kind = FinanceImportRepository.suggestKind(source)) }
+         mutable.update { it.copy(preview = preview, mappings = mappings, reviewed = false, selected = emptySet(),
+-            fees = false, splitTags = false, history = repository.history()) }
++            fees = false, splitTags = false, policy = FinanceImportReviewPolicy(), overrides = emptyMap(), history = repository.history()) }
+     }
+     fun map(mapping: FinanceAccountMapping) {
+         if (!mutable.value.busy) mutable.update { it.copy(mappings = it.mappings.map { old ->
+@@ -74,13 +75,33 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
+         val current = mutable.value
+         val preview = repository.preview(requireNotNull(current.preview).batch.id, current.mappings)
+         mutable.update { it.copy(preview = preview, reviewed = true,
+-            selected = preview.rows.filter { row -> row.status == FinanceRowStatus.READY && row.canonicalId == null }.map { row -> row.id }.toSet()) }
++            policy = FinanceImportReviewPolicy(), overrides = emptyMap(), fees = false,
++            selected = FinanceImportReview.selected(preview.rows, FinanceImportReviewPolicy())) }
+     }
+     fun choose(id: String, selected: Boolean) {
+-        if (!mutable.value.busy) mutable.update { it.copy(selected = if (selected) it.selected + id else it.selected - id) }
++        if (!mutable.value.busy) mutable.update {
++            val overrides = it.overrides + (id to selected)
++            it.copy(overrides = overrides, selected = FinanceImportReview.selected(it.preview?.rows.orEmpty(), it.policy, overrides))
++        }
+     }
+     fun tags(value: Boolean) { mutable.update { it.copy(splitTags = value) } }
+-    fun fees(value: Boolean) { mutable.update { it.copy(fees = value) } }
++    fun policy(group: FinanceImportGroup, value: Boolean) {
++        if (mutable.value.busy) return
++        mutable.update {
++            val policy = when (group) {
++                FinanceImportGroup.READY -> it.policy.copy(ready = value)
++                FinanceImportGroup.REIMBURSEMENT -> it.policy.copy(reimbursement = value)
++                FinanceImportGroup.REFUND -> it.policy.copy(refund = value)
++                FinanceImportGroup.FEES -> it.policy.copy(fees = value)
++                else -> it.policy
++            }
++            // A group action replaces previous individual choices only within that group.
++            val ids = it.preview?.rows.orEmpty().filter { row -> group in FinanceImportReview.groups(row) }.map { row -> row.id }.toSet()
++            val overrides = it.overrides.filterKeys { id -> id !in ids }
++            it.copy(policy = policy, overrides = overrides, fees = policy.fees,
++                selected = FinanceImportReview.selected(it.preview?.rows.orEmpty(), policy, overrides))
++        }
++    }
+     fun commit() = run {
+         val current = mutable.value
+         require(current.reviewed)
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+index 4167464576d7c5aaf32928a77bf122aa5554f098..d5a01a0bb93cf627381672308287e27c70a40b27 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+@@ -123,9 +123,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                         MoneySummary("支出", state.selected, true)
+                         MoneySummary("收入", state.selected, false)
+                         DimensionSummary("分类", state.categories)
+-                        DimensionSummary("主分类", FinanceProjection.parentCategoryTotals(FinancePersonalProjection.rows(state.snapshot, state.ledger), state.snapshot.categories))
++                        DimensionSummary("主分类", FinanceProjection.parentCategoryTotals(state.personalRows, state.snapshot.categories))
+                         DimensionSummary("标签", state.tags)
+-                        DimensionSummary("账户", FinanceProjection.accountTotals(FinancePersonalProjection.rows(state.snapshot, state.ledger)))
++                        DimensionSummary("账户", FinanceProjection.accountTotals(state.personalRows))
+                         Text("账户真实流入 / 流出", style = LifeText.title)
+                         MoneySummary("真实流出", FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId), true)
+                         MoneySummary("真实流入", FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId), false)
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceProposalSheet.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceProposalSheet.kt
+index de6098cc5690b03fb554d4179ca243d53c9c814d..3a2cc966e3cf2dd72e810448d614dbff17d5b6a6 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceProposalSheet.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceProposalSheet.kt
+@@ -50,8 +50,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
+     var subcategory by rememberSaveable { mutableStateOf(proposal.subcategory) }
+     var tags by rememberSaveable { mutableStateOf(state.data.tags.filter { it.proposalId == proposal.id }.joinToString("，") { it.name }) }
+     var relation by remember { mutableStateOf(FinanceRelationshipDraft(nature = proposal.nature,
+-        role = if (proposal.evidenceText.contains("退款")) FinanceFlowRole.REFUND else
+-            if (proposal.kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)) }
++        role = proposal.role)) }
+     val accounts = state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }
+     fun later() = vm.dismiss(proposal, FinanceProposalStatus.SNOOZED, close)
+     FinanceReceipt(if (proposal.source == FinanceSource.WECHAT) "微信 · 发现一笔" else "支付宝 · 发现一笔",
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRelationshipFields.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRelationshipFields.kt
+index 78f59c48b8f89edc92809988b7fe4ac7e636f162..90f058a93e2a1c9bcf30f07c58deb6281d5746a3 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRelationshipFields.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRelationshipFields.kt
+@@ -11,36 +11,45 @@ import androidx.compose.ui.unit.dp
+ import com.qq.closie.life.finance.*
+ import com.qq.closie.ui.lifeos.theme.LifeText
+ 
++data class FinanceExpectedFlowDraft(val id: String? = null, val role: FinanceFlowRole = FinanceFlowRole.SETTLEMENT,
++    val amount: String = "", val note: String = "", val cancelled: Boolean = false) {
++    fun resolve(currency: String) = FinanceExpectedFlowInput(id, role,
++        (if (cancelled) null else amount.takeIf { it.isNotBlank() }?.let { FinanceMoney.parse(it, currency) }), note, cancelled)
++}
++
+ data class FinanceRelationshipDraft(
+     val nature: FinanceNature = FinanceNature.PERSONAL, val role: FinanceFlowRole = FinanceFlowRole.PAYMENT,
+-    val eventId: String? = null, val share: String = "", val expected: String = "",
++    val eventId: String? = null, val share: String = "",
+     val excluded: Boolean = false, val excludedBudget: Boolean = false,
+-    val expectedRole: FinanceFlowRole? = null, val cancelExpected: Boolean = false,
++    val expectedFlows: List<FinanceExpectedFlowDraft> = emptyList(), val expectedEdited: Boolean = false,
+     val eventUpdatedAt: Long? = null
+ ) {
+     fun resolve(currency: String): FinanceEventInput = FinanceEventInput(
+         nature = nature, role = role, existingEventId = eventId,
+         personalShareMinor = share.takeIf { it.isNotBlank() }?.let { FinanceMoney.parse(it, currency, allowNegative = true).also { n -> require(n >= 0) } },
+-        expectedMinor = expected.takeIf { it.isNotBlank() }?.let { FinanceMoney.parse(it, currency) },
+-        expectedRole = expectedRole ?: if (nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT,
++        expectedFlows = expectedFlows.takeIf { expectedEdited }?.map { it.resolve(currency) },
+         statPolicy = if (excluded) FinanceStatPolicy.EXCLUDE else FinanceStatPolicy.INCLUDE,
+         budgetPolicy = if (excludedBudget) FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE,
+-        cancelExpected = cancelExpected, expectedEventUpdatedAt = eventUpdatedAt
++        expectedEventUpdatedAt = eventUpdatedAt
+     )
+     companion object {
++        fun expectations(snapshot: FinanceSnapshot, event: FinanceEventEntity?) = snapshot.v4?.expected.orEmpty()
++            .filter { it.eventId == event?.id && it.cancelledAt == null }.map {
++                FinanceExpectedFlowDraft(it.id, it.role, it.amountMinor?.let { amount ->
++                    FinanceMoney.input(amount, event!!.currencyCode) }.orEmpty(), it.note)
++            }
+         fun from(snapshot: FinanceSnapshot, row: FinanceLedgerRow?): FinanceRelationshipDraft {
+-            val link = snapshot.v4?.links?.singleOrNull { it.entryId == row?.entry?.id }
++            val link = snapshot.v4?.activeLinks?.singleOrNull { it.entryId == row?.entry?.id }
+             val event = snapshot.v4?.events?.find { it.id == link?.eventId }
+-            return FinanceRelationshipDraft(event?.nature ?: FinanceNature.PERSONAL,
+-                link?.role ?: if (row?.entry?.direction == FinanceDirection.INFLOW) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT,
++            return FinanceRelationshipDraft(
++                nature = event?.nature ?: FinanceNature.PERSONAL,
++                role = link?.role ?: if (row?.entry?.direction == FinanceDirection.INFLOW) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT,
+                 // Primary payment edits update the event; follow-up flows only reference it.
+-                event?.id?.takeIf { link?.role !in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.OTHER) },
+-                event?.personalShareMinor?.let { FinanceMoney.input(it, event.currencyCode) }.orEmpty(),
+-                snapshot.v4?.expected?.firstOrNull { it.eventId == event?.id && it.cancelledAt == null }?.amountMinor
+-                    ?.let { FinanceMoney.input(it, event!!.currencyCode) }.orEmpty(),
+-                row?.entry?.statPolicy == FinanceStatPolicy.EXCLUDE, row?.entry?.budgetPolicy == FinanceBudgetPolicy.EXCLUDE,
+-                snapshot.v4?.expected?.firstOrNull { it.eventId == event?.id && it.cancelledAt == null }?.role,
+-                eventUpdatedAt = event?.updatedAt)
++                eventId = event?.id?.takeIf { link?.role !in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.OTHER) },
++                share = event?.personalShareMinor?.let { FinanceMoney.input(it, event.currencyCode) }.orEmpty(),
++                excluded = row?.entry?.statPolicy == FinanceStatPolicy.EXCLUDE,
++                excludedBudget = row?.entry?.budgetPolicy == FinanceBudgetPolicy.EXCLUDE,
++                expectedFlows = expectations(snapshot, event), eventUpdatedAt = event?.updatedAt)
+         }
+     }
+ }
+@@ -62,18 +71,23 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
+         OutlinedTextField(draft.share, { onChange(draft.copy(share = it)) }, Modifier.fillMaxWidth(),
+             label = { Text("我承担的总额（未知可留空）") }, enabled = enabled)
+     }
+-    run {
+-        OutlinedTextField(draft.expected, { onChange(draft.copy(expected = it, cancelExpected = false)) }, Modifier.fillMaxWidth(),
+-            label = { Text("预计后续到账（可留空）") }, enabled = enabled)
+-        EnumChoice("预计用途", draft.expectedRole ?: if (draft.nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT,
+-            listOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT, FinanceFlowRole.SETTLEMENT, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK).map { it to it.label }, enabled) {
+-            onChange(draft.copy(expectedRole = it))
+-        }
+-        TextButton(onClick = { onChange(draft.copy(expected = "", cancelExpected = true)) }, enabled = enabled) {
+-            Text(if (draft.cancelExpected) "保存时取消预计款项" else "取消此事件的预计款项")
+-        }
+-        Text("预计款项不改变余额；实际到账后再确认关联。", style = LifeText.caption)
++    Text("预计后续款项", style = LifeText.body)
++    draft.expectedFlows.forEachIndexed { index, flow ->
++        fun update(value: FinanceExpectedFlowDraft) = onChange(draft.copy(
++            expectedFlows = draft.expectedFlows.mapIndexed { i, old -> if (i == index) value else old }, expectedEdited = true))
++        if (!flow.cancelled) {
++            EnumChoice("用途", flow.role, FinanceFlowRole.entries.map { it to it.label }, enabled) { update(flow.copy(role = it)) }
++            OutlinedTextField(flow.amount, { update(flow.copy(amount = it)) }, Modifier.fillMaxWidth(),
++                label = { Text("预计金额（可留空）") }, enabled = enabled)
++            OutlinedTextField(flow.note, { update(flow.copy(note = it)) }, Modifier.fillMaxWidth(),
++                label = { Text("备注") }, enabled = enabled)
++            TextButton({ update(flow.copy(cancelled = true)) }, enabled = enabled) { Text("取消此项") }
++        } else Text("此项将在保存时取消", style = LifeText.caption)
+     }
++    TextButton({ onChange(draft.copy(expectedFlows = draft.expectedFlows + FinanceExpectedFlowDraft(
++        role = if (draft.nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT),
++        expectedEdited = true)) }, enabled = enabled) { Text("+ 添加预计款项") }
++    Text("预计款项不改变余额；实际到账后再确认关联。", style = LifeText.caption)
+     ChoiceFilter("资金用途", draft.role.name, FinanceFlowRole.entries.map { it.name to it.label }) {
+         if (enabled) onChange(draft.copy(role = it?.let(FinanceFlowRole::valueOf) ?: FinanceFlowRole.OTHER))
+     }
+@@ -81,18 +95,19 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
+     val events = snapshot.v4?.events.orEmpty().filter { it.voidedAt == null }
+     draft.eventId?.let { id ->
+         Text(events.find { it.id == id }?.description ?: "原事件暂不可用", style = LifeText.caption)
+-        TextButton({ onChange(draft.copy(eventId = null, eventUpdatedAt = null)) }, enabled = enabled) { Text("取消选择") }
++        TextButton({ onChange(draft.copy(eventId = null, eventUpdatedAt = null, expectedFlows = emptyList(), expectedEdited = false)) }, enabled = enabled) { Text("取消选择") }
+     }
+     OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("搜事由、日期或付款金额") }, enabled = enabled)
+     if (search.isNotBlank()) {
+-        val amounts = snapshot.v4?.links.orEmpty().groupBy { it.eventId }.mapValues { (_, links) ->
++        val amounts = snapshot.v4?.activeLinks.orEmpty().groupBy { it.eventId }.mapValues { (_, links) ->
+             links.filter { it.role == FinanceFlowRole.PAYMENT }.sumOf { it.allocatedMinor }
+         }
+         events.filter { event ->
+             (event.description + " " + FinanceTime.input(event.occurredAt) + " " +
+                 FinanceMoney.input(amounts[event.id] ?: 0, event.currencyCode)).contains(search, true)
+         }.take(12).forEach { event ->
+-            TextButton({ onChange(draft.copy(eventId = event.id, nature = event.nature, eventUpdatedAt = event.updatedAt)); search = "" }, enabled = enabled) {
++            TextButton({ onChange(draft.copy(eventId = event.id, nature = event.nature, eventUpdatedAt = event.updatedAt,
++                expectedFlows = FinanceRelationshipDraft.expectations(snapshot, event), expectedEdited = false)); search = "" }, enabled = enabled) {
+                 Text(FinanceTime.input(event.occurredAt) + " · " + event.description)
+             }
+         }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
+index 0f719218c3282117ae0528bd86828fd6b07a1397..ba0c02868f56ad7eb141dc14589ae366b1321ab2 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
+@@ -24,7 +24,8 @@ data class FinanceUiState(
+     val month: Map<String, FinanceTotals> = emptyMap(), val year: Map<String, FinanceTotals> = emptyMap(),
+     val selected: Map<String, FinanceTotals> = emptyMap(),
+     val categories: List<FinanceDimensionTotal> = emptyList(), val tags: List<FinanceDimensionTotal> = emptyList(),
+-    val loading: Boolean = true, val busy: Boolean = false, val error: String? = null
++    val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
++    val personalRows: List<FinanceLedgerRow> = emptyList()
+ )
+ data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
+     val targetAccountId: String, val occurredAt: String, val description: String,
+@@ -58,22 +59,29 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+         else {
+             val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
+             val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
+-            val natureEntries = data.v4?.links.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
+-            val linkedEntries = data.v4?.links.orEmpty().map { it.entryId }.toSet()
+-            val rows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
++            val natureEntries = data.v4?.activeLinks.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
++            val linkedEntries = data.v4?.activeLinks.orEmpty().map { it.entryId }.toSet()
++            val baseRows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
+                 (selection.accountId == null || row.account.id == selection.accountId || row.targetAccount?.id == selection.accountId) &&
+-                (selection.categoryId == null || row.entry.categoryId == selection.categoryId || data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }) &&
+-                (selection.tagId == null || row.entry.id in tagEntries) &&
+                 (selection.nature == null || row.entry.id in natureEntries ||
+                     (selection.nature == FinanceNature.PERSONAL && row.transfer == null && row.entry.id !in linkedEntries))
+             }
++            fun categoryMatches(row: FinanceLedgerRow) = selection.categoryId == null ||
++                row.entry.categoryId == selection.categoryId ||
++                data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }
++            val rows = baseRows.filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) }
++            val selectedTag = data.tags.find { it.id == selection.tagId }?.name
++            // Apply dimension filters after attribution, so a refund follows its payment category/tag.
++            val personal = FinancePersonalProjection.rows(data, baseRows).filter {
++                categoryMatches(it) && (selection.tagId == null || (selectedTag != null && selectedTag in it.tags))
++            }
+             FinanceUiState(data, selection, rows,
+                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
+                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.month()))),
+                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.year()))),
+-                FinanceProjection.totals(FinancePersonalProjection.rows(data, rows)),
+-                FinanceProjection.categoryTotals(FinancePersonalProjection.rows(data, rows)), FinanceProjection.tagTotals(FinancePersonalProjection.rows(data, rows)),
+-                loading = false, busy = saving, error = message)
++                FinanceProjection.totals(personal),
++                FinanceProjection.categoryTotals(personal), FinanceProjection.tagTotals(personal),
++                loading = false, busy = saving, error = message, personalRows = personal)
+         }
+     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
+ 
+@@ -131,7 +139,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+                 expectedUpdatedAt = row?.transfer?.updatedAt)
+         } else {
+             require(row?.transfer == null) { "转账需要整体编辑" }
+-            val multiple = snapshot.value?.v4?.links.orEmpty().count { it.entryId == row?.entry?.id } > 1
++            val multiple = snapshot.value?.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
+             require(!multiple || (amount == row?.entry?.amountMinor &&
+                 draft.kind.name == if (row?.entry?.direction == FinanceDirection.INFLOW) "INCOME" else "EXPENSE")) {
+                 "此流水分配给多个事件，请先调整事件分配再改变整笔金额或方向"
+-- 
+2.53.0.windows.3
+
+
+From b9fbfd794ec20d314163bfa924015be7cc0f0253 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Sat, 10 Oct 2026 23:07:39 +0800
+Subject: [PATCH 2/2] test(finance): cover v4 migration import and automation
+
+---
+ .../life/finance/FinanceImportReview.kt       |   1 -
+ .../com/qq/closie/ArchitectureBoundaryTest.kt |  30 +++-
+ .../data/backup/FinanceBackupRecoveryTest.kt  |   4 +-
+ .../backup/FinanceV4BackupRecoveryTest.kt     | 100 +++++++++++
+ .../life/finance/FinanceAutomationTest.kt     | 108 ++++++++++++
+ .../finance/FinanceImportRepositoryTest.kt    | 130 ++++++++++++++
+ .../life/finance/FinanceImportReviewTest.kt   |  37 ++++
+ .../life/finance/FinanceMigrationTest.kt      |   2 +-
+ .../finance/FinancePersonalProjectionTest.kt  |  87 ++++++++++
+ .../finance/FinanceRelationLifecycleTest.kt   | 158 ++++++++++++++++++
+ .../qq/closie/life/finance/FinanceRoomTest.kt |  35 ++++
+ .../life/finance/FinanceV4MigrationTest.kt    |  92 ++++++++++
+ .../life/finance/LegacyLedgerReaderTest.kt    |  65 +++++++
+ .../life/finance/SyntheticLegacyLedger.kt     |  39 +++++
+ docs/finance-v4-review-fix.md                 |  59 +++++++
+ 15 files changed, 938 insertions(+), 9 deletions(-)
+ create mode 100644 app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceImportReviewTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceRelationLifecycleTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/LegacyLedgerReaderTest.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/SyntheticLegacyLedger.kt
+ create mode 100644 docs/finance-v4-review-fix.md
+
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt
+index d07be8136f001f0b08434c777369bae8149ac2cf..93f1b0ae21bb2d4f220da390178866b14348d467 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceImportReview.kt
+@@ -40,4 +40,3 @@ object FinanceImportReview {
+         })
+     }.map { it.id }.toSet()
+ }
+-
+diff --git a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+index 2d7deedab3ae6a449f0e9c6f1e65e8848558585e..14d25616870efba510fcdd4b45afd6db75460bea 100644
+--- a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
++++ b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+@@ -21,16 +21,36 @@ class ArchitectureBoundaryTest {
+             assertFalse(it.name, text.contains("financeDao("))
+             assertFalse(it.name, text.contains("life.data.database"))
+         }
+-        val dao = File(source, "life/data/database/dao/FinanceDao.kt").readText()
+-        assertFalse(dao.contains("@Delete"))
+-        assertFalse(dao.contains("OnConflictStrategy.REPLACE"))
+-        assertFalse(Regex("DELETE FROM finance_(accounts|entries|transfers|categories|tags)\\b").containsMatchIn(dao))
++        val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
++            "finance_rule_conditions", "finance_rule_actions")
++        (File(source, "life/data/database/dao").listFiles()!!.filter { it.name.startsWith("Finance") } +
++            File(source, "life/finance").walkTopDown().filter { it.extension == "kt" }.toList()).forEach { file ->
++            val dao = file.readText()
++            assertFalse(file.name, dao.contains("@Delete"))
++            assertFalse(file.name, dao.contains("OnConflictStrategy.REPLACE"))
++            Regex("DELETE\\s+FROM\\s+(finance_\\w+)", RegexOption.IGNORE_CASE).findAll(dao).forEach {
++                assertTrue(file.name + ": " + it.value, it.groupValues[1].lowercase() in allowedDeletes)
++            }
++        }
+         assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 4"))
+-        assertTrue(File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/3.json").exists())
++        val version = Regex("version\\s*=\\s*(\\d+)").find(
++            File(source, "life/data/database/LifeDatabase.kt").readText())!!.groupValues[1]
++        val schema = File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/$version.json")
++        assertTrue("Missing current Room/KSP schema: " + schema.path, schema.isFile)
++        assertEquals(version.toInt(), com.google.gson.JsonParser.parseString(schema.readText())
++            .asJsonObject.getAsJsonObject("database").get("version").asInt)
+         assertEquals("life_os.db", com.qq.closie.life.data.database.LifeDatabase.DATABASE_NAME)
+         assertEquals(com.qq.closie.navigation.LifeOsRoute.FINANCE,
+             com.qq.closie.ui.lifeos.drawer.LifeModules.find("finance").route)
+     }
++    @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
++        val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
++        assertTrue(listener.contains("financeAutomationRepository.discover(proposal)"))
++        for (forbidden in listOf("financeDao(", "financeIntakeDao(", "saveEntry(", "saveTransfer(",
++            "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY")) {
++            assertFalse(forbidden, listener.contains(forbidden))
++        }
++    }
+     @Test fun captureHasNoUserLevelPhysicalDeleteApi() {
+         val owners = listOf(
+             com.qq.closie.life.repository.CaptureRepository::class.java,
+diff --git a/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt b/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt
+index 904ef334f83a3f2920962b89bbd6a7a0a9cd03cc..0bc44eaf68d3fad89968bc18245d5de97625a241 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt
+@@ -36,8 +36,8 @@ class FinanceBackupRecoveryTest {
+     @Test fun snapshotAndJsonArchiveCarryEveryFinanceTableExactly() = runTest {
+         seed()
+         val saved = LifeBackupApplier.snapshot(db)
+-        assertEquals(repo.snapshot(), saved.finance)
+-        assertEquals(16, saved.toInsertOrder().size)
++        assertEquals(readFinanceSnapshot(db, includeIntake = true), saved.finance)
++        assertEquals(27, saved.toInsertOrder().size)
+         val decoded = BackupValidator.gson.fromJson(BackupValidator.gson.toJson(saved), LifeBackupPayload::class.java)
+         assertEquals(saved.finance, decoded.finance)
+         FinanceIntegrity.validate(requireNotNull(decoded.finance))
+diff --git a/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt b/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f3dde2b3dc056e7df4e8fb9b503e1c286c198bf
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt
+@@ -0,0 +1,100 @@
++package com.qq.closie.data.backup
++
++import android.content.Context
++import androidx.room.Room
++import androidx.test.core.app.ApplicationProvider
++import com.qq.closie.life.data.database.LifeDatabase
++import com.qq.closie.life.finance.*
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class FinanceV4BackupRecoveryTest : FinanceRoomTest() {
++    @Test fun jsonArchiveRestoresActiveAndHistoricalLinksExpectedRulesProposalsAndStagingExactly() = runTest {
++        val a = account()
++        val paid = payment(a.id)
++        finance.saveEntry(paid.id, a.id, paid.direction, 25_000, "合成纠正", paid.occurredAt,
++            category = "衣服", tags = listOf("合成标签"), event = FinanceEventInput(), expectedRevision = paid.revision)
++        val eventId = eventId(paid.id)
++        finance.saveExpectedFlows(eventId, listOf(
++            FinanceExpectedFlowInput(role = FinanceFlowRole.REFUND, amountMinor = 5_000, note = "原预计")),
++            db.financeIntakeDao().event(eventId)!!.updatedAt)
++        finance.saveExpectedFlows(eventId, listOf(
++            FinanceExpectedFlowInput(role = FinanceFlowRole.REFUND, note = "未知金额"),
++            FinanceExpectedFlowInput(role = FinanceFlowRole.SETTLEMENT, amountMinor = 1_000, note = "另一预计")),
++            db.financeIntakeDao().event(eventId)!!.updatedAt)
++        val automation = FinanceAutomationRepository(db, finance)
++        automation.saveRule(FinanceRuleSet(FinanceRuleEntity("rule", "合成规则", 1, true, 1_000),
++            listOf(FinanceRuleConditionEntity("rule", 0, FinanceConditionKind.SOURCE, FinanceSource.WECHAT.name)),
++            listOf(FinanceRuleActionEntity("rule", 0, FinanceActionKind.ADD_TAG, "合成建议标签"))))
++        val proposal = FinanceNotificationParser.parse("com.tencent.mm", "synthetic-backup-key", "微信支付",
++            "支付成功 ￥1.00", System.currentTimeMillis())!!
++        val found = automation.discover(proposal)!!
++        automation.dismiss(found.id, found.revision, FinanceProposalStatus.SNOOZED)
++        val intake = db.financeIntakeDao()
++        intake.insertBatch(FinanceImportBatchEntity("batch", "synthetic-digest", "synthetic.csv", 1_000))
++        intake.insertRows(LegacyLedgerReader.stage(LegacyLedgerTable("synthetic",
++            listOf(LegacyLedgerReader.headers, SyntheticLegacyLedger.row())), "batch"))
++        val saved = LifeBackupApplier.snapshot(db)
++        val archived = BackupValidator.gson.fromJson(BackupValidator.gson.toJson(saved), LifeBackupPayload::class.java)
++        assertEquals(saved, archived)
++        val context: Context = ApplicationProvider.getApplicationContext()
++        val target = Room.inMemoryDatabaseBuilder(context, LifeDatabase::class.java).allowMainThreadQueries().build()
++        try {
++            LifeBackupApplier.restoreSnapshot(target, archived)
++            val restored = readFinanceSnapshot(target, true)
++            assertEquals(saved.finance, restored)
++            assertEquals(2, restored.v4!!.links.size)
++            assertEquals(1, restored.v4!!.activeLinks.size)
++            assertEquals(1, restored.v4!!.links.count { it.voidedAt != null })
++            assertEquals(2, restored.v4!!.expected.count { it.cancelledAt == null })
++            assertEquals(1, restored.v4!!.expected.count { it.cancelledAt != null })
++            assertEquals(FinanceProposalStatus.SNOOZED, restored.v4!!.proposals.single().status)
++            assertEquals(1, restored.v4!!.rules.size)
++            assertEquals(1, restored.v4!!.conditions.size)
++            assertEquals(1, restored.v4!!.actions.size)
++            assertEquals(1, restored.v4!!.proposalTags.size)
++            assertEquals(1, restored.v4!!.staging.size)
++            FinanceIntegrity.validate(restored)
++            LifeBackupApplier.restoreSnapshot(target, archived)
++            assertEquals(restored, readFinanceSnapshot(target, true))
++        } finally { target.close() }
++    }
++
++    @Test fun restoringOlderSnapshotRetiresNewRelationsAndRetainsBothHistoricalIdentities() = runTest {
++        val a = account()
++        val paid = payment(a.id)
++        val before = LifeBackupApplier.snapshot(db)
++        finance.saveEntry(paid.id, a.id, paid.direction, paid.amountMinor, "后来编辑", paid.occurredAt,
++            event = FinanceEventInput(), expectedRevision = paid.revision)
++        val laterLink = db.financeIntakeDao().linksForEntry(paid.id).single()
++        LifeBackupApplier.restoreSnapshot(db, before)
++        val after = readFinanceSnapshot(db, true)
++        assertEquals(before.finance!!.v4!!.links.single(), after.v4!!.activeLinks.single())
++        assertNotNull(after.v4!!.links.single { it.id == laterLink.id }.voidedAt)
++        assertEquals(2, after.v4!!.links.size)
++        FinanceIntegrity.validate(after)
++    }
++
++    @Test fun preV4FinanceRestoreRetiresRelationsWithoutErasingTheirHistoryOrPendingIntake() = runTest {
++        val a = account()
++        payment(a.id)
++        val backup = LifeBackupApplier.snapshot(db)
++        val old = backup.copy(finance = backup.finance!!.copy(v4 = null))
++        val proposal = FinanceNotificationParser.parse("com.tencent.mm", "legacy-key", "微信支付",
++            "支付成功 1元", System.currentTimeMillis())!!
++        FinanceAutomationRepository(db, finance).discover(proposal)
++        LifeBackupApplier.restoreSnapshot(db, old)
++        val after = readFinanceSnapshot(db, true)
++        assertEquals(1, after.v4!!.links.size)
++        assertTrue(after.v4!!.activeLinks.isEmpty())
++        assertTrue(after.v4!!.events.all { it.voidedAt != null })
++        assertEquals(1, after.v4!!.proposals.size)
++        FinanceIntegrity.validate(after)
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..9e10f2f09bae1bdfcc75f194072d6275ad59a131
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt
+@@ -0,0 +1,108 @@
++package com.qq.closie.life.finance
++
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class FinanceAutomationTest : FinanceRoomTest() {
++    private val automation get() = FinanceAutomationRepository(db, finance)
++    private fun parse(key: String = "synthetic-key", body: String = "支付成功 ￥12.34") =
++        FinanceNotificationParser.parse("com.tencent.mm", key, "微信支付", body, System.currentTimeMillis())!!
++
++    @Test fun allowlistPaymentEvidenceAndAmountAmbiguityProduceOnlyTypedProposals() {
++        assertNull(FinanceNotificationParser.parse("other.package", "key", "支付成功", "￥1.00", 0))
++        assertNull(FinanceNotificationParser.parse("com.tencent.mm", "key", "聊天消息", "今晚￥12.34", 0))
++        assertNull(FinanceNotificationParser.parse("com.tencent.mm", "key", "微信支付", "待支付 ￥1.00", 0))
++        val one = parse()
++        assertEquals(1_234L, one.amountMinor)
++        assertEquals(FinanceProposalStatus.ACTIVE, one.status)
++        assertNull(one.canonicalId)
++        assertNull(parse(body = "支付成功 ￥12.34，账户余额￥56.78").amountMinor)
++        val refund = FinanceNotificationParser.parse("com.eg.android.AlipayGphone", "refund-key",
++            "退款到账", "退款成功 10.00元", System.currentTimeMillis())!!
++        assertEquals(FinanceProposalKind.INCOME, refund.kind)
++        assertEquals(FinanceFlowRole.REFUND, refund.role)
++    }
++
++    @Test fun sourceKeyDiscoveryIsIdempotentRejectAndSnoozeNeverCreateTruth() = runTest {
++        account()
++        val found = automation.discover(parse())!!
++        assertNotNull(found.accountId)
++        assertNull(automation.discover(parse()))
++        assertEquals(1, db.financeIntakeDao().proposals().size)
++        assertTrue(finance.snapshot().entries.isEmpty())
++        automation.dismiss(found.id, found.revision, FinanceProposalStatus.SNOOZED)
++        val snoozed = db.financeIntakeDao().proposal(found.id)!!
++        assertEquals(FinanceProposalStatus.SNOOZED, snoozed.status)
++        assertNull(snoozed.canonicalId)
++        assertTrue(finance.snapshot().entries.isEmpty())
++        automation.dismiss(snoozed.id, snoozed.revision, FinanceProposalStatus.REJECTED)
++        assertEquals(FinanceProposalStatus.REJECTED, db.financeIntakeDao().proposal(found.id)!!.status)
++        assertTrue(finance.snapshot().entries.isEmpty())
++        assertTrue(finance.snapshot().v4!!.events.isEmpty())
++    }
++
++    @Test fun confirmationCreatesExactlyOneCanonicalResultAndOneRelationWithProposalAuthority() = runTest {
++        val a = account()
++        val found = automation.discover(parse())!!
++        val input = FinanceProposalConfirmation(FinanceProposalKind.EXPENSE, a.id, null, 1_234, "合成确认",
++            2_000, "餐饮", "", listOf("确认标签"), FinanceEventInput())
++        val id = automation.confirm(found.id, found.revision, input)
++        assertEquals(id, automation.confirm(found.id, found.revision, input.copy(amountMinor = 99_999)))
++        val state = readFinanceSnapshot(db, true)
++        assertEquals(1, state.entries.size)
++        assertEquals(1_234L, state.entries.single().amountMinor)
++        assertEquals(id, state.entries.single().id)
++        assertEquals(1, state.v4!!.events.size)
++        assertEquals(1, state.v4!!.activeLinks.size)
++        assertEquals(FinanceProposalStatus.CONFIRMED, state.v4!!.proposals.single().status)
++        assertEquals(id, state.v4!!.proposals.single().canonicalId)
++        assertTrue(state.v4!!.changes.filter { it.operation in setOf("ENTRY_SAVE", "LINK_CREATE") }
++            .all { it.authority == "USER_CONFIRMED_PROPOSAL" })
++    }
++
++    @Test fun snoozedProposalCanConfirmOnceAndFailedConfirmationKeepsProposalUnchanged() = runTest {
++        val a = account()
++        val proposal = automation.discover(parse())!!
++        automation.dismiss(proposal.id, proposal.revision, FinanceProposalStatus.SNOOZED)
++        val snoozed = db.financeIntakeDao().proposal(proposal.id)!!
++        val input = FinanceProposalConfirmation(FinanceProposalKind.EXPENSE, a.id, null, 100, "合成确认",
++            2_000, "", "", emptyList(), FinanceEventInput())
++        assertTrue(runCatching { automation.confirm(snoozed.id, snoozed.revision, input.copy(accountId = "missing")) }.isFailure)
++        assertEquals(snoozed, db.financeIntakeDao().proposal(snoozed.id))
++        assertTrue(finance.snapshot().entries.isEmpty())
++        val canonical = automation.confirm(snoozed.id, snoozed.revision, input)
++        assertEquals(canonical, automation.confirm(snoozed.id, snoozed.revision, input))
++        assertEquals(1, finance.snapshot().entries.size)
++    }
++
++    @Test fun rulesSortByPriorityThenIdFirstScalarWinsAndTagsMergeInStableOrder() {
++        val proposal = parse().copy(accountId = "original")
++        fun rule(id: String, priority: Int, category: String, tag: String) = FinanceRuleSet(
++            FinanceRuleEntity(id, id, priority, true, 1_000),
++            listOf(FinanceRuleConditionEntity(id, 0, FinanceConditionKind.TEXT_CONTAINS, "支付")),
++            listOf(FinanceRuleActionEntity(id, 0, FinanceActionKind.SUGGEST_CATEGORY, category),
++                FinanceRuleActionEntity(id, 1, FinanceActionKind.SUGGEST_ACCOUNT, id),
++                FinanceRuleActionEntity(id, 2, FinanceActionKind.ADD_TAG, tag),
++                FinanceRuleActionEntity(id, 3, FinanceActionKind.ADD_TAG, "共享标签"),
++                FinanceRuleActionEntity(id, 4, FinanceActionKind.NORMALIZE_DESCRIPTION, "建议" + id)))
++        val early = rule("a", 1, "服饰/衣服", "一")
++        val tie = rule("b", 1, "餐饮", "二")
++        val late = rule("z", 9, "旅行", "三")
++        val result = FinanceRuleEngine.apply(proposal, listOf(late, tie, early))
++        assertEquals(result, FinanceRuleEngine.apply(proposal, listOf(early, late, tie)))
++        assertEquals("服饰", result.proposal.category)
++        assertEquals("衣服", result.proposal.subcategory)
++        assertEquals("a", result.proposal.accountId)
++        assertEquals("建议a", result.proposal.description)
++        assertEquals(listOf("一", "共享标签", "二", "三"), result.tags)
++        assertEquals(listOf("a", "b", "z"), result.matched)
++        assertEquals(proposal.evidenceText, result.proposal.evidenceText)
++        assertEquals(proposal.role, result.proposal.role)
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2f779f87e54e462fe43f63c967fe2ca0a64139d
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt
+@@ -0,0 +1,130 @@
++package com.qq.closie.life.finance
++
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class FinanceImportRepositoryTest : FinanceRoomTest() {
++    @get:Rule val files = TemporaryFolder()
++    private val imports get() = FinanceImportRepository(db, finance)
++    private suspend fun stage(rows: List<List<String>>, name: String = "synthetic.csv"): FinanceImportPreview {
++        val file = files.newFile(name)
++        if (name.endsWith(".xlsx")) SyntheticLegacyLedger.xlsx(file, rows) else SyntheticLegacyLedger.csv(file, rows)
++        return imports.stage(file, name)
++    }
++
++    @Test fun confirmedXlsxBatchCreatesOnlyRealFlowsFeeAndHierarchyThenUndoRetiresAllSemantics() = runTest {
++        val preview = stage(listOf(
++            SyntheticLegacyLedger.row("金额" to "12.34", "分类" to "服饰", "子分类" to "衣服", "标签" to "原始 单元格"),
++            SyntheticLegacyLedger.row("类型" to "转账", "金额" to "20", "转入账户" to "合成银行", "转账手续费" to "0.29"),
++            SyntheticLegacyLedger.row("备注" to "报销付款", "金额" to "3", "是否为报销" to "是", "报销金额" to "1"),
++            SyntheticLegacyLedger.row("备注" to "退款证据", "金额" to "4", "退款金额" to "2", "不计入收支" to "是")),
++            "synthetic.xlsx")
++        assertTrue(finance.snapshot().entries.isEmpty())
++        val mappings = listOf(FinanceAccountMapping("合成钱包"), FinanceAccountMapping("合成银行", kind = FinanceAccountKind.BANK_CARD))
++        val checked = imports.preview(preview.batch.id, mappings)
++        val selected = FinanceImportReview.selected(checked.rows,
++            FinanceImportReviewPolicy(reimbursement = true, refund = true, fees = true))
++        assertEquals(4, selected.size)
++        assertEquals(4, imports.commit(preview.batch.id, mappings, selected, emptySet(), false, true))
++        val state = readFinanceSnapshot(db, true)
++        assertEquals(6, state.entries.size) // Three real ordinary flows + transfer pair + real fee.
++        assertEquals(1, state.transfers.size)
++        assertEquals(1, state.entries.count { it.direction == FinanceDirection.INFLOW })
++        assertEquals(listOf("原始 单元格"), FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.tags)
++        assertEquals("服饰 / 衣服", FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.category)
++        assertTrue(state.categories.any { it.parentId != null && it.name == "衣服" })
++        assertEquals(29L, state.entries.single { it.description == "转账手续费" }.amountMinor)
++        assertTrue(state.v4!!.events.any { it.nature == FinanceNature.REIMBURSABLE })
++        assertTrue(state.entries.any { it.description == "退款证据" && it.statPolicy == FinanceStatPolicy.EXCLUDE })
++        assertTrue(state.v4!!.expected.isEmpty())
++        val wallet = state.accounts.single { it.importSourceName == "合成钱包" }
++        assertEquals(checked.rows.minOf { it.occurredAt!! }, wallet.balanceAnchorAt)
++        assertEquals(-3_963L, FinanceProjection.balance(wallet, state.entries))
++        assertEquals(FinanceTotals(1_263, 0), FinanceProjection.totals(FinancePersonalProjection.rows(state, FinanceProjection.ledger(state)))["CNY"])
++        assertEquals(0, imports.commit(preview.batch.id, mappings, selected, emptySet(), false, true))
++        val undo = imports.undo(preview.batch.id)
++        assertEquals(FinanceUndoResult(6, 0), undo)
++        val retired = readFinanceSnapshot(db, true)
++        assertTrue(retired.entries.all { it.voidedAt != null })
++        assertTrue(retired.v4!!.events.all { it.voidedAt != null })
++        assertTrue(retired.v4!!.activeLinks.isEmpty())
++        assertEquals(4, retired.v4!!.links.size)
++        assertTrue(retired.v4!!.staging.all { it.status == FinanceRowStatus.UNDONE && it.rawPayload.isNotBlank() })
++        assertEquals(FinanceUndoResult(0, 0), imports.undo(preview.batch.id))
++        FinanceIntegrity.validate(retired)
++    }
++
++    @Test fun csvSameFileIdempotencyWithinFileAndExistingCanonicalDuplicatesNeedExplicitOverride() = runTest {
++        val a = account()
++        val row = SyntheticLegacyLedger.row("备注" to "重复候选")
++        val preview = stage(listOf(row, row))
++        val file = files.root.resolve("synthetic.csv")
++        assertEquals(preview.batch.id, imports.stage(file, "renamed.csv").batch.id)
++        assertEquals(1, imports.history().size)
++        val mappings = listOf(FinanceAccountMapping("合成钱包", existingId = a.id))
++        val first = preview.rows.first()
++        finance.saveEntry(accountId = a.id, direction = FinanceDirection.OUTFLOW, amountMinor = first.amountMinor!!,
++            description = first.description, occurredAt = first.occurredAt!!)
++        val checked = imports.preview(preview.batch.id, mappings)
++        assertTrue(checked.rows.all { it.status == FinanceRowStatus.DUPLICATE })
++        assertTrue(FinanceImportReview.selected(checked.rows, FinanceImportReviewPolicy()).isEmpty())
++        val before = readFinanceSnapshot(db, true)
++        assertTrue(runCatching {
++            imports.commit(preview.batch.id, mappings, setOf(first.id), emptySet(), false, false)
++        }.isFailure)
++        assertEquals(before, readFinanceSnapshot(db, true))
++        assertEquals(1, imports.commit(preview.batch.id, mappings, setOf(first.id), setOf(first.id), false, false))
++        assertEquals(2, finance.snapshot().entries.size)
++        assertEquals(1, finance.snapshot().accounts.size)
++    }
++
++    @Test fun currentBalanceAnchorKeepsBackfilledEntriesInHistoryWithoutChangingCurrentBalance() = runTest {
++        val preview = stage(listOf(SyntheticLegacyLedger.row("金额" to "12.34")))
++        val mapping = FinanceAccountMapping("合成钱包", fromHistory = false, openingMinor = 4_567, anchorAt = 2_000_000_000_000)
++        val checked = imports.preview(preview.batch.id, listOf(mapping))
++        imports.commit(preview.batch.id, listOf(mapping), checked.rows.map { it.id }.toSet(), emptySet(), false, false)
++        val state = finance.snapshot()
++        val a = state.accounts.single()
++        assertEquals(mapping.anchorAt, a.balanceAnchorAt)
++        assertEquals(4_567L, FinanceProjection.balance(a, state.entries))
++        assertEquals(1, FinanceProjection.ledger(state).size)
++        assertEquals(1_234L, FinanceProjection.totals(FinancePersonalProjection.rows(state, FinanceProjection.ledger(state)))["CNY"]!!.expenseMinor)
++    }
++
++    @Test fun lateCanonicalFailureRollsBackEntriesRelationsJournalAndStagingAsOneBatch() = runTest {
++        val a = account()
++        val preview = stage(listOf(SyntheticLegacyLedger.row("备注" to "先成功"),
++            SyntheticLegacyLedger.row("类型" to "转账", "转入账户" to "合成银行", "备注" to "后失败")))
++        // Source and target map to the same real account: rejected by the domain after the first row wrote.
++        val mappings = listOf(FinanceAccountMapping("合成钱包", existingId = a.id),
++            FinanceAccountMapping("合成银行", existingId = a.id))
++        val before = readFinanceSnapshot(db, true)
++        assertTrue(runCatching {
++            imports.commit(preview.batch.id, mappings, preview.rows.map { it.id }.toSet(), emptySet(), false, false)
++        }.isFailure)
++        assertEquals(before, readFinanceSnapshot(db, true))
++    }
++
++    @Test fun undoKeepsLaterEditedOrLinkedImportedEntriesAndTheirLiveRelations() = runTest {
++        val preview = stage(listOf(SyntheticLegacyLedger.row()))
++        val mappings = listOf(FinanceAccountMapping("合成钱包"))
++        imports.commit(preview.batch.id, mappings, preview.rows.map { it.id }.toSet(), emptySet(), false, false)
++        val entry = finance.snapshot().entries.single()
++        finance.saveEntry(entry.id, entry.accountId, entry.direction, entry.amountMinor, "后来纠正", entry.occurredAt,
++            event = FinanceEventInput(), expectedRevision = entry.revision)
++        assertEquals(FinanceUndoResult(0, 1), imports.undo(preview.batch.id))
++        val state = finance.snapshot()
++        assertNull(state.entries.single().voidedAt)
++        assertEquals(1, state.v4!!.activeLinks.size)
++        assertEquals(2, state.v4!!.links.size)
++        assertNull(state.v4!!.events.single().voidedAt)
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceImportReviewTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceImportReviewTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..57ff8e6d34259b7fb341fdafc69ac11ace17ae96
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceImportReviewTest.kt
+@@ -0,0 +1,37 @@
++package com.qq.closie.life.finance
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class FinanceImportReviewTest {
++    private fun rows() = LegacyLedgerReader.stage(LegacyLedgerTable("synthetic", listOf(LegacyLedgerReader.headers) +
++        (1..300).map { SyntheticLegacyLedger.row("备注" to "报销$it", "是否为报销" to "是") } +
++        listOf(SyntheticLegacyLedger.row("备注" to "普通"),
++            SyntheticLegacyLedger.row("备注" to "退款", "退款金额" to "2"),
++            SyntheticLegacyLedger.row("备注" to "手续费", "类型" to "转账", "转入账户" to "合成银行", "转账手续费" to "1"),
++            SyntheticLegacyLedger.row("备注" to "交叉问题", "是否为报销" to "是", "退款金额" to "3"),
++            SyntheticLegacyLedger.row("备注" to "普通"), SyntheticLegacyLedger.row("债务人" to "合成人物"),
++            SyntheticLegacyLedger.row("金额" to "bad"))), "batch")
++    @Test fun ordinaryRowsDefaultSelectAndHundredsOfKnownIssueRowsNeedOnlyBatchPolicy() {
++        val rows = rows()
++        assertEquals(1, FinanceImportReview.selected(rows, FinanceImportReviewPolicy()).size)
++        val reimbursement = FinanceImportReview.selected(rows, FinanceImportReviewPolicy(reimbursement = true))
++        assertEquals(301, reimbursement.size)
++        val allKnown = FinanceImportReview.selected(rows, FinanceImportReviewPolicy(reimbursement = true, refund = true, fees = true))
++        assertEquals(304, allKnown.size)
++        assertFalse(rows.single { it.description == "交叉问题" }.id in reimbursement)
++        assertTrue(rows.single { it.description == "交叉问题" }.id in allKnown)
++        assertTrue(rows.filter { it.status == FinanceRowStatus.DUPLICATE || it.requiresIndividualReview }.none { it.id in allKnown })
++        assertTrue(FinanceImportGroup.entries.all { group -> rows.any { group in FinanceImportReview.groups(it) } })
++    }
++
++    @Test fun duplicatesNeedIndividualOverrideInvalidRowsCannotBeSelected() {
++        val rows = rows()
++        val duplicate = rows.single { it.status == FinanceRowStatus.DUPLICATE }
++        val invalid = rows.single { it.status == FinanceRowStatus.INVALID }
++        val ordinary = rows.single { it.status == FinanceRowStatus.READY }
++        val selected = FinanceImportReview.selected(rows, FinanceImportReviewPolicy(),
++            mapOf(duplicate.id to true, invalid.id to true, ordinary.id to false))
++        assertEquals(setOf(duplicate.id), selected)
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt
+index 6e3f4b04cce71c4e17aa14d8316036bbc81f7e58..5979525bd82eaf6834de9a9da0fd3e22085d866f 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt
+@@ -45,7 +45,7 @@ class FinanceMigrationTest {
+             assertEquals(2, repo.snapshot().entries.size)
+             assertEquals("旧计划", room.planDao().getAllOnce().single().title)
+             assertEquals("旧记录", room.captureDao().getAllOnce().single().rawText)
+-            assertEquals(3, room.openHelper.writableDatabase.version)
++            assertEquals(4, room.openHelper.writableDatabase.version)
+         } finally { room.close(); RestoreStartupGate.resetForTesting() }
+     }
+ }
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..04b272f1103d9e535c81e7da2e13b945ef222271
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt
+@@ -0,0 +1,87 @@
++package com.qq.closie.life.finance
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class FinancePersonalProjectionTest {
++    private fun entry(id: String, amount: Long, direction: FinanceDirection = FinanceDirection.OUTFLOW,
++        category: String? = "clothing") = FinanceEntryEntity(id, "a", direction, amount, id, 2_000, 1_000, 1_000, category)
++    private val account = FinanceAccountEntity("a", "合成账户", FinanceAccountKind.CASH, "CNY", 0, 0, 0)
++    private val categories = listOf(FinanceCategoryEntity("root", "穿着"),
++        FinanceCategoryEntity("clothing", "衣服", "root"), FinanceCategoryEntity("food", "餐饮"),
++        FinanceCategoryEntity("refund", "退款原分类"))
++    private fun snapshot(nature: FinanceNature, share: Long? = null, flows: List<FinanceEntryEntity>,
++        roles: List<FinanceFlowRole>) = FinanceSnapshot(accounts = listOf(account), entries = flows, categories = categories,
++        tags = listOf(FinanceTagEntity("t", "穿着标签"), FinanceTagEntity("wrong", "到账标签")),
++        entryTags = flows.map { FinanceEntryTagCrossRef(it.id, if (it.direction == FinanceDirection.OUTFLOW) "t" else "wrong") },
++        v4 = FinanceV4Snapshot(events = listOf(FinanceEventEntity("event", "合成事件", nature, "CNY", 2_000, 1_000, 1_000, share)),
++            links = flows.zip(roles).map { (flow, role) -> FinanceEventEntryLinkEntity("event", flow.id, role, flow.amountMinor, createdAt = 1_000, updatedAt = 1_000) }))
++    private fun rows(data: FinanceSnapshot) = FinancePersonalProjection.rows(data, FinanceProjection.ledger(data))
++
++    @Test fun personalPaymentAndEachLinkedAdjustmentReconcileWithPaymentDimensions() {
++        for (role in listOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)) {
++            val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
++                entry("adjust", 10_000, FinanceDirection.INFLOW, "refund")), roles = listOf(FinanceFlowRole.PAYMENT, role))
++            FinanceIntegrity.validate(data)
++            val projected = rows(data)
++            assertEquals(FinanceTotals(20_000, 0), FinanceProjection.totals(projected)["CNY"])
++            assertEquals(listOf(FinanceDimensionTotal("穿着 / 衣服", "CNY", FinanceTotals(20_000, 0))), FinanceProjection.categoryTotals(projected))
++            assertEquals(FinanceTotals(20_000, 0), FinanceProjection.parentCategoryTotals(projected, categories).single().totals)
++            assertEquals(listOf("穿着标签"), FinanceProjection.tagTotals(projected).map { it.label })
++            assertEquals(20_000L, FinanceProjection.tagTotals(projected).single().totals.expenseMinor)
++            // A refund selected in a later period still uses full payment context.
++            assertEquals("穿着 / 衣服", FinancePersonalProjection.rows(data,
++                FinanceProjection.ledger(data).filter { it.entry.id == "adjust" }).single().category)
++            assertEquals(-20_000L, FinanceProjection.balance(account, data.entries))
++        }
++    }
++
++    @Test fun incompatiblePaymentCategoriesUseExplicitAdjustmentBucketWithoutChangingTotal() {
++        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("one", 20_000), entry("two", 10_000, category = "food"),
++            entry("refund", 10_000, FinanceDirection.INFLOW, "refund")),
++            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND))
++        val projected = rows(data)
++        val breakdown = FinanceProjection.categoryTotals(projected)
++        assertEquals(-10_000L, breakdown.single { it.label == "调整待归属" }.totals.expenseMinor)
++        assertFalse(breakdown.any { it.label == "退款原分类" })
++        assertEquals(20_000L, breakdown.sumOf { it.totals.expenseMinor })
++        assertEquals(FinanceProjection.totals(projected)["CNY"]!!.expenseMinor, breakdown.sumOf { it.totals.expenseMinor })
++        assertEquals(-10_000L, FinanceProjection.parentCategoryTotals(projected, categories).single { it.label == "调整待归属" }.totals.expenseMinor)
++    }
++
++    @Test fun splitAndReimbursementCountOnlyConfirmedShareProxyNeverBecomesPersonalConsumption() {
++        for (nature in listOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE)) {
++            val data = snapshot(nature, 10_001, listOf(entry("one", 20_000), entry("two", 10_000)),
++                listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.PAYMENT))
++            assertEquals(10_001L, FinanceProjection.totals(rows(data))["CNY"]!!.expenseMinor)
++            assertEquals(-30_000L, FinanceProjection.balance(account, data.entries))
++            assertTrue(rows(data.copy(v4 = data.v4!!.copy(events = data.v4!!.events.map { it.copy(personalShareMinor = null) }))).isEmpty())
++        }
++        val proxy = snapshot(FinanceNature.PROXY_PURCHASE, flows = listOf(entry("pay", 30_000)),
++            roles = listOf(FinanceFlowRole.PAYMENT))
++        assertTrue(rows(proxy).isEmpty())
++        assertEquals(-30_000L, FinanceProjection.balance(account, proxy.entries))
++    }
++
++    @Test fun actualSettlementAndReimbursementDoNotAddIncomeToConfirmedPersonalShare() {
++        for ((nature, role) in listOf(FinanceNature.SPLIT to FinanceFlowRole.SETTLEMENT,
++            FinanceNature.REIMBURSABLE to FinanceFlowRole.REIMBURSEMENT)) {
++            val data = snapshot(nature, 10_000, flows = listOf(entry("pay", 30_000),
++                entry("incoming", 20_000, FinanceDirection.INFLOW, null)),
++                roles = listOf(FinanceFlowRole.PAYMENT, role))
++            FinanceIntegrity.validate(data)
++            assertEquals(FinanceTotals(10_000, 0), FinanceProjection.totals(rows(data))["CNY"])
++            assertEquals(FinanceTotals(30_000, 20_000), FinancePersonalProjection.realTotals(FinanceProjection.ledger(data))["CNY"])
++            assertEquals(-10_000L, FinanceProjection.balance(account, data.entries))
++        }
++    }
++
++    @Test fun historicalLinkAndExcludedFlowCannotDoubleCountCurrentPersonalStatistics() {
++        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000)), roles = listOf(FinanceFlowRole.PAYMENT))
++        val old = data.v4!!.links.single().copy(id = "historical", allocatedMinor = 50_000, voidedAt = 3_000, updatedAt = 3_000, revision = 2)
++        val history = data.copy(v4 = data.v4!!.copy(links = data.v4!!.links + old))
++        FinanceIntegrity.validate(history)
++        assertEquals(30_000L, FinanceProjection.totals(rows(history))["CNY"]!!.expenseMinor)
++        assertTrue(rows(history.copy(entries = history.entries.map { it.copy(statPolicy = FinanceStatPolicy.EXCLUDE) })).isEmpty())
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceRelationLifecycleTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceRelationLifecycleTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..4e00919adaddbc0358cc7b18ae75a9598ec8c64d
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceRelationLifecycleTest.kt
+@@ -0,0 +1,158 @@
++package com.qq.closie.life.finance
++
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class FinanceRelationLifecycleTest : FinanceRoomTest() {
++    @Test fun reassociationPreservesIdentityHistoryRetiresOrphanAndCancelsAllExpectations() = runTest {
++        val a = account()
++        val first = payment(a.id)
++        val second = payment(a.id, 10_000)
++        val originalId = eventId(first.id)
++        val targetId = eventId(second.id)
++        val original = db.financeIntakeDao().event(originalId)!!
++        finance.saveExpectedFlows(originalId, listOf(
++            FinanceExpectedFlowInput(role = FinanceFlowRole.REFUND, amountMinor = 100, note = "一"),
++            FinanceExpectedFlowInput(role = FinanceFlowRole.SETTLEMENT, note = "二")), original.updatedAt)
++        val oldLink = db.financeIntakeDao().linksForEntry(first.id).single()
++        finance.allocateEntry(first.id, listOf(FinanceAllocation(targetId, FinanceFlowRole.PAYMENT, first.amountMinor)), first.revision)
++        val state = readFinanceSnapshot(db, true)
++        val old = state.v4!!.links.single { it.id == oldLink.id }
++        assertNotNull(old.voidedAt)
++        assertEquals(oldLink.createdAt, old.createdAt)
++        assertEquals(oldLink.revision + 1, old.revision)
++        assertEquals(3, state.v4!!.links.size)
++        assertEquals(2, state.v4!!.activeLinks.size)
++        assertNotNull(state.v4!!.events.single { it.id == originalId }.voidedAt)
++        assertTrue(state.v4!!.expected.all { it.cancelledAt != null })
++        assertTrue(state.v4!!.changes.any { it.objectId == old.id && it.operation == "LINK_RETIRE" &&
++            it.beforeRevision == 1L && it.afterRevision == 2L })
++        assertEquals(-40_000L, FinanceProjection.balance(a, state.entries))
++        FinanceIntegrity.validate(state)
++    }
++
++    @Test fun singleFlowCanPartitionAcrossEventsAndRemovingOneRetainsHistory() = runTest {
++        val a = account()
++        val flow = payment(a.id, 30_000)
++        val other = payment(a.id, 5_000)
++        val one = eventId(flow.id)
++        val two = eventId(other.id)
++        finance.allocateEntry(flow.id, listOf(
++            FinanceAllocation(one, FinanceFlowRole.PAYMENT, 10_000),
++            FinanceAllocation(two, FinanceFlowRole.PAYMENT, 20_000)), flow.revision)
++        var state = finance.snapshot()
++        assertEquals(30_000L, state.v4!!.activeLinks.filter { it.entryId == flow.id }.sumOf { it.allocatedMinor })
++        assertEquals(35_000L, FinanceProjection.totals(FinancePersonalProjection.rows(state, FinanceProjection.ledger(state)))["CNY"]!!.expenseMinor)
++        finance.allocateEntry(flow.id, listOf(FinanceAllocation(two, FinanceFlowRole.PAYMENT, 30_000)),
++            state.entries.single { it.id == flow.id }.revision)
++        state = finance.snapshot()
++        assertNotNull(state.v4!!.events.single { it.id == one }.voidedAt)
++        assertEquals(3, state.v4!!.links.count { it.entryId == flow.id && it.voidedAt != null })
++        assertEquals(1, state.v4!!.activeLinks.count { it.entryId == flow.id })
++    }
++
++    @Test fun multipleOptionalExpectedFlowsEditAndCancelWithoutAffectingTruthOrBalances() = runTest {
++        val a = account()
++        val entry = payment(a.id, nature = FinanceNature.SPLIT, share = 10_000)
++        val id = eventId(entry.id)
++        val before = finance.snapshot()
++        finance.saveExpectedFlows(id, listOf(
++            FinanceExpectedFlowInput(role = FinanceFlowRole.SETTLEMENT, amountMinor = 10_000, note = "第一人"),
++            FinanceExpectedFlowInput(role = FinanceFlowRole.SETTLEMENT, note = "金额未知"),
++            FinanceExpectedFlowInput(role = FinanceFlowRole.REIMBURSEMENT, amountMinor = 5_000, note = "另一关系")),
++            before.v4!!.events.single().updatedAt)
++        val after = finance.snapshot()
++        assertEquals(before.entries, after.entries)
++        assertEquals(FinanceProjection.balance(a, before.entries), FinanceProjection.balance(a, after.entries))
++        assertEquals(10_000L, FinanceProjection.totals(FinancePersonalProjection.rows(after, FinanceProjection.ledger(after)))["CNY"]!!.expenseMinor)
++        assertEquals(3, after.v4!!.expected.size)
++        assertNull(after.v4!!.expected.single { it.note == "金额未知" }.amountMinor)
++        val keep = after.v4!!.expected.first()
++        finance.saveExpectedFlows(id, listOf(FinanceExpectedFlowInput(keep.id, keep.role, 12_000, "已调整")),
++            after.v4!!.events.single().updatedAt)
++        val edited = finance.snapshot().v4!!
++        assertEquals(1, edited.expected.count { it.cancelledAt == null })
++        assertEquals(2, edited.expected.count { it.cancelledAt != null })
++        assertEquals("已调整", edited.expected.single { it.cancelledAt == null }.note)
++        assertTrue(runCatching { finance.saveExpectedFlows(id, emptyList(), after.v4!!.events.single().updatedAt) }.isFailure)
++    }
++
++    @Test fun voidEntryRetiresItsLinksEventAndExpectedRelations() = runTest {
++        val a = account()
++        val entry = payment(a.id)
++        val id = eventId(entry.id)
++        finance.saveExpectedFlows(id, listOf(FinanceExpectedFlowInput(role = FinanceFlowRole.REFUND)),
++            db.financeIntakeDao().event(id)!!.updatedAt)
++        finance.voidEntry(entry.id)
++        finance.voidEntry(entry.id)
++        val state = finance.snapshot()
++        assertTrue(state.v4!!.activeLinks.isEmpty())
++        assertEquals(1, state.v4!!.links.size)
++        assertNotNull(state.v4!!.events.single().voidedAt)
++        assertNotNull(state.v4!!.expected.single().cancelledAt)
++        assertEquals(0L, FinanceProjection.balance(a, state.entries))
++        assertTrue(FinancePersonalProjection.rows(state, FinanceProjection.ledger(state)).isEmpty())
++    }
++
++    @Test fun attachEditAlsoRetainsPriorLinkAndInvalidAllocationRollsBackEverything() = runTest {
++        val a = account()
++        val entry = payment(a.id)
++        val target = payment(a.id, 100)
++        val oldId = eventId(entry.id)
++        finance.saveEntry(entry.id, a.id, FinanceDirection.OUTFLOW, 30_000, "纠正关联", 2_000,
++            event = FinanceEventInput(existingEventId = eventId(target.id)), expectedRevision = entry.revision)
++        val saved = readFinanceSnapshot(db, true)
++        assertNotNull(saved.v4!!.events.single { it.id == oldId }.voidedAt)
++        assertEquals(2, saved.v4!!.links.count { it.entryId == entry.id })
++        val current = saved.entries.single { it.id == entry.id }
++        assertTrue(runCatching {
++            finance.allocateEntry(entry.id, listOf(FinanceAllocation("missing", FinanceFlowRole.PAYMENT, 30_000)), current.revision)
++        }.isFailure)
++        assertEquals(saved, readFinanceSnapshot(db, true))
++        assertTrue(runCatching {
++            finance.allocateEntry(entry.id, listOf(FinanceAllocation(eventId(target.id), FinanceFlowRole.REFUND, 30_000)), current.revision)
++        }.isFailure)
++        assertEquals(saved, readFinanceSnapshot(db, true))
++    }
++
++    @Test fun voidTransferAlsoRetiresRealFeeAndCancelsFeeExpectations() = runTest {
++        val a = account()
++        val b = account("合成银行")
++        val transfer = finance.saveTransfer(sourceAccountId = a.id, targetAccountId = b.id,
++            amountMinor = 10_000, description = "合成转账", occurredAt = 2_000)
++        val fee = finance.saveEntry(accountId = a.id, direction = FinanceDirection.OUTFLOW,
++            amountMinor = 100, description = "合成手续费", occurredAt = 2_000,
++            event = FinanceEventInput(role = FinanceFlowRole.FEE, relatedTransferId = transfer.id))
++        val id = eventId(fee.id)
++        finance.saveExpectedFlows(id, listOf(FinanceExpectedFlowInput(role = FinanceFlowRole.REFUND)),
++            db.financeIntakeDao().event(id)!!.updatedAt)
++        finance.voidTransfer(transfer.id)
++        val state = finance.snapshot()
++        assertTrue(state.entries.all { it.voidedAt != null })
++        assertTrue(state.v4!!.activeLinks.isEmpty())
++        assertNotNull(state.v4!!.expected.single().cancelledAt)
++        assertNotNull(state.v4!!.events.single().voidedAt)
++        assertEquals(0L, FinanceProjection.balance(a, state.entries))
++        assertEquals(0L, FinanceProjection.balance(b, state.entries))
++    }
++
++    @Test fun integrityRejectsActiveOrphansAndExpectationsButAllowsHistoricalRelations() = runTest {
++        val a = account()
++        payment(a.id)
++        val saved = finance.snapshot()
++        val event = saved.v4!!.events.single()
++        assertTrue(runCatching { FinanceIntegrity.validate(saved.copy(v4 = saved.v4!!.copy(links = emptyList()))) }.isFailure)
++        val retired = event.copy(voidedAt = 3_000)
++        val historical = saved.v4!!.links.single().copy(voidedAt = 3_000, updatedAt = 3_000, revision = 2)
++        val invalid = saved.copy(v4 = saved.v4!!.copy(events = listOf(retired), links = listOf(historical),
++            expected = listOf(FinanceExpectedFlowEntity("e", event.id, FinanceFlowRole.REFUND, null, "", 1_000))))
++        assertTrue(runCatching { FinanceIntegrity.validate(invalid) }.isFailure)
++        FinanceIntegrity.validate(invalid.copy(v4 = invalid.v4!!.copy(expected = invalid.v4!!.expected.map { it.copy(cancelledAt = 3_000) })))
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..77d653b88f2ec3411e1bf864ddd340ad740522df
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt
+@@ -0,0 +1,35 @@
++package com.qq.closie.life.finance
++
++import android.content.Context
++import androidx.room.Room
++import androidx.test.core.app.ApplicationProvider
++import com.qq.closie.data.backup.RestoreStartupGate
++import com.qq.closie.life.data.database.LifeDatabase
++import org.junit.After
++import org.junit.Before
++
++/** One actual Room database per test, including generated DAO/transaction behavior. */
++abstract class FinanceRoomTest {
++    protected lateinit var db: LifeDatabase
++    protected lateinit var finance: FinanceRepository
++    protected var clock = 1_000L
++    @Before fun openRoom() {
++        RestoreStartupGate.resetForTesting()
++        RestoreStartupGate.markReady()
++        val context: Context = ApplicationProvider.getApplicationContext()
++        db = Room.inMemoryDatabaseBuilder(context, LifeDatabase::class.java).allowMainThreadQueries().build()
++        finance = FinanceRepository(db) { clock }
++    }
++    @After fun closeRoom() {
++        db.close()
++        RestoreStartupGate.resetForTesting()
++    }
++    protected suspend fun account(name: String = "合成账户") =
++        finance.saveAccount(name = name, kind = FinanceAccountKind.WECHAT)
++    protected suspend fun payment(accountId: String, amount: Long = 30_000,
++        nature: FinanceNature = FinanceNature.PERSONAL, share: Long? = null, category: String = "衣服") =
++        finance.saveEntry(accountId = accountId, direction = FinanceDirection.OUTFLOW, amountMinor = amount,
++            description = "合成付款", occurredAt = 2_000, category = category, tags = listOf("合成标签"),
++            event = FinanceEventInput(nature = nature, personalShareMinor = share))
++    protected suspend fun eventId(entryId: String) = db.financeIntakeDao().linksForEntry(entryId).single().eventId
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f28ea943f0ea51fae689410ccdd93fc1d9e17a2
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt
+@@ -0,0 +1,92 @@
++package com.qq.closie.life.finance
++
++import android.content.Context
++import androidx.room.Room
++import androidx.room.testing.MigrationTestHelper
++import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
++import androidx.test.core.app.ApplicationProvider
++import androidx.test.platform.app.InstrumentationRegistry
++import com.qq.closie.data.backup.RestoreStartupGate
++import com.qq.closie.life.data.database.LifeDatabase
++import com.qq.closie.life.data.database.LifeMigrations
++import com.qq.closie.life.data.database.MIGRATION_3_4
++import kotlinx.coroutines.test.runTest
++import org.junit.*
++import org.junit.Assert.*
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class FinanceV4MigrationTest {
++    @get:Rule val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), LifeDatabase::class.java,
++        emptyList(), FrameworkSQLiteOpenHelperFactory())
++    @Before fun ready() { RestoreStartupGate.resetForTesting(); RestoreStartupGate.markReady() }
++    @After fun reset() { RestoreStartupGate.resetForTesting() }
++    private fun room(name: String): LifeDatabase {
++        val context: Context = ApplicationProvider.getApplicationContext()
++        return Room.databaseBuilder(context, LifeDatabase::class.java, name)
++            .addMigrations(*LifeMigrations.ALL).allowMainThreadQueries().build()
++    }
++
++    @Test fun populatedV3PreservesDomainFinanceAnchorsAndBalanceAndAcceptsV4Semantics() = runTest {
++        val name = "synthetic-v3-v4.db"
++        helper.createDatabase(name, 3).apply {
++            execSQL("INSERT INTO capture_items(id,source,status,rawText,createdAt,updatedAt) VALUES('capture','MANUAL','NEW','合成旧记录',10,20)")
++            execSQL("INSERT INTO finance_accounts(id,name,kind,currencyCode,openingBalanceMinor,createdAt,updatedAt) VALUES('a','合成卡','BANK_CARD','CNY',100000,100,100),('b','合成钱包','WECHAT','CNY',0,100,100)")
++            execSQL("INSERT INTO finance_categories(id,name) VALUES('c','合成分类')")
++            execSQL("INSERT INTO finance_tags(id,name) VALUES('t','合成标签')")
++            execSQL("INSERT INTO finance_entries(id,accountId,direction,amountMinor,description,occurredAt,recordedAt,updatedAt,categoryId) VALUES('e','a','OUTFLOW',1000,'合成支出',100,100,100,'c'),('out','a','OUTFLOW',2000,'合成转账',200,200,200,NULL),('in','b','INFLOW',2000,'合成转账',200,200,200,NULL)")
++            execSQL("INSERT INTO finance_entry_tags(entryId,tagId) VALUES('e','t')")
++            execSQL("INSERT INTO finance_transfers(id,outflowEntryId,inflowEntryId,recordedAt,updatedAt) VALUES('transfer','out','in',200,200)")
++            close()
++        }
++        helper.runMigrationsAndValidate(name, 4, true, MIGRATION_3_4).close()
++        val db = room(name)
++        try {
++            val finance = FinanceRepository(db) { 1_000L }
++            val state = finance.snapshot()
++            assertEquals(4, db.openHelper.writableDatabase.version)
++            assertEquals("合成旧记录", db.captureDao().getAllOnce().single().rawText)
++            assertTrue(state.accounts.all { it.balanceAnchorAt == it.createdAt && it.createdAt == 100L })
++            assertEquals(97_000L, FinanceProjection.balance(state.accounts.single { it.id == "a" }, state.entries))
++            assertEquals(2_000L, FinanceProjection.balance(state.accounts.single { it.id == "b" }, state.entries))
++            assertEquals("transfer", state.transfers.single().id)
++            assertEquals("合成分类", FinanceProjection.ledger(state).single { it.entry.id == "e" }.category)
++            assertEquals(listOf("合成标签"), FinanceProjection.ledger(state).single { it.entry.id == "e" }.tags)
++            val old = state.entries.single { it.id == "e" }
++            finance.saveEntry(old.id, old.accountId, old.direction, old.amountMinor, old.description, old.occurredAt,
++                "合成分类", listOf("合成标签"), event = FinanceEventInput(expectedFlows = listOf(
++                    FinanceExpectedFlowInput(role = FinanceFlowRole.REFUND),
++                    FinanceExpectedFlowInput(role = FinanceFlowRole.SETTLEMENT, amountMinor = 100))), expectedRevision = old.revision)
++            val after = finance.snapshot()
++            assertEquals(1, after.v4!!.activeLinks.size)
++            assertEquals(2, after.v4!!.expected.size)
++            assertEquals(97_000L, FinanceProjection.balance(after.accounts.single { it.id == "a" }, after.entries))
++            FinanceIntegrity.validate(after)
++        } finally { db.close() }
++    }
++
++    @Test fun v2ThroughV3ToV4KeepsOldPlanIdentityCaptureAndRevision() = runTest {
++        val name = "synthetic-v2-v4.db"
++        helper.createDatabase(name, 2).apply {
++            execSQL("INSERT INTO life_entities(id,entityType,createdAt,updatedAt,revision) VALUES('identity','plan',10,20,7)")
++            execSQL("INSERT INTO plan_items(id,lifeEntityId,title,note,createdAt,updatedAt,sortOrder) VALUES('plan','identity','合成计划','保留旧领域数据',10,20,0)")
++            execSQL("INSERT INTO capture_items(id,source,status,rawText,createdAt,updatedAt) VALUES('capture','MANUAL','NEW','合成捕获',10,20)")
++            close()
++        }
++        helper.runMigrationsAndValidate(name, 4, true, LifeMigrations.MIGRATION_2_3, MIGRATION_3_4).apply {
++            query("SELECT revision FROM life_entities WHERE id='identity'").use {
++                assertTrue(it.moveToFirst()); assertEquals(7, it.getInt(0))
++            }
++            close()
++        }
++        val db = room(name)
++        try {
++            assertEquals("保留旧领域数据", db.planDao().getAllOnce().single().note)
++            assertEquals("合成捕获", db.captureDao().getAllOnce().single().rawText)
++            assertTrue(FinanceRepository(db).snapshot().entries.isEmpty())
++        } finally { db.close() }
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/LegacyLedgerReaderTest.kt b/app/src/test/java/com/qq/closie/life/finance/LegacyLedgerReaderTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..780adc8e1856a938e42669ce30778a2ac56089a3
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/LegacyLedgerReaderTest.kt
+@@ -0,0 +1,65 @@
++package com.qq.closie.life.finance
++
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class LegacyLedgerReaderTest {
++    @get:Rule val files = TemporaryFolder()
++    @Test fun csvPreservesExactMoneyHierarchyQuotesFlagsAndRelationshipEvidence() {
++        val row = SyntheticLegacyLedger.row("金额" to "0.29", "分类" to "服饰", "子分类" to "衣服",
++            "备注" to "逗号,引号\"及\n换行", "标签" to "两个 标签", "是否为报销" to "是",
++            "报销金额" to "0.10", "退款金额" to "0.05", "不计入收支" to "是", "不计入预算" to "是")
++        val file = files.newFile("synthetic.csv")
++        SyntheticLegacyLedger.csv(file, listOf(row, row, SyntheticLegacyLedger.row("金额" to "0.001")))
++        val table = LegacyLedgerReader.read(file, file.name)
++        assertEquals(row, table.rows[1])
++        val staged = LegacyLedgerReader.stage(table, "batch")
++        assertEquals(29L, staged[0].amountMinor)
++        assertEquals("服饰", staged[0].category)
++        assertEquals("衣服", staged[0].subcategory)
++        assertTrue(staged[0].reimbursable && staged[0].hasRefund)
++        assertEquals(FinanceStatPolicy.EXCLUDE, staged[0].statPolicy)
++        assertEquals(FinanceBudgetPolicy.EXCLUDE, staged[0].budgetPolicy)
++        assertTrue(staged[0].rawPayload.contains("报销金额"))
++        assertEquals(FinanceRowStatus.REVIEW, staged[0].status)
++        assertEquals(FinanceRowStatus.DUPLICATE, staged[1].status)
++        assertEquals(FinanceRowStatus.INVALID, staged[2].status)
++        assertNull(staged[2].amountMinor)
++    }
++
++    @Test fun incorrectSingleRowXlsxDimensionDoesNotTruncateActualWorksheetRows() {
++        val rows = (1..512).map { SyntheticLegacyLedger.row("备注" to "合成行$it", "金额" to "123.45") }
++        val file = files.newFile("wrong-dimension.xlsx")
++        SyntheticLegacyLedger.xlsx(file, rows, "A1:V1")
++        val table = LegacyLedgerReader.read(file, file.name)
++        assertEquals(513, table.rows.size)
++        assertEquals(rows.first(), table.rows[1])
++        assertEquals(rows.last(), table.rows.last())
++        val staged = LegacyLedgerReader.stage(table, "batch")
++        assertEquals(512, staged.size)
++        assertTrue(staged.all { it.amountMinor == 12_345L && it.status == FinanceRowStatus.READY })
++    }
++
++    @Test fun regularXlsxTransferFeeAndUnsupportedDebtorAreTypedForReview() {
++        val file = files.newFile("synthetic.xlsx")
++        SyntheticLegacyLedger.xlsx(file, listOf(
++            SyntheticLegacyLedger.row("类型" to "转账", "转入账户" to "合成银行", "转账手续费" to "0.10"),
++            SyntheticLegacyLedger.row("债务人" to "合成人物"),
++            SyntheticLegacyLedger.row("类型" to "无法解释")), "A1:V4")
++        val rows = LegacyLedgerReader.stage(LegacyLedgerReader.read(file, file.name), "batch")
++        assertEquals(FinanceProposalKind.TRANSFER, rows[0].kind)
++        assertEquals(10L, rows[0].feeMinor)
++        assertEquals("合成银行", rows[0].targetAccount)
++        assertFalse(rows[0].requiresIndividualReview)
++        assertTrue(rows[1].requiresIndividualReview)
++        assertTrue(rows[2].requiresIndividualReview)
++        assertNull(rows[2].kind)
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/SyntheticLegacyLedger.kt b/app/src/test/java/com/qq/closie/life/finance/SyntheticLegacyLedger.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..cdca8b923f3f0f536953237ae4b59908f6f8e0fe
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/SyntheticLegacyLedger.kt
+@@ -0,0 +1,39 @@
++package com.qq.closie.life.finance
++
++import java.io.File
++import java.util.zip.ZipEntry
++import java.util.zip.ZipOutputStream
++
++/** Synthetic source only; fixtures never read the owner's private workbook. */
++internal object SyntheticLegacyLedger {
++    fun row(vararg values: Pair<String, String>): List<String> {
++        val cells = mapOf("日期" to "2026-10-01 12:00:00", "金额" to "12.34", "类型" to "支出",
++            "备注" to "合成记录", "账户" to "合成钱包") + values.toMap()
++        return LegacyLedgerReader.headers.map { cells[it].orEmpty() }
++    }
++    fun csv(file: File, rows: List<List<String>>) {
++        file.writeText((listOf(LegacyLedgerReader.headers) + rows).joinToString("\r\n") {
++            it.joinToString(",") { value -> "\"" + value.replace("\"", "\"\"") + "\"" }
++        }, Charsets.UTF_8)
++    }
++    fun xlsx(file: File, rows: List<List<String>>, dimension: String = "A1:V1") {
++        fun xml(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
++        val sheet = (listOf(LegacyLedgerReader.headers) + rows).mapIndexed { rowIndex, cells ->
++            "<row r=\"" + (rowIndex + 1) + "\">" + cells.mapIndexed { col, value ->
++                "<c r=\"" + ('A' + col) + (rowIndex + 1) + "\" t=\"inlineStr\"><is><t>" + xml(value) + "</t></is></c>"
++            }.joinToString("") + "</row>"
++        }.joinToString("")
++        ZipOutputStream(file.outputStream()).use { out ->
++            fun part(name: String, text: String) {
++                out.putNextEntry(ZipEntry(name))
++                out.write(text.toByteArray(Charsets.UTF_8))
++                out.closeEntry()
++            }
++            part("[Content_Types].xml", """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""")
++            part("_rels/.rels", """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""")
++            part("xl/workbook.xml", """<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="账单列表" sheetId="1" r:id="rId1"/></sheets></workbook>""")
++            part("xl/_rels/workbook.xml.rels", """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""")
++            part("xl/worksheets/sheet1.xml", """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="$dimension"/><sheetData>$sheet</sheetData></worksheet>""")
++        }
++    }
++}
+diff --git a/docs/finance-v4-review-fix.md b/docs/finance-v4-review-fix.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..86983ec219c664f9fe2a6a4d198a32f2bd041d05
+--- /dev/null
++++ b/docs/finance-v4-review-fix.md
+@@ -0,0 +1,59 @@
++# Finance V4 review-fix 验收说明
++
++## 范围与基线
++在 `372d41b866bb63d18663100c276f9368a695fdb6` 上追加两个 review-fix 提交，保留原五个提交。只修改 Finance V4 关系、统计归属、导入审核及相关测试。未推送。数据库仍为 version 4、同一个 life_os.db；未修改 applicationId、签名、根导航、功能页手势、层叠/平面外观、减少动画、图标或字体。
++
++## 修复结果
++- 事件关系增加稳定 ID、创建/更新时间、作废时间和 revision。普通编辑和分配作废旧关系、插入新关系；LINK_CREATE/LINK_RETIRE 日志引用关系 ID、版本和确认来源。备份保留完整历史，语义查询、统计及关系分配只采用有效关系。
++- 移走最后一条有效关系后，旧事件作废，预计关系取消；共享事件关系变化会更新事件时间以阻止过期编辑。作废流水、转账手续费及撤销导入采用同一生命周期规则。Integrity 拒绝孤立有效事件、作废流水上的有效关系和孤立/已作废事件上的有效预计款项。
++- 一个事件可有多项预计款项，提供用途、可选金额、备注、添加和逐项取消。未编辑列表时不改既有预计款项。预计款项不会创建实际流水或影响余额、收入、支出。
++- REFUND/REBATE/CASHBACK 在明确时采用原付款分类、标签；付款分类冲突或缺少有效付款上下文时使用“调整待归属”。分类与标签分别判定歧义。服饰付款 300、退款 100 的个人净支出和服饰分类均为 200。金额只在投影中调整，实际流水不变；跨期退款仍使用完整事件上下文，分析分类/标签筛选在归属之后执行。
++- 导入六组：普通 READY 默认批量选择；报销、退款、转账手续费按组确认；重复候选默认跳过，支持明细中逐条覆盖；无法解释、债务关系或无效记录需单独处理。多种问题并存时需要确认全部相应政策。报销/退款附属字段仅保留在 staging 证据中，不虚构到账。手续费一次确认适用于所有所选适用行。明细默认收起，以分组入口查看。
++- 新增关系不扫描全部关系；旧事件清理按事件索引查询。通知退款建议新增 typed REFUND role，界面不再从原文重新推断角色。
++- canonical DELETE 源码审计：移除 clearLinks，Finance canonical 表无 DELETE、无 REPLACE、无 cascade。仅保留 finance_entry_tags 的描述性重建、finance_proposal_tags 和 finance_rule_conditions/actions 的配置重建 DELETE。架构守卫覆盖 Finance DAO 及 Finance 领域源码，并检查当前 Room schema 文件及其 version。
++
++## 新增测试类（未执行）
++包 `com.qq.closie.life.finance`：
++- FinanceV4MigrationTest：实际 MigrationTestHelper v3→4、v2→3→4；旧 Capture/Plan/身份 revision、账户、普通流水、转账、分类/标签、余额与 anchor 保留；Room 写入新语义。
++- FinanceRelationLifecycleTest：重关联、多事件分配、关系历史与日志、孤立清理、多项可选预计款项、余额隔离、过期编辑、失败回滚、作废流水/手续费、Integrity。
++- FinancePersonalProjectionTest：个人付款、退款/返利/返现分类及标签归属、歧义桶、分账/报销承担和实际结算、代拍、历史关系和排除统计。
++- LegacyLedgerReaderTest：合成 CSV/XLSX、精确分值、分类/子分类、引号/换行、重复、非法精度、报销/退款/排除字段、手续费、未知类型/债务。错误 dimension A1:V1 的 XLSX 实际写入 512 行，断言全部读取。
++- FinanceImportReviewTest：300 条报销记录的批量政策、重叠问题、普通默认选择、重复单独覆盖、无效禁止选择。
++- FinanceImportRepositoryTest：staging 不入账、账户映射、历史与当前余额 anchor、转账/手续费、分类/标签、无虚构到账、同文件幂等、库内/文件内重复、迟发失败原子回滚、重复提交、撤销及保留后续编辑。
++- FinanceAutomationTest：来源允许列表、非支付忽略、单金额和歧义金额、REFUND role、sourceKey 幂等、稍后/忽略不入账、确认一次、重复确认、确认失败不改变 Proposal、规则确定排序/首个标量/合并标签。
++包 `com.qq.closie.data.backup`：
++- FinanceV4BackupRecoveryTest：JSON + 实际 Room 恢复，完整活动/历史关系、多项及已取消预计、规则、Proposal、staging；恢复重试、恢复旧快照保留后来关系身份、旧 F1 格式恢复保留 pending intake。
++另有测试基类 FinanceRoomTest、合成数据辅助 SyntheticLegacyLedger。维护 ArchitectureBoundaryTest、FinanceMigrationTest、FinanceBackupRecoveryTest 的过期断言，并增加 listener 无直接创建 FinanceEntry/启动 overlay 的源代码守卫。
++
++## 实际验证状态
++- 构建：未运行。PATH 无 java/javac/kotlinc，JAVA_HOME、ANDROID_HOME、ANDROID_SDK_ROOT 未设置，常用 Android Studio JBR/Android SDK 位置不存在；没有 local.properties。
++- 单元/Room/Compose 测试：未运行，不能声称通过。测试代码也未由 Kotlin 编译器验证。
++- Room schema 4：未生成、未提交。没有手工制作 identityHash；这是仍未满足的验收条件。迁移和当前 schema 守卫已补齐。
++- 私人真实 XLSX：未提交，没有写入测试或日志。
++- 真实 XLSX 的 Kotlin 读取器 dry-run：未执行，原因同上。此前仅有本地文件结构检查，不等于实际读取器验证。
++- 合成 XLSX 回归：测试已写，未运行。
++- 字体仍为原 Source Han Sans CN Normal 8,434,332 字节；未生成 APK，因此 debug 前后、release/压缩增量均不可用。
++- `git diff --check`：导出前执行，结果记于交付消息。
++
++## Android 环境/CI 最小待办
++先用 JDK 17 和项目要求的 SDK，依次运行：
++
++```sh
++./gradlew :app:kspDebugKotlin --stacktrace
++./gradlew :app:testDebugUnitTest --stacktrace
++./gradlew :app:assembleDebug --stacktrace
++```
++
++先单独运行 KSP，确保新导出的 schema 4 在 debug migration assets 合并前存在。预期：真实生成
++`app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json`，迁移和新测试通过，debug APK 产出。
++将实际生成的 4.json 作为第三个 `chore(room): commit LifeDatabase v4 schema` 提交；失败时根据真实诊断修复，不手填 schema/hash。此 patch 尚不具备“已编译、测试通过、schema 完备”的验收状态。
++
++## 最小手动验收（未执行）
++仅使用可丢弃账本/安装和文件副本，保留真实账本备份。
++
++1. 服饰付款 300、关联退款 100：个人总额、子/主分类均为 200；实际流出 300、流入 100。再让事件含餐饮付款：退款显示“调整待归属”，分类合计仍等于个人总额；原退款分类不得冒充付款归属。
++2. 同事件添加多项预计（其中一项金额留空），取消一项；保存后余额及实际流水数量不变。重关联后旧孤立事件与其预计失效；备份再恢复仍保留旧关系身份。
++3. 合成/脱敏 22 列账单：确认前不入账；普通默认批量选中，报销/退款/手续费组各一次操作覆盖全部适用记录，重复默认跳过。实际入账仅包括真实流水和已确认费用。重选同文件打开原批次；撤销作废未修改流水，保留后来编辑。
++4. 微信/支付宝测试通知：发现时仅有 Proposal；稍后/忽略不入账；确认及重复确认只有一笔。系统通知权限拒绝时提案仍可从 Finance 查看。
++
++已知限制：不自动解释债务/未知类型；不推断缺失的个人承担；歧义分类需人工整理；多标签统计本身允许交叉归类，不能将所有标签桶简单相加作为支出总额。通知幂等按通知来源 key，不保证不同通知描述同一交易时自动合并。未执行真机/界面检查、真实工作簿读取器 dry-run、构建和迁移验证，schema 4 仍待真实 KSP 生成。
+-- 
+2.53.0.windows.3
+
