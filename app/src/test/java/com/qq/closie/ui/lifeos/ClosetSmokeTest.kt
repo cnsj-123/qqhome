@@ -128,9 +128,10 @@ class ClosetSmokeTest {
     @Test
     fun functionPageContentLeftSwipeClosesIt() {
         openDrawer()
-        compose.onNodeWithTag("life-drawer")
-            .performTouchInput { swipeLeft(startX = width * .75f, endX = width * .25f) }
+        compose.onRoot()
+            .performTouchInput { swipeLeft(startX = width * .70f, endX = width * .10f) }
         compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
     }
 

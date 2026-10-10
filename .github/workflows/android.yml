@@ -29,6 +29,8 @@ jobs:
         shell: bash
         run: |
           test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+          git diff --exit-code -- \
+            app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
 
       # Includes Room migration, repository and restore-safety regression tests.
       - name: Unit tests
