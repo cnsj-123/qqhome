@@ -15,7 +15,8 @@ import kotlinx.coroutines.launch
 enum class FinancePeriod(val label: String) { ALL("全部"), MONTH("本月"), YEAR("今年"), CUSTOM("自定义") }
 enum class FinanceEditorKind(val label: String) { EXPENSE("支出"), INCOME("收入"), TRANSFER("转账") }
 data class FinanceFilter(val query: String = "", val period: FinancePeriod = FinancePeriod.ALL,
-    val range: FinanceDateRange = FinanceDateRange(), val customLabel: String = "")
+    val range: FinanceDateRange = FinanceDateRange(), val customLabel: String = "",
+    val accountId: String? = null, val categoryId: String? = null, val tagId: String? = null)
 data class FinanceUiState(
     val snapshot: FinanceSnapshot = FinanceSnapshot(), val filter: FinanceFilter = FinanceFilter(),
     val ledger: List<FinanceLedgerRow> = emptyList(), val balances: Map<String, Long> = emptyMap(),
@@ -53,7 +54,12 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     val state: StateFlow<FinanceUiState> = combine(snapshot, filter, error, busy) { data, selection, message, saving ->
         if (data == null) FinanceUiState(filter = selection, loading = message == null, busy = saving, error = message)
         else {
-            val rows = FinanceProjection.ledger(data, selection.range, selection.query)
+            val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
+            val rows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
+                (selection.accountId == null || row.account.id == selection.accountId || row.targetAccount?.id == selection.accountId) &&
+                (selection.categoryId == null || row.entry.categoryId == selection.categoryId) &&
+                (selection.tagId == null || row.entry.id in tagEntries)
+            }
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
                 FinanceProjection.totals(FinanceProjection.ledger(data, FinanceDateRange.month())),
@@ -61,7 +67,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 FinanceProjection.totals(rows), FinanceProjection.categoryTotals(rows), FinanceProjection.tagTotals(rows),
                 loading = false, busy = saving, error = message)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 
     private var reader: kotlinx.coroutines.Job? = null
     init { reload() }
@@ -74,6 +80,9 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         }
     }
     fun clearError() { error.value = null }
+    fun filterAccount(id: String?) { filter.value = filter.value.copy(accountId = id) }
+    fun filterCategory(id: String?) { filter.value = filter.value.copy(categoryId = id) }
+    fun filterTag(id: String?) { filter.value = filter.value.copy(tagId = id) }
     fun search(query: String) { filter.value = filter.value.copy(query = query) }
     fun selectPeriod(period: FinancePeriod) {
         if (period == FinancePeriod.CUSTOM) return

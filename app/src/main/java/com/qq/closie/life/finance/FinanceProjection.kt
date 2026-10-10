@@ -71,6 +71,7 @@ object FinanceProjection {
             sum(values.filter { it.entry.direction == FinanceDirection.OUTFLOW }),
             sum(values.filter { it.entry.direction == FinanceDirection.INFLOW })) }
     fun categoryTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.category ?: "未分类") }
+    fun accountTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.account.name) }
     fun tagTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { it.tags }
     private fun dimensions(rows: List<FinanceLedgerRow>, names: (FinanceLedgerRow) -> List<String>): List<FinanceDimensionTotal> =
         rows.filter { it.transfer == null }.flatMap { row -> names(row).map { (it to row.currencyCode) to row } }
