@@ -215,5 +215,5 @@ object LifeMigrations {
     }
 
     /** Every migration the database must be able to run, in version order. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }

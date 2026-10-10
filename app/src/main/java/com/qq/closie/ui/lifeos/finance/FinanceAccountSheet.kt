@@ -31,12 +31,12 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
         Text("币种 · ${account?.currencyCode ?: "CNY"}", style = LifeText.caption, color = colors.muted)
         OutlinedTextField(balance, { balance = it }, Modifier.fillMaxWidth(), label = { Text("期初余额") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy)
-        account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.createdAt)}", style = LifeText.caption, color = colors.muted) }
-        Text("期初余额以账户建立时刻为准。当前余额仅计入该时刻及之后发生的有效流水；更早的补记仍保留在历史与统计中。", style = LifeText.caption, color = colors.muted)
+        account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.balanceAnchorAt)}", style = LifeText.caption, color = colors.muted) }
+        Text("期初余额以显示的余额起点为准。当前余额仅计入该时刻及之后发生的有效流水；更早的补记仍保留在历史与统计中。", style = LifeText.caption, color = colors.muted)
         Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.busy) "正在保存……" else "保存账户")
         }
-        if (account?.archivedAt != null) Text("账户已归档，历史记录仍保留。", style = LifeText.caption, color = colors.muted)
+        if (account?.archivedAt != null) TextButton({ vm.unarchiveAccount(account.id, onClose) }, enabled = !state.busy) { Text("恢复使用此账户") }
         else if (account != null) TextButton(onClick = { confirmArchive = true }, enabled = !state.busy) { Text("归档账户") }
     }
     if (confirmArchive && account != null) AlertDialog(onDismissRequest = { if (!state.busy) confirmArchive = false },

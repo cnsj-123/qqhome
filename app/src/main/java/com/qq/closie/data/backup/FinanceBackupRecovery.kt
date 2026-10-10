@@ -28,12 +28,13 @@ internal object FinanceBackupRecovery {
             }
             if (old == null) dao.insertAccount(row) else dao.updateAccount(row)
         }
-        saved.categories.forEach { if (current.categories.any { old -> old.id == it.id }) dao.updateCategory(it) else dao.insertCategory(it) }
+        saved.categories.sortedBy { it.parentId != null }.forEach { if (current.categories.any { old -> old.id == it.id }) dao.updateCategory(it) else dao.insertCategory(it) }
         saved.tags.forEach { if (current.tags.any { old -> old.id == it.id }) dao.updateTag(it) else dao.insertTag(it) }
         saved.entries.forEach { if (current.entries.any { old -> old.id == it.id }) dao.updateEntry(it) else dao.insertEntry(it) }
         saved.transfers.forEach { if (current.transfers.any { old -> old.id == it.id }) dao.updateTransfer(it) else dao.insertTransfer(it) }
         saved.entries.forEach { dao.clearEntryTags(it.id) }
         dao.insertEntryTags(saved.entryTags)
-        FinanceIntegrity.validate(FinanceSnapshot(dao.accounts(), dao.entries(), dao.transfers(), dao.categories(), dao.tags(), dao.entryTags()))
+        saved.v4?.let { FinanceV4BackupRecovery.restore(database, it, saved.entries.map { row -> row.id }.toSet()) }
+        FinanceIntegrity.validate(readFinanceSnapshot(database, true))
     }
 }

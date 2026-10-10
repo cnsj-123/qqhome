@@ -82,7 +82,18 @@ data class LifeBackupPayload(
         "finance_tags" to finance?.tags.orEmpty(),
         "finance_entries" to finance?.entries.orEmpty(),
         "finance_transfers" to finance?.transfers.orEmpty(),
-        "finance_entry_tags" to finance?.entryTags.orEmpty()
+        "finance_entry_tags" to finance?.entryTags.orEmpty(),
+        "finance_events" to finance?.v4?.events.orEmpty(),
+        "finance_event_entries" to finance?.v4?.links.orEmpty(),
+        "finance_expected_flows" to finance?.v4?.expected.orEmpty(),
+        "finance_import_batches" to finance?.v4?.batches.orEmpty(),
+        "finance_import_rows" to finance?.v4?.staging.orEmpty(),
+        "finance_proposals" to finance?.v4?.proposals.orEmpty(),
+        "finance_proposal_tags" to finance?.v4?.proposalTags.orEmpty(),
+        "finance_rules" to finance?.v4?.rules.orEmpty(),
+        "finance_rule_conditions" to finance?.v4?.conditions.orEmpty(),
+        "finance_rule_actions" to finance?.v4?.actions.orEmpty(),
+        "finance_changes" to finance?.v4?.changes.orEmpty()
     )
 
     /** Total row count, for the manifest and for logging a restore. */

@@ -11,7 +11,8 @@ data class FinanceSnapshot(
     val transfers: List<FinanceTransferEntity> = emptyList(),
     val categories: List<FinanceCategoryEntity> = emptyList(),
     val tags: List<FinanceTagEntity> = emptyList(),
-    val entryTags: List<FinanceEntryTagCrossRef> = emptyList()
+    val entryTags: List<FinanceEntryTagCrossRef> = emptyList(),
+    val v4: FinanceV4Snapshot? = null
 )
 data class FinanceDateRange(val startInclusive: Long? = null, val endExclusive: Long? = null) {
     init { require(startInclusive == null || endExclusive == null || startInclusive < endExclusive) { "起止日期顺序有误" } }
@@ -35,9 +36,9 @@ data class FinanceTotals(val expenseMinor: Long = 0, val incomeMinor: Long = 0)
 data class FinanceDimensionTotal(val label: String, val currencyCode: String, val totals: FinanceTotals)
 
 object FinanceProjection {
-    /** Opening balance is the balance at account creation; backfills belong to history only. */
+    /** Opening balance is the balance at the explicit balance anchor; backfills belong to history only. */
     fun balance(account: FinanceAccountEntity, entries: List<FinanceEntryEntity>): Long = exact(
-        entries.filter { it.accountId == account.id && it.voidedAt == null && it.occurredAt >= account.createdAt }
+        entries.filter { it.accountId == account.id && it.voidedAt == null && it.occurredAt >= account.balanceAnchorAt }
             .fold(BigInteger.valueOf(account.openingBalanceMinor)) { total, row ->
             val amount = BigInteger.valueOf(row.amountMinor)
             if (row.direction == FinanceDirection.INFLOW) total + amount else total - amount
@@ -45,7 +46,7 @@ object FinanceProjection {
     fun ledger(snapshot: FinanceSnapshot, range: FinanceDateRange = FinanceDateRange(), search: String = ""): List<FinanceLedgerRow> {
         val accounts = snapshot.accounts.associateBy { it.id }
         val entries = snapshot.entries.associateBy { it.id }
-        val categories = snapshot.categories.associate { it.id to it.name }
+        val categories = snapshot.categories.associate { it.id to categoryPath(snapshot.categories, it.id) }
         val tags = snapshot.tags.associate { it.id to it.name }
         val entryTags = snapshot.entryTags.groupBy { it.entryId }
         val legs = snapshot.transfers.flatMap { listOf(it.outflowEntryId, it.inflowEntryId) }.toSet()
@@ -65,8 +66,13 @@ object FinanceProjection {
             .sortedWith(compareByDescending<FinanceLedgerRow> { it.entry.occurredAt }
                 .thenByDescending { it.entry.recordedAt }.thenBy { it.id })
     }
+    fun categoryPath(categories: List<FinanceCategoryEntity>, id: String?): String? {
+        val leaf = categories.find { it.id == id } ?: return null
+        val parent = categories.find { it.id == leaf.parentId }
+        return if (parent == null) leaf.name else parent.name + " / " + leaf.name
+    }
     /** F1 ordinary flows only; F2 relationships will refine personal-consumption/income projections. */
-    fun totals(rows: List<FinanceLedgerRow>): Map<String, FinanceTotals> = rows.filter { it.transfer == null }
+    fun totals(rows: List<FinanceLedgerRow>): Map<String, FinanceTotals> = rows.filter { it.transfer == null && it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
         .groupBy { it.currencyCode }.mapValues { (_, values) -> FinanceTotals(
             sum(values.filter { it.entry.direction == FinanceDirection.OUTFLOW }),
             sum(values.filter { it.entry.direction == FinanceDirection.INFLOW })) }
@@ -74,7 +80,7 @@ object FinanceProjection {
     fun accountTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.account.name) }
     fun tagTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { it.tags }
     private fun dimensions(rows: List<FinanceLedgerRow>, names: (FinanceLedgerRow) -> List<String>): List<FinanceDimensionTotal> =
-        rows.filter { it.transfer == null }.flatMap { row -> names(row).map { (it to row.currencyCode) to row } }
+        rows.filter { it.transfer == null && it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }.flatMap { row -> names(row).map { (it to row.currencyCode) to row } }
             .groupBy({ it.first }, { it.second }).map { (key, values) -> FinanceDimensionTotal(key.first, key.second,
                 totals(values).getValue(key.second)) }.sortedBy { it.label }
     private fun sum(rows: List<FinanceLedgerRow>) = exact(rows.fold(BigInteger.ZERO) { total, row -> total + BigInteger.valueOf(row.entry.amountMinor) })

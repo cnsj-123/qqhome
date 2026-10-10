@@ -10,7 +10,8 @@ interface FinanceDao {
     // One invalidation signal for all owned tables; the repository reads one coherent transaction.
     @Query("SELECT (SELECT COUNT(*) FROM finance_accounts) + (SELECT COUNT(*) FROM finance_entries) + " +
         "(SELECT COUNT(*) FROM finance_transfers) + (SELECT COUNT(*) FROM finance_categories) + " +
-        "(SELECT COUNT(*) FROM finance_tags) + (SELECT COUNT(*) FROM finance_entry_tags)")
+        "(SELECT COUNT(*) FROM finance_tags) + (SELECT COUNT(*) FROM finance_entry_tags) + " +
+        "(SELECT COUNT(*) FROM finance_events) + (SELECT COUNT(*) FROM finance_event_entries) + (SELECT COUNT(*) FROM finance_expected_flows)")
     fun observeChanges(): Flow<Long>
     @Query("SELECT * FROM finance_accounts ORDER BY createdAt, id") fun observeAccounts(): Flow<List<FinanceAccountEntity>>
     @Query("SELECT * FROM finance_accounts ORDER BY createdAt, id") suspend fun accounts(): List<FinanceAccountEntity>

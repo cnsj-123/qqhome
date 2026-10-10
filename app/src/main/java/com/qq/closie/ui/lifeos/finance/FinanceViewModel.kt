@@ -27,7 +27,8 @@ data class FinanceUiState(
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
-    val category: String = "", val tags: String = "", val preservedOccurredAt: Long? = null)
+    val category: String = "", val tags: String = "", val preservedOccurredAt: Long? = null,
+    val subcategory: String = "", val relationship: FinanceRelationshipDraft = FinanceRelationshipDraft())
 data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String)
 
 /** Wall-clock input is explicit and strict; recordedAt remains owned by FinanceRepository. */
@@ -57,14 +58,15 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
             val rows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
                 (selection.accountId == null || row.account.id == selection.accountId || row.targetAccount?.id == selection.accountId) &&
-                (selection.categoryId == null || row.entry.categoryId == selection.categoryId) &&
+                (selection.categoryId == null || row.entry.categoryId == selection.categoryId || data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }) &&
                 (selection.tagId == null || row.entry.id in tagEntries)
             }
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
-                FinanceProjection.totals(FinanceProjection.ledger(data, FinanceDateRange.month())),
-                FinanceProjection.totals(FinanceProjection.ledger(data, FinanceDateRange.year())),
-                FinanceProjection.totals(rows), FinanceProjection.categoryTotals(rows), FinanceProjection.tagTotals(rows),
+                FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.month()))),
+                FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.year()))),
+                FinanceProjection.totals(FinancePersonalProjection.rows(data, rows)),
+                FinanceProjection.categoryTotals(FinancePersonalProjection.rows(data, rows)), FinanceProjection.tagTotals(FinancePersonalProjection.rows(data, rows)),
                 loading = false, busy = saving, error = message)
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
@@ -110,6 +112,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         repository.saveAccount(id, draft.name, draft.kind, currency,
             FinanceMoney.parse(draft.openingBalance.ifBlank { "0" }, currency, allowNegative = true))
     }
+    fun unarchiveAccount(id: String, onSaved: () -> Unit) = mutate(onSaved) { repository.unarchiveAccount(id) }
     fun archiveAccount(id: String, onSaved: () -> Unit) = mutate(onSaved) { repository.archiveAccount(id) }
     fun saveRecord(row: FinanceLedgerRow?, draft: FinanceEntryDraft, onSaved: () -> Unit) = mutate(onSaved) {
         val account = requireNotNull(snapshot.value?.accounts?.find { it.id == draft.accountId }) { "请先建立并选择账户" }
@@ -122,7 +125,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             require(row?.transfer == null) { "转账需要整体编辑" }
             repository.saveEntry(row?.entry?.id, draft.accountId,
                 if (draft.kind == FinanceEditorKind.INCOME) FinanceDirection.INFLOW else FinanceDirection.OUTFLOW,
-                amount, draft.description, occurred, draft.category, draft.tags.split(Regex("[,，\\n]")))
+                amount, draft.description, occurred, draft.category, draft.tags.split(Regex("[,，\\n]")), draft.subcategory, draft.relationship.resolve(account.currencyCode), row?.entry?.revision)
         }
     }
     fun voidRecord(row: FinanceLedgerRow, onSaved: () -> Unit) = mutate(onSaved) {

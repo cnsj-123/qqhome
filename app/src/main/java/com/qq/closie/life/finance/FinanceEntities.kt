@@ -1,5 +1,6 @@
 package com.qq.closie.life.finance
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -8,7 +9,7 @@ import androidx.room.TypeConverter
 
 /** Finance owns real account flows. These are not final personal consumption or product cost. */
 enum class FinanceAccountKind(val label: String) {
-    BANK_CARD("银行卡"), WECHAT("微信"), ALIPAY("支付宝"), CASH("现金"), OTHER("其他")
+    BANK_CARD("银行卡"), WECHAT("微信"), ALIPAY("支付宝"), CASH("现金"), OTHER("其他"), CREDIT("信用账户"), INVESTMENT("投资账户")
 }
 enum class FinanceDirection { INFLOW, OUTFLOW }
 
@@ -19,14 +20,16 @@ data class FinanceAccountEntity(
     val kind: FinanceAccountKind,
     val currencyCode: String,
     val openingBalanceMinor: Long,
-    /** Immutable F1 opening-balance anchor, also the canonical account creation time. */
+    /** Record creation time; balanceAnchorAt is the independent opening-balance anchor. */
     val createdAt: Long,
     val updatedAt: Long,
-    val archivedAt: Long? = null
+    val archivedAt: Long? = null,
+    @ColumnInfo(defaultValue = "0") val balanceAnchorAt: Long = createdAt,
+    val importBatchId: String? = null
 )
 
-@Entity(tableName = "finance_categories", indices = [Index(value = ["name"])])
-data class FinanceCategoryEntity(@PrimaryKey val id: String, val name: String)
+@Entity(tableName = "finance_categories", indices = [Index(value = ["name"]), Index("parentId")])
+data class FinanceCategoryEntity(@PrimaryKey val id: String, val name: String, val parentId: String? = null)
 
 @Entity(tableName = "finance_tags", indices = [Index(value = ["name"])])
 data class FinanceTagEntity(@PrimaryKey val id: String, val name: String)
@@ -34,7 +37,7 @@ data class FinanceTagEntity(@PrimaryKey val id: String, val name: String)
 @Entity(tableName = "finance_entries", foreignKeys = [
     ForeignKey(entity = FinanceAccountEntity::class, parentColumns = ["id"], childColumns = ["accountId"]),
     ForeignKey(entity = FinanceCategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"])
-], indices = [Index("accountId"), Index("categoryId"), Index("occurredAt"), Index("voidedAt")])
+], indices = [Index("accountId"), Index("categoryId"), Index("occurredAt"), Index("voidedAt"), Index("importBatchId")])
 data class FinanceEntryEntity(
     @PrimaryKey val id: String,
     val accountId: String,
@@ -45,7 +48,11 @@ data class FinanceEntryEntity(
     val recordedAt: Long,
     val updatedAt: Long,
     val categoryId: String? = null,
-    val voidedAt: Long? = null
+    val voidedAt: Long? = null,
+    @ColumnInfo(defaultValue = "'INCLUDE'") val statPolicy: FinanceStatPolicy = FinanceStatPolicy.INCLUDE,
+    @ColumnInfo(defaultValue = "'INCLUDE'") val budgetPolicy: FinanceBudgetPolicy = FinanceBudgetPolicy.INCLUDE,
+    @ColumnInfo(defaultValue = "0") val revision: Long = 0,
+    val importBatchId: String? = null
 )
 
 @Entity(tableName = "finance_transfers", foreignKeys = [

@@ -21,7 +21,7 @@ import java.io.File
  * because it is trusted.
  */
 // v3 requires the typed Finance section. Older clients reject it instead of silently losing money rows.
-const val BACKUP_FORMAT_VERSION = 3
+const val BACKUP_FORMAT_VERSION = 4
 const val BACKUP_SCHEMA_VERSION = 1
 
 /** Backward/forward-compatible backup format version. */

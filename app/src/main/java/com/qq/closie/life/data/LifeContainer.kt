@@ -186,7 +186,18 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
             FinanceTransferEntity::class.java,
             FinanceCategoryEntity::class.java,
             FinanceTagEntity::class.java,
-            FinanceEntryTagCrossRef::class.java
+            FinanceEntryTagCrossRef::class.java,
+            FinanceEventEntity::class.java,
+            FinanceEventEntryLinkEntity::class.java,
+            FinanceExpectedFlowEntity::class.java,
+            FinanceImportBatchEntity::class.java,
+            FinanceImportRowEntity::class.java,
+            FinanceProposalEntity::class.java,
+            FinanceProposalTagEntity::class.java,
+            FinanceRuleEntity::class.java,
+            FinanceRuleConditionEntity::class.java,
+            FinanceRuleActionEntity::class.java,
+            FinanceChangeEntity::class.java
         )
     }
 }

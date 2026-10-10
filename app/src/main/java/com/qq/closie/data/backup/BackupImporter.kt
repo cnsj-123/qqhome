@@ -43,7 +43,7 @@ internal object BackupImporter {
      * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 3):
      * v1 archives from before v0.3.0 remain restorable forever.
      */
-    val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3)
+    val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3, 4)
 
     /**
      * Unpacks [inputUri] and builds the complete, validated staging directories.
@@ -79,7 +79,23 @@ internal object BackupImporter {
 
         // Parse and validate the Life OS payload *before* touching anything.
         val lifePayload = if (hasLifeSection) {
-            runCatching { gson.fromJson(lifeDataFile.readText(), LifeBackupPayload::class.java) }
+            runCatching {
+                val tree = com.google.gson.JsonParser.parseString(lifeDataFile.readText()).asJsonObject
+                val finance = tree.getAsJsonObject("finance")
+                if (manifest.formatVersion < 4 && finance != null) {
+                    finance.getAsJsonArray("accounts")?.forEach { value ->
+                        val row = value.asJsonObject
+                        if (!row.has("balanceAnchorAt")) row.add("balanceAnchorAt", row.get("createdAt"))
+                    }
+                    finance.getAsJsonArray("entries")?.forEach { value ->
+                        val row = value.asJsonObject
+                        if (!row.has("statPolicy")) row.addProperty("statPolicy", "INCLUDE")
+                        if (!row.has("budgetPolicy")) row.addProperty("budgetPolicy", "INCLUDE")
+                    }
+                }
+                if (manifest.formatVersion >= 4 && finance != null) require(finance.has("v4") && !finance.get("v4").isJsonNull)
+                gson.fromJson(tree, LifeBackupPayload::class.java)
+            }
                 .getOrNull() ?: throw IllegalStateException("Life OS 数据无法解析")
         } else {
             null

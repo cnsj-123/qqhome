@@ -2,6 +2,7 @@ package com.qq.closie.life.data.database
 
 import com.qq.closie.life.finance.*
 import com.qq.closie.life.data.database.dao.FinanceDao
+import com.qq.closie.life.data.database.dao.FinanceIntakeDao
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -41,7 +42,7 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
  * (`room.schemaLocation` → app/schemas/), which is committed to the repository.
  */
 @Database(
-    version = 3,
+    version = 4,
     exportSchema = true,
     entities = [
         LifeEntityEntity::class,
@@ -62,6 +63,18 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
         FinanceCategoryEntity::class,
         FinanceTagEntity::class,
         FinanceEntryTagCrossRef::class,
+        FinanceEventEntity::class,
+        FinanceEventEntryLinkEntity::class,
+        FinanceExpectedFlowEntity::class,
+        FinanceImportBatchEntity::class,
+        FinanceImportRowEntity::class,
+        FinanceProposalEntity::class,
+        FinanceProposalTagEntity::class,
+        FinanceRuleEntity::class,
+        FinanceRuleConditionEntity::class,
+        FinanceRuleActionEntity::class,
+        FinanceChangeEntity::class,
+
     ]
 )
 @TypeConverters(
@@ -82,6 +95,7 @@ abstract class LifeDatabase : RoomDatabase() {
     abstract fun captureDao(): CaptureDao
     abstract fun referenceDao(): ReferenceDao
     abstract fun financeDao(): FinanceDao
+    abstract fun financeIntakeDao(): FinanceIntakeDao
     abstract fun planDao(): PlanDao
 
     companion object {
@@ -108,6 +122,6 @@ abstract class LifeDatabase : RoomDatabase() {
         const val DATABASE_NAME = "life_os.db"
 
         /** Current schema version — kept in sync with the @Database annotation by test. */
-        const val VERSION = 3
+        const val VERSION = 4
     }
 }

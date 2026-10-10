@@ -64,9 +64,7 @@ internal object LifeBackupApplier {
             captureItems = database.captureDao().getAllOnce(),
             referenceItems = database.referenceDao().getAllOnce(),
             planItems = database.planDao().getAllOnce(),
-            finance = FinanceSnapshot(database.financeDao().accounts(), database.financeDao().entries(),
-                database.financeDao().transfers(), database.financeDao().categories(),
-                database.financeDao().tags(), database.financeDao().entryTags())
+            finance = com.qq.closie.life.finance.readFinanceSnapshot(database, includeIntake = true)
         )
     }
 

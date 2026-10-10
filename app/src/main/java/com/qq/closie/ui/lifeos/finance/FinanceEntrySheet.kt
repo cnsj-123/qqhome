@@ -27,7 +27,11 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     val preservedOccurredAt = rememberSaveable(row?.id) { row?.entry?.occurredAt ?: System.currentTimeMillis() }
     var occurredAt by rememberSaveable(row?.id) { mutableStateOf(FinanceTime.input(preservedOccurredAt)) }
     var description by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.description.orEmpty()) }
-    var category by rememberSaveable(row?.id) { mutableStateOf(row?.category.orEmpty()) }
+    val leaf = state.snapshot.categories.find { it.id == row?.entry?.categoryId }
+    val parent = state.snapshot.categories.find { it.id == leaf?.parentId }
+    var category by rememberSaveable(row?.id) { mutableStateOf(parent?.name ?: leaf?.name.orEmpty()) }
+    var subcategory by rememberSaveable(row?.id) { mutableStateOf(if (parent == null) "" else leaf?.name.orEmpty()) }
+    var relationship by remember(row?.id) { mutableStateOf(FinanceRelationshipDraft.from(state.snapshot, row)) }
     var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
     var confirmVoid by remember { mutableStateOf(false) }
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
@@ -35,7 +39,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FinanceEditorKind.entries.forEach { tab ->
                 val editable = row == null || if (row.transfer != null) tab == FinanceEditorKind.TRANSFER else tab != FinanceEditorKind.TRANSFER
-                FilterChip(kind == tab, onClick = { kindName = tab.name; vm.clearError() }, enabled = editable && !state.busy,
+                FilterChip(kind == tab, onClick = { kindName = tab.name; if (row == null) relationship = relationship.copy(role = if (tab == FinanceEditorKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT); vm.clearError() }, enabled = editable && !state.busy,
                     label = { Text(tab.label) })
             }
         }
@@ -53,13 +57,15 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             label = { Text(if (kind == FinanceEditorKind.TRANSFER) "备注（可留空）" else "具体事由 · 买了什么 / 为了什么") }, enabled = !state.busy)
         if (kind != FinanceEditorKind.TRANSFER) {
             OutlinedTextField(category, { category = it }, Modifier.fillMaxWidth(), label = { Text("分类（可自定义）") }, singleLine = true, enabled = !state.busy)
-            val suggestions = (state.snapshot.categories.map { it.name } + listOf("餐饮", "交通", "日用", "其他")).distinct().take(6)
+            OutlinedTextField(subcategory, { subcategory = it }, Modifier.fillMaxWidth(), label = { Text("子分类（可留空）") }, enabled = !state.busy)
+            val suggestions = (state.snapshot.categories.filter { it.parentId == null }.map { it.name } + listOf("餐饮", "交通", "日用", "其他")).distinct().take(6)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 suggestions.take(4).forEach { name -> TextButton(onClick = { category = name }, enabled = !state.busy) { Text(name, style = LifeText.caption) } }
             }
             OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), label = { Text("标签 · 用逗号分隔，可自定义") }, enabled = !state.busy)
         }
-        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt), onClose) },
+        if (kind != FinanceEditorKind.TRANSFER) FinanceRelationshipFields(state.snapshot, relationship, !state.busy) { relationship = it }
+        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship), onClose) },
             enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
         if (row != null) {
             Text("记录时间 ${FinanceTime.input(row.entry.recordedAt)}", style = LifeText.caption, color = colors.muted)

@@ -124,7 +124,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         MoneySummary("收入", state.selected, false)
                         DimensionSummary("分类", state.categories)
                         DimensionSummary("标签", state.tags)
-                        DimensionSummary("账户", FinanceProjection.accountTotals(state.ledger))
+                        DimensionSummary("账户", FinanceProjection.accountTotals(FinancePersonalProjection.rows(state.snapshot, state.ledger)))
+                        Text("账户真实流入 / 流出", style = LifeText.title)
+                        MoneySummary("真实流出", FinancePersonalProjection.realTotals(state.ledger), true)
+                        MoneySummary("真实流入", FinancePersonalProjection.realTotals(state.ledger), false)
                         Text("转账仅改变账户余额，不计入个人收支。", style = LifeText.caption)
                     } else {
                         item { Text("流水 · ${state.ledger.size} 笔", style = LifeText.title) }
