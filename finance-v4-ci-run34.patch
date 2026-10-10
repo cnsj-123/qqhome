@@ -1,0 +1,199 @@
+From dcc718172b8eb0a756e6eff06331216fdadac59d Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Sun, 11 Oct 2026 01:01:27 +0800
+Subject: [PATCH 1/2] fix(ci): generate Room schema before migration tests
+
+---
+ .github/workflows/android.yml | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/.github/workflows/android.yml b/.github/workflows/android.yml
+index 99c2fcdd8e8fe04de7673a5033bbf483ad994d8b..ca876a22bc5fc61daa4ac2ef36b3b2bdf3257e90 100644
+--- a/.github/workflows/android.yml
++++ b/.github/workflows/android.yml
+@@ -22,6 +22,14 @@ jobs:
+           java-version: '17'
+       - uses: gradle/actions/setup-gradle@v4
+ 
++      # Generate schema assets before the unit-test invocation merges debug assets.
++      - name: Generate Room schema
++        run: ./gradlew :app:kspDebugKotlin --stacktrace
++      - name: Verify Room v4 schema
++        shell: bash
++        run: |
++          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
++
+       # Includes Room migration, repository and restore-safety regression tests.
+       - name: Unit tests
+         run: ./gradlew :app:testDebugUnitTest --stacktrace
+@@ -40,6 +48,13 @@ jobs:
+           name: unit-test-report-build${{ github.run_number }}
+           path: app/build/reports/tests/testDebugUnitTest/
+           if-no-files-found: ignore
++      - name: Upload Room schema
++        uses: actions/upload-artifact@v4
++        if: always()
++        with:
++          name: room-schema-build${{ github.run_number }}
++          path: app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
++          if-no-files-found: error
+ 
+       # These secret-bearing steps are skipped on PR/feature/manual feature runs.
+       - name: Check release signing availability
+-- 
+2.53.0.windows.3
+
+
+From ec18565bd93273bf55651cf520cf9441f30fd4a9 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Sun, 11 Oct 2026 01:07:12 +0800
+Subject: [PATCH 2/2] fix(test): align V12 function page and Finance smoke
+ tests
+
+---
+ .../life/finance/FinanceBalanceAnchorTest.kt  | 13 ++++++-
+ .../qq/closie/ui/lifeos/ClosetSmokeTest.kt    | 36 +++++++++++--------
+ .../ui/lifeos/finance/FinanceSmokeTest.kt     |  4 +--
+ 3 files changed, 36 insertions(+), 17 deletions(-)
+
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt
+index 96b507b3aa3839b03cf9593d8e0365a1114127c9..de259984e5e4c708a432562fdef571634a931e92 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt
+@@ -157,15 +157,26 @@ class FinanceBalanceAnchorTest {
+         val bank = account()
+         flow(bank.id, FinanceDirection.OUTFLOW, "100", yesterday, "旧支出")
+         flow(bank.id, FinanceDirection.OUTFLOW, "200", time(19), "新支出")
++        val savedBusiness = repo.snapshot()
+         val saved = LifeBackupApplier.snapshot(db)
++        val savedV4 = requireNotNull(saved.finance?.v4)
++        assertTrue(savedV4.changes.isNotEmpty())
+         now = time(21)
+         repo.saveAccount(bank.id, "改名", bank.kind, openingBalanceMinor = FinanceMoney.parse("20000"))
++        val journalBeforeRestore = requireNotNull(LifeBackupApplier.snapshot(db).finance?.v4).changes
+         LifeBackupApplier.restoreSnapshot(db, saved)
+         val restored = repo.snapshot()
+         assertEquals(anchor, restored.accounts.single().createdAt)
++        assertEquals(anchor, restored.accounts.single().balanceAnchorAt)
+         assertEquals(FinanceMoney.parse("9800"), FinanceProjection.balance(restored.accounts.single(), restored.entries))
+-        assertEquals(saved.finance, restored)
++        assertEquals(savedBusiness, restored)
+         assertEquals(2, restored.entries.size)
+         assertTrue(restored.entries.all { it.voidedAt == null })
++        // Full backup state includes intake/config/history, unlike the ordinary business snapshot.
++        val restoredV4 = requireNotNull(LifeBackupApplier.snapshot(db).finance?.v4)
++        assertEquals(savedV4.copy(changes = journalBeforeRestore), restoredV4)
++        // Recovery retains the journal, including later changes; entity equality checks IDs,
++        // objectId, operation, authority and both revisions, not just the number of rows.
++        assertEquals(journalBeforeRestore.associateBy { it.id }, restoredV4.changes.associateBy { it.id })
+     }
+ }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+index b603f4055ca130647433b42fef6203f0815a1215..68b9adbe8d62f7c22b85035203798fa4ab2d38ee 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+@@ -27,7 +27,7 @@ import org.robolectric.RobolectricTestRunner
+ import org.robolectric.annotation.Config
+ import org.robolectric.annotation.GraphicsMode
+ 
+-/** Cold launch → V11 drawer → real Closet, with no competing root bottom bar. */
++/** Cold launch → V12 function page → real Closet, with no competing root bottom bar. */
+ @RunWith(RobolectricTestRunner::class)
+ @Config(sdk = [34], qualifiers = "w393dp-h852dp")
+ @GraphicsMode(GraphicsMode.Mode.NATIVE)
+@@ -65,17 +65,22 @@ class ClosetSmokeTest {
+         compose.onNodeWithText("水母来信 · 把日子放回自己的位置").assertIsDisplayed()
+         compose.onNodeWithText("搜一件东西、一段经历……").assertIsDisplayed()
+         compose.onNodeWithTag("drawer-capture").assertIsDisplayed()
++        compose.onNodeWithText("记一下").assertIsDisplayed()
+         compose.onNodeWithText("收件匣").assertIsDisplayed()
+         compose.onNodeWithText("日历").assertIsDisplayed()
+         compose.onNodeWithText("搜索").assertIsDisplayed()
+         val capture = compose.onNodeWithTag("drawer-capture").fetchSemanticsNode().boundsInRoot
+-        val inbox = compose.onNodeWithText("收件匣").fetchSemanticsNode().boundsInRoot
+-        val calendar = compose.onNodeWithText("日历").fetchSemanticsNode().boundsInRoot
+-        val search = compose.onNodeWithText("搜索").fetchSemanticsNode().boundsInRoot
+-        org.junit.Assert.assertTrue(inbox.left > capture.right)
+-        org.junit.Assert.assertEquals(capture.top, inbox.top, 2f)
+-        org.junit.Assert.assertEquals(calendar.top, search.top, 2f)
+-        org.junit.Assert.assertTrue(calendar.top > capture.bottom)
++        // Compare complete action cells, not text glyph bounds from the packaged font.
++        val inbox = compose.onNodeWithTag("drawer-inbox").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
++        val calendar = compose.onNodeWithTag("drawer-calendar").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
++        val search = compose.onNodeWithTag("drawer-search").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
++        org.junit.Assert.assertTrue(capture.center.x < inbox.center.x)
++        org.junit.Assert.assertTrue(calendar.center.x < search.center.x)
++        org.junit.Assert.assertEquals(capture.center.y, inbox.center.y, 2f)
++        org.junit.Assert.assertEquals(calendar.center.y, search.center.y, 2f)
++        org.junit.Assert.assertEquals(capture.center.x, calendar.center.x, 2f)
++        org.junit.Assert.assertEquals(inbox.center.x, search.center.x, 2f)
++        org.junit.Assert.assertTrue(minOf(calendar.center.y, search.center.y) > maxOf(capture.center.y, inbox.center.y))
+         compose.onNodeWithText("收件匣 0").assertDoesNotExist()
+     }
+ 
+@@ -108,10 +113,10 @@ class ClosetSmokeTest {
+         compose.onNodeWithText("衣橱还是空的").assertExists()
+     }
+     @Test
+-    fun homeContentLeftSwipeOpensDrawerAndBackClosesIt() {
++    fun homeContentRightSwipeOpensFunctionPageAndBackClosesIt() {
+         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
+         compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("Life OS")))
+-            .performTouchInput { swipeLeft(startX = width * .75f, endX = width * .25f) }
++            .performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
+         compose.mainClock.advanceTimeBy(500)
+         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
+         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+@@ -121,10 +126,10 @@ class ClosetSmokeTest {
+     }
+ 
+     @Test
+-    fun drawerContentRightSwipeClosesIt() {
++    fun functionPageContentLeftSwipeClosesIt() {
+         openDrawer()
+         compose.onNodeWithTag("life-drawer")
+-            .performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
++            .performTouchInput { swipeLeft(startX = width * .75f, endX = width * .25f) }
+         compose.mainClock.advanceTimeBy(500)
+         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+     }
+@@ -142,9 +147,12 @@ class ClosetSmokeTest {
+         openDrawer()
+         compose.onNodeWithTag("life-drawer").performScrollToIndex(16)
+         compose.onNodeWithTag("drawer-finance").performClick()
+-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("账户与余额")).fetchSemanticsNodes().isNotEmpty() }
++        compose.waitUntil(10_000) { compose.onAllNodes(hasText("账户摘要")).fetchSemanticsNodes().isNotEmpty() }
+         compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+-        compose.onNodeWithContentDescription("返回首页").performClick()
++        compose.onNodeWithText("账户摘要").assertIsDisplayed()
++        listOf("总览", "流水", "账户", "分析").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
++        compose.onNodeWithText("返回").assertIsDisplayed().performClick()
++        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
+         compose.onNodeWithText("Life OS").assertIsDisplayed()
+     }
+ 
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+index 699c87d48d0e1088ddeacf2882245fce6a1c66ed..7307e2f708cec79d883967e76fc8620745e2310f 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+@@ -55,7 +55,7 @@ class FinanceSmokeTest {
+         input("期初余额", "1000.00")
+         click("保存账户"); saved()
+         assertEquals(100_000L, snapshot().accounts.single().openingBalanceMinor)
+-        compose.onNodeWithTag("finance-add").performScrollTo().performClick()
++        compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
+         input("金额 · CNY", "12.34")
+         input("具体事由 · 买了什么 / 为了什么", "早餐豆浆")
+         input("分类（可自定义）", "餐饮")
+@@ -88,7 +88,7 @@ class FinanceSmokeTest {
+             repository.saveAccount(name = "微信", kind = FinanceAccountKind.WECHAT)
+         }
+         launch()
+-        compose.onNodeWithTag("finance-add").performScrollTo().performClick()
++        compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
+         click("转账")
+         input("金额 · CNY", "200.00")
+         click("保存记录"); saved()
+-- 
+2.53.0.windows.3
+
