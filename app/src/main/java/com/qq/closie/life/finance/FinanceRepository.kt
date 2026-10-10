@@ -87,7 +87,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
             dao.tagNamed(name)?.id ?: newId().also { dao.insertTag(FinanceTagEntity(it, name)) }
         }
         dao.insertEntryTags(tagIds.map { FinanceEntryTagCrossRef(row.id, it) })
-        if (event != null) attachEvent(row, event)
+        if (event != null) attachEvent(row, event, batchId, authority)
         journal(row.id, "ENTRY_SAVE", batchId, old?.revision, row.revision, authority)
         return row
     }
@@ -134,17 +134,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         if (entry.voidedAt == null) {
             val now = clock()
             dao.updateEntry(entry.copy(voidedAt = now, updatedAt = now, revision = entry.revision + 1))
-            val links = intake.links()
-            for (link in links.filter { it.entryId == id }) {
-                val event = requireNotNull(intake.event(link.eventId))
-                val active = links.filter { it.eventId == event.id }.any { dao.entry(it.entryId)?.voidedAt == null }
-                if (!active) {
-                    intake.updateEvent(event.copy(voidedAt = now, updatedAt = maxOf(now, event.updatedAt + 1)))
-                    intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }.forEach {
-                        intake.updateExpected(it.copy(cancelledAt = now))
-                    }
-                }
-            }
+            retireEntryRelations(setOf(id))
             journal(id, "ENTRY_VOID", before = entry.revision, after = entry.revision + 1)
             validateBalances()
         }
@@ -159,7 +149,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
             }
             dao.updateTransfer(transfer.copy(voidedAt = now, updatedAt = now))
             val feeEvents = intake.events().filter { it.relatedTransferId == id && it.voidedAt == null }
-            val links = intake.links()
+            val links = intake.activeLinks()
             for (event in feeEvents) {
                 val fees = links.filter { it.eventId == event.id }
                 for (link in fees) {
@@ -172,7 +162,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
                         journal(fee.id, "TRANSFER_FEE_VOID", before = fee.revision, after = fee.revision + 1)
                     }
                 }
-                intake.updateEvent(event.copy(voidedAt = now, updatedAt = now))
+                retireEntryRelations(fees.map { it.entryId }.toSet())
             }
             journal(id, "TRANSFER_VOID")
             validateBalances()
@@ -190,7 +180,7 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         } ?: root
     }
 
-    private suspend fun attachEvent(entry: FinanceEntryEntity, input: FinanceEventInput) {
+    private suspend fun attachEvent(entry: FinanceEntryEntity, input: FinanceEventInput, batchId: String?, authority: String?) {
         val oldLinks = if (entry.revision == 1L) emptyList() else intake.linksForEntry(entry.id)
         require(oldLinks.size <= 1) { "此流水分配到多个事件，请先在关联编辑中调整分配" }
         val now = clock()
@@ -210,22 +200,84 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         require(event.currencyCode == dao.account(entry.accountId)?.currencyCode) { "不能关联不同币种的事件" }
         require(input.personalShareMinor == null || input.personalShareMinor >= 0) { "个人承担不能为负数" }
         if (priorEvent?.id == event.id || target != null) intake.updateEvent(event) else intake.insertEvent(event)
-        intake.clearLinks(entry.id)
-        intake.insertLinks(listOf(FinanceEventEntryLinkEntity(event.id, entry.id, input.role, entry.amountMinor)))
-        if (input.cancelExpected) {
-            require(input.expectedMinor == null)
-            intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }.forEach {
-                intake.updateExpected(it.copy(cancelledAt = now))
+        replaceEntryLinks(entry.id, listOf(FinanceAllocation(event.id, input.role, entry.amountMinor)), batchId, authority)
+        input.expectedFlows?.let { editExpectedFlows(event.id, it, batchId, authority) }
+    }
+
+    /** Expectations remain relationships; no entry or balance mutation is made here. */
+    suspend fun saveExpectedFlows(eventId: String, flows: List<FinanceExpectedFlowInput>, expectedUpdatedAt: Long) = transaction {
+        val event = requireNotNull(intake.event(eventId))
+        require(event.voidedAt == null && event.updatedAt == expectedUpdatedAt) { "事件已改变，请重新打开" }
+        require(intake.activeLinksForEvent(eventId).isNotEmpty()) { "事件已没有有效流水" }
+        editExpectedFlows(eventId, flows)
+        intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
+        validateBalances()
+    }
+
+    private suspend fun editExpectedFlows(eventId: String, flows: List<FinanceExpectedFlowInput>,
+        batchId: String? = null, authority: String? = null) {
+        val existing = intake.activeExpectedForEvent(eventId).associateBy { it.id }
+        val ids = flows.mapNotNull { it.id }
+        require(ids.distinct().size == ids.size && ids.all { it in existing }) { "预计关系已改变，请重新打开" }
+        require(flows.all { it.cancelled || it.amountMinor == null || it.amountMinor > 0 }) { "预计金额必须大于 0 或留空" }
+        val now = clock()
+        existing.values.filter { it.id !in ids || flows.any { input -> input.id == it.id && input.cancelled } }.forEach {
+            intake.updateExpected(it.copy(cancelledAt = maxOf(now, it.createdAt)))
+            journal(it.id, "EXPECTED_CANCEL", batchId, authority = authority)
+        }
+        flows.filter { !it.cancelled }.forEach { input ->
+            val old = input.id?.let(existing::getValue)
+            val row = FinanceExpectedFlowEntity(old?.id ?: newId(), eventId, input.role, input.amountMinor,
+                input.note.trim(), old?.createdAt ?: now)
+            if (old == null) intake.insertExpected(row) else intake.updateExpected(row)
+            journal(row.id, "EXPECTED_SAVE", batchId, authority = authority)
+        }
+    }
+
+    private suspend fun retireLinks(links: List<FinanceEventEntryLinkEntity>, batchId: String?, authority: String?) {
+        links.forEach {
+            val now = maxOf(clock(), it.updatedAt + 1)
+            intake.updateLink(it.copy(voidedAt = now, updatedAt = now, revision = it.revision + 1))
+            journal(it.id, "LINK_RETIRE", batchId, it.revision, it.revision + 1, authority)
+        }
+    }
+
+    private suspend fun retireOrphans(eventIds: Set<String>, batchId: String?, authority: String?) {
+        eventIds.forEach { id ->
+            val event = requireNotNull(intake.event(id))
+            if (event.voidedAt == null && intake.activeLinksForEvent(id).isEmpty()) {
+                val now = maxOf(clock(), event.updatedAt + 1)
+                intake.updateEvent(event.copy(voidedAt = now, updatedAt = now))
+                journal(id, "EVENT_RETIRE", batchId, authority = authority)
+                intake.activeExpectedForEvent(id).forEach {
+                    intake.updateExpected(it.copy(cancelledAt = maxOf(now, it.createdAt)))
+                    journal(it.id, "EXPECTED_CANCEL", batchId, authority = authority)
+                }
+            } else if (event.voidedAt == null) {
+                // Shared event remains active, but stale editors must observe the changed relations.
+                intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
             }
         }
-        if (input.expectedMinor != null) {
-            require(input.expectedMinor > 0) { "预计金额必须大于 0" }
-            val existing = intake.expected().filter { it.eventId == event.id && it.cancelledAt == null }
-            require(existing.size <= 1) { "此事件有多项预期，请在关系中分别调整" }
-            val row = existing.singleOrNull()?.copy(role = input.expectedRole, amountMinor = input.expectedMinor)
-                ?: FinanceExpectedFlowEntity(newId(), event.id, input.expectedRole, input.expectedMinor, "", now)
-            if (existing.isEmpty()) intake.insertExpected(row) else intake.updateExpected(row)
+    }
+
+    internal suspend fun retireEntryRelations(entryIds: Set<String>, batchId: String? = null, authority: String? = null) {
+        val old = intake.activeLinks().filter { it.entryId in entryIds }
+        retireLinks(old, batchId, authority)
+        retireOrphans(old.map { it.eventId }.toSet(), batchId, authority)
+    }
+
+    private suspend fun replaceEntryLinks(entryId: String, allocations: List<FinanceAllocation>,
+        batchId: String? = null, authority: String? = null) {
+        val old = intake.linksForEntry(entryId)
+        retireLinks(old, batchId, authority)
+        val now = maxOf(clock(), old.maxOfOrNull { it.updatedAt + 1 } ?: clock())
+        val inserted = allocations.map {
+            FinanceEventEntryLinkEntity(it.eventId, entryId, it.role, it.amountMinor, newId(), now, now)
         }
+        intake.insertLinks(inserted)
+        inserted.forEach { journal(it.id, "LINK_CREATE", batchId, after = it.revision, authority = authority) }
+        // Only after replacement: a relation to the same event must not retire that event.
+        retireOrphans(old.map { it.eventId }.toSet(), batchId, authority)
     }
 
     suspend fun allocateEntry(entryId: String, allocations: List<FinanceAllocation>, expectedRevision: Long) = transaction {
@@ -236,10 +288,12 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         require(allocations.fold(java.math.BigInteger.ZERO) { sum, it -> sum + it.amountMinor.toBigInteger() } == entry.amountMinor.toBigInteger()) {
             "分配金额之和必须等于整笔真实流水"
         }
-        intake.clearLinks(entryId)
-        intake.insertLinks(allocations.map { FinanceEventEntryLinkEntity(it.eventId, entryId, it.role, it.amountMinor) })
-        allocations.forEach {
-            val event = requireNotNull(intake.event(it.eventId))
+        require(allocations.all { it.amountMinor > 0 })
+        val targets = allocations.map { requireNotNull(intake.event(it.eventId)) { "关联事件已不可用" } }
+        require(targets.all { it.voidedAt == null }) { "关联事件已不可用" }
+        replaceEntryLinks(entryId, allocations)
+        targets.forEach { target ->
+            val event = requireNotNull(intake.event(target.id))
             intake.updateEvent(event.copy(updatedAt = maxOf(clock(), event.updatedAt + 1)))
         }
         dao.updateEntry(entry.copy(revision = entry.revision + 1, updatedAt = clock()))

@@ -79,6 +79,7 @@ object FinanceNotificationParser {
         return FinanceProposalEntity(java.util.UUID.randomUUID().toString(), source, sourceKey, text, now, occurredAt,
             if (inflow) FinanceProposalKind.INCOME else FinanceProposalKind.EXPENSE,
             amounts.singleOrNull(), title.take(120),
-            nature = if (text.contains("退款")) FinanceNature.OTHER else FinanceNature.PERSONAL)
+            nature = if (text.contains("退款")) FinanceNature.OTHER else FinanceNature.PERSONAL,
+            role = if (text.contains("退款")) FinanceFlowRole.REFUND else if (inflow) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
     }
 }

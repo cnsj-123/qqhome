@@ -203,7 +203,8 @@ object LegacyLedgerReader {
                 issues.joinToString("；"), v("账户"), v("转入账户"), kind, minor, time, v("备注"),
                 v("分类"), v("子分类"), v("标签"), fee ?: 0, reimbursement, refund,
                 if (v("不计入收支") == "是") FinanceStatPolicy.EXCLUDE else FinanceStatPolicy.INCLUDE,
-                if (v("不计入预算") == "是") FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE)
+                if (v("不计入预算") == "是") FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE,
+                requiresIndividualReview = invalid || kind == null || v("债务人").isNotBlank())
         }
     }
 

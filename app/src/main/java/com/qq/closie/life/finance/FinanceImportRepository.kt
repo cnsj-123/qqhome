@@ -125,7 +125,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
         val v4 = snapshot.v4!!
         val batchEntries = snapshot.entries.filter { it.importBatchId == id && it.voidedAt == null }
         val safe = batchEntries.filter { it.revision == 1L }.map { it.id }.toMutableSet()
-        val byEvent = v4.links.groupBy { it.eventId }
+        val byEvent = v4.activeLinks.groupBy { it.eventId }
         for (event in v4.events) {
             val linked = byEvent[event.id].orEmpty().map { it.entryId }
             if (event.updatedAt != event.createdAt || linked.any { entryId -> snapshot.entries.any {
@@ -136,7 +136,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
         for (transfer in snapshot.transfers) {
             val feeEvents = v4.events.filter { it.relatedTransferId == transfer.id }.map { it.id }.toSet()
             val ids = setOf(transfer.outflowEntryId, transfer.inflowEntryId) +
-                v4.links.filter { it.eventId in feeEvents }.map { it.entryId }
+                v4.activeLinks.filter { it.eventId in feeEvents }.map { it.entryId }
             if (!safe.containsAll(ids)) safe.removeAll(ids)
         }
         val now = System.currentTimeMillis()
@@ -148,13 +148,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
         snapshot.transfers.filter { it.outflowEntryId in safe && it.inflowEntryId in safe }.forEach {
             storage.updateTransfer(it.copy(voidedAt = now, updatedAt = now))
         }
-        v4.events.filter { event -> byEvent[event.id].orEmpty().isNotEmpty() &&
-            byEvent[event.id].orEmpty().all { it.entryId in safe } }.forEach {
-            dao.updateEvent(it.copy(voidedAt = now, updatedAt = now))
-            v4.expected.filter { expected -> expected.eventId == it.id && expected.cancelledAt == null }.forEach { expected ->
-                dao.updateExpected(expected.copy(cancelledAt = now))
-            }
-        }
+        finance.retireEntryRelations(safe, id)
         snapshot.accounts.filter { it.importBatchId == id && it.createdAt == it.updatedAt &&
             snapshot.entries.none { entry -> entry.accountId == it.id && entry.voidedAt == null && entry.id !in safe } }.forEach {
             storage.updateAccount(it.copy(archivedAt = now, updatedAt = now))

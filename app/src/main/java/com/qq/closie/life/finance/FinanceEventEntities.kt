@@ -21,12 +21,15 @@ data class FinanceEventEntity(
     val relatedTransferId: String? = null
 )
 
-@Entity(tableName = "finance_event_entries", primaryKeys = ["eventId", "entryId"], foreignKeys = [
+@Entity(tableName = "finance_event_entries", foreignKeys = [
     ForeignKey(entity = FinanceEventEntity::class, parentColumns = ["id"], childColumns = ["eventId"]),
     ForeignKey(entity = FinanceEntryEntity::class, parentColumns = ["id"], childColumns = ["entryId"])
-], indices = [Index("entryId")])
+], indices = [Index("entryId"), Index("eventId")])
 data class FinanceEventEntryLinkEntity(val eventId: String, val entryId: String,
-    val role: FinanceFlowRole, val allocatedMinor: Long)
+    val role: FinanceFlowRole, val allocatedMinor: Long,
+    @PrimaryKey val id: String = java.util.UUID.randomUUID().toString(),
+    val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = createdAt,
+    val voidedAt: Long? = null, val revision: Long = 1)
 
 @Entity(tableName = "finance_expected_flows", foreignKeys = [
     ForeignKey(entity = FinanceEventEntity::class, parentColumns = ["id"], childColumns = ["eventId"])
@@ -38,12 +41,15 @@ data class FinanceExpectedFlowEntity(
 
 /** One real entry may allocate to several events; amounts must exactly partition that entry. */
 data class FinanceAllocation(val eventId: String, val role: FinanceFlowRole, val amountMinor: Long)
+data class FinanceExpectedFlowInput(val id: String? = null, val role: FinanceFlowRole,
+    val amountMinor: Long? = null, val note: String = "", val cancelled: Boolean = false)
 data class FinanceEventInput(
     val nature: FinanceNature = FinanceNature.PERSONAL, val personalShareMinor: Long? = null,
     val role: FinanceFlowRole = FinanceFlowRole.PAYMENT, val existingEventId: String? = null,
-    val expectedMinor: Long? = null, val expectedRole: FinanceFlowRole = FinanceFlowRole.SETTLEMENT,
+    /** null preserves existing expectations; a list explicitly edits the active set. */
+    val expectedFlows: List<FinanceExpectedFlowInput>? = null,
     val statPolicy: FinanceStatPolicy = FinanceStatPolicy.INCLUDE,
     val budgetPolicy: FinanceBudgetPolicy = FinanceBudgetPolicy.INCLUDE,
-    val relatedTransferId: String? = null, val cancelExpected: Boolean = false,
+    val relatedTransferId: String? = null,
     val expectedEventUpdatedAt: Long? = null
 )

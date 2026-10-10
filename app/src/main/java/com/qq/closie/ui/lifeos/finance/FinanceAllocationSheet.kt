@@ -10,7 +10,7 @@ private data class AllocationDraft(val eventId: String, val role: FinanceFlowRol
 
 @Composable
 internal fun FinanceAllocationSheet(state: FinanceUiState, row: FinanceLedgerRow, vm: FinanceViewModel, close: () -> Unit) {
-    val parts = remember(row.entry.id) { state.snapshot.v4?.links.orEmpty().filter { it.entryId == row.entry.id }
+    val parts = remember(row.entry.id) { state.snapshot.v4?.activeLinks.orEmpty().filter { it.entryId == row.entry.id }
         .map { AllocationDraft(it.eventId, it.role, FinanceMoney.input(it.allocatedMinor, row.currencyCode)) }.toMutableStateList() }
     var query by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }

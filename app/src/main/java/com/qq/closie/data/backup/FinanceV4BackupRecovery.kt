@@ -13,8 +13,13 @@ internal object FinanceV4BackupRecovery {
             dao.updateEvent(it.copy(voidedAt = it.voidedAt ?: now, updatedAt = now))
         }
         reconcile(current.events, saved.events, { it.id }, dao::insertEvent, dao::updateEvent)
-        restoredEntryIds.forEach { dao.clearLinks(it) }
-        dao.insertLinks(saved.links)
+        require(saved.links.all { it.entryId in restoredEntryIds })
+        val savedLinkIds = saved.links.map { it.id }.toSet()
+        current.activeLinks.filter { it.id !in savedLinkIds }.forEach {
+            val retiredAt = maxOf(now, it.updatedAt + 1)
+            dao.updateLink(it.copy(voidedAt = retiredAt, updatedAt = retiredAt, revision = it.revision + 1))
+        }
+        reconcile(current.links, saved.links, { it.id }, { dao.insertLinks(listOf(it)) }, dao::updateLink)
         current.expected.filter { old -> saved.expected.none { it.id == old.id } }.forEach {
             dao.updateExpected(it.copy(cancelledAt = it.cancelledAt ?: now))
         }

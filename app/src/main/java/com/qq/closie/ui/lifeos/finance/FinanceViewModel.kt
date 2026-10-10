@@ -24,7 +24,8 @@ data class FinanceUiState(
     val month: Map<String, FinanceTotals> = emptyMap(), val year: Map<String, FinanceTotals> = emptyMap(),
     val selected: Map<String, FinanceTotals> = emptyMap(),
     val categories: List<FinanceDimensionTotal> = emptyList(), val tags: List<FinanceDimensionTotal> = emptyList(),
-    val loading: Boolean = true, val busy: Boolean = false, val error: String? = null
+    val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
+    val personalRows: List<FinanceLedgerRow> = emptyList()
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
@@ -58,22 +59,29 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         else {
             val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
             val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
-            val natureEntries = data.v4?.links.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
-            val linkedEntries = data.v4?.links.orEmpty().map { it.entryId }.toSet()
-            val rows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
+            val natureEntries = data.v4?.activeLinks.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
+            val linkedEntries = data.v4?.activeLinks.orEmpty().map { it.entryId }.toSet()
+            val baseRows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
                 (selection.accountId == null || row.account.id == selection.accountId || row.targetAccount?.id == selection.accountId) &&
-                (selection.categoryId == null || row.entry.categoryId == selection.categoryId || data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }) &&
-                (selection.tagId == null || row.entry.id in tagEntries) &&
                 (selection.nature == null || row.entry.id in natureEntries ||
                     (selection.nature == FinanceNature.PERSONAL && row.transfer == null && row.entry.id !in linkedEntries))
+            }
+            fun categoryMatches(row: FinanceLedgerRow) = selection.categoryId == null ||
+                row.entry.categoryId == selection.categoryId ||
+                data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }
+            val rows = baseRows.filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) }
+            val selectedTag = data.tags.find { it.id == selection.tagId }?.name
+            // Apply dimension filters after attribution, so a refund follows its payment category/tag.
+            val personal = FinancePersonalProjection.rows(data, baseRows).filter {
+                categoryMatches(it) && (selection.tagId == null || (selectedTag != null && selectedTag in it.tags))
             }
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.month()))),
                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.year()))),
-                FinanceProjection.totals(FinancePersonalProjection.rows(data, rows)),
-                FinanceProjection.categoryTotals(FinancePersonalProjection.rows(data, rows)), FinanceProjection.tagTotals(FinancePersonalProjection.rows(data, rows)),
-                loading = false, busy = saving, error = message)
+                FinanceProjection.totals(personal),
+                FinanceProjection.categoryTotals(personal), FinanceProjection.tagTotals(personal),
+                loading = false, busy = saving, error = message, personalRows = personal)
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 
@@ -131,7 +139,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 expectedUpdatedAt = row?.transfer?.updatedAt)
         } else {
             require(row?.transfer == null) { "转账需要整体编辑" }
-            val multiple = snapshot.value?.v4?.links.orEmpty().count { it.entryId == row?.entry?.id } > 1
+            val multiple = snapshot.value?.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
             require(!multiple || (amount == row?.entry?.amountMinor &&
                 draft.kind.name == if (row?.entry?.direction == FinanceDirection.INFLOW) "INCOME" else "EXPENSE")) {
                 "此流水分配给多个事件，请先调整事件分配再改变整笔金额或方向"

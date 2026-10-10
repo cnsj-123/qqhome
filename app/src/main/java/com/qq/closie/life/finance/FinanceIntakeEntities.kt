@@ -28,7 +28,7 @@ data class FinanceImportRowEntity(
     val category: String, val subcategory: String, val tagsText: String,
     val feeMinor: Long, val reimbursable: Boolean, val hasRefund: Boolean,
     val statPolicy: FinanceStatPolicy, val budgetPolicy: FinanceBudgetPolicy,
-    val canonicalId: String? = null
+    val canonicalId: String? = null, val requiresIndividualReview: Boolean = false
 )
 
 @Entity(tableName = "finance_proposals", indices = [
@@ -42,7 +42,8 @@ data class FinanceProposalEntity(
     val category: String = "", val subcategory: String = "",
     val nature: FinanceNature = FinanceNature.PERSONAL,
     val status: FinanceProposalStatus = FinanceProposalStatus.ACTIVE,
-    val canonicalId: String? = null, val revision: Long = 0
+    val canonicalId: String? = null, val revision: Long = 0,
+    val role: FinanceFlowRole = if (kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT
 )
 
 @Entity(tableName = "finance_proposal_tags", primaryKeys = ["proposalId", "name"], foreignKeys = [
@@ -84,3 +85,6 @@ data class FinanceV4Snapshot(
     val actions: List<FinanceRuleActionEntity> = emptyList(),
     val changes: List<FinanceChangeEntity> = emptyList()
 )
+
+/** Canonical readers use active links; archives retain the complete list. */
+val FinanceV4Snapshot.activeLinks get() = links.filter { it.voidedAt == null }

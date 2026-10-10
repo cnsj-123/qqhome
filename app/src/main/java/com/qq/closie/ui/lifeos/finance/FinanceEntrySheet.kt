@@ -35,7 +35,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
     var confirmVoid by remember { mutableStateOf(false) }
     var allocationOpen by remember { mutableStateOf(false) }
-    val multiple = state.snapshot.v4?.links.orEmpty().count { it.entryId == row?.entry?.id } > 1
+    val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
     FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

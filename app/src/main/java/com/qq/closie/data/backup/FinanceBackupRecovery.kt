@@ -39,7 +39,10 @@ internal object FinanceBackupRecovery {
             // A pre-v4 restore explicitly restores F1 truth. Retire incompatible later semantics,
             // but retain pending intake/rules: their absence in an old format is not deletion.
             val intake = database.financeIntakeDao()
-            saved.entries.forEach { intake.clearLinks(it.id) }
+            intake.activeLinks().forEach {
+                val retiredAt = maxOf(now, it.updatedAt + 1)
+                intake.updateLink(it.copy(voidedAt = retiredAt, updatedAt = retiredAt, revision = it.revision + 1))
+            }
             intake.events().filter { it.voidedAt == null }.forEach { intake.updateEvent(it.copy(voidedAt = now, updatedAt = now)) }
             intake.expected().filter { it.cancelledAt == null }.forEach { intake.updateExpected(it.copy(cancelledAt = now)) }
         }

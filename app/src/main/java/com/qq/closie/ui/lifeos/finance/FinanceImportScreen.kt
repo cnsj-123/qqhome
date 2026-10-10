@@ -28,6 +28,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.select(context, it) } }
     var confirmation by remember { mutableStateOf<String?>(null) }
     var evidence by remember { mutableStateOf<FinanceImportRowEntity?>(null) }
+    var detailGroup by remember { mutableStateOf<FinanceImportGroup?>(null) }
     BackHandler(enabled = !state.busy, onBack = onBack)
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row {
@@ -69,12 +70,28 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                         item {
                             TextButton(onClick = { state.mappings.firstOrNull()?.let(vm::map) }, enabled = !state.busy) { Text("修改账户映射") }
                             Row { Checkbox(state.splitTags, vm::tags, enabled = !state.busy); Text("将标签按空格拆开（默认保留原单元格）") }
-                            Row { Checkbox(state.fees, vm::fees, enabled = !state.busy); Text("确认手续费为转账金额之外的实际支出") }
-                            Text("普通记录默认选中。待检查和重复项需逐条勾选；勾选重复项表示仍要导入。退款／报销附属金额仅保留作依据，不生成到账。无效或不支持的类型请在文件副本中修正后重新选择。")
+                            Text("普通记录默认批量选中。报销／退款可批量导入已确认的真实流水，附属金额和关系证据保留，后续再整理；不会生成额外到账。")
+                            FinanceImportGroup.entries.forEach { group ->
+                                val count = preview.rows.count { group in FinanceImportReview.groups(it) }
+                                val checked = when (group) {
+                                    FinanceImportGroup.READY -> state.policy.ready
+                                    FinanceImportGroup.REIMBURSEMENT -> state.policy.reimbursement
+                                    FinanceImportGroup.REFUND -> state.policy.refund
+                                    FinanceImportGroup.FEES -> state.policy.fees
+                                    else -> false
+                                }
+                                Row {
+                                    if (group !in setOf(FinanceImportGroup.DUPLICATES, FinanceImportGroup.UNSUPPORTED))
+                                        Checkbox(checked, { vm.policy(group, it) }, enabled = !state.busy)
+                                    TextButton({ detailGroup = if (detailGroup == group) null else group }) {
+                                        Text(group.label + " · " + count + " 行 · " + if (detailGroup == group) "收起明细" else "查看明细")
+                                    }
+                                }
+                            }
+                            Text("手续费勾选表示确认所有适用行的手续费为转账金额之外的实际支出。重复项默认跳过，可在明细中单独确认；无效记录需修正文件副本后重选。多种问题同时存在时，需要确认各项批量政策。")
                         }
-                        items(preview.rows, key = { it.id }) { row ->
-                            val enabled = !state.busy && row.canonicalId == null && row.kind != null &&
-                                row.status !in setOf(FinanceRowStatus.INVALID, FinanceRowStatus.UNDONE)
+                        items(preview.rows.filter { detailGroup?.let { group -> group in FinanceImportReview.groups(it) } == true }, key = { it.id }) { row ->
+                            val enabled = !state.busy && FinanceImportReview.eligible(row)
                             Row {
                                 Checkbox(row.id in state.selected, { vm.choose(row.id, it) }, enabled = enabled)
                                 Column(Modifier.weight(1f)) {

@@ -40,15 +40,19 @@ object FinanceIntegrity {
         data.entryTags.forEach { require(it.entryId in entries && data.tags.any { tag -> tag.id == it.tagId }) { "流水标签关联缺失" } }
         data.accounts.forEach { FinanceProjection.balance(it, data.entries) }
         data.v4?.let { v4 ->
-            unique(v4.events) { it.id }; unique(v4.expected) { it.id }
+            unique(v4.events) { it.id }; unique(v4.expected) { it.id }; unique(v4.links) { it.id }
             val events = v4.events.associateBy { it.id }
-            val eventLinks = v4.links.groupBy { it.eventId }
+            val eventLinks = v4.activeLinks.groupBy { it.eventId }
             val transferLegs = legs.toSet()
-            require(v4.links.map { it.eventId to it.entryId }.distinct().size == v4.links.size) { "事件关联重复" }
+            require(v4.activeLinks.map { it.eventId to it.entryId }.distinct().size == v4.activeLinks.size) { "事件关联重复" }
             v4.links.forEach { link ->
                 val event = requireNotNull(events[link.eventId]) { "关联事件缺失" }
                 val entry = requireNotNull(entries[link.entryId]) { "关联流水缺失" }
                 require(link.allocatedMinor > 0 && entry.id !in transferLegs) { "分配金额或流水类型无效" }
+                require(link.revision >= 1 && link.updatedAt >= link.createdAt &&
+                    (link.voidedAt == null || link.voidedAt >= link.createdAt)) { "关系生命周期无效" }
+                if (link.voidedAt != null) return@forEach
+                require(entry.voidedAt == null) { "有效关系不能关联已作废流水" }
                 require(accounts.getValue(entry.accountId).currencyCode == event.currencyCode) { "事件币种不一致" }
                 require(event.relatedTransferId == null || link.role == FinanceFlowRole.FEE) { "转账手续费事件只能关联手续费" }
                 if (entry.voidedAt == null) {
@@ -61,7 +65,7 @@ object FinanceIntegrity {
                     }
                 }
             }
-            v4.links.groupBy { it.entryId }.forEach { (id, links) ->
+            v4.activeLinks.groupBy { it.entryId }.forEach { (id, links) ->
                 if (entries.getValue(id).voidedAt == null) require(
                     links.fold(java.math.BigInteger.ZERO) { sum, it -> sum + it.allocatedMinor.toBigInteger() } ==
                         entries.getValue(id).amountMinor.toBigInteger()) { "事件分配与实际流水不一致" }
@@ -70,6 +74,7 @@ object FinanceIntegrity {
                 require(it.relatedTransferId == null || data.transfers.any { transfer -> transfer.id == it.relatedTransferId }) { "手续费对应的转账缺失" }
                 require(it.description.isNotBlank() && (it.personalShareMinor == null || it.personalShareMinor >= 0)) { "事件信息无效" }
                 FinanceMoney.fractionDigits(it.currencyCode)
+                require(it.voidedAt != null || eventLinks[it.id].orEmpty().isNotEmpty()) { "有效事件缺少有效流水" }
                 if (it.voidedAt == null && it.personalShareMinor != null) {
                     val paid = eventLinks[it.id].orEmpty().filter { link ->
                         entries[link.entryId]?.voidedAt == null && link.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE)
@@ -77,7 +82,11 @@ object FinanceIntegrity {
                     require(it.personalShareMinor.toBigInteger() <= paid) { "个人承担超过当前有效付款，请先调整事件承担额" }
                 }
             }
-            v4.expected.forEach { require(it.eventId in events && (it.amountMinor == null || it.amountMinor > 0)) { "预计关系无效" } }
+            v4.expected.forEach {
+                require(it.eventId in events && (it.amountMinor == null || it.amountMinor > 0)) { "预计关系无效" }
+                require(it.cancelledAt != null || (events.getValue(it.eventId).voidedAt == null &&
+                    eventLinks[it.eventId].orEmpty().isNotEmpty())) { "有效预计关系不能依附孤立或已作废事件" }
+            }
             unique(v4.batches) { it.id }; unique(v4.staging) { it.id }; unique(v4.proposals) { it.id }; unique(v4.rules) { it.id }
             require(v4.batches.map { it.digest }.distinct().size == v4.batches.size)
             require(v4.proposals.map { it.sourceKey }.distinct().size == v4.proposals.size)

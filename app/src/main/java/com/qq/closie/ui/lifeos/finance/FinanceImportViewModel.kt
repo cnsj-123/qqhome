@@ -16,7 +16,8 @@ internal data class ImportUiState(
     val preview: FinanceImportPreview? = null,
     val mappings: List<FinanceAccountMapping> = emptyList(),
     val reviewed: Boolean = false, val selected: Set<String> = emptySet(),
-    val splitTags: Boolean = false, val fees: Boolean = false
+    val splitTags: Boolean = false, val fees: Boolean = false,
+    val policy: FinanceImportReviewPolicy = FinanceImportReviewPolicy(), val overrides: Map<String, Boolean> = emptyMap()
 )
 
 internal class FinanceImportViewModel(private val repository: FinanceImportRepository) : ViewModel() {
@@ -64,7 +65,7 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
             .filter(String::isNotBlank).distinct().map { source -> preview.createdMappings.find { it.source == source }
                 ?: FinanceAccountMapping(source, kind = FinanceImportRepository.suggestKind(source)) }
         mutable.update { it.copy(preview = preview, mappings = mappings, reviewed = false, selected = emptySet(),
-            fees = false, splitTags = false, history = repository.history()) }
+            fees = false, splitTags = false, policy = FinanceImportReviewPolicy(), overrides = emptyMap(), history = repository.history()) }
     }
     fun map(mapping: FinanceAccountMapping) {
         if (!mutable.value.busy) mutable.update { it.copy(mappings = it.mappings.map { old ->
@@ -74,13 +75,33 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
         val current = mutable.value
         val preview = repository.preview(requireNotNull(current.preview).batch.id, current.mappings)
         mutable.update { it.copy(preview = preview, reviewed = true,
-            selected = preview.rows.filter { row -> row.status == FinanceRowStatus.READY && row.canonicalId == null }.map { row -> row.id }.toSet()) }
+            policy = FinanceImportReviewPolicy(), overrides = emptyMap(), fees = false,
+            selected = FinanceImportReview.selected(preview.rows, FinanceImportReviewPolicy())) }
     }
     fun choose(id: String, selected: Boolean) {
-        if (!mutable.value.busy) mutable.update { it.copy(selected = if (selected) it.selected + id else it.selected - id) }
+        if (!mutable.value.busy) mutable.update {
+            val overrides = it.overrides + (id to selected)
+            it.copy(overrides = overrides, selected = FinanceImportReview.selected(it.preview?.rows.orEmpty(), it.policy, overrides))
+        }
     }
     fun tags(value: Boolean) { mutable.update { it.copy(splitTags = value) } }
-    fun fees(value: Boolean) { mutable.update { it.copy(fees = value) } }
+    fun policy(group: FinanceImportGroup, value: Boolean) {
+        if (mutable.value.busy) return
+        mutable.update {
+            val policy = when (group) {
+                FinanceImportGroup.READY -> it.policy.copy(ready = value)
+                FinanceImportGroup.REIMBURSEMENT -> it.policy.copy(reimbursement = value)
+                FinanceImportGroup.REFUND -> it.policy.copy(refund = value)
+                FinanceImportGroup.FEES -> it.policy.copy(fees = value)
+                else -> it.policy
+            }
+            // A group action replaces previous individual choices only within that group.
+            val ids = it.preview?.rows.orEmpty().filter { row -> group in FinanceImportReview.groups(row) }.map { row -> row.id }.toSet()
+            val overrides = it.overrides.filterKeys { id -> id !in ids }
+            it.copy(policy = policy, overrides = overrides, fees = policy.fees,
+                selected = FinanceImportReview.selected(it.preview?.rows.orEmpty(), policy, overrides))
+        }
+    }
     fun commit() = run {
         val current = mutable.value
         require(current.reviewed)

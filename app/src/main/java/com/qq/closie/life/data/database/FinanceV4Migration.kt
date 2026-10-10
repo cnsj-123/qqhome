@@ -24,11 +24,13 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
         db.execSQL("CREATE INDEX index_finance_events_occurredAt ON finance_events(occurredAt)")
         db.execSQL("CREATE INDEX index_finance_events_voidedAt ON finance_events(voidedAt)")
         db.execSQL("""CREATE TABLE IF NOT EXISTS finance_event_entries (
-            eventId TEXT NOT NULL, entryId TEXT NOT NULL, role TEXT NOT NULL, allocatedMinor INTEGER NOT NULL,
-            PRIMARY KEY(eventId, entryId),
+            id TEXT NOT NULL PRIMARY KEY, eventId TEXT NOT NULL, entryId TEXT NOT NULL,
+            role TEXT NOT NULL, allocatedMinor INTEGER NOT NULL, createdAt INTEGER NOT NULL,
+            updatedAt INTEGER NOT NULL, voidedAt INTEGER, revision INTEGER NOT NULL,
             FOREIGN KEY(eventId) REFERENCES finance_events(id) ON UPDATE NO ACTION ON DELETE NO ACTION,
             FOREIGN KEY(entryId) REFERENCES finance_entries(id) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
         db.execSQL("CREATE INDEX index_finance_event_entries_entryId ON finance_event_entries(entryId)")
+        db.execSQL("CREATE INDEX index_finance_event_entries_eventId ON finance_event_entries(eventId)")
         db.execSQL("""CREATE TABLE IF NOT EXISTS finance_expected_flows (
             id TEXT NOT NULL PRIMARY KEY, eventId TEXT NOT NULL, role TEXT NOT NULL, amountMinor INTEGER,
             note TEXT NOT NULL, createdAt INTEGER NOT NULL, cancelledAt INTEGER,
@@ -44,7 +46,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
             sourceAccount TEXT NOT NULL, targetAccount TEXT NOT NULL, kind TEXT, amountMinor INTEGER,
             occurredAt INTEGER, description TEXT NOT NULL, category TEXT NOT NULL, subcategory TEXT NOT NULL,
             tagsText TEXT NOT NULL, feeMinor INTEGER NOT NULL, reimbursable INTEGER NOT NULL, hasRefund INTEGER NOT NULL,
-            statPolicy TEXT NOT NULL, budgetPolicy TEXT NOT NULL, canonicalId TEXT,
+            statPolicy TEXT NOT NULL, budgetPolicy TEXT NOT NULL, canonicalId TEXT, requiresIndividualReview INTEGER NOT NULL,
             FOREIGN KEY(batchId) REFERENCES finance_import_batches(id) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
         db.execSQL("CREATE INDEX index_finance_import_rows_batchId ON finance_import_rows(batchId)")
         db.execSQL("CREATE INDEX index_finance_import_rows_fingerprint ON finance_import_rows(fingerprint)")
@@ -52,7 +54,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
             id TEXT NOT NULL PRIMARY KEY, source TEXT NOT NULL, sourceKey TEXT NOT NULL, evidenceText TEXT NOT NULL,
             createdAt INTEGER NOT NULL, occurredAt INTEGER NOT NULL, kind TEXT NOT NULL, amountMinor INTEGER,
             description TEXT NOT NULL, accountId TEXT, targetAccountId TEXT, category TEXT NOT NULL,
-            subcategory TEXT NOT NULL, nature TEXT NOT NULL, status TEXT NOT NULL, canonicalId TEXT, revision INTEGER NOT NULL)""")
+            subcategory TEXT NOT NULL, nature TEXT NOT NULL, status TEXT NOT NULL, canonicalId TEXT, revision INTEGER NOT NULL, role TEXT NOT NULL)""")
         db.execSQL("CREATE UNIQUE INDEX index_finance_proposals_sourceKey ON finance_proposals(sourceKey)")
         db.execSQL("CREATE INDEX index_finance_proposals_status ON finance_proposals(status)")
         db.execSQL("CREATE INDEX index_finance_proposals_createdAt ON finance_proposals(createdAt)")

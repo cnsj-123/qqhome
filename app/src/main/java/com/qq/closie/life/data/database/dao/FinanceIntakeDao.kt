@@ -8,9 +8,13 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface FinanceIntakeDao {
     @Query("SELECT * FROM finance_events WHERE id = :id") suspend fun event(id: String): FinanceEventEntity?
-    @Query("SELECT * FROM finance_event_entries WHERE entryId = :id") suspend fun linksForEntry(id: String): List<FinanceEventEntryLinkEntity>
+    @Query("SELECT * FROM finance_event_entries WHERE entryId = :id AND voidedAt IS NULL") suspend fun linksForEntry(id: String): List<FinanceEventEntryLinkEntity>
     @Query("SELECT * FROM finance_events") suspend fun events(): List<FinanceEventEntity>
     @Query("SELECT * FROM finance_event_entries") suspend fun links(): List<FinanceEventEntryLinkEntity>
+    @Query("SELECT * FROM finance_event_entries WHERE eventId = :id AND voidedAt IS NULL")
+    suspend fun activeLinksForEvent(id: String): List<FinanceEventEntryLinkEntity>
+    @Query("SELECT * FROM finance_expected_flows WHERE eventId = :id AND cancelledAt IS NULL")
+    suspend fun activeExpectedForEvent(id: String): List<FinanceExpectedFlowEntity>
     @Query("SELECT * FROM finance_expected_flows") suspend fun expected(): List<FinanceExpectedFlowEntity>
     @Query("SELECT * FROM finance_import_batches ORDER BY createdAt DESC") suspend fun batches(): List<FinanceImportBatchEntity>
     @Query("SELECT * FROM finance_import_rows") suspend fun staging(): List<FinanceImportRowEntity>
@@ -30,7 +34,8 @@ interface FinanceIntakeDao {
     @Insert suspend fun insertEvent(row: FinanceEventEntity)
     @Update suspend fun updateEvent(row: FinanceEventEntity)
     @Insert suspend fun insertLinks(rows: List<FinanceEventEntryLinkEntity>)
-    @Query("DELETE FROM finance_event_entries WHERE entryId = :id") suspend fun clearLinks(id: String)
+    @Update suspend fun updateLink(row: FinanceEventEntryLinkEntity)
+    @Query("SELECT * FROM finance_event_entries WHERE voidedAt IS NULL") suspend fun activeLinks(): List<FinanceEventEntryLinkEntity>
     @Insert suspend fun insertExpected(row: FinanceExpectedFlowEntity)
     @Update suspend fun updateExpected(row: FinanceExpectedFlowEntity)
     @Insert suspend fun insertBatch(row: FinanceImportBatchEntity)

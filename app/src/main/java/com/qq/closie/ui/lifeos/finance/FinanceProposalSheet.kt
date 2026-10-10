@@ -50,8 +50,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
     var subcategory by rememberSaveable { mutableStateOf(proposal.subcategory) }
     var tags by rememberSaveable { mutableStateOf(state.data.tags.filter { it.proposalId == proposal.id }.joinToString("，") { it.name }) }
     var relation by remember { mutableStateOf(FinanceRelationshipDraft(nature = proposal.nature,
-        role = if (proposal.evidenceText.contains("退款")) FinanceFlowRole.REFUND else
-            if (proposal.kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)) }
+        role = proposal.role)) }
     val accounts = state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }
     fun later() = vm.dismiss(proposal, FinanceProposalStatus.SNOOZED, close)
     FinanceReceipt(if (proposal.source == FinanceSource.WECHAT) "微信 · 发现一笔" else "支付宝 · 发现一笔",

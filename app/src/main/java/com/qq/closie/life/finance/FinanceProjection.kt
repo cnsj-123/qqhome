@@ -28,7 +28,7 @@ data class FinanceDateRange(val startInclusive: Long? = null, val endExclusive: 
 }
 data class FinanceLedgerRow(val entry: FinanceEntryEntity, val account: FinanceAccountEntity,
     val category: String?, val tags: List<String>, val transfer: FinanceTransferEntity? = null,
-    val targetAccount: FinanceAccountEntity? = null) {
+    val targetAccount: FinanceAccountEntity? = null, val categoryOverride: String? = null) {
     val id get() = transfer?.id ?: entry.id
     val currencyCode get() = account.currencyCode
 }
@@ -81,7 +81,7 @@ object FinanceProjection {
         val byId = categories.associateBy { it.id }
         return dimensions(rows) { row ->
             val leaf = byId[row.entry.categoryId]
-            listOf(leaf?.parentId?.let { byId[it]?.name } ?: leaf?.name ?: "未分类")
+            listOf(row.categoryOverride ?: leaf?.parentId?.let { byId[it]?.name } ?: leaf?.name ?: "未分类")
         }
     }
     fun accountTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.account.name) }

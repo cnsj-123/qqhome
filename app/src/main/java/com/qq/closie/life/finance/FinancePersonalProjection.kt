@@ -8,8 +8,9 @@ object FinancePersonalProjection {
         val v4 = snapshot.v4 ?: return selected.filter { it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
         val events = v4.events.associateBy { it.id }
         val entries = snapshot.entries.associateBy { it.id }
-        val links = v4.links.groupBy { it.entryId }
-        val eventLinks = v4.links.groupBy { it.eventId }
+        val links = v4.activeLinks.groupBy { it.entryId }
+        val eventLinks = v4.activeLinks.groupBy { it.eventId }
+        val ledgerById = FinanceProjection.ledger(snapshot).associateBy { it.entry.id }
         val shares = mutableMapOf<Pair<String, String>, Long>()
         for (event in v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE) }) {
             val paymentLinks = eventLinks[event.id].orEmpty().filter {
@@ -41,7 +42,23 @@ object FinancePersonalProjection {
                         else -> null
                     }
                 }
-                expense?.let { row.copy(entry = row.entry.copy(amountMinor = it, direction = FinanceDirection.OUTFLOW)) }
+                expense?.let { amount ->
+                    var attributed = row
+                    if (link.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)) {
+                        val context = eventLinks[event.id].orEmpty()
+                            .filter { it.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE) }
+                            .mapNotNull { ledgerById[it.entryId] }
+                        val categoryIds = context.map { it.entry.categoryId }.distinct()
+                        attributed = if (context.isNotEmpty() && categoryIds.size == 1) row.copy(
+                            entry = row.entry.copy(categoryId = categoryIds.single()), category = context.first().category)
+                        else row.copy(entry = row.entry.copy(categoryId = null),
+                            category = "调整待归属", categoryOverride = "调整待归属")
+                        val tagSets = context.map { it.tags.toSet() }.distinct()
+                        attributed = attributed.copy(tags = if (context.isNotEmpty() && tagSets.size == 1)
+                            tagSets.single().sorted() else listOf("调整待归属"))
+                    }
+                    attributed.copy(entry = attributed.entry.copy(amountMinor = amount, direction = FinanceDirection.OUTFLOW))
+                }
             }
         }
     }
