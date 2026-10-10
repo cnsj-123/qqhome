@@ -33,6 +33,10 @@ class AppearanceRepository(
 
     suspend fun read(): AppearanceSettings = records.first()
 
+    suspend fun selectFunctionPageStyle(style: FunctionPageStyle) {
+        store.edit { it[AppearanceCodec.functionPageStyle] = style.name }
+    }
+
     suspend fun selectPreset(preset: ThemePreset) {
         store.edit { it[AppearanceCodec.selected] = preset.id }
     }
@@ -60,6 +64,7 @@ class AppearanceRepository(
 }
 
 internal object AppearanceCodec {
+    val functionPageStyle = stringPreferencesKey("functionPageStyle")
     val selected = stringPreferencesKey("selectedThemeId")
     val customAccent = stringPreferencesKey("customAccent")
     val customPaper = stringPreferencesKey("customPaper")
@@ -76,6 +81,8 @@ internal object AppearanceCodec {
             ThemePreset.fromId(rawId) != null -> rawId!!
             else -> ThemePreset.ORIGINAL.id
         }
-        return AppearanceSettings(id, custom)
+        return AppearanceSettings(id, custom, FunctionPageStyle.entries.firstOrNull {
+            it.name == values[functionPageStyle]
+        } ?: FunctionPageStyle.LAYERED)
     }
 }

@@ -3,15 +3,18 @@ package com.qq.closie.ui.lifeos.theme
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
+import com.qq.closie.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** System serif titles and sans text: no downloaded or unlicensed fonts in the APK. */
+/** Bundled Source Han Sans CN Normal (OFL 1.1); no network or OEM font dependency. */
 object LifeText {
-    val display = TextStyle(fontFamily = FontFamily.Serif, fontSize = 26.sp, lineHeight = 34.sp)
-    val title = TextStyle(fontFamily = FontFamily.Serif, fontSize = 20.sp, lineHeight = 29.sp)
-    val body = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 15.sp, lineHeight = 24.sp)
-    val caption = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 19.sp)
+    val family = FontFamily(Font(R.font.life_sans))
+    val display = TextStyle(fontFamily = family, fontSize = 26.sp, lineHeight = 34.sp)
+    val title = TextStyle(fontFamily = family, fontSize = 20.sp, lineHeight = 29.sp)
+    val body = TextStyle(fontFamily = family, fontSize = 15.sp, lineHeight = 24.sp)
+    val caption = TextStyle(fontFamily = family, fontSize = 12.sp, lineHeight = 19.sp)
 }
 
 val LifeOsTypography = Typography(

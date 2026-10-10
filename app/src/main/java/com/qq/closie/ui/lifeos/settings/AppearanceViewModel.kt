@@ -7,6 +7,7 @@ import com.qq.closie.data.appearance.AppearanceRepository
 import com.qq.closie.data.appearance.AppearanceSettings
 import com.qq.closie.data.appearance.CustomTheme
 import com.qq.closie.data.appearance.ThemePreset
+import com.qq.closie.data.appearance.FunctionPageStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -49,6 +50,16 @@ class AppearanceViewModel(
     }
 
     fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
+
+    fun selectFunctionPageStyle(style: FunctionPageStyle) {
+        viewModelScope.launch {
+            try {
+                appearanceRepository.selectFunctionPageStyle(style)
+                _editor.value?.let { _editor.value = it.copy(preview = it.preview.copy(functionPageStyle = style)) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { _editor.value = _editor.value?.copy(message = "功能页样式保存失败，请重试") }
+        }
+    }
 
     fun saveAppearance() {
         val draft = _editor.value ?: return

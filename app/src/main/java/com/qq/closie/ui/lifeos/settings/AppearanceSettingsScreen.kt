@@ -29,7 +29,9 @@ fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit) 
             viewModel::previewSavedCustom, viewModel::editThemeField,
             onSave = { viewModel.saveAppearance() },
             onCancel = { viewModel.cancelAppearanceEdit(); onBack() },
-            onRestore = viewModel::restoreOriginal)
+            onRestore = viewModel::restoreOriginal,
+            functionPageStyle = stored?.functionPageStyle ?: FunctionPageStyle.LAYERED,
+            onFunctionPageStyle = viewModel::selectFunctionPageStyle)
     }
 }
 
@@ -39,10 +41,23 @@ fun AppearanceSettingsScreen(
     hasSavedCustom: Boolean,
     onPreset: (ThemePreset) -> Unit, onCustom: () -> Unit,
     onField: (ThemeField, String) -> Unit,
-    onSave: () -> Unit, onCancel: () -> Unit, onRestore: () -> Unit
+    onSave: () -> Unit, onCancel: () -> Unit, onRestore: () -> Unit,
+    functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
+    onFunctionPageStyle: (FunctionPageStyle) -> Unit = {}
 ) {
     val colors = LocalLifeOsColors.current
     LifePage("主题与配色", onCancel) {
+        Text("功能页", style = LifeText.title)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FunctionPageStyle.entries.forEach { style ->
+                FilterChip(functionPageStyle == style, { onFunctionPageStyle(style) }, label = { Text(style.label) })
+            }
+        }
+        Text(if (functionPageStyle == FunctionPageStyle.LAYERED)
+            "右滑时，手账稍稍缩小、移向右侧，左边露出功能页。"
+            else "右滑时，两页平稳移动，手账保持原大小。",
+            style = LifeText.caption, color = colors.muted)
+        Text("样式即时保存；系统关闭动画时不使用缩放和视差。", style = LifeText.caption, color = colors.muted)
         Text("给日子换一种颜色", style = LifeText.title)
         Text("四份画里的灵感，还有最初的暮山紫。照片保留原来的颜色。", Modifier.padding(vertical = 12.dp), style = LifeText.body, color = colors.muted)
         ThemePreset.entries.chunked(2).forEach { row ->

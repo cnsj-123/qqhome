@@ -30,7 +30,8 @@ data class CustomTheme(val accent: String, val paper: String, val secondary: Str
 
 data class AppearanceSettings(
     val selectedThemeId: String = ThemePreset.ORIGINAL.id,
-    val custom: CustomTheme? = null
+    val custom: CustomTheme? = null,
+    val functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED
 ) {
     fun selectedColors(): CustomTheme {
         if (selectedThemeId == CUSTOM_ID && custom != null) return custom.normalized()
@@ -40,6 +41,8 @@ data class AppearanceSettings(
 
     companion object { const val CUSTOM_ID = "custom" }
 }
+
+enum class FunctionPageStyle(val label: String) { LAYERED("层叠"), FLAT("平移") }
 
 object HexColor {
     private val pattern = Regex("^#[0-9a-fA-F]{6}$")

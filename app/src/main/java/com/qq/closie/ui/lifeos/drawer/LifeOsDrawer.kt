@@ -23,7 +23,7 @@ import com.qq.closie.ui.lifeos.theme.*
 @Composable
 fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val colors = LocalLifeOsColors.current
-    Box(modifier.fillMaxHeight().lifeHorizontalSwipe(onRight = onClose)) {
+    Box(modifier.fillMaxHeight()) {
         LazyColumn(Modifier.testTag("life-drawer"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -37,7 +37,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                 Surface(onClick = { onOpenModule(LifeModules.find("search")) },
                     shape = RoundedCornerShape(22.dp), color = colors.card,
                     border = BorderStroke(1.dp, colors.line)) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Search, null, tint = colors.muted)
                         Spacer(Modifier.width(10.dp))
                         Text("搜一件东西、一段经历……", style = LifeText.caption, color = colors.inkSecondary)
@@ -46,7 +46,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
             }
             LifeModules.groups.forEachIndexed { groupIndex, group ->
                 item(key = group.label) {
-                    Text(group.label, Modifier.padding(top = 26.dp, bottom = 12.dp), style = LifeText.caption, color = colors.muted)
+                    Text(group.label, Modifier.padding(top = 22.dp, bottom = 8.dp), style = LifeText.caption, color = colors.muted)
                 }
                 group.modules.chunked(2).forEach { pair ->
                     item(key = pair.first().id) {
@@ -59,7 +59,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     }
                 }
             }
-            item { Text("右滑或点击露出的首页，收起抽屉。", Modifier.padding(top = 26.dp), style = LifeText.caption, color = colors.muted) }
+            item { Text("左滑或点击露出的首页，返回手账。", Modifier.padding(top = 26.dp), style = LifeText.caption, color = colors.muted) }
         }
     }
 }
@@ -67,9 +67,9 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
 @Composable
 private fun ModuleCell(module: LifeModule, quick: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val colors = LocalLifeOsColors.current
-    Box(modifier.padding(bottom = if (quick) 10.dp else 0.dp), contentAlignment = Alignment.CenterStart) {
-        Row(Modifier.fillMaxWidth().heightIn(min = if (quick) 62.dp else 58.dp)
-            .testTag("drawer-${module.id}").clickable(role = Role.Button, onClick = onClick).padding(horizontal = 8.dp, vertical = 12.dp),
+    Box(modifier.padding(bottom = 0.dp), contentAlignment = Alignment.CenterStart) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .testTag("drawer-${module.id}").clickable(role = Role.Button, onClick = onClick).padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Icon(module.icon(), null, Modifier.size(22.dp), tint = colors.accentDeep)
             Spacer(Modifier.width(10.dp))

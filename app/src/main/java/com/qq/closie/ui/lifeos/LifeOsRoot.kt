@@ -61,21 +61,16 @@ fun LifeOsRoot(
         val entry by nav.currentBackStackEntryAsState()
         val legacySurface = entry?.destination?.route in setOf(LifeOsRoute.CLOSET, LifeOsRoute.BACKUP)
         val home by shellViewModel.home.collectAsStateWithLifecycle()
-        val drawer = rememberDrawerState(DrawerValue.Closed)
+        var drawerOpen by rememberSaveable { mutableStateOf(false) }
         val reduced = reducedLifeMotion()
         val scope = rememberCoroutineScope()
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
         val intakeError by intake.error.collectAsStateWithLifecycle()
-        val drawerWidth = (LocalConfiguration.current.screenWidthDp * .82f).dp
-        suspend fun closeDrawer() {
-            if (reduced) drawer.snapTo(DrawerValue.Closed) else drawer.close()
-        }
-        fun openDrawer() {
-            scope.launch { if (reduced) drawer.snapTo(DrawerValue.Open) else drawer.open() }
-        }
+        suspend fun closeDrawer() { drawerOpen = false }
+        fun openDrawer() { drawerOpen = true }
         LaunchedEffect(entry?.destination?.route) {
-            if (entry?.destination?.route != LifeOsRoute.HOME && drawer.isOpen) closeDrawer()
+            if (entry?.destination?.route != LifeOsRoute.HOME && drawerOpen) closeDrawer()
         }
         LaunchedEffect(externalCommand) {
             externalCommand?.let { command ->
@@ -99,36 +94,22 @@ fun LifeOsRoot(
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
             Box(Modifier.safeDrawingPadding().consumeWindowInsets(WindowInsets.safeDrawing)) {
-                ModalNavigationDrawer(
-                    drawerState = drawer,
-                    // Closed Home owns its content swipe; never capture the system-back edge.
-                    // Enable native scrim dismissal only once the drawer is already open.
-                    gesturesEnabled = drawer.isOpen,
-                    scrimColor = colors.shade.copy(alpha = .16f),
-                    drawerContent = {
-                        // State overload supplies native predictive-back handling (Material3 1.3.1).
-                        ModalDrawerSheet(drawerState = drawer, modifier = Modifier.width(drawerWidth),
-                            drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
-                            drawerContainerColor = colors.paperSecondary, drawerContentColor = colors.ink) {
-                            LifeOsDrawer(
-                                onOpenModule = { module ->
-                                    if (module.id == "capture") scope.launch { closeDrawer(); captureMenu = true }
-                                    else nav.navigateLifeTopLevel(module.route)
-                                },
-                                onClose = { scope.launch { closeDrawer() } }
-                            )
-                        }
+                com.qq.closie.ui.lifeos.components.LifeFunctionPages(
+                    open = drawerOpen,
+                    enabled = entry?.destination?.route == LifeOsRoute.HOME,
+                    style = appearance.functionPageStyle, reducedMotion = reduced,
+                    onOpenChange = { drawerOpen = it },
+                    functionPage = {
+                        LifeOsDrawer(onOpenModule = { module ->
+                            drawerOpen = false
+                            if (module.id == "capture") captureMenu = true
+                            else nav.navigateLifeTopLevel(module.route)
+                        }, onClose = { drawerOpen = false })
                     }
                 ) {
-                    Box(Modifier.fillMaxSize().lifeHorizontalSwipe(
-                        enabled = entry?.destination?.route == LifeOsRoute.HOME &&
-                            drawer.currentValue == DrawerValue.Closed && drawer.targetValue == DrawerValue.Closed,
-                        onLeft = ::openDrawer
-                    )) {
-                        LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
-                            shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
-                            onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
-                    }
+                    LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
+                        shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
+                        onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
                 }
             }
         }
