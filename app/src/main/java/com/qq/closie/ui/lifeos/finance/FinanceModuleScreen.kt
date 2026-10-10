@@ -57,6 +57,19 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (state.loading) item { Text("正在打开账本……", style = LifeText.body) }
             state.error?.let { message -> item { Text(message, color = colors.accentDeep); TextButton(vm::clearError) { Text("知道了") } } }
+            if (detailAccount == null && view in setOf(FinanceView.OVERVIEW, FinanceView.INSIGHTS) && state.unassignedAdjustments.isNotEmpty()) {
+                item {
+                    Text("账本调整待归属", style = LifeText.title)
+                    Text("以下调整保留真实到账，尚未冲减个人成本；此列表包含账本全部待归属调整。", style = LifeText.caption)
+                }
+                items(state.unassignedAdjustments, key = { "unassigned-${it.linkId}" }) { adjustment ->
+                    Column {
+                        Text(adjustment.role.label + " · " + FinanceMoney.display(adjustment.amountMinor, adjustment.row.currencyCode))
+                        Text(adjustment.issue.label + " · " + adjustment.row.entry.description, style = LifeText.caption)
+                        TextButton({ entryId = adjustment.row.entry.id; editing = true }) { Text("查看并整理流水") }
+                    }
+                }
+            }
             if (detailAccount != null) {
                 val account = state.snapshot.accounts.find { it.id == detailAccount }
                 if (account != null) {

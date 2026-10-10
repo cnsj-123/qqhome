@@ -25,7 +25,8 @@ data class FinanceUiState(
     val selected: Map<String, FinanceTotals> = emptyMap(),
     val categories: List<FinanceDimensionTotal> = emptyList(), val tags: List<FinanceDimensionTotal> = emptyList(),
     val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
-    val personalRows: List<FinanceLedgerRow> = emptyList()
+    val personalRows: List<FinanceLedgerRow> = emptyList(),
+    val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList()
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
@@ -81,7 +82,8 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.year()))),
                 FinanceProjection.totals(personal),
                 FinanceProjection.categoryTotals(personal), FinanceProjection.tagTotals(personal),
-                loading = false, busy = saving, error = message, personalRows = personal)
+                loading = false, busy = saving, error = message, personalRows = personal,
+                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)))
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 

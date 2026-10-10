@@ -121,6 +121,30 @@ class FinanceRelationLifecycleTest : FinanceRoomTest() {
         assertEquals(saved, readFinanceSnapshot(db, true))
     }
 
+    @Test fun voidingPaymentLeavesRealRefundAndExposesItWithoutNegativeConsumption() = runTest {
+        val a = account()
+        val paid = payment(a.id)
+        val refund = finance.saveEntry(accountId = a.id, direction = FinanceDirection.INFLOW,
+            amountMinor = 10_000, description = "合成退款", occurredAt = 3_000,
+            event = FinanceEventInput(role = FinanceFlowRole.REFUND, existingEventId = eventId(paid.id)))
+        val before = finance.snapshot()
+        assertEquals(FinanceTotals(20_000, 0), FinanceProjection.totals(
+            FinancePersonalProjection.rows(before, FinanceProjection.ledger(before)))["CNY"])
+        finance.voidEntry(paid.id)
+        val after = finance.snapshot()
+        FinanceIntegrity.validate(after)
+        assertEquals(refund, after.entries.single { it.id == refund.id })
+        assertEquals(10_000L, FinanceProjection.balance(a, after.entries))
+        val ledger = FinanceProjection.ledger(after)
+        assertEquals(FinanceTotals(0, 10_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
+        assertTrue(FinancePersonalProjection.rows(after, ledger).isEmpty())
+        val unresolved = FinancePersonalProjection.unassignedAdjustments(after, ledger).single()
+        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST, unresolved.issue)
+        assertEquals(10_000L, unresolved.amountMinor)
+        assertEquals(refund.id, unresolved.row.entry.id)
+        assertTrue(after.v4!!.activeLinks.all { it.role == FinanceFlowRole.REFUND })
+    }
+
     @Test fun voidTransferAlsoRetiresRealFeeAndCancelsFeeExpectations() = runTest {
         val a = account()
         val b = account("合成银行")

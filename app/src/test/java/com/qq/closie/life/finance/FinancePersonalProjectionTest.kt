@@ -33,6 +33,7 @@ class FinancePersonalProjectionTest {
             assertEquals("穿着 / 衣服", FinancePersonalProjection.rows(data,
                 FinanceProjection.ledger(data).filter { it.entry.id == "adjust" }).single().category)
             assertEquals(-20_000L, FinanceProjection.balance(account, data.entries))
+            assertTrue(FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).isEmpty())
         }
     }
 
@@ -47,6 +48,86 @@ class FinancePersonalProjectionTest {
         assertEquals(20_000L, breakdown.sumOf { it.totals.expenseMinor })
         assertEquals(FinanceProjection.totals(projected)["CNY"]!!.expenseMinor, breakdown.sumOf { it.totals.expenseMinor })
         assertEquals(-10_000L, FinanceProjection.parentCategoryTotals(projected, categories).single { it.label == "调整待归属" }.totals.expenseMinor)
+    }
+
+    @Test fun excessAdjustmentIsWhollyUnassignedAndNeverCreatesNegativeConsumption() {
+        for (nature in listOf(FinanceNature.PERSONAL, FinanceNature.STORED_VALUE)) {
+            for (role in listOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)) {
+                val data = snapshot(nature, flows = listOf(entry("pay", 30_000),
+                    entry("adjust", 38_000, FinanceDirection.INFLOW, "refund")), roles = listOf(FinanceFlowRole.PAYMENT, role))
+                FinanceIntegrity.validate(data)
+                val projected = rows(data)
+                assertEquals(FinanceTotals(30_000, 0), FinanceProjection.totals(projected)["CNY"])
+                assertEquals(30_000L, FinanceProjection.categoryTotals(projected).sumOf { it.totals.expenseMinor })
+                val unresolved = FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).single()
+                assertEquals(FinanceAdjustmentIssue.EXCEEDS_PAYMENT_COST, unresolved.issue)
+                assertEquals(38_000L, unresolved.amountMinor)
+                assertEquals(role, unresolved.role)
+                assertEquals(data.entries.single { it.id == "adjust" }, unresolved.row.entry)
+                assertEquals(FinanceTotals(30_000, 38_000), FinancePersonalProjection.realTotals(FinanceProjection.ledger(data))["CNY"])
+                assertEquals(8_000L, FinanceProjection.balance(account, data.entries))
+            }
+        }
+    }
+
+    @Test fun cumulativeRefundRebateAndCashbackAreCheckedAgainstFullEventEvenInFilteredPeriod() {
+        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+            entry("refund", 10_000, FinanceDirection.INFLOW), entry("rebate", 20_000, FinanceDirection.INFLOW),
+            entry("cashback", 8_000, FinanceDirection.INFLOW)), roles = listOf(FinanceFlowRole.PAYMENT,
+            FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK))
+        assertEquals(FinanceTotals(30_000, 0), FinanceProjection.totals(rows(data))["CNY"])
+        val ledger = FinanceProjection.ledger(data)
+        assertEquals(38_000L, FinancePersonalProjection.unassignedAdjustments(data, ledger).sumOf { it.amountMinor })
+        val onlyRefund = ledger.filter { it.entry.id == "refund" }
+        assertTrue(FinancePersonalProjection.rows(data, onlyRefund).isEmpty())
+        assertEquals(FinanceAdjustmentIssue.EXCEEDS_PAYMENT_COST,
+            FinancePersonalProjection.unassignedAdjustments(data, onlyRefund).single().issue)
+        assertEquals(FinanceProjection.totals(rows(data)), FinanceProjection.totals(rows(data.copy(entries = data.entries.reversed()))))
+        val exactlyPaid = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+            entry("refund", 10_000, FinanceDirection.INFLOW), entry("rebate", 20_000, FinanceDirection.INFLOW)),
+            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND, FinanceFlowRole.REBATE))
+        assertEquals(FinanceTotals(0, 0), FinanceProjection.totals(rows(exactlyPaid))["CNY"])
+        assertTrue(FinancePersonalProjection.unassignedAdjustments(exactlyPaid, FinanceProjection.ledger(exactlyPaid)).isEmpty())
+    }
+
+    @Test fun feeCategoryAndTagDoNotMakePaymentAttributionAmbiguous() {
+        val base = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+            entry("fee", 300, category = "fee"), entry("refund", 10_000, FinanceDirection.INFLOW, "refund")),
+            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE, FinanceFlowRole.REFUND))
+        val data = base.copy(categories = base.categories + FinanceCategoryEntity("fee", "手续费"),
+            tags = base.tags + FinanceTagEntity("fee-tag", "手续费标签"),
+            entryTags = base.entryTags.map { if (it.entryId == "fee") it.copy(tagId = "fee-tag") else it })
+        FinanceIntegrity.validate(data)
+        val projected = rows(data)
+        assertEquals(FinanceTotals(20_300, 0), FinanceProjection.totals(projected)["CNY"])
+        val categoryTotals = FinanceProjection.categoryTotals(projected)
+        assertEquals(20_000L, categoryTotals.single { it.label == "穿着 / 衣服" }.totals.expenseMinor)
+        assertEquals(300L, categoryTotals.single { it.label == "手续费" }.totals.expenseMinor)
+        assertFalse(categoryTotals.any { it.label == "调整待归属" })
+        val tagTotals = FinanceProjection.tagTotals(projected)
+        assertEquals(20_000L, tagTotals.single { it.label == "穿着标签" }.totals.expenseMinor)
+        assertEquals(300L, tagTotals.single { it.label == "手续费标签" }.totals.expenseMinor)
+        assertFalse(tagTotals.any { it.label in setOf("调整待归属", "到账标签") })
+        assertTrue(FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).isEmpty())
+    }
+
+    @Test fun feeAloneCannotSupplyPaymentCostForAnAdjustment() {
+        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("fee", 300),
+            entry("refund", 100, FinanceDirection.INFLOW)), roles = listOf(FinanceFlowRole.FEE, FinanceFlowRole.REFUND))
+        assertEquals(FinanceTotals(300, 0), FinanceProjection.totals(rows(data))["CNY"])
+        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST,
+            FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).single().issue)
+        assertEquals(-200L, FinanceProjection.balance(account, data.entries))
+    }
+
+    @Test fun excludedPaymentCannotProduceNegativeIncludedPersonalCost() {
+        val base = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+            entry("refund", 10_000, FinanceDirection.INFLOW)), roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND))
+        val data = base.copy(entries = base.entries.map { if (it.id == "pay") it.copy(statPolicy = FinanceStatPolicy.EXCLUDE) else it })
+        assertTrue(rows(data).isEmpty())
+        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST,
+            FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).single().issue)
+        assertEquals(-20_000L, FinanceProjection.balance(account, data.entries))
     }
 
     @Test fun splitAndReimbursementCountOnlyConfirmedShareProxyNeverBecomesPersonalConsumption() {

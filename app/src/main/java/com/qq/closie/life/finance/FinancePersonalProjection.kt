@@ -2,8 +2,57 @@ package com.qq.closie.life.finance
 
 import java.math.BigInteger
 
+enum class FinanceAdjustmentIssue(val label: String) {
+    NO_ACTIVE_PAYMENT_COST("没有可计入个人成本的有效付款"),
+    EXCEEDS_PAYMENT_COST("累计调整超过有效付款成本")
+}
+
+/** Read-only unresolved semantics, not income or a persisted balance. Amount is the real allocation. */
+data class FinanceUnassignedAdjustment(val linkId: String, val eventId: String, val row: FinanceLedgerRow,
+    val role: FinanceFlowRole, val amountMinor: Long, val issue: FinanceAdjustmentIssue)
+
 /** Statistics interpret confirmed typed relationships, never import evidence or expected money. */
 object FinancePersonalProjection {
+    private val adjustmentRoles = setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)
+
+    private fun activePayment(link: FinanceEventEntryLinkEntity, ledger: Map<String, FinanceLedgerRow>,
+        currency: String): FinanceLedgerRow? = ledger[link.entryId]?.takeIf {
+        link.role == FinanceFlowRole.PAYMENT && link.allocatedMinor > 0 && it.transfer == null &&
+            it.entry.direction == FinanceDirection.OUTFLOW && it.currencyCode == currency
+    }
+
+    /** Evaluate the entire event, even for a filtered period. Never choose or split adjustments by order. */
+    private fun adjustmentIssues(v4: FinanceV4Snapshot, ledger: Map<String, FinanceLedgerRow>): Map<String, FinanceAdjustmentIssue> {
+        val byEvent = v4.activeLinks.groupBy { it.eventId }
+        return buildMap {
+            v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.PERSONAL, FinanceNature.STORED_VALUE) }.forEach { event ->
+                val links = byEvent[event.id].orEmpty()
+                val adjustments = links.filter { link -> link.role in adjustmentRoles &&
+                    ledger[link.entryId]?.let { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW } == true }
+                if (adjustments.isEmpty()) return@forEach
+                val cost = links.filter { activePayment(it, ledger, event.currencyCode)?.entry?.statPolicy == FinanceStatPolicy.INCLUDE }
+                    .fold(BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
+                val adjusted = adjustments.fold(BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
+                when {
+                    cost.signum() == 0 -> put(event.id, FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST)
+                    adjusted > cost -> put(event.id, FinanceAdjustmentIssue.EXCEEDS_PAYMENT_COST)
+                }
+            }
+        }
+    }
+
+    /** Unsafe event adjustments stay visible, wholly unresolved; their real account flows remain intact. */
+    fun unassignedAdjustments(snapshot: FinanceSnapshot, selected: List<FinanceLedgerRow>): List<FinanceUnassignedAdjustment> {
+        val v4 = snapshot.v4 ?: return emptyList()
+        val issues = adjustmentIssues(v4, FinanceProjection.ledger(snapshot).associateBy { it.entry.id })
+        val links = v4.activeLinks.groupBy { it.entryId }
+        return selected.filter { it.transfer == null && it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }.flatMap { row ->
+            links[row.entry.id].orEmpty().filter { it.role in adjustmentRoles }.mapNotNull { link ->
+                issues[link.eventId]?.let { FinanceUnassignedAdjustment(link.id, link.eventId, row, link.role, link.allocatedMinor, it) }
+            }
+        }
+    }
+
     fun rows(snapshot: FinanceSnapshot, selected: List<FinanceLedgerRow>): List<FinanceLedgerRow> {
         val v4 = snapshot.v4 ?: return selected.filter { it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
         val events = v4.events.associateBy { it.id }
@@ -11,6 +60,7 @@ object FinancePersonalProjection {
         val links = v4.activeLinks.groupBy { it.entryId }
         val eventLinks = v4.activeLinks.groupBy { it.eventId }
         val ledgerById = FinanceProjection.ledger(snapshot).associateBy { it.entry.id }
+        val issues = adjustmentIssues(v4, ledgerById)
         val shares = mutableMapOf<Pair<String, String>, Long>()
         for (event in v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE) }) {
             val paymentLinks = eventLinks[event.id].orEmpty().filter {
@@ -36,7 +86,7 @@ object FinancePersonalProjection {
                     FinanceNature.PROXY_PURCHASE, FinanceNature.OTHER -> null
                     FinanceNature.SPLIT, FinanceNature.REIMBURSABLE -> shares[event.id to row.entry.id]
                     FinanceNature.PERSONAL, FinanceNature.STORED_VALUE -> when {
-                        link.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK) -> -link.allocatedMinor
+                        link.role in adjustmentRoles -> if (event.id in issues) null else -link.allocatedMinor
                         row.entry.direction == FinanceDirection.OUTFLOW -> link.allocatedMinor
                         link.role == FinanceFlowRole.OTHER -> return@mapNotNull row.copy(entry = row.entry.copy(amountMinor = link.allocatedMinor))
                         else -> null
@@ -44,10 +94,9 @@ object FinancePersonalProjection {
                 }
                 expense?.let { amount ->
                     var attributed = row
-                    if (link.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)) {
+                    if (link.role in adjustmentRoles) {
                         val context = eventLinks[event.id].orEmpty()
-                            .filter { it.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE) }
-                            .mapNotNull { ledgerById[it.entryId] }
+                            .mapNotNull { activePayment(it, ledgerById, event.currencyCode) }
                         val categoryIds = context.map { it.entry.categoryId }.distinct()
                         attributed = if (context.isNotEmpty() && categoryIds.size == 1) row.copy(
                             entry = row.entry.copy(categoryId = categoryIds.single()), category = context.first().category)
