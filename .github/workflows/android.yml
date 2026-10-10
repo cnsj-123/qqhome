@@ -22,6 +22,14 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
 
+      # Generate schema assets before the unit-test invocation merges debug assets.
+      - name: Generate Room schema
+        run: ./gradlew :app:kspDebugKotlin --stacktrace
+      - name: Verify Room v4 schema
+        shell: bash
+        run: |
+          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+
       # Includes Room migration, repository and restore-safety regression tests.
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
@@ -40,6 +48,13 @@ jobs:
           name: unit-test-report-build${{ github.run_number }}
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
+      - name: Upload Room schema
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: room-schema-build${{ github.run_number }}
+          path: app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+          if-no-files-found: error
 
       # These secret-bearing steps are skipped on PR/feature/manual feature runs.
       - name: Check release signing availability
