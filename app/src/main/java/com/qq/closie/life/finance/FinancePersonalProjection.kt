@@ -28,7 +28,8 @@ object FinancePersonalProjection {
             v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.PERSONAL, FinanceNature.STORED_VALUE) }.forEach { event ->
                 val links = byEvent[event.id].orEmpty()
                 val adjustments = links.filter { link -> link.role in adjustmentRoles &&
-                    ledger[link.entryId]?.let { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW } == true }
+                    ledger[link.entryId]?.let { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW &&
+                        it.entry.statPolicy == FinanceStatPolicy.INCLUDE } == true }
                 if (adjustments.isEmpty()) return@forEach
                 val cost = links.filter { activePayment(it, ledger, event.currencyCode)?.entry?.statPolicy == FinanceStatPolicy.INCLUDE }
                     .fold(BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }

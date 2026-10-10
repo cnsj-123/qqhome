@@ -120,13 +120,53 @@ class FinancePersonalProjectionTest {
         assertEquals(-200L, FinanceProjection.balance(account, data.entries))
     }
 
+    @Test fun excludedCashbackCannotMakeIncludedRefundUnassigned() {
+        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+            entry("refund", 10_000, FinanceDirection.INFLOW, "refund"),
+            entry("cashback", 25_000, FinanceDirection.INFLOW).copy(statPolicy = FinanceStatPolicy.EXCLUDE)),
+            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND, FinanceFlowRole.CASHBACK))
+        FinanceIntegrity.validate(data)
+        val ledger = FinanceProjection.ledger(data)
+        val projected = rows(data)
+        assertEquals(FinanceTotals(20_000, 0), FinanceProjection.totals(projected)["CNY"])
+        assertEquals(setOf("pay", "refund"), projected.map { it.entry.id }.toSet())
+        val refund = projected.single { it.entry.id == "refund" }
+        assertEquals("穿着 / 衣服", refund.category)
+        assertEquals(listOf(FinanceDimensionTotal("穿着 / 衣服", "CNY", FinanceTotals(20_000, 0))),
+            FinanceProjection.categoryTotals(projected))
+        assertEquals(listOf("穿着标签"), FinanceProjection.tagTotals(listOf(refund)).map { it.label })
+        assertTrue(FinancePersonalProjection.unassignedAdjustments(data, ledger).isEmpty())
+        assertEquals(data.entries.single { it.id == "cashback" }, ledger.single { it.entry.id == "cashback" }.entry)
+        assertEquals(FinanceTotals(30_000, 35_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
+        assertEquals(5_000L, FinanceProjection.balance(account, data.entries))
+    }
+
+    @Test fun excludedExcessRefundRemainsRealInflowWithoutPersonalStatisticsOrWarning() {
+        val data = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
+            entry("refund", 38_000, FinanceDirection.INFLOW).copy(statPolicy = FinanceStatPolicy.EXCLUDE)),
+            roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND))
+        FinanceIntegrity.validate(data)
+        val ledger = FinanceProjection.ledger(data)
+        val projected = rows(data)
+        assertEquals(FinanceTotals(30_000, 0), FinanceProjection.totals(projected)["CNY"])
+        assertEquals("pay", projected.single().entry.id)
+        assertTrue(FinancePersonalProjection.unassignedAdjustments(data, ledger).isEmpty())
+        assertEquals(data.entries.single { it.id == "refund" }, ledger.single { it.entry.id == "refund" }.entry)
+        assertEquals(FinanceTotals(30_000, 38_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
+        assertEquals(8_000L, FinanceProjection.balance(account, data.entries))
+    }
+
     @Test fun excludedPaymentCannotProduceNegativeIncludedPersonalCost() {
         val base = snapshot(FinanceNature.PERSONAL, flows = listOf(entry("pay", 30_000),
             entry("refund", 10_000, FinanceDirection.INFLOW)), roles = listOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.REFUND))
         val data = base.copy(entries = base.entries.map { if (it.id == "pay") it.copy(statPolicy = FinanceStatPolicy.EXCLUDE) else it })
+        FinanceIntegrity.validate(data)
+        val ledger = FinanceProjection.ledger(data)
         assertTrue(rows(data).isEmpty())
-        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST,
-            FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).single().issue)
+        val unresolved = FinancePersonalProjection.unassignedAdjustments(data, ledger).single()
+        assertEquals(FinanceAdjustmentIssue.NO_ACTIVE_PAYMENT_COST, unresolved.issue)
+        assertEquals(10_000L, unresolved.amountMinor)
+        assertEquals(FinanceTotals(30_000, 10_000), FinancePersonalProjection.realTotals(ledger)["CNY"])
         assertEquals(-20_000L, FinanceProjection.balance(account, data.entries))
     }
 
