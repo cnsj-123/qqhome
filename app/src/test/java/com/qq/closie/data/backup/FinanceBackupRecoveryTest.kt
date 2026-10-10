@@ -36,8 +36,8 @@ class FinanceBackupRecoveryTest {
     @Test fun snapshotAndJsonArchiveCarryEveryFinanceTableExactly() = runTest {
         seed()
         val saved = LifeBackupApplier.snapshot(db)
-        assertEquals(repo.snapshot(), saved.finance)
-        assertEquals(16, saved.toInsertOrder().size)
+        assertEquals(readFinanceSnapshot(db, includeIntake = true), saved.finance)
+        assertEquals(27, saved.toInsertOrder().size)
         val decoded = BackupValidator.gson.fromJson(BackupValidator.gson.toJson(saved), LifeBackupPayload::class.java)
         assertEquals(saved.finance, decoded.finance)
         FinanceIntegrity.validate(requireNotNull(decoded.finance))

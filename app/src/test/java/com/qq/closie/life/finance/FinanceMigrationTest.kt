@@ -45,7 +45,7 @@ class FinanceMigrationTest {
             assertEquals(2, repo.snapshot().entries.size)
             assertEquals("旧计划", room.planDao().getAllOnce().single().title)
             assertEquals("旧记录", room.captureDao().getAllOnce().single().rawText)
-            assertEquals(3, room.openHelper.writableDatabase.version)
+            assertEquals(4, room.openHelper.writableDatabase.version)
         } finally { room.close(); RestoreStartupGate.resetForTesting() }
     }
 }

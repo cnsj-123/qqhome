@@ -21,15 +21,35 @@ class ArchitectureBoundaryTest {
             assertFalse(it.name, text.contains("financeDao("))
             assertFalse(it.name, text.contains("life.data.database"))
         }
-        val dao = File(source, "life/data/database/dao/FinanceDao.kt").readText()
-        assertFalse(dao.contains("@Delete"))
-        assertFalse(dao.contains("OnConflictStrategy.REPLACE"))
-        assertFalse(Regex("DELETE FROM finance_(accounts|entries|transfers|categories|tags)\\b").containsMatchIn(dao))
+        val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
+            "finance_rule_conditions", "finance_rule_actions")
+        (File(source, "life/data/database/dao").listFiles()!!.filter { it.name.startsWith("Finance") } +
+            File(source, "life/finance").walkTopDown().filter { it.extension == "kt" }.toList()).forEach { file ->
+            val dao = file.readText()
+            assertFalse(file.name, dao.contains("@Delete"))
+            assertFalse(file.name, dao.contains("OnConflictStrategy.REPLACE"))
+            Regex("DELETE\\s+FROM\\s+(finance_\\w+)", RegexOption.IGNORE_CASE).findAll(dao).forEach {
+                assertTrue(file.name + ": " + it.value, it.groupValues[1].lowercase() in allowedDeletes)
+            }
+        }
         assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 4"))
-        assertTrue(File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/3.json").exists())
+        val version = Regex("version\\s*=\\s*(\\d+)").find(
+            File(source, "life/data/database/LifeDatabase.kt").readText())!!.groupValues[1]
+        val schema = File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/$version.json")
+        assertTrue("Missing current Room/KSP schema: " + schema.path, schema.isFile)
+        assertEquals(version.toInt(), com.google.gson.JsonParser.parseString(schema.readText())
+            .asJsonObject.getAsJsonObject("database").get("version").asInt)
         assertEquals("life_os.db", com.qq.closie.life.data.database.LifeDatabase.DATABASE_NAME)
         assertEquals(com.qq.closie.navigation.LifeOsRoute.FINANCE,
             com.qq.closie.ui.lifeos.drawer.LifeModules.find("finance").route)
+    }
+    @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
+        val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
+        assertTrue(listener.contains("financeAutomationRepository.discover(proposal)"))
+        for (forbidden in listOf("financeDao(", "financeIntakeDao(", "saveEntry(", "saveTransfer(",
+            "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY")) {
+            assertFalse(forbidden, listener.contains(forbidden))
+        }
     }
     @Test fun captureHasNoUserLevelPhysicalDeleteApi() {
         val owners = listOf(
