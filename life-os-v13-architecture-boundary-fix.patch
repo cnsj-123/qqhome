@@ -1,0 +1,25 @@
+From f6c452341ffbfe5f775aa9a12b4347e4b4c61d4f Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Sun, 11 Oct 2026 12:29:40 +0800
+Subject: [PATCH] fix(test): align finance listener architecture boundary
+
+---
+ app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+index 14d2561..8af1cc8 100644
+--- a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
++++ b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+@@ -45,7 +45,7 @@ class ArchitectureBoundaryTest {
+     }
+     @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
+         val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
+-        assertTrue(listener.contains("financeAutomationRepository.discover(proposal)"))
++        assertTrue(listener.contains("financeAutomationRepository.discoverWithResult(proposal)"))
+         for (forbidden in listOf("financeDao(", "financeIntakeDao(", "saveEntry(", "saveTransfer(",
+             "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY")) {
+             assertFalse(forbidden, listener.contains(forbidden))
+-- 
+2.53.0.windows.3
+
