@@ -45,9 +45,10 @@ class ArchitectureBoundaryTest {
     }
     @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
         val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
-        assertTrue(listener.contains("financeAutomationRepository.discover(proposal)"))
+        assertTrue(Regex("""\bfinanceAutomationRepository\.discover(?:WithResult)?\s*\(\s*proposal\s*\)""").containsMatchIn(listener))
         for (forbidden in listOf("financeDao(", "financeIntakeDao(", "saveEntry(", "saveTransfer(",
-            "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY")) {
+            "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY",
+            "financeAutomationRepository.confirm(")) {
             assertFalse(forbidden, listener.contains(forbidden))
         }
     }
