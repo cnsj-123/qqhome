@@ -30,14 +30,18 @@ data class CustomTheme(val accent: String, val paper: String, val secondary: Str
     )
 }
 
+data class NamedTheme(val id: String, val name: String, val colors: CustomTheme)
+
 data class AppearanceSettings(
     val selectedThemeId: String = ThemePreset.ORIGINAL.id,
     val custom: CustomTheme? = null,
     val functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
-    val moduleOrder: List<String> = emptyList()
+    val moduleOrder: List<String> = emptyList(),
+    val namedThemes: List<NamedTheme> = emptyList()
 ) {
     fun selectedColors(): CustomTheme {
         if (selectedThemeId == CUSTOM_ID && custom != null) return custom.normalized()
+        namedThemes.firstOrNull { it.id == selectedThemeId }?.let { return it.colors.normalized() }
         val preset = ThemePreset.fromId(selectedThemeId) ?: ThemePreset.ORIGINAL
         return CustomTheme(preset.accent, preset.paper, preset.secondary, preset.soft, preset.warm)
     }

@@ -30,7 +30,7 @@ val LocalLifeOsColors = staticCompositionLocalOf { ThemePalette.resolve(Appearan
 
 @Composable
 fun LifeOsTheme(settings: AppearanceSettings = AppearanceSettings(), content: @Composable () -> Unit) {
-    val colors = androidx.compose.runtime.remember(settings.selectedThemeId, settings.custom) { ThemePalette.resolve(settings).colors() }
+    val colors = androidx.compose.runtime.remember(settings.selectedThemeId, settings.custom, settings.namedThemes) { ThemePalette.resolve(settings).colors() }
     val base = if (colors.isDark) darkColorScheme() else lightColorScheme()
     val scheme = base.copy(
         primary = colors.accent, onPrimary = colors.onAccent,

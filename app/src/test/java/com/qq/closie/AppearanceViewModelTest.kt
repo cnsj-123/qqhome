@@ -32,7 +32,8 @@ class AppearanceViewModelTest {
     @get:Rule val temporary = TemporaryFolder()
     private val main = UnconfinedTestDispatcher()
     private val custom = CustomTheme("#AB12CD", "#F0EADC", "#98AB76")
-    private val saved = AppearanceSettings(ThemePreset.WATER_LILY.id, custom)
+    private val saved = AppearanceSettings(ThemePreset.WATER_LILY.id, custom, namedThemes = listOf(
+        com.qq.closie.data.appearance.NamedTheme("legacy-custom", "以前的我的配色", custom)))
 
     @Before fun setMain() { Dispatchers.setMain(main) }
     @After fun resetMain() { Dispatchers.resetMain() }
@@ -74,24 +75,28 @@ class AppearanceViewModelTest {
             model.editThemeField(ThemeField.SOFT, custom.soft)
             model.editThemeField(ThemeField.WARM, custom.warm)
             saveAndAwait(model)
-            assertEquals(custom, repository.read().custom)
-            repository.settings.first { it?.selectedThemeId == AppearanceSettings.CUSTOM_ID }
+            val named = repository.read().namedThemes.single()
+            assertEquals(custom, named.colors)
+            assertEquals(named.id, repository.read().selectedThemeId)
+            repository.settings.first { it?.selectedThemeId == named.id }
 
             model.previewPreset(ThemePreset.WATER_LILY)
             saveAndAwait(model)
-            val preset = AppearanceSettings(ThemePreset.WATER_LILY.id, custom)
-            assertEquals(preset, repository.read())
+            val preset = repository.read()
+            assertEquals(ThemePreset.WATER_LILY.id, preset.selectedThemeId)
+            assertEquals(listOf(named), preset.namedThemes)
             repository.settings.first { it == preset }
 
             model.cancelAppearanceEdit()
             model.beginAppearanceEdit()
-            model.previewSavedCustom()
+            model.previewNamed(named.id)
             val draft = model.editor.value!!
-            assertEquals(AppearanceSettings.CUSTOM_ID, draft.selectedId)
+            assertEquals(named.id, draft.selectedId)
             assertEquals(custom, draft.preview.selectedColors())
             assertEquals(preset, repository.read())
             saveAndAwait(model)
-            assertEquals(AppearanceSettings(AppearanceSettings.CUSTOM_ID, custom), repository.read())
+            assertEquals(named.id, repository.read().selectedThemeId)
+            assertEquals(listOf(named), repository.read().namedThemes)
         }
     }
 

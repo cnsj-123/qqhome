@@ -51,6 +51,55 @@ class AppearanceViewModel(
 
     fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
 
+    fun previewNamed(id: String) {
+        if (_editor.value?.isSaving == true) return
+        val saved = savedAppearance.value ?: return
+        _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = id))
+    }
+
+    fun nameTheme(value: String) {
+        _editor.value?.takeUnless { it.isSaving }?.let {
+            _editor.value = it.copy(themeName = value.take(40), selectedId = AppearanceSettings.CUSTOM_ID)
+        }
+    }
+
+    fun deleteNamed(id: String) {
+        val draft = _editor.value ?: return
+        if (draft.isSaving || draft.extracting) return
+        val generation = editGeneration
+        _editor.value = draft.copy(isSaving = true)
+        viewModelScope.launch {
+            try {
+                appearanceRepository.deleteNamed(id)
+                val saved = appearanceRepository.read()
+                if (generation == editGeneration && _editor.value != null)
+                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已删除")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { if (generation == editGeneration) _editor.value = draft.copy(message = "删除失败，请重试") }
+        }
+    }
+
+    fun extractImage(context: android.content.Context, uri: android.net.Uri) {
+        val initial = _editor.value ?: return
+        if (initial.isSaving || initial.extracting) return
+        val generation = editGeneration
+        _editor.value = initial.copy(extracting = true, message = "正在从图片中取色…")
+        viewModelScope.launch {
+            try {
+                val palette = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    com.qq.closie.data.appearance.themeFromImage(context, uri)
+                }
+                if (generation == editGeneration && _editor.value != null) {
+                    val preview = (_editor.value ?: initial).preview.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID, custom = palette)
+                    _editor.value = AppearanceEditorState.from(preview).copy(themeName = "图片里的颜色", message = "已在本机取色，可继续调整和命名；保存后可再次使用。")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (generation == editGeneration) _editor.value = _editor.value?.copy(extracting = false, message = error.message ?: "图片取色失败，请重试")
+            }
+        }
+    }
+
     fun selectFunctionPageStyle(style: FunctionPageStyle) {
         viewModelScope.launch {
             try {
@@ -71,13 +120,14 @@ class AppearanceViewModel(
 
     fun saveAppearance() {
         val draft = _editor.value ?: return
-        if (draft.isSaving || draft.validationError != null) return
+        if (draft.isSaving || draft.extracting || draft.validationError != null) return
         val generation = editGeneration
         _editor.value = draft.copy(isSaving = true, message = null)
         viewModelScope.launch {
             runCatching {
                 when {
-                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveCustom(CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
+                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveNamed(draft.themeName, CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
+                    draft.preview.namedThemes.any { it.id == draft.selectedId } -> appearanceRepository.selectNamed(draft.selectedId)
                     else -> appearanceRepository.selectPreset(requireNotNull(ThemePreset.fromId(draft.selectedId)))
                 }
                 appearanceRepository.read()

@@ -12,7 +12,8 @@ data class AppearanceEditorState(
     val validationError: String? = null,
     val isSaving: Boolean = false,
     val message: String? = null,
-    val soft: String = secondary, val warm: String = paper
+    val soft: String = secondary, val warm: String = paper,
+    val themeName: String = "我的配色", val extracting: Boolean = false
 ) {
     fun edit(field: ThemeField, text: String): AppearanceEditorState {
         val changed = when (field) {
@@ -31,7 +32,8 @@ data class AppearanceEditorState(
     companion object {
         fun from(settings: AppearanceSettings): AppearanceEditorState {
             val c = settings.selectedColors()
-            return AppearanceEditorState(settings.selectedThemeId, c.accent, c.paper, c.secondary, settings, soft = c.soft, warm = c.warm)
+            return AppearanceEditorState(settings.selectedThemeId, c.accent, c.paper, c.secondary, settings, soft = c.soft, warm = c.warm,
+                themeName = settings.namedThemes.firstOrNull { it.id == settings.selectedThemeId }?.name ?: "我的配色")
         }
     }
 }

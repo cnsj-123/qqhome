@@ -12,10 +12,10 @@ import androidx.compose.ui.unit.sp
 /** Bundled Noto Sans SC pins real weight axes; journal headings may opt into bundled serif. */
 object LifeText {
     val family = LifeFonts.Sans
-    val number = TextStyle(fontFamily = family, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
+    val number = TextStyle(fontFamily = family, fontSize = 23.sp, lineHeight = 31.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
     val journal = TextStyle(fontFamily = FontFamily(Font(R.font.noto_serif_sc_medium)), fontSize = 22.sp, lineHeight = 30.sp)
     val display = TextStyle(fontFamily = family, fontSize = 26.sp, lineHeight = 34.sp)
-    val title = TextStyle(fontFamily = family, fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium)
+    val title = TextStyle(fontFamily = family, fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.Medium)
     val body = TextStyle(fontFamily = family, fontSize = 14.sp, lineHeight = 21.sp)
     val caption = TextStyle(fontFamily = family, fontSize = 12.sp, lineHeight = 18.sp)
 }
