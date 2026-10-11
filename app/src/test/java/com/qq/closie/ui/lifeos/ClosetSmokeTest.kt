@@ -16,6 +16,8 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onRoot
@@ -60,7 +62,7 @@ class ClosetSmokeTest {
     }
 
     @Test
-    fun drawerHasRestoredHeaderSearchAndQuickActions() {
+    fun drawerHasHeaderSearchModulesAndDirectReorderAffordances() {
         openDrawer()
         compose.onNodeWithText("生活的抽屉").assertIsDisplayed()
         compose.onNodeWithText("把日子放回自己的位置").assertIsDisplayed()
@@ -71,7 +73,9 @@ class ClosetSmokeTest {
         compose.onNodeWithText("日历").assertIsDisplayed()
         compose.onNodeWithText("搜索").assertIsDisplayed()
         compose.onNodeWithTag("drawer-finance").assertIsDisplayed()
-        compose.onNodeWithText("整理").assertIsDisplayed()
+        compose.onNodeWithText("长按直接移动").assertIsDisplayed()
+        compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
+        compose.onNodeWithTag("drawer-restore-order").assertExists().assertIsDisplayed()
     }
 
     @Test
@@ -145,6 +149,35 @@ class ClosetSmokeTest {
         compose.onNodeWithContentDescription("返回").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Life OS").assertIsDisplayed()
+    }
+
+    @Test
+    fun financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance() {
+        openDrawer()
+        compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
+        compose.onNodeWithTag("drawer-finance").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+        compose.onNodeWithText("钱的位置").assertIsDisplayed()
+        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+
+        // Real input on Finance content, away from system edges and horizontal account rows.
+        compose.onNodeWithTag("finance-ledger").performTouchInput {
+            swipe(Offset(width * .25f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
+        }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        compose.onNodeWithTag("life-drawer").assertIsDisplayed()
+        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
+
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+        compose.onNodeWithText("钱的位置").assertIsDisplayed()
     }
 
 }

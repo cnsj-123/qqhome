@@ -75,6 +75,54 @@ class AppearanceRepositoryTest {
     }
 
     @Test
+    fun `legacy stays derived when unrelated palettes are saved deleted and explicitly duplicated`() = runBlocking {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope) { File(temporary.root, "derived.preferences_pb") }
+        val repository = AppearanceRepository(store, scope)
+        val custom = CustomTheme("#765432", "#EFEFEF", "#BBAADD")
+        suspend fun rawIds(): List<String> = com.google.gson.JsonParser.parseString(
+            store.data.first()[AppearanceCodec.collection] ?: "[]"
+        ).asJsonArray.map { it.asJsonObject.get("id").asString }
+        try {
+            repository.saveCustom(custom)
+            repository.selectNamed("legacy-custom")
+            assertEquals("legacy-custom", repository.read().selectedThemeId)
+            assertEquals(custom, repository.read().selectedColors())
+            assertTrue(rawIds().isEmpty())
+
+            repository.saveNamed("另一个主题", CustomTheme("#112233", "#FFFFFF", "#CCDDEE"))
+            val unrelatedId = repository.read().selectedThemeId
+            assertEquals(listOf(unrelatedId), rawIds())
+            assertTrue(unrelatedId.startsWith("palette-"))
+            assertEquals(1, repository.read().namedThemes.count { it.id == "legacy-custom" })
+
+            repository.selectNamed("legacy-custom")
+            assertEquals(listOf(unrelatedId), rawIds())
+            // The explicit duplicate/save command appends exactly one real palette.
+            repository.saveNamed("旧配色副本", repository.read().selectedColors())
+            val duplicateId = repository.read().selectedThemeId
+            assertEquals(listOf(unrelatedId, duplicateId), rawIds())
+            assertTrue(rawIds().all { it.startsWith("palette-") })
+            assertEquals(custom, repository.read().namedThemes.single { it.id == duplicateId }.colors)
+
+            repository.selectNamed("legacy-custom")
+            repository.deleteNamed(unrelatedId)
+            assertEquals(listOf(duplicateId), rawIds())
+            val reloaded = repository.read()
+            assertEquals("legacy-custom", reloaded.selectedThemeId)
+            assertEquals(custom, reloaded.selectedColors())
+            assertEquals(1, reloaded.namedThemes.count { it.id == "legacy-custom" })
+            val fields = store.data.first()
+            assertEquals(custom.accent, fields[AppearanceCodec.customAccent])
+            assertEquals(custom.paper, fields[AppearanceCodec.customPaper])
+            assertEquals(custom.secondary, fields[AppearanceCodec.customSecondary])
+            assertEquals(custom.soft, fields[AppearanceCodec.customSoft])
+            assertEquals(custom.warm, fields[AppearanceCodec.customWarm])
+        } finally { job.cancelAndJoin() }
+    }
+
+    @Test
     fun `invalid save leaves the previously persisted palette untouched`() = runBlocking {
         val job = SupervisorJob()
         val scope = CoroutineScope(job + Dispatchers.IO)

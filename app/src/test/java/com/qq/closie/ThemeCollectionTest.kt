@@ -6,13 +6,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ThemeCollectionTest {
-    @Test fun `legacy custom colors remain selected and become a named theme`() {
+    @Test fun `legacy custom derives one compatibility entry from fields even after an old accidental serialization`() {
+        val stale = NamedTheme("legacy-custom", "旧兼容记录", CustomTheme("#112233", "#EEEEEE", "#8899AA"))
         val values = mutablePreferencesOf(AppearanceCodec.selected to "custom",
             AppearanceCodec.customAccent to "#765432", AppearanceCodec.customPaper to "#FFFFFF",
-            AppearanceCodec.customSecondary to "#AABBCC")
+            AppearanceCodec.customSecondary to "#AABBCC",
+            AppearanceCodec.collection to com.google.gson.Gson().toJson(listOf(stale)))
         val decoded = AppearanceCodec.decode(values)
         assertEquals("custom", decoded.selectedThemeId)
         assertEquals(decoded.custom, decoded.namedThemes.single().colors)
+        assertEquals("legacy-custom", decoded.namedThemes.single().id)
         assertEquals(decoded.custom, decoded.selectedColors())
     }
 

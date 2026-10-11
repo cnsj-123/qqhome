@@ -59,7 +59,7 @@ class AppearanceRepository(
             val existing = AppearanceCodec.decode(values).namedThemes
             require(existing.size < 24) { "已保存 24 个主题，请先删除不再使用的主题" }
             val theme = NamedTheme("palette-" + java.util.UUID.randomUUID(), name.trim(), valid)
-            values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(existing + theme)
+            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(existing + theme)
             values[AppearanceCodec.selected] = theme.id
         }
     }
@@ -69,7 +69,7 @@ class AppearanceRepository(
         require(id != "legacy-custom") { "旧配色暂时保留；可以另存为新主题" }
         store.edit { values ->
             val settings = AppearanceCodec.decode(values)
-            values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(settings.namedThemes.filterNot { it.id == id })
+            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(settings.namedThemes.filterNot { it.id == id })
             if (values[AppearanceCodec.selected] == id) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
         }
     }
@@ -130,12 +130,16 @@ internal object AppearanceCodec {
         } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct(), themes)
     }
 
+    // Compatibility entries are derived from old fields, never records in namedThemesV1.
+    fun encodeNamedThemes(themes: List<NamedTheme>): String =
+        com.google.gson.Gson().toJson(themes.filter { it.id.startsWith("palette-") })
+
     private fun decodeThemes(raw: String?): List<NamedTheme> = runCatching {
         com.google.gson.JsonParser.parseString(raw ?: "[]").asJsonArray.mapNotNull { element ->
             runCatching {
                 val json = element.asJsonObject
                 val id = json.get("id").asString
-                require(id == "legacy-custom" || id.startsWith("palette-"))
+                require(id.startsWith("palette-"))
                 val name = json.get("name").asString.trim().take(40).also { require(it.isNotBlank()) }
                 val c = json.getAsJsonObject("colors")
                 NamedTheme(id, name, CustomTheme(c.get("accent").asString, c.get("paper").asString,

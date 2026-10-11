@@ -57,6 +57,13 @@
 - 下一次 CI/本地具备 Android 环境时，仍需执行 `./gradlew :app:testDebugUnitTest` 和 `./gradlew :app:assembleDebug`。
 - 真机重点：四种功能页开合/返回；跨常用区拖动和长距离自动滚动；系统边缘返回、竖滚与子控件手势；各主题玻璃可读性及低端回退；字体缩放后月历大额显示；Photo Picker 取消/图片异常/主题重启持久化；有/无流水账户币种限制；设置启用发现后仅生成待确认提案；真实旧账完整导入。
 
+## 最终 pre-CI 对齐
+
+- 更新功能页冒烟测试，保留标题、搜索、模块和 Finance 入口断言；检查“长按直接移动”，滚到底部检查 `drawer-restore-order`。
+- 增加一项壳层所有权回归：从 Home 功能页进入 Finance，在 `finance-ledger` 上注入真实右滑，然后调用 Android Back；检查功能页关闭后仍显示 Finance 根页面。没有通过改状态或 Finance 菜单按钮代替手势。
+- `namedThemesV1` 编码仅写入真实 `palette-*` 条目，解码忽略曾意外序列化的 `legacy-custom`，并始终从保留的旧 custom 字段派生单一兼容入口。仓库回归直接检查原始集合：另存、选用和删除其他主题均不写入该派生条目，明确复制只新增一个真实主题。
+- 以上回归测试源码已补充，**尚未运行**；当前仍无可用 Android/JDK/Gradle 构建环境。前三个 V14 提交保留，本次作为独立第四提交交付。
+
 ## pre-CI 包名核对
 
 `FinanceCards` 改为正常导入 `androidx.compose.ui.graphics.RectangleShape`。清单建议的 `androidx.compose.foundation.shape.RectangleShape` 不存在；[官方 Compose graphics API](https://developer.android.com/reference/kotlin/androidx/compose/ui/graphics/package-summary#RectangleShape()) 列明其属于 `ui-graphics`，自 1.0.0 提供。没有通过换成不存在的包来“修复”正确引用。静态检查不能代替待运行的 Kotlin/Android 编译。
