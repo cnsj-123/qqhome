@@ -37,6 +37,10 @@ class AppearanceRepository(
         store.edit { it[AppearanceCodec.functionPageStyle] = style.name }
     }
 
+    suspend fun saveModuleOrder(ids: List<String>) {
+        store.edit { it[AppearanceCodec.moduleOrder] = ids.distinct().joinToString(",") }
+    }
+
     suspend fun selectPreset(preset: ThemePreset) {
         store.edit { it[AppearanceCodec.selected] = preset.id }
     }
@@ -54,6 +58,8 @@ class AppearanceRepository(
             it[AppearanceCodec.customAccent] = valid.accent
             it[AppearanceCodec.customPaper] = valid.paper
             it[AppearanceCodec.customSecondary] = valid.secondary
+            it[AppearanceCodec.customSoft] = valid.soft
+            it[AppearanceCodec.customWarm] = valid.warm
             it[AppearanceCodec.selected] = AppearanceSettings.CUSTOM_ID
         }
     }
@@ -64,6 +70,9 @@ class AppearanceRepository(
 }
 
 internal object AppearanceCodec {
+    val moduleOrder = stringPreferencesKey("moduleOrder")
+    val customSoft = stringPreferencesKey("customSoft")
+    val customWarm = stringPreferencesKey("customWarm")
     val functionPageStyle = stringPreferencesKey("functionPageStyle")
     val selected = stringPreferencesKey("selectedThemeId")
     val customAccent = stringPreferencesKey("customAccent")
@@ -74,7 +83,9 @@ internal object AppearanceCodec {
         val accent = HexColor.normalizeOrNull(values[customAccent])
         val paper = HexColor.normalizeOrNull(values[customPaper])
         val secondary = HexColor.normalizeOrNull(values[customSecondary])
-        val custom = if (accent != null && paper != null && secondary != null) CustomTheme(accent, paper, secondary) else null
+        val custom = if (accent != null && paper != null && secondary != null) CustomTheme(accent, paper, secondary,
+            HexColor.normalizeOrNull(values[customSoft]) ?: secondary,
+            HexColor.normalizeOrNull(values[customWarm]) ?: paper) else null
         val rawId = values[selected]
         val id = when {
             rawId == AppearanceSettings.CUSTOM_ID && custom != null -> rawId
@@ -83,6 +94,6 @@ internal object AppearanceCodec {
         }
         return AppearanceSettings(id, custom, FunctionPageStyle.entries.firstOrNull {
             it.name == values[functionPageStyle]
-        } ?: FunctionPageStyle.LAYERED)
+        } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct())
     }
 }

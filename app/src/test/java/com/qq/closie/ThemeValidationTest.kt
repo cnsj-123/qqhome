@@ -25,7 +25,7 @@ class ThemeValidationTest {
     }
 
     @Test
-    fun `V11 preset values and original semantic overrides are retained`() {
+    fun `V11 preset sources are retained as five semantic inputs`() {
         assertEquals(5, ThemePreset.entries.size)
         val expected = listOf(
             listOf("#6F67A8", "#F6F5F9", "#B6C2CF"), listOf("#755493", "#F8F4FA", "#9FC5E6"),
@@ -35,11 +35,11 @@ class ThemeValidationTest {
         ThemePreset.entries.zip(expected).forEach { (preset, colors) ->
             assertEquals(colors, listOf(preset.accent, preset.paper, preset.secondary))
         }
-        val original = ThemePalette.resolve(AppearanceSettings())
-        assertEquals("#FCFBFE", original.card)
-        assertEquals("#ECEAF3", original.paperSecondary)
-        assertEquals("#575091", original.accentDeep)
-        assertEquals("#DEDAE8", original.line)
+        ThemePreset.entries.forEach { preset ->
+            val resolved = ThemePalette.resolve(AppearanceSettings(selectedThemeId = preset.id))
+            assertEquals(preset.soft, resolved.soft)
+            assertEquals(preset.warm, resolved.warm)
+        }
     }
 
     @Test
@@ -51,7 +51,7 @@ class ThemeValidationTest {
         )
         choices.forEach { custom ->
             val tokens = ThemePalette.resolve(AppearanceSettings(AppearanceSettings.CUSTOM_ID, custom))
-            for (surface in listOf(tokens.paper, tokens.card, tokens.paperSecondary, tokens.paperTertiary)) {
+            for (surface in listOf(tokens.paper, tokens.card, tokens.paperSecondary, tokens.paperTertiary, tokens.warmSurface)) {
                 for (text in listOf(tokens.ink, tokens.inkSecondary, tokens.muted, tokens.accent, tokens.accentDeep)) {
                     assertTrue("$text on $surface for $custom", ThemePalette.contrast(text, surface) >= 4.5)
                 }

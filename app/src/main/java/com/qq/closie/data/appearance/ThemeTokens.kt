@@ -8,7 +8,8 @@ data class ThemeTokens(
     val paper: String, val paperSecondary: String, val paperTertiary: String,
     val card: String, val ink: String, val inkSecondary: String, val muted: String,
     val accent: String, val accentDeep: String, val secondary: String,
-    val line: String, val onAccent: String, val shade: String, val isDark: Boolean
+    val line: String, val onAccent: String, val shade: String, val isDark: Boolean,
+    val soft: String = paperTertiary, val warm: String = paperSecondary, val warmSurface: String = paperSecondary
 )
 
 object ThemePalette {
@@ -39,7 +40,10 @@ object ThemePalette {
     private fun readable(color: String, background: String, minimum: Double): String {
         var value = HexColor.requireValid(color)
         val end = if (contrast("#000000", background) > contrast("#FFFFFF", background)) "#000000" else "#FFFFFF"
-        repeat(100) { if (contrast(value, background) < minimum) value = mix(value, end, .09) }
+        repeat(100) {
+            if (contrast(value, background) >= minimum) return value
+            value = mix(value, end, .09)
+        }
         // Integer RGB mixing can stop one channel short of the endpoint. Mid-tone paper may
         // also make the requested ratio impossible; use the most readable endpoint in that case.
         return if (contrast(value, background) < minimum) end else value
@@ -51,35 +55,33 @@ object ThemePalette {
         val dark = contrast("#FFFFFF", paper) > contrast("#000000", paper)
         val inkBase = if (dark) "#F5F4F1" else "#3A3748"
         var card = mix(paper, if (dark) "#181C22" else "#FFFFFF", .72)
-        var paper2 = mix(paper, choice.secondary, .11)
-        var paper3 = mix(paper, choice.accent, .15)
+        var paper2 = mix(paper, choice.secondary, .22)
+        var paper3 = mix(paper, choice.soft, .32)
         var ink = readable(inkBase, paper, 7.0)
         var ink2 = readable(mix(inkBase, choice.accent, .2), paper, 6.0)
         val muted = readable(mix(inkBase, paper, .38), paper, 4.7)
         var accent = readable(choice.accent, if (dark) card else "#FFFFFF", 4.8)
         var deep = readable(accent, paper, 6.0)
         var line = mix(paper, choice.accent, .19)
-        if (settings.selectedThemeId == ThemePreset.ORIGINAL.id) {
-            paper2 = "#ECEAF3"; paper3 = "#E2DEEC"; card = "#FCFBFE"
-            ink = "#3A3748"; ink2 = "#565270"; accent = "#6F67A8"; deep = "#575091"; line = "#DEDAE8"
-        }
-        if (settings.selectedThemeId == AppearanceSettings.CUSTOM_ID) {
+        var warmSurface = mix(paper, choice.warm, .28)
+        run {
             accent = readable(choice.accent, paper, 4.7)
             deep = readable(accent, paper, 6.0)
             val foregrounds = listOf(ink, ink2, muted, accent, deep)
             fun safeSurface(initial: String): String {
                 var surface = initial
                 repeat(100) {
-                    if (foregrounds.any { contrast(it, surface) < 4.5 }) surface = mix(surface, paper, .14)
+                    if (foregrounds.all { contrast(it, surface) >= 4.5 }) return surface
+                    surface = mix(surface, paper, .14)
                 }
                 return if (foregrounds.any { contrast(it, surface) < 4.5 }) paper else surface
             }
-            card = safeSurface(card); paper2 = safeSurface(paper2); paper3 = safeSurface(paper3)
+            card = safeSurface(card); paper2 = safeSurface(paper2); paper3 = safeSurface(paper3); warmSurface = safeSurface(warmSurface)
         }
         return ThemeTokens(
             paper, paper2, paper3, card, ink, ink2, muted, accent, deep, choice.secondary, line,
             if (contrast(accent, "#FFFFFF") >= 4.5) "#FFFFFF" else "#000000",
-            mix(inkBase, choice.accent, .3), dark
+            mix(inkBase, choice.accent, .3), dark, choice.soft, choice.warm, warmSurface
         )
     }
 }

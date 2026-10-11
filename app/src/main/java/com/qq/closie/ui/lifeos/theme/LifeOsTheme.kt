@@ -15,21 +15,22 @@ data class LifeOsColors(
     val paper: Color, val paperSecondary: Color, val paperTertiary: Color,
     val card: Color, val ink: Color, val inkSecondary: Color, val muted: Color,
     val accent: Color, val accentDeep: Color, val secondary: Color,
-    val line: Color, val onAccent: Color, val shade: Color, val isDark: Boolean
+    val line: Color, val onAccent: Color, val shade: Color, val isDark: Boolean,
+    val soft: Color = paperTertiary, val warm: Color = paperSecondary, val warmSurface: Color = paperSecondary
 )
 
 private fun String.color() = Color(0xFF000000L or substring(1).toLong(16))
 private fun ThemeTokens.colors() = LifeOsColors(
     paper.color(), paperSecondary.color(), paperTertiary.color(), card.color(), ink.color(),
     inkSecondary.color(), muted.color(), accent.color(), accentDeep.color(), secondary.color(),
-    line.color(), onAccent.color(), shade.color(), isDark
+    line.color(), onAccent.color(), shade.color(), isDark, soft.color(), warm.color(), warmSurface.color()
 )
 
 val LocalLifeOsColors = staticCompositionLocalOf { ThemePalette.resolve(AppearanceSettings()).colors() }
 
 @Composable
 fun LifeOsTheme(settings: AppearanceSettings = AppearanceSettings(), content: @Composable () -> Unit) {
-    val colors = ThemePalette.resolve(settings).colors()
+    val colors = androidx.compose.runtime.remember(settings.selectedThemeId, settings.custom) { ThemePalette.resolve(settings).colors() }
     val base = if (colors.isDark) darkColorScheme() else lightColorScheme()
     val scheme = base.copy(
         primary = colors.accent, onPrimary = colors.onAccent,

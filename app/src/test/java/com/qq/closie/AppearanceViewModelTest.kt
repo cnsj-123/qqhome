@@ -71,6 +71,8 @@ class AppearanceViewModelTest {
             model.editThemeField(ThemeField.ACCENT, custom.accent)
             model.editThemeField(ThemeField.PAPER, custom.paper)
             model.editThemeField(ThemeField.SECONDARY, custom.secondary)
+            model.editThemeField(ThemeField.SOFT, custom.soft)
+            model.editThemeField(ThemeField.WARM, custom.warm)
             saveAndAwait(model)
             assertEquals(custom, repository.read().custom)
             repository.settings.first { it?.selectedThemeId == AppearanceSettings.CUSTOM_ID }

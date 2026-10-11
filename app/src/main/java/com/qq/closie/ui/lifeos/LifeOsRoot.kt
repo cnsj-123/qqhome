@@ -104,7 +104,8 @@ fun LifeOsRoot(
                             drawerOpen = false
                             if (module.id == "capture") captureMenu = true
                             else nav.navigateLifeTopLevel(module.route)
-                        }, onClose = { drawerOpen = false })
+                        }, onClose = { drawerOpen = false }, moduleOrder = appearance.moduleOrder,
+                            onSaveOrder = appearanceViewModel::saveModuleOrder)
                     }
                 ) {
                     LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,

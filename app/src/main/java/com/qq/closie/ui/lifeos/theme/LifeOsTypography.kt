@@ -8,13 +8,15 @@ import com.qq.closie.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** Bundled Source Han Sans CN Normal (OFL 1.1); no network or OEM font dependency. */
+/** UI uses platform sans with real weights; journal headings may opt into bundled serif. */
 object LifeText {
-    val family = FontFamily(Font(R.font.life_sans))
+    val family = FontFamily.SansSerif
+    val number = TextStyle(fontFamily = family, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
+    val journal = TextStyle(fontFamily = FontFamily(Font(R.font.noto_serif_sc_medium)), fontSize = 22.sp, lineHeight = 30.sp)
     val display = TextStyle(fontFamily = family, fontSize = 26.sp, lineHeight = 34.sp)
-    val title = TextStyle(fontFamily = family, fontSize = 20.sp, lineHeight = 29.sp)
-    val body = TextStyle(fontFamily = family, fontSize = 15.sp, lineHeight = 24.sp)
-    val caption = TextStyle(fontFamily = family, fontSize = 12.sp, lineHeight = 19.sp)
+    val title = TextStyle(fontFamily = family, fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium)
+    val body = TextStyle(fontFamily = family, fontSize = 14.sp, lineHeight = 21.sp)
+    val caption = TextStyle(fontFamily = family, fontSize = 12.sp, lineHeight = 18.sp)
 }
 
 val LifeOsTypography = Typography(

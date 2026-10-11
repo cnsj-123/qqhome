@@ -22,27 +22,35 @@ enum class ThemePreset(
     }
 }
 
-data class CustomTheme(val accent: String, val paper: String, val secondary: String) {
+data class CustomTheme(val accent: String, val paper: String, val secondary: String,
+    val soft: String = secondary, val warm: String = paper) {
     fun normalized() = CustomTheme(
-        HexColor.requireValid(accent), HexColor.requireValid(paper), HexColor.requireValid(secondary)
+        HexColor.requireValid(accent), HexColor.requireValid(paper), HexColor.requireValid(secondary),
+        HexColor.requireValid(soft), HexColor.requireValid(warm)
     )
 }
 
 data class AppearanceSettings(
     val selectedThemeId: String = ThemePreset.ORIGINAL.id,
     val custom: CustomTheme? = null,
-    val functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED
+    val functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
+    val moduleOrder: List<String> = emptyList()
 ) {
     fun selectedColors(): CustomTheme {
         if (selectedThemeId == CUSTOM_ID && custom != null) return custom.normalized()
         val preset = ThemePreset.fromId(selectedThemeId) ?: ThemePreset.ORIGINAL
-        return CustomTheme(preset.accent, preset.paper, preset.secondary)
+        return CustomTheme(preset.accent, preset.paper, preset.secondary, preset.soft, preset.warm)
     }
 
     companion object { const val CUSTOM_ID = "custom" }
 }
 
-enum class FunctionPageStyle(val label: String) { LAYERED("层叠"), FLAT("平移") }
+enum class FunctionPageStyle(val label: String, val description: String) {
+    DECK("透视书页", "手账向右翻转，功能页从后方展开；两张纸仍在同一个空间。"),
+    LAYERED("柔和叠页", "手账缩小并右移，背后的纸张与阴影轻轻展开。"),
+    GLASS("透光浮层", "半透明功能页滑到手账上方，颜色透过层次交融。"),
+    FLAT("轻快推页", "两页并排平移，不缩放、不倾斜，短滑即可切换。")
+}
 
 object HexColor {
     private val pattern = Regex("^#[0-9a-fA-F]{6}$")

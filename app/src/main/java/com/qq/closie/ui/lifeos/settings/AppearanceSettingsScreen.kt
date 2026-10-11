@@ -48,15 +48,12 @@ fun AppearanceSettingsScreen(
     val colors = LocalLifeOsColors.current
     LifePage("主题与配色", onCancel) {
         Text("功能页", style = LifeText.title)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column {
             FunctionPageStyle.entries.forEach { style ->
                 FilterChip(functionPageStyle == style, { onFunctionPageStyle(style) }, label = { Text(style.label) })
             }
         }
-        Text(if (functionPageStyle == FunctionPageStyle.LAYERED)
-            "右滑时，手账稍稍缩小、移向右侧，左边露出功能页。"
-            else "右滑时，两页平稳移动，手账保持原大小。",
-            style = LifeText.caption, color = colors.muted)
+        Text(functionPageStyle.description, style = LifeText.caption, color = colors.muted)
         Text("样式即时保存；系统关闭动画时不使用缩放和视差。", style = LifeText.caption, color = colors.muted)
         Text("给日子换一种颜色", style = LifeText.title)
         Text("四份画里的灵感，还有最初的暮山紫。照片保留原来的颜色。", Modifier.padding(vertical = 12.dp), style = LifeText.body, color = colors.muted)
@@ -72,7 +69,7 @@ fun AppearanceSettingsScreen(
                             Text(preset.displayName, style = LifeText.body)
                             Text(if (chosen) "已选" else "试试这份", style = LifeText.caption, color = colors.inkSecondary)
                             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                ColorSwatch(preset.accent); ColorSwatch(preset.paper); ColorSwatch(preset.secondary)
+                                ColorSwatch(preset.accent); ColorSwatch(preset.paper); ColorSwatch(preset.secondary); ColorSwatch(preset.soft); ColorSwatch(preset.warm)
                             }
                         }
                     }
@@ -92,7 +89,7 @@ fun AppearanceSettingsScreen(
             }
         }
         Text("自定义主题色", style = LifeText.title)
-        listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary).forEach { (field, value) ->
+        listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm).forEach { (field, value) ->
             OutlinedTextField(value, { onField(field, it) }, Modifier.fillMaxWidth().padding(vertical = 5.dp),
                 label = { Text(field.label) }, leadingIcon = { ColorSwatch(value) }, singleLine = true,
                 enabled = !state.isSaving, isError = HexColor.normalizeOrNull(value) == null,

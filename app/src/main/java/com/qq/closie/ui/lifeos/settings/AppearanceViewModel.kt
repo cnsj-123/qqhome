@@ -61,6 +61,14 @@ class AppearanceViewModel(
         }
     }
 
+    fun saveModuleOrder(ids: List<String>, done: () -> Unit, failed: (String) -> Unit) {
+        viewModelScope.launch {
+            try { appearanceRepository.saveModuleOrder(ids); done() }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { failed("顺序未能保存，请重试") }
+        }
+    }
+
     fun saveAppearance() {
         val draft = _editor.value ?: return
         if (draft.isSaving || draft.validationError != null) return
@@ -69,7 +77,7 @@ class AppearanceViewModel(
         viewModelScope.launch {
             runCatching {
                 when {
-                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveCustom(CustomTheme(draft.accent, draft.paper, draft.secondary))
+                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveCustom(CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
                     else -> appearanceRepository.selectPreset(requireNotNull(ThemePreset.fromId(draft.selectedId)))
                 }
                 appearanceRepository.read()
