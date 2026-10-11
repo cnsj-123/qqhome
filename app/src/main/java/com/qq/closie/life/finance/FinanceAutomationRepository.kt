@@ -26,11 +26,12 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
     fun observe() = gateAwareFlow { dao.observeChanges().map { transaction {
         FinanceAutomationSnapshot(dao.proposals(), dao.proposalTags(), rules())
     } } }
-    suspend fun discover(proposal: FinanceProposalEntity): FinanceProposalEntity? = transaction {
+    suspend fun discover(proposal: FinanceProposalEntity): FinanceProposalEntity? = discoverWithResult(proposal).proposal
+    suspend fun discoverWithResult(proposal: FinanceProposalEntity): FinanceParseResult = transaction {
         require(proposal.status == FinanceProposalStatus.ACTIVE && proposal.canonicalId == null && proposal.revision == 0L)
-        if (dao.proposalByKey(proposal.sourceKey) != null) return@transaction null
+        if (dao.proposalByKey(proposal.sourceKey) != null) return@transaction FinanceParseResult(DiscoveryResult.DUPLICATE)
         // Old notifications are not replayed by the listener; this also bounds delayed system deliveries.
-        if (System.currentTimeMillis() - proposal.occurredAt > 24 * 60 * 60 * 1000L) return@transaction null
+        if (System.currentTimeMillis() - proposal.occurredAt > 24 * 60 * 60 * 1000L) return@transaction FinanceParseResult(DiscoveryResult.STALE)
         val kind = if (proposal.source == FinanceSource.WECHAT) FinanceAccountKind.WECHAT else FinanceAccountKind.ALIPAY
         val suggested = database.financeDao().accounts().filter { it.kind == kind && it.currencyCode == "CNY" && it.archivedAt == null }.singleOrNull()?.id
         val result = FinanceRuleEngine.apply(proposal.copy(accountId = proposal.accountId ?: suggested), rules())
@@ -38,7 +39,7 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
         val row = result.proposal.copy(accountId = account?.takeIf { it.archivedAt == null && it.currencyCode == "CNY" }?.id)
         dao.insertProposal(row)
         dao.insertProposalTags(result.tags.map { FinanceProposalTagEntity(row.id, it) })
-        row
+        FinanceParseResult(DiscoveryResult.CREATED, row)
     }
     suspend fun confirm(id: String, revision: Long, input: FinanceProposalConfirmation): String = transaction {
         val proposal = requireNotNull(dao.proposal(id)) { "待确认记录已不存在" }

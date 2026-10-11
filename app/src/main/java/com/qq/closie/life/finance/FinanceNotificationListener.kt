@@ -73,37 +73,56 @@ class FinanceNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
         if (sbn.packageName !in FinanceNotificationParser.packages) return
+        val source = FinanceNotificationParser.packages.getValue(sbn.packageName)
+        val trace = FinanceDiscoveryDiagnostics.received(source)
+        try { handleNotification(sbn, source, trace) }
+        catch (_: Exception) { FinanceDiscoveryDiagnostics.result(source, trace, DiscoveryResult.MALFORMED) }
+    }
+    private fun handleNotification(sbn: StatusBarNotification, source: FinanceSource, trace: Long) {
+        fun report(result: DiscoveryResult) = FinanceDiscoveryDiagnostics.result(source, trace, result)
         val settings = FinanceAutomationSettings(this)
         val current = settings.read()
-        if (!current.enabled || (sbn.packageName == "com.tencent.mm" && !current.wechat) ||
-            (sbn.packageName == "com.eg.android.AlipayGphone" && !current.alipay)) return
-        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        @Suppress("DEPRECATION")
-        val installed = runCatching { packageManager.getApplicationInfo(sbn.packageName, 0).enabled }.getOrDefault(false)
-        if (!installed) return
+        if (!current.enabled) { report(DiscoveryResult.MASTER_OFF); return }
+        if ((source == FinanceSource.WECHAT && !current.wechat) || (source == FinanceSource.ALIPAY && !current.alipay)) {
+            report(DiscoveryResult.SOURCE_OFF); return
+        }
+        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) { report(DiscoveryResult.GROUP_SUMMARY); return }
+        // Delivery itself proves the source exists; package-manager visibility is not a discovery gate.
         val extra = sbn.notification.extras
         val title = extra.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val body = (extra.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extra.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
+        val body = listOfNotNull(extra.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
+            extra.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            extra.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n"))
+            .filter(String::isNotBlank).distinct().joinToString("\n").take(1800)
         val timestamp = sbn.notification.`when`.takeIf { it > 0 } ?: sbn.postTime
         val key = MessageDigest.getInstance("SHA-256").digest(
             "${sbn.packageName}|${sbn.key}|$timestamp|$title|$body".toByteArray(Charsets.UTF_8)
         ).joinToString("") { "%02x".format(it) }
-        val proposal = FinanceNotificationParser.parse(sbn.packageName, key, title, body, timestamp) ?: return
+        val parsed = FinanceNotificationParser.inspect(sbn.packageName, key, title, body, timestamp)
+        val proposal = parsed.proposal ?: run { report(parsed.result); return }
+        if (System.currentTimeMillis() - timestamp > 24 * 60 * 60 * 1000L) { report(DiscoveryResult.STALE); return }
         scope.launch {
             try {
                 // Recheck switches after dispatch; disabling stops queued discoveries too.
                 val live = settings.read()
-                if (!live.enabled || (proposal.source == FinanceSource.WECHAT && !live.wechat) ||
-                    (proposal.source == FinanceSource.ALIPAY && !live.alipay)) return@launch
-                val created = LifeContainer.getInstance(applicationContext).financeAutomationRepository.discover(proposal) ?: return@launch
+                if (!live.enabled) { report(DiscoveryResult.MASTER_OFF); return@launch }
+                if ((source == FinanceSource.WECHAT && !live.wechat) || (source == FinanceSource.ALIPAY && !live.alipay)) {
+                    report(DiscoveryResult.SOURCE_OFF); return@launch
+                }
+                val outcome = LifeContainer.getInstance(applicationContext).financeAutomationRepository.discoverWithResult(proposal)
+                val created = outcome.proposal ?: run { report(outcome.result); return@launch }
+                FinanceDiscoveryDiagnostics.result(source, trace,
+                    if (created.amountMinor == null) DiscoveryResult.AMBIGUOUS_AMOUNT else DiscoveryResult.CREATED,
+                    created.amountMinor, created.id)
                 settings.status("最近已发现一条待确认记录")
                 if (FinanceReviewRequests.foreground) FinanceReviewRequests.open(created.id)
-                else if (live.backgroundReview) FinanceReviewNotifications.post(applicationContext, created)
+                else if (live.backgroundReview) runCatching { FinanceReviewNotifications.post(applicationContext, created) }
+                    .onFailure { settings.status("待确认已保存，但后台提醒未能送达；可在账目中查看") }
             } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { settings.status("最近一次发现未保存，请打开应用检查恢复状态后重试") }
+            catch (_: Exception) { report(DiscoveryResult.SAVE_FAILED); settings.status("最近一次发现未保存，请打开应用检查恢复状态后重试") }
         }
     }
-    override fun onListenerConnected() { FinanceAutomationSettings(this).status("通知访问已连接") }
-    override fun onListenerDisconnected() { FinanceAutomationSettings(this).status("通知访问已断开，可在系统设置中重新连接") }
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    override fun onListenerConnected() { super.onListenerConnected(); FinanceDiscoveryDiagnostics.connection(true) }
+    override fun onListenerDisconnected() { super.onListenerDisconnected(); FinanceDiscoveryDiagnostics.connection(false) }
+    override fun onDestroy() { FinanceDiscoveryDiagnostics.connection(false); scope.cancel(); super.onDestroy() }
 }

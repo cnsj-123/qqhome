@@ -62,6 +62,7 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { FinanceDiagnosticsCard(access, discovery) }
             item {
                 Text("通知访问允许应用读取设备通知。本功能只处理下面选中的微信／支付宝支付提示，在本机解析，不上传内容，其他通知忽略。发现的信息仅供确认，不会自动记账。")
                 Row { Switch(discovery.enabled, { settings.save(discovery.copy(enabled = it)) }); Text("自动发现 ${if (discovery.enabled) "开启" else "关闭"}") }
@@ -133,7 +134,10 @@ private fun FinanceRuleEditor(initial: FinanceRuleSet, state: AutomationUiState,
     var confirmDelete by remember { mutableStateOf(false) }
     fun draft() = FinanceRuleSet(initial.rule.copy(name = name, priority = requireNotNull(priority.toIntOrNull()) { "顺序请输入整数" }),
         conditions.toList(), actions.toList())
-    FinanceReceipt("记账规则", state.busy, state.error, onClose) {
+    FinanceReceipt("记账规则", state.busy, state.error, onClose, actions = {
+        Button(onClick = { try { vm.saveRule(draft(), onClose) } catch (e: Exception) { result = e.message } },
+            modifier = Modifier.fillMaxWidth(), enabled = !state.busy) { Text("保存规则") }
+    }) {
         OutlinedTextField(name, { name = it }, label = { Text("规则名称") }, enabled = !state.busy)
         OutlinedTextField(priority, { priority = it }, label = { Text("顺序（较小的先应用）") }, enabled = !state.busy)
         Text("以下条件同时满足；多条规则命中时，靠前规则的单项建议优先，标签合并。")
@@ -175,7 +179,6 @@ private fun FinanceRuleEditor(initial: FinanceRuleSet, state: AutomationUiState,
             } catch (e: Exception) { e.message ?: "无法预览" }
         }) { Text("预览效果（不保存账目）") }
         result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-        Button(onClick = { try { vm.saveRule(draft(), onClose) } catch (e: Exception) { result = e.message } }, enabled = !state.busy) { Text("保存规则") }
         if (state.data.rules.any { it.rule.id == initial.rule.id }) TextButton(onClick = { confirmDelete = true }, enabled = !state.busy) { Text("删除规则") }
     }
     if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("删除这条规则？") },

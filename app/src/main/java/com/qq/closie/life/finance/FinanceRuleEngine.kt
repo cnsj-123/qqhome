@@ -58,28 +58,3 @@ object FinanceRuleEngine {
         return FinanceRuleResult(proposal, tags.toList(), matched)
     }
 }
-
-object FinanceNotificationParser {
-    val packages = mapOf("com.tencent.mm" to FinanceSource.WECHAT, "com.eg.android.AlipayGphone" to FinanceSource.ALIPAY)
-    private val money = Regex("(?<![0-9.,+\\-])(?:[¥￥]\\s*([0-9]+(?:\\.[0-9]{1,2})?)(?![0-9.])|([0-9]+(?:\\.[0-9]{1,2})?)\\s*元)")
-    fun parse(packageName: String, sourceKey: String, title: String, body: String, occurredAt: Long): FinanceProposalEntity? {
-        val source = packages[packageName] ?: return null
-        val text = (title + "\n" + body).take(1800)
-        if (listOf("失败", "未支付", "待付款", "待支付", "验证码", "优惠券", "营销", "请付款").any(text::contains)) return null
-        if (listOf("支付", "收款", "到账", "退款").none(title::contains) && !(source == FinanceSource.ALIPAY && title == "支付宝")) return null
-        val outflow = listOf("支付成功", "付款成功", "成功付款", "扣款成功", "已支付", "已付款").any(text::contains)
-        val inflow = listOf("收款", "到账", "退款成功", "已退款").any(text::contains)
-        if (outflow == inflow) return null
-        val amounts = money.findAll(text).mapNotNull { match ->
-            runCatching { java.math.BigDecimal(match.groupValues[1].ifBlank { match.groupValues[2] }).movePointRight(2).longValueExact() }
-                .getOrNull()?.takeIf { it > 0 }
-        }.toSet()
-        if (amounts.isEmpty()) return null
-        val now = System.currentTimeMillis()
-        return FinanceProposalEntity(java.util.UUID.randomUUID().toString(), source, sourceKey, text, now, occurredAt,
-            if (inflow) FinanceProposalKind.INCOME else FinanceProposalKind.EXPENSE,
-            amounts.singleOrNull(), title.take(120),
-            nature = if (text.contains("退款")) FinanceNature.OTHER else FinanceNature.PERSONAL,
-            role = if (text.contains("退款")) FinanceFlowRole.REFUND else if (inflow) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
-    }
-}
