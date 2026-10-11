@@ -6,6 +6,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LifeOsNavigationTest {
+    @Test fun fastSwitchingIsLimitedToModuleRoots() {
+        assertTrue(isFastLifeModuleSwitch(LifeOsRoute.HOME, LifeOsRoute.FINANCE))
+        assertTrue(isFastLifeModuleSwitch(LifeOsRoute.CLOSET, LifeOsRoute.CAPTURE))
+        assertTrue(isFastLifeModuleSwitch(LifeOsRoute.FINANCE, LifeOsRoute.HOME))
+        listOf(LifeOsRoute.SETTINGS, LifeOsRoute.APPEARANCE, LifeOsRoute.FINANCE_AUTOMATION,
+            LifeOsRoute.CAPTURE_DETAIL, LifeOsRoute.REFERENCE_DETAIL, LifeOsRoute.REFERENCE_EDIT,
+            LifeOsRoute.PLAN_EDIT, null).forEach { internal ->
+            assertFalse(isFastLifeModuleSwitch(LifeOsRoute.HOME, internal))
+            assertFalse(isFastLifeModuleSwitch(internal, LifeOsRoute.HOME))
+        }
+    }
+
     @Test fun rootAndRealModulesHaveOneCatalog() {
         assertEquals("life/home", LifeOsRoute.DEFAULT)
         val modules = LifeModules.groups.flatMap { it.modules }.associateBy { it.id }

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import com.qq.closie.data.appearance.*
 import java.io.File
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -44,6 +45,33 @@ class AppearanceRepositoryTest {
             second.selectSavedCustom()
             assertEquals(custom.normalized(), second.read().selectedColors())
         } finally { secondJob.cancelAndJoin() }
+    }
+
+    @Test
+    fun `reset order and deleting a new theme preserve legacy preference fields`() = runBlocking {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope) { File(temporary.root, "review.preferences_pb") }
+        val repository = AppearanceRepository(store, scope)
+        val custom = CustomTheme("#765432", "#EFEFEF", "#BBAADD")
+        try {
+            repository.saveCustom(custom)
+            repository.saveModuleOrder(listOf("calendar", "finance", "capture"))
+            repository.saveModuleOrder(emptyList())
+            assertTrue(repository.read().moduleOrder.isEmpty())
+            repository.saveNamed("副本", custom)
+            val saved = repository.read()
+            repository.deleteNamed(saved.selectedThemeId)
+            assertEquals(custom, repository.read().custom)
+            assertEquals("legacy-custom", repository.read().namedThemes.single().id)
+            assertTrue(runCatching { repository.deleteNamed("legacy-custom") }.isFailure)
+            val values = store.data.first()
+            assertEquals(custom.accent, values[AppearanceCodec.customAccent])
+            assertEquals(custom.paper, values[AppearanceCodec.customPaper])
+            assertEquals(custom.secondary, values[AppearanceCodec.customSecondary])
+            assertEquals(custom.soft, values[AppearanceCodec.customSoft])
+            assertEquals(custom.warm, values[AppearanceCodec.customWarm])
+        } finally { job.cancelAndJoin() }
     }
 
     @Test

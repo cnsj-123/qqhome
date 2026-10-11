@@ -51,16 +51,23 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     var message by remember { mutableStateOf<String?>(null) }
     val save by rememberUpdatedState(onSaveOrder)
     LaunchedEffect(moduleOrder) { if (lifted == null && !saving) modules = orderedModules(moduleOrder) }
-    fun cancel() { modules = baseline; lifted = null; message = "已取消移动" }
     val policy = com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
+    fun cancel() {
+        policy?.cancelReorder = null
+        if (lifted == null || saving) return
+        modules = baseline; lifted = null; message = "已取消移动"
+    }
     DisposableEffect(lifted?.id, policy) {
         policy?.cancelReorder = if (lifted != null) ({ cancel() }) else null
         onDispose { policy?.cancelReorder = null }
     }
-    fun persist(previous: List<LifeModule>) {
-        if (modules == previous) return
+    fun persist(previous: List<LifeModule>, restoreDefault: Boolean = false) {
+        policy?.cancelReorder = null
+        if (!restoreDefault && modules == previous) return
         saving = true
-        save(modules.map { it.id }, { saving = false; message = "顺序已保存" }, {
+        save(if (restoreDefault) emptyList() else modules.map { it.id }, {
+            saving = false; message = if (restoreDefault) "已恢复默认顺序" else "顺序已保存"
+        }, {
             modules = previous; saving = false; message = it
         })
     }
@@ -111,7 +118,10 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     }
                 }, onDrag = { change, amount ->
                     if (lifted != null) { change.consume(); pointer += amount; moveAtPointer() }
-                }, onDragEnd = { if (lifted != null) { lifted = null; persist(baseline) } },
+                }, onDragEnd = {
+                    policy?.cancelReorder = null
+                    if (lifted != null) { lifted = null; persist(baseline) }
+                },
                     onDragCancel = { if (lifted != null) cancel() })
             }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
             item(key = "brand", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
@@ -156,7 +166,16 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                 }
             }
             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
-                Text(message ?: "左滑收起 · 顺序会随你保留", Modifier.padding(top = 20.dp, bottom = 16.dp), style = LifeText.caption, color = colors.inkSecondary)
+                Column(Modifier.padding(top = 20.dp, bottom = 16.dp)) {
+                    Text(message ?: "左滑收起 · 顺序会随你保留", style = LifeText.caption, color = colors.inkSecondary)
+                    TextButton(onClick = {
+                        val previous = modules
+                        modules = orderedModules(emptyList())
+                        persist(previous, restoreDefault = true)
+                    }, enabled = !saving && lifted == null, modifier = Modifier.testTag("drawer-restore-order")) {
+                        Text("恢复默认顺序", style = LifeText.caption)
+                    }
+                }
             }
         }
         lifted?.let { module ->

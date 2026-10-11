@@ -106,9 +106,9 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     fun filterNature(nature: FinanceNature?) { filter.value = filter.value.copy(nature = nature) }
     fun search(query: String) { filter.value = filter.value.copy(query = query) }
     /** A restored calendar tab must not accidentally show an unbounded ledger after VM recreation. */
-    fun ensureCalendarMonth() {
+    fun ensureCalendarMonth(viewedMonth: java.time.YearMonth? = null) {
         val current = filter.value
-        val month = current.range.startInclusive?.let {
+        val month = viewedMonth ?: current.range.startInclusive?.let {
             java.time.YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))
         } ?: java.time.YearMonth.now()
         val range = FinanceDateRange.month(month.atDay(1))

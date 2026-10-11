@@ -101,6 +101,32 @@ class AppearanceViewModelTest {
     }
 
     @Test
+    fun `applying and reselecting legacy palette does not append a named copy`() = runTest {
+        withEditor(saved.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID)) { repository, model ->
+            assertEquals("legacy-custom", model.editor.value!!.selectedId)
+            saveAndAwait(model)
+            assertEquals("legacy-custom", repository.read().selectedThemeId)
+            assertEquals(saved.namedThemes, repository.read().namedThemes)
+            assertEquals(custom, repository.read().custom)
+            repository.settings.first { it?.selectedThemeId == "legacy-custom" }
+
+            model.previewPreset(ThemePreset.ORIGINAL)
+            model.previewNamed("legacy-custom")
+            saveAndAwait(model)
+            assertEquals(saved.namedThemes, repository.read().namedThemes)
+
+            model.duplicateTheme()
+            assertEquals(AppearanceSettings.CUSTOM_ID, model.editor.value!!.selectedId)
+            assertEquals(saved.namedThemes, repository.read().namedThemes)
+            saveAndAwait(model)
+            val duplicated = repository.read()
+            assertEquals(2, duplicated.namedThemes.size)
+            assertEquals(custom, duplicated.namedThemes.last().colors)
+            assertEquals(custom, duplicated.custom)
+        }
+    }
+
+    @Test
     fun `invalid hex retains last valid preview and cannot persist`() = runTest {
         withEditor(saved) { repository, model ->
             model.editThemeField(ThemeField.ACCENT, "#123456")

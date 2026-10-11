@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qq.closie.life.finance.*
@@ -82,7 +83,7 @@ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, in
     val colors = LocalLifeOsColors.current
     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
     Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
-        shape = if (flat) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(18.dp)) {
+        shape = if (flat) RectangleShape else RoundedCornerShape(18.dp)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(3.dp).height(48.dp).background(swatch, RoundedCornerShape(2.dp)))
             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

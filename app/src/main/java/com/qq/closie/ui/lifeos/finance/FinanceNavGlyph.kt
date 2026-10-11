@@ -9,11 +9,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
+import androidx.compose.material3.LocalContentColor
 
 @Composable
 internal fun FinanceNavGlyph(view: FinanceView) {
-    val color = LocalLifeOsColors.current.accentDeep
+    val color = LocalContentColor.current
     Canvas(Modifier.size(22.dp)) {
         val unit = size.width / 24f
         fun line(x: Float, y: Float, xx: Float, yy: Float) = drawLine(color, Offset(x * unit, y * unit), Offset(xx * unit, yy * unit), 1.45f * unit, StrokeCap.Round)

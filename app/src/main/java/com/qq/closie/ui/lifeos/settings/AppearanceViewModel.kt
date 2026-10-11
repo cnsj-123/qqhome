@@ -28,7 +28,7 @@ class AppearanceViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     fun beginAppearanceEdit() {
         editGeneration++
-        _editor.value = AppearanceEditorState.from(appearanceRepository.settings.value ?: AppearanceSettings())
+        _editor.value = savedEditor(appearanceRepository.settings.value ?: AppearanceSettings())
     }
 
     fun cancelAppearanceEdit() { editGeneration++; _editor.value = null }
@@ -39,12 +39,6 @@ class AppearanceViewModel(
         _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = preset.id))
     }
 
-    fun previewSavedCustom() {
-        if (_editor.value == null || _editor.value?.isSaving == true) return
-        val saved = appearanceRepository.settings.value ?: return
-        if (saved.custom != null) _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID))
-    }
-
     fun editThemeField(field: ThemeField, value: String) {
         _editor.value?.takeUnless { it.isSaving }?.let { _editor.value = it.edit(field, value) }
     }
@@ -52,9 +46,24 @@ class AppearanceViewModel(
     fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
 
     fun previewNamed(id: String) {
-        if (_editor.value?.isSaving == true) return
+        if (_editor.value == null || _editor.value?.isSaving == true || _editor.value?.extracting == true) return
         val saved = savedAppearance.value ?: return
+        if (saved.namedThemes.none { it.id == id }) return
         _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = id))
+    }
+
+    fun duplicateTheme() {
+        _editor.value?.takeUnless { it.isSaving || it.extracting }?.let {
+            _editor.value = it.copy(selectedId = AppearanceSettings.CUSTOM_ID,
+                themeName = (it.themeName.take(35) + " · 副本"), message = "保存后会新增一份主题")
+        }
+    }
+
+    // Old CUSTOM means an already saved palette, not an unsaved palette to append on Apply.
+    private fun savedEditor(saved: AppearanceSettings): AppearanceEditorState {
+        val selected = if (saved.selectedThemeId == AppearanceSettings.CUSTOM_ID &&
+            saved.namedThemes.any { it.id == "legacy-custom" }) saved.copy(selectedThemeId = "legacy-custom") else saved
+        return AppearanceEditorState.from(selected)
     }
 
     fun nameTheme(value: String) {
@@ -73,7 +82,7 @@ class AppearanceViewModel(
                 appearanceRepository.deleteNamed(id)
                 val saved = appearanceRepository.read()
                 if (generation == editGeneration && _editor.value != null)
-                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已删除")
+                    _editor.value = savedEditor(saved).copy(message = "主题已删除")
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { if (generation == editGeneration) _editor.value = draft.copy(message = "删除失败，请重试") }
         }
@@ -133,7 +142,7 @@ class AppearanceViewModel(
                 appearanceRepository.read()
             }.onSuccess { saved ->
                 if (generation == editGeneration && _editor.value != null) {
-                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已保存")
+                    _editor.value = savedEditor(saved).copy(message = "主题已保存")
                 }
             }.onFailure {
                 if (generation == editGeneration && _editor.value != null) {

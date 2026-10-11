@@ -1,6 +1,11 @@
 package com.qq.closie.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -28,12 +33,24 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
     nav: NavHostController, home: HomeUiState, onHomeDateSelected: (LocalDate) -> Unit,
     appearanceViewModel: AppearanceViewModel, onDrawer: () -> Unit,
     onCapture: () -> Unit, onFileToLibrary: (String) -> Unit) {
-    // The function page already animates the switch; avoid a second default NavHost crossfade.
+    // Avoid stacking a crossfade on module switching; internal routes retain a short transition.
     NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
-        enterTransition = { androidx.compose.animation.EnterTransition.None },
-        exitTransition = { androidx.compose.animation.ExitTransition.None },
-        popEnterTransition = { androidx.compose.animation.EnterTransition.None },
-        popExitTransition = { androidx.compose.animation.ExitTransition.None }) {
+        enterTransition = {
+            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) EnterTransition.None
+            else fadeIn(tween(140))
+        },
+        exitTransition = {
+            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) ExitTransition.None
+            else fadeOut(tween(140))
+        },
+        popEnterTransition = {
+            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) EnterTransition.None
+            else fadeIn(tween(140))
+        },
+        popExitTransition = {
+            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) ExitTransition.None
+            else fadeOut(tween(140))
+        }) {
         composable(LifeOsRoute.HOME) {
             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
@@ -68,3 +85,10 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         }
     }
 }
+
+private val fastLifeModuleRoutes = setOf(LifeOsRoute.HOME, LifeOsRoute.FINANCE, LifeOsRoute.CLOSET,
+    LifeOsRoute.CAPTURE, LifeOsRoute.REFERENCE, LifeOsRoute.PLAN, LifeOsRoute.READING,
+    LifeOsRoute.CALENDAR, LifeOsRoute.MAP, LifeOsRoute.COMPANION, LifeOsRoute.MODULE)
+
+internal fun isFastLifeModuleSwitch(from: String?, to: String?): Boolean =
+    from != null && to != null && from in fastLifeModuleRoutes && to in fastLifeModuleRoutes

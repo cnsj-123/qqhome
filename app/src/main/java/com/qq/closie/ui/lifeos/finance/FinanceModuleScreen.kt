@@ -38,19 +38,22 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
     var accountEditing by rememberSaveable { mutableStateOf(false) }
     var calendarMode by rememberSaveable { mutableStateOf(true) }
+    // Independent of Insights/list range filters, and restored with the module's UI state.
+    var calendarMonth by rememberSaveable { mutableStateOf(state.filter.range.startInclusive?.let {
+        YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())).toString()
+    } ?: YearMonth.now().toString()) }
     var selectedDay by rememberSaveable { mutableStateOf<String?>(null) }
     var dates by rememberSaveable { mutableStateOf(false) }
     var chartLabel by rememberSaveable { mutableStateOf<String?>(null) }
     var chartCurrency by rememberSaveable { mutableStateOf("CNY") }
     var reviewAdjustments by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    LaunchedEffect(viewName, calendarMode) {
-        if (view == FinanceView.TRANSACTIONS && calendarMode) vm.ensureCalendarMonth()
+    LaunchedEffect(viewName, calendarMode, calendarMonth) {
+        if (view == FinanceView.TRANSACTIONS && calendarMode) vm.ensureCalendarMonth(YearMonth.parse(calendarMonth))
     }
-    LaunchedEffect(state.filter.range, calendarMode) {
+    LaunchedEffect(calendarMonth) {
         selectedDay?.let { day ->
-            val time = LocalDate.parse(day).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            if (calendarMode && !state.filter.range.contains(time)) selectedDay = null
+            if (YearMonth.from(LocalDate.parse(day)).toString() != calendarMonth) selectedDay = null
         }
     }
     LaunchedEffect(viewName, detailAccount, chartLabel) { listState.scrollToItem(0) }
@@ -75,7 +78,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         // This bar belongs to Finance only. The Life OS root has no bottom navigation.
         NavigationBar(containerColor = colors.card, tonalElevation = 0.dp, windowInsets = WindowInsets(0)) {
             FinanceView.entries.forEach { target ->
-                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name; if (target == FinanceView.TRANSACTIONS && calendarMode) { vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null } },
+                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name },
                     icon = { FinanceNavGlyph(target) }, label = { Text(target.label, style = LifeText.caption) },
                     colors = NavigationBarItemDefaults.colors(indicatorColor = colors.paperTertiary,
                         selectedIconColor = colors.accentDeep, selectedTextColor = colors.accentDeep))
@@ -124,7 +127,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }
             } else when (view) {
                 FinanceView.OVERVIEW -> {
-                    item { FinanceMonthCard(state) { vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
+                    item { FinanceMonthCard(state) { calendarMonth = YearMonth.now().toString(); vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
                     item { FinanceBalanceSummary(state) }
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -152,14 +155,14 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }
                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
                     item {
-                        val month = state.filter.range.startInclusive?.let { YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) } ?: YearMonth.now()
+                        val month = YearMonth.parse(calendarMonth)
                         if (view == FinanceView.TRANSACTIONS) Row {
-                            FilterChip(calendarMode, { calendarMode = true; selectedDay = null; vm.selectPeriod(FinancePeriod.MONTH) }, label = { Text("月历") })
+                            FilterChip(calendarMode, { calendarMode = true; vm.ensureCalendarMonth(month) }, label = { Text("月历") })
                             Spacer(Modifier.width(8.dp))
                             FilterChip(!calendarMode, { calendarMode = false; selectedDay = null }, label = { Text("列表与范围") })
                         }
                         if (view == FinanceView.TRANSACTIONS && calendarMode) FinanceMonthLedger(month, state.ledger,
-                            selectedDay?.let(LocalDate::parse), { m -> selectedDay = null; vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) },
+                            selectedDay?.let(LocalDate::parse), { m -> selectedDay = null; calendarMonth = m.toString(); vm.ensureCalendarMonth(m) },
                             { selectedDay = it?.toString() })
                         else TextButton({ dates = true }) { Text(state.filter.customLabel.ifBlank { "选择日期范围" }) }
                         OutlinedTextField(state.filter.query, vm::search, Modifier.fillMaxWidth(),
@@ -179,7 +182,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                             MoneySummary("个人支出", state.selected, true, Modifier.weight(1f))
                             MoneySummary("个人收入", state.selected, false, Modifier.weight(1f))
                         } } }
-                        item { FinanceTrend(state.personalRows) { start, end -> vm.customRange(start, end); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
+                        item { FinanceTrend(state.personalRows) { start, end -> calendarMonth = YearMonth.from(LocalDate.parse(start)).toString(); vm.customRange(start, end); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
                         item { FinanceCategoryChart(state.categories) { label, currency -> chartLabel = label; chartCurrency = currency } }
                         item { FinanceSection {
                             Text("账户真实流量", style = LifeText.title)
@@ -190,12 +193,14 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                             Text("转账只改变账户余额；真实流量与个人收支分别展示。", style = LifeText.caption)
                         } }
                     } else {
-                        item { Text("流水 · ${state.ledger.size} 笔", style = LifeText.title) }
-                        groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }.forEach { (date, rows) ->
+                        val shownDays = groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
+                        val heading = if (calendarMode && selectedDay != null) "$selectedDay 流水" else "流水"
+                        item { Text("$heading · ${shownDays.values.sumOf { it.size }} 笔", style = LifeText.title) }
+                        shownDays.forEach { (date, rows) ->
                                 item(key = "date-$date") { Text(date.toString(), style = LifeText.caption, color = colors.muted) }
                                 items(rows, key = { it.id }) { LedgerLine(it, roles[it.entry.id]) { entryId = it.id; editing = true } }
                             }
-                        if (state.ledger.isEmpty() || (calendarMode && selectedDay != null && groupedDays.keys.none { it.toString() == selectedDay })) item { Text("这一天或范围还没有流水。", style = LifeText.body) }
+                        if (shownDays.isEmpty()) item { Text("这一天或范围还没有流水。", style = LifeText.body) }
                     }
                 }
             }

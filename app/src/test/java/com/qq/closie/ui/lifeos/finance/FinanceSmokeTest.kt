@@ -10,6 +10,8 @@ import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import kotlinx.coroutines.runBlocking
+import java.time.YearMonth
+import java.time.ZoneId
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -109,5 +111,47 @@ class FinanceSmokeTest {
         compose.onNodeWithText("确认作废").performClick(); saved()
         assertTrue(snapshot().entries.all { it.voidedAt != null })
         assertNotNull(snapshot().transfers.single().voidedAt)
+    }
+
+    @Test fun historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange() {
+        val month = YearMonth.now().minusMonths(1)
+        val day = month.atDay(1)
+        val monthLabel = "${month.year} 年 ${month.monthValue} 月"
+        val heading = "$day 流水 · 1 笔"
+        runBlocking {
+            val account = repository.saveAccount(name = "测试现金", kind = FinanceAccountKind.CASH)
+            (1..2).forEach { number ->
+                repository.saveEntry(accountId = account.id, direction = FinanceDirection.OUTFLOW,
+                    amountMinor = 100, description = "上月第 $number 日",
+                    occurredAt = month.atDay(number).atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            }
+        }
+        launch()
+        click("流水")
+        compose.onNodeWithContentDescription("上个月").performClick()
+        compose.onNodeWithText(monthLabel).assertIsDisplayed()
+        fun awaitHistoricalRows() {
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasContentDescription("$day，1 笔", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        awaitHistoricalRows()
+        compose.onNode(hasContentDescription("$day，", substring = true)).performClick()
+        fun assertSelectedRows() {
+            compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText(heading))
+            compose.onNodeWithText(heading).assertExists()
+            compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("上月第 1 日"))
+            compose.onNodeWithText("上月第 1 日").assertExists()
+            compose.onNodeWithText("上月第 2 日").assertDoesNotExist()
+        }
+        assertSelectedRows()
+        click("流水") // Tapping the already-selected tab must retain the month and day.
+        assertSelectedRows()
+        click("分析")
+        click("本月") // Insights has a different range; Transactions owns its viewed month.
+        click("流水")
+        compose.onNodeWithText(monthLabel).assertIsDisplayed()
+        awaitHistoricalRows()
+        assertSelectedRows()
     }
 }

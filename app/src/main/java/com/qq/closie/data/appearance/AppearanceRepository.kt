@@ -65,15 +65,12 @@ class AppearanceRepository(
     }
 
     suspend fun deleteNamed(id: String) {
+        // Preserve old preference fields and their sole selectable compatibility entry.
+        require(id != "legacy-custom") { "旧配色暂时保留；可以另存为新主题" }
         store.edit { values ->
             val settings = AppearanceCodec.decode(values)
             values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(settings.namedThemes.filterNot { it.id == id })
             if (values[AppearanceCodec.selected] == id) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
-            if (id == "legacy-custom") {
-                values.remove(AppearanceCodec.customAccent); values.remove(AppearanceCodec.customPaper)
-                values.remove(AppearanceCodec.customSecondary); values.remove(AppearanceCodec.customSoft); values.remove(AppearanceCodec.customWarm)
-                if (values[AppearanceCodec.selected] == AppearanceSettings.CUSTOM_ID) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
-            }
         }
     }
 

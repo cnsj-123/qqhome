@@ -33,29 +33,28 @@ fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit) 
     LaunchedEffect(viewModel) { viewModel.beginAppearanceEdit() }
     DisposableEffect(viewModel) { onDispose { viewModel.cancelAppearanceEdit() } }
     editor?.let { draft ->
-        AppearanceSettingsScreen(draft, stored?.custom != null, viewModel::previewPreset,
-            viewModel::previewSavedCustom, viewModel::editThemeField,
+        AppearanceSettingsScreen(draft, viewModel::previewPreset, viewModel::editThemeField,
             onSave = { viewModel.saveAppearance() },
             onCancel = { viewModel.cancelAppearanceEdit(); onBack() },
             onRestore = viewModel::restoreOriginal,
             functionPageStyle = stored?.functionPageStyle ?: FunctionPageStyle.LAYERED,
             onFunctionPageStyle = viewModel::selectFunctionPageStyle,
             namedThemes = stored?.namedThemes.orEmpty(), onNamed = viewModel::previewNamed, onDelete = viewModel::deleteNamed,
-            onName = viewModel::nameTheme, onImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+            onName = viewModel::nameTheme, onDuplicate = viewModel::duplicateTheme,
+            onImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
     }
 }
 
 @Composable
 fun AppearanceSettingsScreen(
     state: AppearanceEditorState,
-    hasSavedCustom: Boolean,
-    onPreset: (ThemePreset) -> Unit, onCustom: () -> Unit,
+    onPreset: (ThemePreset) -> Unit,
     onField: (ThemeField, String) -> Unit,
     onSave: () -> Unit, onCancel: () -> Unit, onRestore: () -> Unit,
     functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
     onFunctionPageStyle: (FunctionPageStyle) -> Unit = {},
     namedThemes: List<NamedTheme> = emptyList(), onNamed: (String) -> Unit = {}, onDelete: (String) -> Unit = {},
-    onName: (String) -> Unit = {}, onImage: () -> Unit = {}
+    onName: (String) -> Unit = {}, onImage: () -> Unit = {}, onDuplicate: () -> Unit = {}
 ) {
     val colors = LocalLifeOsColors.current
     LifePage("主题与配色", onCancel) {
@@ -70,7 +69,9 @@ fun AppearanceSettingsScreen(
                         ColorSwatch(theme.colors.accent)
                         Text(" ${theme.name}${if (state.selectedId == theme.id) " · 已选" else ""}")
                     }
-                    TextButton({ onDelete(theme.id) }, enabled = !state.isSaving && !state.extracting) { Text("删除") }
+                    if (theme.id != "legacy-custom") {
+                        TextButton({ onDelete(theme.id) }, enabled = !state.isSaving && !state.extracting) { Text("删除") }
+                    }
                 }
             }
         }
@@ -104,9 +105,6 @@ fun AppearanceSettingsScreen(
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        if (hasSavedCustom) OutlinedButton(onClick = onCustom, enabled = !state.isSaving && !state.extracting) {
-            Text(if (state.selectedId == AppearanceSettings.CUSTOM_ID) "我的配色 · 已选" else "恢复上次的我的配色")
-        }
         Surface(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = colors.paperSecondary, shape = RoundedCornerShape(12.dp)) {
             Column(Modifier.padding(18.dp)) {
                 Text("实时试色", style = LifeText.caption, color = colors.muted)
@@ -116,6 +114,9 @@ fun AppearanceSettingsScreen(
             }
         }
         Text("自定义主题色", style = LifeText.title)
+        if (namedThemes.any { it.id == state.selectedId }) {
+            TextButton(onDuplicate, enabled = !state.isSaving && !state.extracting) { Text("另存为新主题") }
+        }
         OutlinedTextField(state.themeName, onName, Modifier.fillMaxWidth(), label = { Text("主题名称") }, singleLine = true,
             enabled = !state.isSaving && !state.extracting)
         listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm).forEach { (field, value) ->
@@ -137,5 +138,5 @@ fun AppearanceSettingsScreen(
 @Preview(name = "Appearance · PreviewOnly", showBackground = true)
 @Composable
 private fun AppearanceSettingsPreview() {
-    LifeOsTheme { AppearanceSettingsScreen(AppearanceEditorState.from(AppearanceSettings()), false, {}, {}, { _, _ -> }, {}, {}, {}) }
+    LifeOsTheme { AppearanceSettingsScreen(AppearanceEditorState.from(AppearanceSettings()), {}, { _, _ -> }, {}, {}, {}) }
 }
