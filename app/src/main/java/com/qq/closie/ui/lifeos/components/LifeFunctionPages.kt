@@ -1,6 +1,5 @@
 package com.qq.closie.ui.lifeos.components
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -153,10 +152,5 @@ fun LifeFunctionPages(
                 }
             }
         }
-    }
-    // Register after nested module handlers: back closes this surface before navigating.
-    val policy = LocalFunctionPagePolicy.current
-    BackHandler(open || revealed) {
-        policy?.cancelReorder?.invoke() ?: onOpenChange(false)
     }
 }

@@ -1,5 +1,6 @@
 package com.qq.closie.ui.lifeos
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -120,6 +121,15 @@ fun LifeOsRoot(
             }
         }
         }
+        // Register when opened, after module content. Re-enabling an older callback would
+        // leave it below NavHost callbacks registered later. Leased editors/viewers keep Back.
+        if (drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
+            BackHandler {
+                val cancelReorder = gesturePolicy.cancelReorder
+                if (cancelReorder != null) cancelReorder() else drawerOpen = false
+            }
+        }
+        // Dialog/sheet hosts retain modal Back priority over the shell callback.
         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
             onManual = { nav.navigateLifeTopLevel(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
