@@ -28,13 +28,14 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
     var evidence by remember { mutableStateOf<FinanceImportRowEntity?>(null) }
     var detailGroup by remember { mutableStateOf<FinanceImportGroup?>(null) }
     var summary by androidx.compose.runtime.saveable.rememberSaveable(state.preview?.batch?.id) { mutableStateOf(false) }
-    LaunchedEffect(state.reviewed) { if (!state.reviewed) summary = false }
+    LaunchedEffect(state.stage) { if (state.stage != ImportStage.REVIEW) summary = false }
     val colors = com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current
     val preview = state.preview
-    val step = when { preview == null -> 0; !state.reviewed -> 1; !summary -> 2; else -> 3 }
+    val completed = state.stage == ImportStage.COMPLETED
+    val step = when { preview == null -> 0; completed -> 3; state.stage == ImportStage.ACCOUNTS -> 1; !summary -> 2; else -> 3 }
     val groups = remember(preview?.rows) { FinanceImportGroup.entries.associateWith { group -> preview?.rows.orEmpty().filter { group in FinanceImportReview.groups(it) } } }
     fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv")) }
-    BackHandler(enabled = !state.busy) { if (summary) summary = false else onBack() }
+    BackHandler(enabled = !state.busy) { if (summary && !completed) summary = false else onBack() }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             TextButton(onBack, enabled = !state.busy) { Text("返回账目") }
@@ -42,7 +43,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
             TextButton(::selectFile, enabled = !state.busy) { Text("选择文件") }
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("文件", "账户", "检查", "确认").forEachIndexed { index, label ->
+            listOf("文件", "账户", "检查", if (completed) "完成" else "确认").forEachIndexed { index, label ->
                 Surface(Modifier.weight(1f), color = if (index == step) colors.paperTertiary else colors.paperSecondary,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)) {
                     Text("${index + 1} $label", Modifier.padding(vertical = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -72,7 +73,17 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                     Text("共 ${preview.rows.size} 行 · ${state.mappings.size} 个账户", style = MaterialTheme.typography.bodySmall)
                 } }
                 if (preview.batch.status == FinanceImportStatus.UNDONE) item { Text("此批次已撤销；后来修改或关联的记录仍保留。") }
-                else if (!state.reviewed) {
+                else if (completed) {
+                    item { FinancePanel(color = colors.paperTertiary) {
+                        Text("旧账已收好", style = MaterialTheme.typography.headlineSmall)
+                        state.message?.let { Text(it) }
+                        Text("本批次已导入 ${preview.rows.count { it.status == FinanceRowStatus.COMMITTED }} 条", style = MaterialTheme.typography.titleLarge)
+                        val remaining = preview.rows.count { it.canonicalId == null }
+                        if (remaining > 0) Text("还有 $remaining 条未导入，包括跳过或待处理的记录。", style = MaterialTheme.typography.bodySmall)
+                        if (preview.rows.any(FinanceImportReview::eligible))
+                            TextButton(vm::backToAccounts, enabled = !state.busy) { Text("检查未导入记录") }
+                    } }
+                } else if (state.stage == ImportStage.ACCOUNTS) {
                     item { Text("先确认钱的位置", style = MaterialTheme.typography.titleLarge)
                         Text("每个旧账户可关联已有账户，或新建。展开卡片可调整余额起点。", style = MaterialTheme.typography.bodySmall) }
                     items(state.mappings, key = { it.source }) { mapping ->
@@ -87,7 +98,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                     }
                 } else if (summary) {
                     item { FinancePanel(color = colors.paperTertiary) {
-                        Text(if (state.selected.isEmpty() && preview.batch.status == FinanceImportStatus.COMMITTED) "旧账已收好" else "最后核对一次", style = MaterialTheme.typography.headlineSmall)
+                        Text("最后核对一次", style = MaterialTheme.typography.headlineSmall)
                         state.message?.let { Text(it) }
                         Text("本次选中 ${state.selected.size} 条", style = MaterialTheme.typography.titleLarge)
                         Text("重复候选选中 ${preview.rows.count { it.status == FinanceRowStatus.DUPLICATE && it.id in state.selected }} 条；其他重复候选保持跳过。")
@@ -133,7 +144,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                         Text("按空格拆分标签", style = MaterialTheme.typography.bodyMedium)
                     }
                         Text("默认保留整个标签单元格。多种问题同时存在时，需要确认各项策略。", style = MaterialTheme.typography.bodySmall)
-                        TextButton({ state.mappings.firstOrNull()?.let(vm::map) }, enabled = !state.busy) { Text("修改账户映射") }
+                        TextButton(vm::backToAccounts, enabled = !state.busy) { Text("修改账户映射") }
                     }
                 }
                 if (preview.batch.status == FinanceImportStatus.COMMITTED) item {
@@ -142,11 +153,13 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
             }
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        if (!summary) state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (!summary && !completed) state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (preview != null && preview.batch.status != FinanceImportStatus.UNDONE) {
-            Button({ when { !state.reviewed -> vm.prepare(); !summary -> summary = true; else -> confirmation = "commit" } },
-                enabled = !state.busy && (!state.reviewed || state.selected.isNotEmpty()), modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
-                Text(when { state.busy -> "正在处理…"; !state.reviewed -> "下一步 · 检查记录"; !summary -> "下一步 · 核对 ${state.selected.size} 条"; else -> "确认导入 ${state.selected.size} 条" })
+            if (completed) Button(onBack, enabled = !state.busy, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                Text("完成 · 返回账目")
+            } else Button({ when { state.stage == ImportStage.ACCOUNTS -> vm.prepare(); !summary -> summary = true; else -> confirmation = "commit" } },
+                enabled = !state.busy && (state.stage == ImportStage.ACCOUNTS || state.selected.isNotEmpty()), modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                Text(when { state.busy -> "正在处理…"; state.stage == ImportStage.ACCOUNTS -> "下一步 · 检查记录"; !summary -> "下一步 · 核对 ${state.selected.size} 条"; else -> "确认导入 ${state.selected.size} 条" })
             }
         }
     }

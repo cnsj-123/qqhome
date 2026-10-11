@@ -5,12 +5,13 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Font
 import com.qq.closie.R
+import com.qq.closie.life.ui.theme.LifeFonts
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** UI uses platform sans with real weights; journal headings may opt into bundled serif. */
+/** Bundled Noto Sans SC pins real weight axes; journal headings may opt into bundled serif. */
 object LifeText {
-    val family = FontFamily.SansSerif
+    val family = LifeFonts.Sans
     val number = TextStyle(fontFamily = family, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
     val journal = TextStyle(fontFamily = FontFamily(Font(R.font.noto_serif_sc_medium)), fontSize = 22.sp, lineHeight = 30.sp)
     val display = TextStyle(fontFamily = family, fontSize = 26.sp, lineHeight = 34.sp)

@@ -10,12 +10,14 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
 
+internal enum class ImportStage { ACCOUNTS, REVIEW, COMPLETED }
+
 internal data class ImportUiState(
     val busy: Boolean = false, val error: String? = null, val message: String? = null,
     val history: List<FinanceImportBatchEntity> = emptyList(),
     val preview: FinanceImportPreview? = null,
     val mappings: List<FinanceAccountMapping> = emptyList(),
-    val reviewed: Boolean = false, val selected: Set<String> = emptySet(),
+    val stage: ImportStage = ImportStage.ACCOUNTS, val selected: Set<String> = emptySet(),
     val splitTags: Boolean = false, val fees: Boolean = false,
     val policy: FinanceImportReviewPolicy = FinanceImportReviewPolicy(), val overrides: Map<String, Boolean> = emptyMap()
 )
@@ -64,17 +66,25 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
         val mappings = preview.rows.flatMap { listOf(it.sourceAccount, it.targetAccount) }
             .filter(String::isNotBlank).distinct().map { source -> preview.createdMappings.find { it.source == source }
                 ?: FinanceAccountMapping(source, kind = FinanceImportRepository.suggestKind(source)) }
-        mutable.update { it.copy(preview = preview, mappings = mappings, reviewed = false, selected = emptySet(),
+        mutable.update { it.copy(preview = preview, mappings = mappings,
+            stage = if (preview.batch.status == FinanceImportStatus.COMMITTED) ImportStage.COMPLETED else ImportStage.ACCOUNTS,
+            selected = emptySet(),
             fees = false, splitTags = false, policy = FinanceImportReviewPolicy(), overrides = emptyMap(), history = repository.history()) }
     }
     fun map(mapping: FinanceAccountMapping) {
         if (!mutable.value.busy) mutable.update { it.copy(mappings = it.mappings.map { old ->
-            if (old.source == mapping.source) mapping else old }, reviewed = false, selected = emptySet()) }
+            if (old.source == mapping.source) mapping else old }, stage = ImportStage.ACCOUNTS, selected = emptySet()) }
+    }
+    /** Presentation navigation only; mapping values and staged/canonical records stay unchanged. */
+    fun backToAccounts() {
+        val current = mutable.value
+        if (!current.busy && current.preview != null && current.preview.batch.status != FinanceImportStatus.UNDONE)
+            mutable.update { it.copy(stage = ImportStage.ACCOUNTS, selected = emptySet(), error = null, message = null) }
     }
     fun prepare() = run {
         val current = mutable.value
         val preview = repository.preview(requireNotNull(current.preview).batch.id, current.mappings)
-        mutable.update { it.copy(preview = preview, reviewed = true,
+        mutable.update { it.copy(preview = preview, stage = ImportStage.REVIEW,
             policy = FinanceImportReviewPolicy(), overrides = emptyMap(), fees = false,
             selected = FinanceImportReview.selected(preview.rows, FinanceImportReviewPolicy())) }
     }
@@ -104,20 +114,22 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
     }
     fun commit() = run {
         val current = mutable.value
-        require(current.reviewed)
+        require(current.stage == ImportStage.REVIEW)
         val id = requireNotNull(current.preview).batch.id
         val count = repository.commit(id, current.mappings, current.selected,
             current.preview.rows.filter { it.status == FinanceRowStatus.DUPLICATE && it.id in current.selected }.map { it.id }.toSet(),
             current.splitTags, current.fees)
         val refreshed = repository.open(id)
         val history = repository.history()
-        mutable.update { it.copy(preview = refreshed, selected = emptySet(),
+        mutable.update { it.copy(preview = refreshed,
+            stage = if (refreshed.batch.status == FinanceImportStatus.COMMITTED) ImportStage.COMPLETED else ImportStage.REVIEW,
+            selected = emptySet(),
             mappings = it.mappings.map { mapping -> refreshed.createdMappings.find { it.source == mapping.source } ?: mapping },
             history = history, message = "已导入 $count 条记录") }
     }
     fun undo(id: String) = run {
         val result = repository.undo(id)
-        mutable.update { it.copy(preview = repository.open(id), reviewed = false, selected = emptySet(),
+        mutable.update { it.copy(preview = repository.open(id), stage = ImportStage.ACCOUNTS, selected = emptySet(),
             history = repository.history(), message = "已作废 ${result.voided} 条流水；保留 ${result.retained} 条后来修改或关联的流水") }
     }
 }
