@@ -1,0 +1,2780 @@
+From 2d0c8c1e06caef45dfd69ccc691b1afd05584b46 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 11 Oct 2026 16:44:09 +0800
+Subject: [PATCH 1/4] feat(appearance): add local image palettes and named
+ theme collection
+
+---
+ .../qq/closie/data/appearance/Appearance.kt   |  6 ++-
+ .../data/appearance/AppearanceRepository.kt   | 52 +++++++++++++++++-
+ .../qq/closie/data/appearance/ImagePalette.kt | 38 +++++++++++++
+ .../closie/data/appearance/LocalThemeImage.kt | 23 ++++++++
+ .../lifeos/settings/AppearanceEditorState.kt  |  6 ++-
+ .../settings/AppearanceSettingsScreen.kt      | 47 ++++++++++++----
+ .../ui/lifeos/settings/AppearanceViewModel.kt | 54 ++++++++++++++++++-
+ .../qq/closie/ui/lifeos/theme/LifeOsTheme.kt  |  2 +-
+ .../ui/lifeos/theme/LifeOsTypography.kt       |  4 +-
+ .../com/qq/closie/AppearanceViewModelTest.kt  | 21 +++++---
+ .../java/com/qq/closie/ThemeCollectionTest.kt | 43 +++++++++++++++
+ 11 files changed, 270 insertions(+), 26 deletions(-)
+ create mode 100644 app/src/main/java/com/qq/closie/data/appearance/ImagePalette.kt
+ create mode 100644 app/src/main/java/com/qq/closie/data/appearance/LocalThemeImage.kt
+ create mode 100644 app/src/test/java/com/qq/closie/ThemeCollectionTest.kt
+
+diff --git a/app/src/main/java/com/qq/closie/data/appearance/Appearance.kt b/app/src/main/java/com/qq/closie/data/appearance/Appearance.kt
+index 2c99af1..ddba4f6 100644
+--- a/app/src/main/java/com/qq/closie/data/appearance/Appearance.kt
++++ b/app/src/main/java/com/qq/closie/data/appearance/Appearance.kt
+@@ -30,14 +30,18 @@ data class CustomTheme(val accent: String, val paper: String, val secondary: Str
+     )
+ }
+ 
++data class NamedTheme(val id: String, val name: String, val colors: CustomTheme)
++
+ data class AppearanceSettings(
+     val selectedThemeId: String = ThemePreset.ORIGINAL.id,
+     val custom: CustomTheme? = null,
+     val functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
+-    val moduleOrder: List<String> = emptyList()
++    val moduleOrder: List<String> = emptyList(),
++    val namedThemes: List<NamedTheme> = emptyList()
+ ) {
+     fun selectedColors(): CustomTheme {
+         if (selectedThemeId == CUSTOM_ID && custom != null) return custom.normalized()
++        namedThemes.firstOrNull { it.id == selectedThemeId }?.let { return it.colors.normalized() }
+         val preset = ThemePreset.fromId(selectedThemeId) ?: ThemePreset.ORIGINAL
+         return CustomTheme(preset.accent, preset.paper, preset.secondary, preset.soft, preset.warm)
+     }
+diff --git a/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt b/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
+index 1dc561b..af248f7 100644
+--- a/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
++++ b/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
+@@ -45,6 +45,38 @@ class AppearanceRepository(
+         store.edit { it[AppearanceCodec.selected] = preset.id }
+     }
+ 
++    suspend fun selectNamed(id: String) {
++        store.edit { values ->
++            require(AppearanceCodec.decode(values).namedThemes.any { it.id == id }) { "主题已不存在" }
++            values[AppearanceCodec.selected] = id
++        }
++    }
++
++    suspend fun saveNamed(name: String, colors: CustomTheme) {
++        val valid = colors.normalized()
++        require(name.trim().isNotEmpty() && name.trim().length <= 40) { "主题名称请填写 1–40 个字" }
++        store.edit { values ->
++            val existing = AppearanceCodec.decode(values).namedThemes
++            require(existing.size < 24) { "已保存 24 个主题，请先删除不再使用的主题" }
++            val theme = NamedTheme("palette-" + java.util.UUID.randomUUID(), name.trim(), valid)
++            values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(existing + theme)
++            values[AppearanceCodec.selected] = theme.id
++        }
++    }
++
++    suspend fun deleteNamed(id: String) {
++        store.edit { values ->
++            val settings = AppearanceCodec.decode(values)
++            values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(settings.namedThemes.filterNot { it.id == id })
++            if (values[AppearanceCodec.selected] == id) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
++            if (id == "legacy-custom") {
++                values.remove(AppearanceCodec.customAccent); values.remove(AppearanceCodec.customPaper)
++                values.remove(AppearanceCodec.customSecondary); values.remove(AppearanceCodec.customSoft); values.remove(AppearanceCodec.customWarm)
++                if (values[AppearanceCodec.selected] == AppearanceSettings.CUSTOM_ID) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
++            }
++        }
++    }
++
+     suspend fun selectSavedCustom() {
+         store.edit { preferences ->
+             requireNotNull(AppearanceCodec.decode(preferences).custom) { "还没有保存自定义配色" }
+@@ -70,6 +102,7 @@ class AppearanceRepository(
+ }
+ 
+ internal object AppearanceCodec {
++    val collection = stringPreferencesKey("namedThemesV1")
+     val moduleOrder = stringPreferencesKey("moduleOrder")
+     val customSoft = stringPreferencesKey("customSoft")
+     val customWarm = stringPreferencesKey("customWarm")
+@@ -87,13 +120,30 @@ internal object AppearanceCodec {
+             HexColor.normalizeOrNull(values[customSoft]) ?: secondary,
+             HexColor.normalizeOrNull(values[customWarm]) ?: paper) else null
+         val rawId = values[selected]
++        val themes = decodeThemes(values[collection]).toMutableList()
++        if (custom != null && themes.none { it.id == "legacy-custom" }) themes.add(0, NamedTheme("legacy-custom", "以前的我的配色", custom))
+         val id = when {
+             rawId == AppearanceSettings.CUSTOM_ID && custom != null -> rawId
+             ThemePreset.fromId(rawId) != null -> rawId!!
++            themes.any { it.id == rawId } -> rawId!!
+             else -> ThemePreset.ORIGINAL.id
+         }
+         return AppearanceSettings(id, custom, FunctionPageStyle.entries.firstOrNull {
+             it.name == values[functionPageStyle]
+-        } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct())
++        } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct(), themes)
+     }
++
++    private fun decodeThemes(raw: String?): List<NamedTheme> = runCatching {
++        com.google.gson.JsonParser.parseString(raw ?: "[]").asJsonArray.mapNotNull { element ->
++            runCatching {
++                val json = element.asJsonObject
++                val id = json.get("id").asString
++                require(id == "legacy-custom" || id.startsWith("palette-"))
++                val name = json.get("name").asString.trim().take(40).also { require(it.isNotBlank()) }
++                val c = json.getAsJsonObject("colors")
++                NamedTheme(id, name, CustomTheme(c.get("accent").asString, c.get("paper").asString,
++                    c.get("secondary").asString, c.get("soft").asString, c.get("warm").asString).normalized())
++            }.getOrNull()
++        }.distinctBy { it.id }
++    }.getOrDefault(emptyList())
+ }
+diff --git a/app/src/main/java/com/qq/closie/data/appearance/ImagePalette.kt b/app/src/main/java/com/qq/closie/data/appearance/ImagePalette.kt
+new file mode 100644
+index 0000000..bafb1f9
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/data/appearance/ImagePalette.kt
+@@ -0,0 +1,38 @@
++package com.qq.closie.data.appearance
++
++import kotlin.math.*
++
++/** Bounded, deterministic local quantization + chroma/diversity scoring; no source image persistence. */
++object ImagePalette {
++    private data class Swatch(val r: Int, val g: Int, val b: Int, val count: Int) {
++        val chroma get() = (maxOf(r, g, b) - minOf(r, g, b)) / 255.0
++        val light get() = (maxOf(r, g, b) + minOf(r, g, b)) / 510.0
++        val hex get() = "#%02X%02X%02X".format(r, g, b)
++        fun distance(other: Swatch) = sqrt(((r-other.r).toDouble().pow(2) + (g-other.g).toDouble().pow(2) + (b-other.b).toDouble().pow(2))) / 441.7
++    }
++    fun extract(pixels: IntArray): CustomTheme {
++        val bins = mutableMapOf<Int, IntArray>()
++        val stride = maxOf(1, pixels.size / 12000)
++        for (index in pixels.indices step stride) {
++            val p = pixels[index]
++            if ((p ushr 24) < 128) continue
++            val r = (p ushr 16) and 255; val g = (p ushr 8) and 255; val b = p and 255
++            val key = ((r shr 4) shl 8) or ((g shr 4) shl 4) or (b shr 4)
++            val bin = bins.getOrPut(key) { IntArray(4) }
++            bin[0] += r; bin[1] += g; bin[2] += b; bin[3]++
++        }
++        val swatches = bins.values.map { Swatch(it[0]/it[3], it[1]/it[3], it[2]/it[3], it[3]) }
++        val useful = swatches.filter { it.light in .10.. .90 && it.chroma > .10 }
++        val accent = useful.maxByOrNull { sqrt(it.count.toDouble()) * (.2 + it.chroma) * (1.0 - abs(it.light - .45)) }
++            ?: Swatch(111, 103, 168, 1)
++        val secondary = useful.filter { it.distance(accent) > .20 }
++            .maxByOrNull { sqrt(it.count.toDouble()) * it.distance(accent) * (.3 + it.chroma) } ?: Swatch(139, 168, 190, 1)
++        val warm = useful.filter { it.r > it.b + 15 && it.distance(accent) > .15 }
++            .maxByOrNull { sqrt(it.count.toDouble()) * (.2 + it.chroma) } ?: Swatch(213, 171, 146, 1)
++        val paper = ThemePalette.mix(secondary.hex, "#FFFFFF", .95)
++        var inkAccent = accent.hex
++        repeat(30) { if (ThemePalette.contrast(inkAccent, paper) < 4.8) inkAccent = ThemePalette.mix(inkAccent, "#20202C", .12) }
++        return CustomTheme(inkAccent, paper, ThemePalette.mix(secondary.hex, paper, .25),
++            ThemePalette.mix(accent.hex, paper, .63), ThemePalette.mix(warm.hex, paper, .42)).normalized()
++    }
++}
+diff --git a/app/src/main/java/com/qq/closie/data/appearance/LocalThemeImage.kt b/app/src/main/java/com/qq/closie/data/appearance/LocalThemeImage.kt
+new file mode 100644
+index 0000000..db7fbd1
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/data/appearance/LocalThemeImage.kt
+@@ -0,0 +1,23 @@
++package com.qq.closie.data.appearance
++
++import android.content.Context
++import android.graphics.BitmapFactory
++import android.net.Uri
++
++/** Read transient Photo Picker access, downsample before decode; never copy the screenshot. */
++internal fun themeFromImage(context: Context, uri: Uri): CustomTheme {
++    val resolver = context.contentResolver
++    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
++    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
++    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "无法读取这张图片，请选择其他照片或截图" }
++    var sample = 1
++    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 256) sample *= 2
++    val options = BitmapFactory.Options().apply { inSampleSize = sample }
++    val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
++        ?: throw IllegalArgumentException("图片读取失败，请重新选择")
++    return try {
++        val pixels = IntArray(bitmap.width * bitmap.height)
++        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
++        ImagePalette.extract(pixels)
++    } finally { bitmap.recycle() }
++}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceEditorState.kt b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceEditorState.kt
+index 9631892..b6252e5 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceEditorState.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceEditorState.kt
+@@ -12,7 +12,8 @@ data class AppearanceEditorState(
+     val validationError: String? = null,
+     val isSaving: Boolean = false,
+     val message: String? = null,
+-    val soft: String = secondary, val warm: String = paper
++    val soft: String = secondary, val warm: String = paper,
++    val themeName: String = "我的配色", val extracting: Boolean = false
+ ) {
+     fun edit(field: ThemeField, text: String): AppearanceEditorState {
+         val changed = when (field) {
+@@ -31,7 +32,8 @@ data class AppearanceEditorState(
+     companion object {
+         fun from(settings: AppearanceSettings): AppearanceEditorState {
+             val c = settings.selectedColors()
+-            return AppearanceEditorState(settings.selectedThemeId, c.accent, c.paper, c.secondary, settings, soft = c.soft, warm = c.warm)
++            return AppearanceEditorState(settings.selectedThemeId, c.accent, c.paper, c.secondary, settings, soft = c.soft, warm = c.warm,
++                themeName = settings.namedThemes.firstOrNull { it.id == settings.selectedThemeId }?.name ?: "我的配色")
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+index 2c868b4..55a7189 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+@@ -1,6 +1,10 @@
+ package com.qq.closie.ui.lifeos.settings
+ 
+ import androidx.compose.foundation.BorderStroke
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.PickVisualMediaRequest
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.text.KeyboardOptions
+@@ -22,6 +26,10 @@ import com.qq.closie.ui.lifeos.theme.*
+ fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit) {
+     val editor by viewModel.editor.collectAsStateWithLifecycle()
+     val stored by viewModel.savedAppearance.collectAsStateWithLifecycle()
++    val context = LocalContext.current.applicationContext
++    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
++        uri?.let { viewModel.extractImage(context, it) }
++    }
+     LaunchedEffect(viewModel) { viewModel.beginAppearanceEdit() }
+     DisposableEffect(viewModel) { onDispose { viewModel.cancelAppearanceEdit() } }
+     editor?.let { draft ->
+@@ -31,7 +39,9 @@ fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit)
+             onCancel = { viewModel.cancelAppearanceEdit(); onBack() },
+             onRestore = viewModel::restoreOriginal,
+             functionPageStyle = stored?.functionPageStyle ?: FunctionPageStyle.LAYERED,
+-            onFunctionPageStyle = viewModel::selectFunctionPageStyle)
++            onFunctionPageStyle = viewModel::selectFunctionPageStyle,
++            namedThemes = stored?.namedThemes.orEmpty(), onNamed = viewModel::previewNamed, onDelete = viewModel::deleteNamed,
++            onName = viewModel::nameTheme, onImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+     }
+ }
+ 
+@@ -43,10 +53,27 @@ fun AppearanceSettingsScreen(
+     onField: (ThemeField, String) -> Unit,
+     onSave: () -> Unit, onCancel: () -> Unit, onRestore: () -> Unit,
+     functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
+-    onFunctionPageStyle: (FunctionPageStyle) -> Unit = {}
++    onFunctionPageStyle: (FunctionPageStyle) -> Unit = {},
++    namedThemes: List<NamedTheme> = emptyList(), onNamed: (String) -> Unit = {}, onDelete: (String) -> Unit = {},
++    onName: (String) -> Unit = {}, onImage: () -> Unit = {}
+ ) {
+     val colors = LocalLifeOsColors.current
+     LifePage("主题与配色", onCancel) {
++        Text("从喜欢的画面开始", style = LifeText.journal)
++        OutlinedButton(onImage, enabled = !state.isSaving && !state.extracting) { Text(if (state.extracting) "正在本机取色…" else "从照片或截图取色") }
++        Text("只保存配色和名称，不保存原图。取色后可预览、调整，再收进主题集。", style = LifeText.caption, color = colors.muted)
++        if (namedThemes.isNotEmpty()) {
++            Text("我的主题 · ${namedThemes.size}/24", Modifier.padding(top = 16.dp), style = LifeText.title)
++            namedThemes.forEach { theme ->
++                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
++                    TextButton({ onNamed(theme.id) }, Modifier.weight(1f), enabled = !state.isSaving && !state.extracting) {
++                        ColorSwatch(theme.colors.accent)
++                        Text(" ${theme.name}${if (state.selectedId == theme.id) " · 已选" else ""}")
++                    }
++                    TextButton({ onDelete(theme.id) }, enabled = !state.isSaving && !state.extracting) { Text("删除") }
++                }
++            }
++        }
+         Text("功能页", style = LifeText.title)
+         Column {
+             FunctionPageStyle.entries.forEach { style ->
+@@ -61,7 +88,7 @@ fun AppearanceSettingsScreen(
+             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                 row.forEach { preset ->
+                     val chosen = state.selectedId == preset.id
+-                    Surface(onClick = { onPreset(preset) }, enabled = !state.isSaving,
++                    Surface(onClick = { onPreset(preset) }, enabled = !state.isSaving && !state.extracting,
+                         modifier = Modifier.weight(1f).semantics { selected = chosen },
+                         color = colors.card, shape = RoundedCornerShape(12.dp),
+                         border = BorderStroke(if (chosen) 2.dp else 1.dp, if (chosen) colors.accent else colors.line)) {
+@@ -77,7 +104,7 @@ fun AppearanceSettingsScreen(
+                 if (row.size == 1) Spacer(Modifier.weight(1f))
+             }
+         }
+-        if (hasSavedCustom) OutlinedButton(onClick = onCustom, enabled = !state.isSaving) {
++        if (hasSavedCustom) OutlinedButton(onClick = onCustom, enabled = !state.isSaving && !state.extracting) {
+             Text(if (state.selectedId == AppearanceSettings.CUSTOM_ID) "我的配色 · 已选" else "恢复上次的我的配色")
+         }
+         Surface(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = colors.paperSecondary, shape = RoundedCornerShape(12.dp)) {
+@@ -89,19 +116,21 @@ fun AppearanceSettingsScreen(
+             }
+         }
+         Text("自定义主题色", style = LifeText.title)
++        OutlinedTextField(state.themeName, onName, Modifier.fillMaxWidth(), label = { Text("主题名称") }, singleLine = true,
++            enabled = !state.isSaving && !state.extracting)
+         listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm).forEach { (field, value) ->
+             OutlinedTextField(value, { onField(field, it) }, Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                 label = { Text(field.label) }, leadingIcon = { ColorSwatch(value) }, singleLine = true,
+-                enabled = !state.isSaving, isError = HexColor.normalizeOrNull(value) == null,
++                enabled = !state.isSaving && !state.extracting, isError = HexColor.normalizeOrNull(value) == null,
+                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
+         }
+         Text(state.validationError ?: "文字和按钮会自动调整，以保持可读。", style = LifeText.caption, color = colors.inkSecondary)
+         state.message?.let { Text(it, Modifier.padding(top = 10.dp), style = LifeText.body) }
+-        Button(onClick = onSave, enabled = !state.isSaving && state.validationError == null, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+-            Text(if (state.isSaving) "正在保存…" else "保存当前主题")
++        Button(onClick = onSave, enabled = !state.isSaving && !state.extracting && state.validationError == null && state.themeName.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
++            Text(if (state.isSaving) "正在保存…" else if (state.selectedId == AppearanceSettings.CUSTOM_ID) "保存为新主题" else "使用当前主题")
+         }
+-        OutlinedButton(onClick = onCancel, enabled = !state.isSaving, modifier = Modifier.fillMaxWidth()) { Text("取消试色") }
+-        TextButton(onClick = onRestore, enabled = !state.isSaving, modifier = Modifier.fillMaxWidth()) { Text("恢复暮山紫原色") }
++        OutlinedButton(onClick = onCancel, enabled = !state.isSaving && !state.extracting, modifier = Modifier.fillMaxWidth()) { Text("取消试色") }
++        TextButton(onClick = onRestore, enabled = !state.isSaving && !state.extracting, modifier = Modifier.fillMaxWidth()) { Text("恢复暮山紫原色") }
+     }
+ }
+ 
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt
+index 7bf4e21..c8c72fe 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt
+@@ -51,6 +51,55 @@ class AppearanceViewModel(
+ 
+     fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
+ 
++    fun previewNamed(id: String) {
++        if (_editor.value?.isSaving == true) return
++        val saved = savedAppearance.value ?: return
++        _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = id))
++    }
++
++    fun nameTheme(value: String) {
++        _editor.value?.takeUnless { it.isSaving }?.let {
++            _editor.value = it.copy(themeName = value.take(40), selectedId = AppearanceSettings.CUSTOM_ID)
++        }
++    }
++
++    fun deleteNamed(id: String) {
++        val draft = _editor.value ?: return
++        if (draft.isSaving || draft.extracting) return
++        val generation = editGeneration
++        _editor.value = draft.copy(isSaving = true)
++        viewModelScope.launch {
++            try {
++                appearanceRepository.deleteNamed(id)
++                val saved = appearanceRepository.read()
++                if (generation == editGeneration && _editor.value != null)
++                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已删除")
++            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
++            catch (_: Exception) { if (generation == editGeneration) _editor.value = draft.copy(message = "删除失败，请重试") }
++        }
++    }
++
++    fun extractImage(context: android.content.Context, uri: android.net.Uri) {
++        val initial = _editor.value ?: return
++        if (initial.isSaving || initial.extracting) return
++        val generation = editGeneration
++        _editor.value = initial.copy(extracting = true, message = "正在从图片中取色…")
++        viewModelScope.launch {
++            try {
++                val palette = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
++                    com.qq.closie.data.appearance.themeFromImage(context, uri)
++                }
++                if (generation == editGeneration && _editor.value != null) {
++                    val preview = (_editor.value ?: initial).preview.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID, custom = palette)
++                    _editor.value = AppearanceEditorState.from(preview).copy(themeName = "图片里的颜色", message = "已在本机取色，可继续调整和命名；保存后可再次使用。")
++                }
++            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
++            catch (error: Exception) {
++                if (generation == editGeneration) _editor.value = _editor.value?.copy(extracting = false, message = error.message ?: "图片取色失败，请重试")
++            }
++        }
++    }
++
+     fun selectFunctionPageStyle(style: FunctionPageStyle) {
+         viewModelScope.launch {
+             try {
+@@ -71,13 +120,14 @@ class AppearanceViewModel(
+ 
+     fun saveAppearance() {
+         val draft = _editor.value ?: return
+-        if (draft.isSaving || draft.validationError != null) return
++        if (draft.isSaving || draft.extracting || draft.validationError != null) return
+         val generation = editGeneration
+         _editor.value = draft.copy(isSaving = true, message = null)
+         viewModelScope.launch {
+             runCatching {
+                 when {
+-                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveCustom(CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
++                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveNamed(draft.themeName, CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
++                    draft.preview.namedThemes.any { it.id == draft.selectedId } -> appearanceRepository.selectNamed(draft.selectedId)
+                     else -> appearanceRepository.selectPreset(requireNotNull(ThemePreset.fromId(draft.selectedId)))
+                 }
+                 appearanceRepository.read()
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTheme.kt b/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTheme.kt
+index a4241eb..25ec159 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTheme.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTheme.kt
+@@ -30,7 +30,7 @@ val LocalLifeOsColors = staticCompositionLocalOf { ThemePalette.resolve(Appearan
+ 
+ @Composable
+ fun LifeOsTheme(settings: AppearanceSettings = AppearanceSettings(), content: @Composable () -> Unit) {
+-    val colors = androidx.compose.runtime.remember(settings.selectedThemeId, settings.custom) { ThemePalette.resolve(settings).colors() }
++    val colors = androidx.compose.runtime.remember(settings.selectedThemeId, settings.custom, settings.namedThemes) { ThemePalette.resolve(settings).colors() }
+     val base = if (colors.isDark) darkColorScheme() else lightColorScheme()
+     val scheme = base.copy(
+         primary = colors.accent, onPrimary = colors.onAccent,
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTypography.kt b/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTypography.kt
+index 7d9a054..cafb249 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTypography.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/theme/LifeOsTypography.kt
+@@ -12,10 +12,10 @@ import androidx.compose.ui.unit.sp
+ /** Bundled Noto Sans SC pins real weight axes; journal headings may opt into bundled serif. */
+ object LifeText {
+     val family = LifeFonts.Sans
+-    val number = TextStyle(fontFamily = family, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
++    val number = TextStyle(fontFamily = family, fontSize = 23.sp, lineHeight = 31.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
+     val journal = TextStyle(fontFamily = FontFamily(Font(R.font.noto_serif_sc_medium)), fontSize = 22.sp, lineHeight = 30.sp)
+     val display = TextStyle(fontFamily = family, fontSize = 26.sp, lineHeight = 34.sp)
+-    val title = TextStyle(fontFamily = family, fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium)
++    val title = TextStyle(fontFamily = family, fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.Medium)
+     val body = TextStyle(fontFamily = family, fontSize = 14.sp, lineHeight = 21.sp)
+     val caption = TextStyle(fontFamily = family, fontSize = 12.sp, lineHeight = 18.sp)
+ }
+diff --git a/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt b/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt
+index 032c50c..00844c6 100644
+--- a/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt
++++ b/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt
+@@ -32,7 +32,8 @@ class AppearanceViewModelTest {
+     @get:Rule val temporary = TemporaryFolder()
+     private val main = UnconfinedTestDispatcher()
+     private val custom = CustomTheme("#AB12CD", "#F0EADC", "#98AB76")
+-    private val saved = AppearanceSettings(ThemePreset.WATER_LILY.id, custom)
++    private val saved = AppearanceSettings(ThemePreset.WATER_LILY.id, custom, namedThemes = listOf(
++        com.qq.closie.data.appearance.NamedTheme("legacy-custom", "以前的我的配色", custom)))
+ 
+     @Before fun setMain() { Dispatchers.setMain(main) }
+     @After fun resetMain() { Dispatchers.resetMain() }
+@@ -74,24 +75,28 @@ class AppearanceViewModelTest {
+             model.editThemeField(ThemeField.SOFT, custom.soft)
+             model.editThemeField(ThemeField.WARM, custom.warm)
+             saveAndAwait(model)
+-            assertEquals(custom, repository.read().custom)
+-            repository.settings.first { it?.selectedThemeId == AppearanceSettings.CUSTOM_ID }
++            val named = repository.read().namedThemes.single()
++            assertEquals(custom, named.colors)
++            assertEquals(named.id, repository.read().selectedThemeId)
++            repository.settings.first { it?.selectedThemeId == named.id }
+ 
+             model.previewPreset(ThemePreset.WATER_LILY)
+             saveAndAwait(model)
+-            val preset = AppearanceSettings(ThemePreset.WATER_LILY.id, custom)
+-            assertEquals(preset, repository.read())
++            val preset = repository.read()
++            assertEquals(ThemePreset.WATER_LILY.id, preset.selectedThemeId)
++            assertEquals(listOf(named), preset.namedThemes)
+             repository.settings.first { it == preset }
+ 
+             model.cancelAppearanceEdit()
+             model.beginAppearanceEdit()
+-            model.previewSavedCustom()
++            model.previewNamed(named.id)
+             val draft = model.editor.value!!
+-            assertEquals(AppearanceSettings.CUSTOM_ID, draft.selectedId)
++            assertEquals(named.id, draft.selectedId)
+             assertEquals(custom, draft.preview.selectedColors())
+             assertEquals(preset, repository.read())
+             saveAndAwait(model)
+-            assertEquals(AppearanceSettings(AppearanceSettings.CUSTOM_ID, custom), repository.read())
++            assertEquals(named.id, repository.read().selectedThemeId)
++            assertEquals(listOf(named), repository.read().namedThemes)
+         }
+     }
+ 
+diff --git a/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt b/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt
+new file mode 100644
+index 0000000..4278362
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt
+@@ -0,0 +1,43 @@
++package com.qq.closie
++
++import androidx.datastore.preferences.core.mutablePreferencesOf
++import com.qq.closie.data.appearance.*
++import org.junit.Assert.*
++import org.junit.Test
++
++class ThemeCollectionTest {
++    @Test fun `legacy custom colors remain selected and become a named theme`() {
++        val values = mutablePreferencesOf(AppearanceCodec.selected to "custom",
++            AppearanceCodec.customAccent to "#765432", AppearanceCodec.customPaper to "#FFFFFF",
++            AppearanceCodec.customSecondary to "#AABBCC")
++        val decoded = AppearanceCodec.decode(values)
++        assertEquals("custom", decoded.selectedThemeId)
++        assertEquals(decoded.custom, decoded.namedThemes.single().colors)
++        assertEquals(decoded.custom, decoded.selectedColors())
++    }
++
++    @Test fun `collection decoding preserves valid siblings and rejects invalid colors`() {
++        val colors = CustomTheme("#665588", "#FFFFFF", "#AABBCC")
++        val good = NamedTheme("palette-one", "花园", colors)
++        val bad = NamedTheme("palette-two", "坏色", colors.copy(accent = "invalid"))
++        val values = mutablePreferencesOf(AppearanceCodec.selected to good.id,
++            AppearanceCodec.collection to com.google.gson.Gson().toJson(listOf(good, bad)))
++        val decoded = AppearanceCodec.decode(values)
++        assertEquals(listOf(good), decoded.namedThemes)
++        assertEquals(colors, decoded.selectedColors())
++    }
++
++    @Test fun `black white transparent and noisy images produce usable deterministic palettes`() {
++        val random = java.util.Random(41)
++        val samples = listOf(IntArray(0), IntArray(200) { 0 }, IntArray(200) { -1 },
++            IntArray(200) { 0xFF000000.toInt() }, IntArray(12000) { random.nextInt() or 0xFF000000.toInt() })
++        samples.forEach { pixels ->
++            val palette = ImagePalette.extract(pixels)
++            assertEquals(palette, ImagePalette.extract(pixels))
++            assertTrue(ThemePalette.contrast(palette.accent, palette.paper) >= 4.5)
++            val tokens = ThemePalette.resolve(AppearanceSettings("custom", palette))
++            assertTrue(ThemePalette.contrast(tokens.ink, tokens.paper) >= 4.5)
++            assertTrue(ThemePalette.contrast(tokens.onAccent, tokens.accent) >= 4.5)
++        }
++    }
++}
+-- 
+2.53.0.windows.3
+
+
+From c36b35807defa8efeb627214cd70b7a1ca59b167 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 11 Oct 2026 16:44:11 +0800
+Subject: [PATCH 2/4] feat(lifeos): refine function page and daily finance from
+ device feedback
+
+---
+ .../qq/closie/navigation/ClosieNavigation.kt  |   1 +
+ .../qq/closie/navigation/LifeOsNavigation.kt  |  13 +-
+ .../com/qq/closie/navigation/LifeOsRoute.kt   |   1 +
+ .../com/qq/closie/ui/lifeos/LifeOsRoot.kt     |   8 +-
+ .../lifeos/components/FunctionPagePolicy.kt   |  30 +++
+ .../ui/lifeos/components/LifeFunctionPages.kt |  35 +++-
+ .../ui/lifeos/drawer/FunctionModuleGrid.kt    | 180 ++++++++++++++++++
+ .../closie/ui/lifeos/drawer/LifeOsDrawer.kt   |  91 ---------
+ .../ui/lifeos/drawer/ModuleOrderSheet.kt      |  87 ---------
+ .../ui/lifeos/finance/FinanceAccountSheet.kt  |  14 +-
+ .../lifeos/finance/FinanceAutomationScreen.kt |   4 +-
+ .../closie/ui/lifeos/finance/FinanceCards.kt  |  15 +-
+ .../closie/ui/lifeos/finance/FinanceCharts.kt |   4 +-
+ .../ui/lifeos/finance/FinanceCurrencies.kt    |  13 ++
+ .../ui/lifeos/finance/FinanceImportScreen.kt  |   4 +-
+ .../ui/lifeos/finance/FinanceModuleScreen.kt  |  54 +++---
+ .../ui/lifeos/finance/FinanceMonthLedger.kt   |  92 +++++++++
+ .../ui/lifeos/finance/FinanceNavGlyph.kt      |  28 +++
+ .../closie/ui/lifeos/finance/FinanceScreen.kt |   5 +-
+ .../ui/lifeos/finance/FinanceViewModel.kt     |  19 +-
+ .../closie/ui/lifeos/home/LifeOsHomeScreen.kt |  26 ++-
+ .../ui/lifeos/settings/LifeSettingsScreen.kt  |   3 +-
+ .../ui/lifeos/finance/MonthLedgerTest.kt      |  32 ++++
+ docs/LIFE_OS_V14_DEVICE_REFINEMENT.md         |  58 ++++++
+ 24 files changed, 581 insertions(+), 236 deletions(-)
+ create mode 100644 app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+ create mode 100644 app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+ delete mode 100644 app/src/main/java/com/qq/closie/ui/lifeos/drawer/ModuleOrderSheet.kt
+ create mode 100644 app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCurrencies.kt
+ create mode 100644 app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceMonthLedger.kt
+ create mode 100644 app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt
+ create mode 100644 app/src/test/java/com/qq/closie/ui/lifeos/finance/MonthLedgerTest.kt
+ create mode 100644 docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+
+diff --git a/app/src/main/java/com/qq/closie/navigation/ClosieNavigation.kt b/app/src/main/java/com/qq/closie/navigation/ClosieNavigation.kt
+index 458f6e9..f677283 100644
+--- a/app/src/main/java/com/qq/closie/navigation/ClosieNavigation.kt
++++ b/app/src/main/java/com/qq/closie/navigation/ClosieNavigation.kt
+@@ -114,6 +114,7 @@ fun ClosieNavHost(
+     val current by nav.currentBackStackEntryAsState()
+     val currentRoute = current?.destination?.route
+     val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
++    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(!showBottomBar)
+ 
+     // At module roots, always offer an explicit return to the single Life OS shell.
+     val showReturnAffordance = TopLevel.entries.any { it.route == currentRoute }
+diff --git a/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt b/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt
+index 0bc4f80..59b5d64 100644
+--- a/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt
++++ b/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt
+@@ -28,7 +28,12 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
+     nav: NavHostController, home: HomeUiState, onHomeDateSelected: (LocalDate) -> Unit,
+     appearanceViewModel: AppearanceViewModel, onDrawer: () -> Unit,
+     onCapture: () -> Unit, onFileToLibrary: (String) -> Unit) {
+-    NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH) {
++    // The function page already animates the switch; avoid a second default NavHost crossfade.
++    NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
++        enterTransition = { androidx.compose.animation.EnterTransition.None },
++        exitTransition = { androidx.compose.animation.ExitTransition.None },
++        popEnterTransition = { androidx.compose.animation.EnterTransition.None },
++        popExitTransition = { androidx.compose.animation.ExitTransition.None }) {
+         composable(LifeOsRoute.HOME) {
+             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
+                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
+@@ -50,9 +55,13 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
+         composable(LifeOsRoute.MAP) { LifeMapScreen { nav.returnToLifeHome() } }
+         composable(LifeOsRoute.COMPANION) { CompanionShellScreen { nav.returnToLifeHome() } }
+         composable(LifeOsRoute.APPEARANCE) { AppearanceSettingsRoute(appearanceViewModel) { nav.returnWithinLifeModule() } }
++        composable(LifeOsRoute.FINANCE_AUTOMATION) {
++            com.qq.closie.ui.lifeos.finance.FinanceAutomationScreen(container.financeAutomationRepository, container.financeRepository) { nav.returnWithinLifeModule() }
++        }
+         composable(LifeOsRoute.SETTINGS) {
+             LifeSettingsScreen(onBack = { nav.returnToLifeHome() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
+-                onBackup = { nav.navigateLifeTopLevel(LifeOsRoute.BACKUP) })
++                onBackup = { nav.navigateLifeTopLevel(LifeOsRoute.BACKUP) },
++                onFinanceAutomation = { nav.navigate(LifeOsRoute.FINANCE_AUTOMATION) })
+         }
+         composable(LifeOsRoute.MODULE, arguments = listOf(navArgument("moduleId") { type = NavType.StringType })) { entry ->
+             ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.returnToLifeHome() }
+diff --git a/app/src/main/java/com/qq/closie/navigation/LifeOsRoute.kt b/app/src/main/java/com/qq/closie/navigation/LifeOsRoute.kt
+index 0798098..0bb9794 100644
+--- a/app/src/main/java/com/qq/closie/navigation/LifeOsRoute.kt
++++ b/app/src/main/java/com/qq/closie/navigation/LifeOsRoute.kt
+@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets
+ 
+ /** One product graph; Closet's local graph is an embedded professional module. */
+ object LifeOsRoute {
++    const val FINANCE_AUTOMATION = "life/settings/finance-automation"
+     const val FINANCE = "life/finance"
+     const val GRAPH = "life"
+     const val HOME = "life/home"
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt b/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
+index cac692e..836f2fd 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
+@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.width
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.*
++import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.remember
++import com.qq.closie.ui.lifeos.components.*
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.SideEffect
+ import androidx.compose.runtime.LaunchedEffect
+@@ -63,6 +66,7 @@ fun LifeOsRoot(
+         val home by shellViewModel.home.collectAsStateWithLifecycle()
+         var drawerOpen by rememberSaveable { mutableStateOf(false) }
+         val reduced = reducedLifeMotion()
++        val gesturePolicy = remember { FunctionPagePolicy() }
+         val scope = rememberCoroutineScope()
+         var captureMenu by rememberSaveable { mutableStateOf(false) }
+         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
+@@ -92,11 +96,12 @@ fun LifeOsRoot(
+             }
+         }
+         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
++        CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
+         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
+             Box(Modifier.safeDrawingPadding().consumeWindowInsets(WindowInsets.safeDrawing)) {
+                 com.qq.closie.ui.lifeos.components.LifeFunctionPages(
+                     open = drawerOpen,
+-                    enabled = entry?.destination?.route == LifeOsRoute.HOME,
++                    enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu,
+                     style = appearance.functionPageStyle, reducedMotion = reduced,
+                     onOpenChange = { drawerOpen = it },
+                     functionPage = {
+@@ -114,6 +119,7 @@ fun LifeOsRoot(
+                 }
+             }
+         }
++        }
+         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
+         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
+             onManual = { nav.navigateLifeTopLevel(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt b/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+new file mode 100644
+index 0000000..55cde8a
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+@@ -0,0 +1,30 @@
++package com.qq.closie.ui.lifeos.components
++
++import androidx.compose.runtime.*
++import com.qq.closie.navigation.LifeOsRoute
++
++/** Shell-owned arbitration; nested editors temporarily lease gesture ownership. */
++@Stable
++class FunctionPagePolicy {
++    var cancelReorder: (() -> Unit)? = null
++    var blockers by mutableIntStateOf(0)
++        private set
++    fun acquire() { blockers++ }
++    fun release() { blockers = (blockers - 1).coerceAtLeast(0) }
++}
++val LocalFunctionPagePolicy = staticCompositionLocalOf<FunctionPagePolicy?> { null }
++
++@Composable
++fun SuspendFunctionPageSwipe(active: Boolean = true) {
++    val policy = LocalFunctionPagePolicy.current
++    DisposableEffect(policy, active) {
++        if (active) policy?.acquire()
++        onDispose { if (active) policy?.release() }
++    }
++}
++
++fun supportsFunctionPage(route: String?): Boolean = route in setOf(
++    LifeOsRoute.HOME, LifeOsRoute.FINANCE, LifeOsRoute.CLOSET, LifeOsRoute.CALENDAR,
++    LifeOsRoute.CAPTURE, LifeOsRoute.REFERENCE, LifeOsRoute.PLAN, LifeOsRoute.READING,
++    LifeOsRoute.MODULE, LifeOsRoute.SETTINGS
++)
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt b/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt
+index d19fbb9..1937d71 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt
+@@ -15,6 +15,9 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Brush
+ import androidx.compose.ui.graphics.graphicsLayer
+ import androidx.compose.ui.graphics.TransformOrigin
++import androidx.compose.ui.graphics.lerp
++import androidx.compose.ui.graphics.asComposeRenderEffect
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.input.pointer.util.VelocityTracker
+ import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.platform.LocalDensity
+@@ -36,18 +39,33 @@ fun LifeFunctionPages(
+     val currentOpen by rememberUpdatedState(open)
+     val changeOpen by rememberUpdatedState(onOpenChange)
+     val edge = with(LocalDensity.current) { 24.dp.toPx() }
++    val context = LocalContext.current
++    val blurRadius = with(LocalDensity.current) { 10.dp.toPx() }
++    val blur = remember(context, blurRadius, reducedMotion) {
++        val lowRam = (context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice
++        if (android.os.Build.VERSION.SDK_INT >= 31 && !lowRam && !reducedMotion)
++            android.graphics.RenderEffect.createBlurEffect(blurRadius, blurRadius, android.graphics.Shader.TileMode.CLAMP).asComposeRenderEffect()
++        else null
++    }
++    // Static atmosphere outside the scrolling grid; no per-item blur or gradient allocation.
++    val atmosphere = remember(colors) { Brush.linearGradient(listOf(
++        lerp(colors.paper, colors.secondary, .26f), lerp(colors.paper, colors.soft, .32f),
++        colors.paper, lerp(colors.paper, colors.warm, .30f), lerp(colors.paper, colors.accent, .09f))) }
++    val glass = remember(colors) { Brush.linearGradient(listOf(
++        lerp(colors.paper, colors.secondary, .22f).copy(alpha = .68f),
++        lerp(colors.paper, colors.soft, .28f).copy(alpha = .72f),
++        lerp(colors.paper, colors.warm, .26f).copy(alpha = .70f))) }
+     LaunchedEffect(open, dragging, reducedMotion) {
+         if (!dragging) {
+             if (reducedMotion) progress = if (open) 1f else 0f
+             else animate(progress, if (open) 1f else 0f, animationSpec = tween(230)) { value, _ -> progress = value }
+         }
+     }
+-    BackHandler(open || revealed) { onOpenChange(false) }
+     BoxWithConstraints(Modifier.fillMaxSize()) {
+         val revealWidth = maxWidth * .84f
+         val travel = with(LocalDensity.current) { revealWidth.toPx() }
+         val mode = if (reducedMotion) FunctionPageStyle.FLAT else style
+-        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(colors.paperSecondary, colors.paperTertiary, colors.warmSurface)))
++        Box(Modifier.fillMaxSize().background(atmosphere)
+             .pointerInput(enabled, travel, edge) {
+                 if (!enabled) return@pointerInput
+                 awaitEachGesture {
+@@ -116,7 +134,9 @@ fun LifeFunctionPages(
+                 cameraDistance = 18.dp.toPx()
+                 shape = RoundedCornerShape((22f * progress).dp)
+                 clip = progress > 0f
+-                shadowElevation = if (mode != FunctionPageStyle.FLAT) 24.dp.toPx() * progress else 0f
++                shadowElevation = if (mode == FunctionPageStyle.LAYERED || mode == FunctionPageStyle.DECK) 10.dp.toPx() * progress else 0f
++                renderEffect = if (mode == FunctionPageStyle.GLASS && progress > 0f) blur else null
++                alpha = if (mode == FunctionPageStyle.GLASS) 1f - progress * (if (blur == null) .86f else .48f) else 1f
+             }.background(colors.paper)) {
+                 Box(if (open) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) { content() }
+                 if (open || dragging) Box(Modifier.fillMaxSize().clickable { changeOpen(false) })
+@@ -127,11 +147,16 @@ fun LifeFunctionPages(
+                     translationX = -(1f - progress) * travel
+                     shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
+                     clip = true
+-                    shadowElevation = 18.dp.toPx()
+-                }.background(Brush.linearGradient(listOf(colors.card.copy(alpha = .78f), colors.paperSecondary.copy(alpha = .86f), colors.warmSurface.copy(alpha = .92f))))) {
++                    shadowElevation = 6.dp.toPx()
++                }.background(glass)) {
+                     functionPage()
+                 }
+             }
+         }
+     }
++    // Register after nested module handlers: back closes this surface before navigating.
++    val policy = LocalFunctionPagePolicy.current
++    BackHandler(open || revealed) {
++        policy?.cancelReorder?.invoke() ?: onOpenChange(false)
++    }
+ }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+new file mode 100644
+index 0000000..8f37b11
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+@@ -0,0 +1,180 @@
++package com.qq.closie.ui.lifeos.drawer
++
++import androidx.activity.compose.BackHandler
++import androidx.compose.foundation.background
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
++import androidx.compose.foundation.gestures.scrollBy
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.grid.*
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.Close
++import androidx.compose.material.icons.outlined.Search
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.graphics.graphicsLayer
++import androidx.compose.ui.hapticfeedback.HapticFeedbackType
++import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.platform.LocalHapticFeedback
++import androidx.compose.ui.platform.testTag
++import androidx.compose.ui.semantics.CustomAccessibilityAction
++import androidx.compose.ui.semantics.customActions
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.unit.dp
++import com.qq.closie.ui.lifeos.theme.*
++import kotlinx.coroutines.delay
++
++/** Stable module keys; one lifted overlay. No effects on the individual scrolling cells. */
++@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
++@Composable
++fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
++    moduleOrder: List<String> = emptyList(),
++    onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() }) {
++    val colors = LocalLifeOsColors.current
++    val grid = rememberLazyGridState()
++    val haptic = LocalHapticFeedback.current
++    val density = LocalDensity.current
++    var modules by remember { mutableStateOf(orderedModules(moduleOrder)) }
++    var baseline by remember { mutableStateOf(modules) }
++    var lifted by remember { mutableStateOf<LifeModule?>(null) }
++    var pointer by remember { mutableStateOf(Offset.Zero) }
++    var grab by remember { mutableStateOf(Offset.Zero) }
++    var cellWidth by remember { mutableIntStateOf(0) }
++    var lastTarget by remember { mutableStateOf<String?>(null) }
++    var saving by remember { mutableStateOf(false) }
++    var message by remember { mutableStateOf<String?>(null) }
++    val save by rememberUpdatedState(onSaveOrder)
++    LaunchedEffect(moduleOrder) { if (lifted == null && !saving) modules = orderedModules(moduleOrder) }
++    fun cancel() { modules = baseline; lifted = null; message = "已取消移动" }
++    val policy = com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
++    DisposableEffect(lifted?.id, policy) {
++        policy?.cancelReorder = if (lifted != null) ({ cancel() }) else null
++        onDispose { policy?.cancelReorder = null }
++    }
++    fun persist(previous: List<LifeModule>) {
++        if (modules == previous) return
++        saving = true
++        save(modules.map { it.id }, { saving = false; message = "顺序已保存" }, {
++            modules = previous; saving = false; message = it
++        })
++    }
++    fun moveAtPointer() {
++        val id = lifted?.id ?: return
++        val target = grid.layoutInfo.visibleItemsInfo.firstOrNull { item ->
++            modules.any { it.id == item.key } &&
++                pointer.x >= item.offset.x && pointer.x < item.offset.x + item.size.width &&
++                pointer.y >= item.offset.y && pointer.y < item.offset.y + item.size.height
++        }?.key as? String ?: return
++        if (target == id) { lastTarget = null; return }
++        if (target == lastTarget) return
++        val from = modules.indexOfFirst { it.id == id }; val to = modules.indexOfFirst { it.id == target }
++        if (from >= 0 && to >= 0 && from != to) {
++            lastTarget = target
++            modules = modules.toMutableList().apply { add(to, removeAt(from)) }
++        }
++    }
++    val edge = with(density) { 56.dp.toPx() }
++    LaunchedEffect(lifted?.id) {
++        while (lifted != null) {
++            val end = grid.layoutInfo.viewportEndOffset
++            val speed = when {
++                pointer.y < edge -> -((edge - pointer.y) / edge).coerceIn(0f, 1f)
++                pointer.y > end - edge -> ((pointer.y - end + edge) / edge).coerceIn(0f, 1f)
++                else -> 0f
++            }
++            if (speed != 0f) { grid.scrollBy(speed * with(density) { 10.dp.toPx() }); moveAtPointer() }
++            delay(16)
++        }
++    }
++    BackHandler(lifted != null) { cancel() }
++    Box(modifier.fillMaxHeight()) {
++        LazyVerticalGrid(GridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("life-drawer")
++            .pointerInput(saving) {
++                if (saving) return@pointerInput
++                detectDragGesturesAfterLongPress(onDragStart = { point ->
++                    val item = grid.layoutInfo.visibleItemsInfo.firstOrNull {
++                        point.x >= it.offset.x && point.x < it.offset.x + it.size.width &&
++                            point.y >= it.offset.y && point.y < it.offset.y + it.size.height
++                    }
++                    val module = modules.firstOrNull { it.id == item?.key }
++                    if (module != null && item != null) {
++                        baseline = modules; lifted = module; pointer = point; lastTarget = null
++                        grab = point - Offset(item.offset.x.toFloat(), item.offset.y.toFloat())
++                        cellWidth = item.size.width; message = "松手放置 · 返回取消"
++                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
++                    }
++                }, onDrag = { change, amount ->
++                    if (lifted != null) { change.consume(); pointer += amount; moveAtPointer() }
++                }, onDragEnd = { if (lifted != null) { lifted = null; persist(baseline) } },
++                    onDragCancel = { if (lifted != null) cancel() })
++            }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
++            item(key = "brand", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
++                Column {
++                    Row(verticalAlignment = Alignment.CenterVertically) {
++                        Column(Modifier.weight(1f)) {
++                            Text("生活的抽屉", style = LifeText.journal, color = colors.ink)
++                            Text("把日子放回自己的位置", style = LifeText.caption, color = colors.inkSecondary)
++                        }
++                        IconButton(onClose, enabled = !saving) { Icon(Icons.Outlined.Close, "收起生活的抽屉", Modifier.size(20.dp)) }
++                    }
++                    Row(Modifier.fillMaxWidth().padding(top = 16.dp).background(colors.card.copy(alpha = .65f), RoundedCornerShape(12.dp))
++                        .clickable { onOpenModule(LifeModules.find("search")) }.heightIn(min = 48.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
++                        Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), colors.inkSecondary)
++                        Text("找一件东西、一段经历", Modifier.padding(start = 8.dp), style = LifeText.caption)
++                    }
++                    Row(Modifier.padding(top = 20.dp, bottom = 8.dp)) {
++                        Text("手边常用", Modifier.weight(1f), style = LifeText.caption, color = colors.accentDeep)
++                        Text("长按直接移动", style = LifeText.caption, color = colors.inkSecondary)
++                    }
++                }
++            }
++            modules.forEachIndexed { index, module ->
++                if (index == 6) item(key = "all", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
++                    Column(Modifier.padding(top = 12.dp, bottom = 8.dp)) {
++                        HorizontalDivider(color = colors.line)
++                        Text("生活的一格一格", Modifier.padding(top = 14.dp), style = LifeText.caption, color = colors.inkSecondary)
++                    }
++                }
++                item(key = module.id, contentType = "module") {
++                    ModuleRow(module, Modifier.animateItem().graphicsLayer { alpha = if (lifted?.id == module.id) 0f else 1f }
++                        .semantics {
++                            customActions = listOf(-1 to "向前移动", 1 to "向后移动").map { (delta, label) ->
++                                CustomAccessibilityAction(label) {
++                                    val at = modules.indexOfFirst { it.id == module.id }; val to = at + delta
++                                    if (!saving && lifted == null && to in modules.indices) {
++                                        val before = modules; modules = modules.toMutableList().apply { add(to, removeAt(at)) }; persist(before); true
++                                    } else false
++                                }
++                            }
++                        }.clickable(enabled = lifted == null && !saving) { onOpenModule(module) }, index < 6)
++                }
++            }
++            item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
++                Text(message ?: "左滑收起 · 顺序会随你保留", Modifier.padding(top = 20.dp, bottom = 16.dp), style = LifeText.caption, color = colors.inkSecondary)
++            }
++        }
++        lifted?.let { module ->
++            ModuleRow(module, Modifier.width(with(density) { cellWidth.toDp() }).graphicsLayer {
++                translationX = pointer.x - grab.x; translationY = pointer.y - grab.y
++                scaleX = 1.035f; scaleY = 1.035f; shadowElevation = 8.dp.toPx()
++                shape = RoundedCornerShape(10.dp); clip = true
++            }.background(colors.card), true)
++        }
++    }
++}
++
++@Composable
++private fun ModuleRow(module: LifeModule, modifier: Modifier, quick: Boolean) {
++    val colors = LocalLifeOsColors.current
++    Row(modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("drawer-${module.id}").padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
++        Icon(module.icon(), null, Modifier.size(20.dp), colors.accentDeep)
++        Text(module.label, Modifier.padding(start = 10.dp), style = if (quick) LifeText.body else LifeText.caption,
++            color = colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
++    }
++}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/LifeOsDrawer.kt b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/LifeOsDrawer.kt
+index 234b861..e5614fb 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/LifeOsDrawer.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/LifeOsDrawer.kt
+@@ -1,98 +1,7 @@
+ package com.qq.closie.ui.lifeos.drawer
+ 
+-import androidx.compose.foundation.BorderStroke
+-import androidx.compose.foundation.ExperimentalFoundationApi
+-import androidx.compose.foundation.combinedClickable
+-import androidx.compose.foundation.layout.*
+-import androidx.compose.foundation.lazy.LazyColumn
+-import androidx.compose.foundation.lazy.items
+-import androidx.compose.foundation.shape.RoundedCornerShape
+-import androidx.compose.material.icons.Icons
+-import androidx.compose.material.icons.outlined.Close
+-import androidx.compose.material.icons.outlined.Search
+-import androidx.compose.material3.*
+-import androidx.compose.runtime.*
+-import androidx.compose.runtime.saveable.rememberSaveable
+-import androidx.compose.ui.Alignment
+-import androidx.compose.ui.Modifier
+-import androidx.compose.ui.platform.testTag
+-import androidx.compose.ui.semantics.Role
+-import androidx.compose.ui.text.style.TextOverflow
+-import androidx.compose.ui.unit.dp
+-import androidx.compose.ui.unit.sp
+-import com.qq.closie.ui.lifeos.theme.*
+-
+ private val defaultFirst = listOf("capture", "finance", "calendar", "closet", "inbox", "plans")
+ internal fun orderedModules(ids: List<String>): List<LifeModule> {
+     val all = LifeModules.groups.flatMap { it.modules }.associateBy { it.id }
+     return ((ids.ifEmpty { defaultFirst }) + all.keys).distinct().mapNotNull(all::get)
+ }
+-
+-@Composable
+-fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
+-    moduleOrder: List<String> = emptyList(),
+-    onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() }) {
+-    val colors = LocalLifeOsColors.current
+-    var arranging by rememberSaveable { mutableStateOf(false) }
+-    val modules = remember(moduleOrder) { orderedModules(moduleOrder) }
+-    val first = remember(modules) { modules.take(6).chunked(2) }
+-    val rest = remember(modules) { modules.drop(6).chunked(2) }
+-    LazyColumn(modifier.fillMaxHeight().testTag("life-drawer"),
+-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+-        item(key = "brand", contentType = "header") {
+-            Row(verticalAlignment = Alignment.CenterVertically) {
+-                Column(Modifier.weight(1f)) {
+-                    Text("生活的抽屉", style = LifeText.journal, color = colors.ink)
+-                    Text("把日子放回自己的位置", style = LifeText.caption, color = colors.muted)
+-                }
+-                IconButton(onClose) { Icon(Icons.Outlined.Close, "收起生活的抽屉", Modifier.size(20.dp), colors.inkSecondary) }
+-            }
+-            Spacer(Modifier.height(16.dp))
+-            Surface(onClick = { onOpenModule(LifeModules.find("search")) }, shape = RoundedCornerShape(16.dp),
+-                color = colors.card.copy(alpha = .82f), border = BorderStroke(1.dp, colors.line)) {
+-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+-                    Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), colors.muted)
+-                    Text("找一件东西、一段经历", Modifier.padding(start = 10.dp), style = LifeText.caption, color = colors.inkSecondary)
+-                }
+-            }
+-            Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+-                Text("手边常用", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
+-                TextButton({ arranging = true }) { Text("整理", style = LifeText.caption) }
+-            }
+-        }
+-        items(first, key = { "first-${it.first().id}" }, contentType = { "pair" }) { pair ->
+-            ModulePair(pair, true, onOpenModule) { arranging = true }
+-        }
+-        item(key = "all", contentType = "header") {
+-            Text("生活的一格一格", Modifier.padding(top = 20.dp, bottom = 8.dp), style = LifeText.caption, color = colors.muted)
+-        }
+-        items(rest, key = { "rest-${it.first().id}" }, contentType = { "pair" }) { pair ->
+-            ModulePair(pair, false, onOpenModule) { arranging = true }
+-        }
+-        item(key = "hint") {
+-            Text("长按整理顺序 · 轻轻左滑回到手账", Modifier.padding(top = 22.dp, bottom = 8.dp), style = LifeText.caption, color = colors.muted)
+-        }
+-    }
+-    if (arranging) ModuleOrderSheet(modules, onSaveOrder) { arranging = false }
+-}
+-
+-@OptIn(ExperimentalFoundationApi::class)
+-@Composable
+-private fun ModulePair(pair: List<LifeModule>, quick: Boolean, open: (LifeModule) -> Unit, arrange: () -> Unit) {
+-    val colors = LocalLifeOsColors.current
+-    Row(Modifier.fillMaxWidth().padding(bottom = if (quick) 6.dp else 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-        pair.forEach { module ->
+-            Surface(Modifier.weight(1f), color = if (quick) colors.card.copy(alpha = .62f) else androidx.compose.ui.graphics.Color.Transparent,
+-                shape = RoundedCornerShape(13.dp)) {
+-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("drawer-${module.id}")
+-                    .combinedClickable(role = Role.Button, onClick = { open(module) }, onLongClick = arrange,
+-                        onLongClickLabel = "整理模块顺序").padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+-                    Icon(module.icon(), null, Modifier.size(19.dp), colors.accentDeep)
+-                    Text(module.label, Modifier.padding(start = 8.dp), style = LifeText.body.copy(fontSize = 13.sp, lineHeight = 19.sp),
+-                        color = colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+-                }
+-            }
+-        }
+-        if (pair.size == 1) Spacer(Modifier.weight(1f))
+-    }
+-}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/ModuleOrderSheet.kt b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/ModuleOrderSheet.kt
+deleted file mode 100644
+index 452e343..0000000
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/ModuleOrderSheet.kt
++++ /dev/null
+@@ -1,87 +0,0 @@
+-package com.qq.closie.ui.lifeos.drawer
+-
+-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+-import androidx.compose.foundation.layout.*
+-import androidx.compose.foundation.lazy.LazyColumn
+-import androidx.compose.foundation.lazy.itemsIndexed
+-import androidx.compose.foundation.lazy.rememberLazyListState
+-import androidx.compose.material.icons.Icons
+-import androidx.compose.material.icons.outlined.ArrowUpward
+-import androidx.compose.material.icons.outlined.ArrowDownward
+-import androidx.compose.material.icons.outlined.DragHandle
+-import androidx.compose.material3.*
+-import androidx.compose.runtime.*
+-import androidx.compose.ui.Alignment
+-import androidx.compose.ui.Modifier
+-import androidx.compose.ui.geometry.Offset
+-import androidx.compose.ui.input.pointer.pointerInput
+-import androidx.compose.ui.platform.LocalDensity
+-import androidx.compose.ui.unit.dp
+-import com.qq.closie.ui.lifeos.theme.*
+-import kotlinx.coroutines.delay
+-
+-@OptIn(ExperimentalMaterial3Api::class)
+-@Composable
+-internal fun ModuleOrderSheet(initial: List<LifeModule>,
+-    save: (List<String>, () -> Unit, (String) -> Unit) -> Unit, close: () -> Unit) {
+-    val rows = remember { initial.toMutableStateList() }
+-    val list = rememberLazyListState()
+-    val density = LocalDensity.current.density
+-    var dragging by remember { mutableStateOf<String?>(null) }
+-    var pointer by remember { mutableStateOf(Offset.Zero) }
+-    var busy by remember { mutableStateOf(false) }
+-    var error by remember { mutableStateOf<String?>(null) }
+-    val colors = LocalLifeOsColors.current
+-    fun move(id: String, target: Int) {
+-        val from = rows.indexOfFirst { it.id == id }
+-        if (from >= 0 && target in rows.indices && from != target) rows.add(target, rows.removeAt(from))
+-    }
+-    fun hit() {
+-        val id = dragging ?: return
+-        list.layoutInfo.visibleItemsInfo.firstOrNull { pointer.y >= it.offset && pointer.y < it.offset + it.size }
+-            ?.let { move(id, it.index) }
+-    }
+-    LaunchedEffect(dragging) {
+-        while (dragging != null) {
+-            val info = list.layoutInfo
+-            val delta = when {
+-                pointer.y < info.viewportStartOffset + 64f * density -> -14f * density
+-                pointer.y > info.viewportEndOffset - 64f * density -> 14f * density
+-                else -> 0f
+-            }
+-            if (delta != 0f) { list.scroll { scrollBy(delta) }; hit() }
+-            delay(24)
+-        }
+-    }
+-    ModalBottomSheet(onDismissRequest = { if (!busy) close() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+-        confirmValueChange = { !busy || it != SheetValue.Hidden })) {
+-        Column(Modifier.fillMaxWidth().fillMaxHeight(.9f).padding(horizontal = 16.dp)) {
+-            Text("整理生活的抽屉", style = LifeText.title)
+-            Text("长按拖动；前六项会放在手边常用。也可以用箭头移动。", style = LifeText.caption, color = colors.muted)
+-            LazyColumn(Modifier.weight(1f).pointerInput(busy) {
+-                if (!busy) detectDragGesturesAfterLongPress(onDragStart = { position ->
+-                    pointer = position
+-                    dragging = list.layoutInfo.visibleItemsInfo.firstOrNull { position.y >= it.offset && position.y < it.offset + it.size }?.key as? String
+-                }, onDragEnd = { dragging = null }, onDragCancel = { dragging = null }) { change, delta ->
+-                    change.consume(); pointer += delta; hit()
+-                }
+-            }, state = list) {
+-                itemsIndexed(rows, key = { _, module -> module.id }) { index, module ->
+-                    Surface(color = if (dragging == module.id) colors.paperTertiary else colors.card) {
+-                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+-                            Icon(Icons.Outlined.DragHandle, null, tint = colors.muted)
+-                            Text(module.label, Modifier.weight(1f).padding(start = 12.dp), style = LifeText.body)
+-                            IconButton({ move(module.id, index - 1) }, enabled = index > 0 && !busy) { Icon(Icons.Outlined.ArrowUpward, "上移${module.label}", Modifier.size(18.dp)) }
+-                            IconButton({ move(module.id, index + 1) }, enabled = index < rows.lastIndex && !busy) { Icon(Icons.Outlined.ArrowDownward, "下移${module.label}", Modifier.size(18.dp)) }
+-                        }
+-                    }
+-                }
+-            }
+-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+-                TextButton({ rows.clear(); rows.addAll(orderedModules(emptyList())) }, enabled = !busy) { Text("默认顺序") }
+-                Button({ busy = true; save(rows.map { it.id }, close, { error = it; busy = false }) }, Modifier.weight(1f), enabled = !busy) { Text(if (busy) "保存中…" else "保存顺序") }
+-            }
+-        }
+-    }
+-}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt
+index 3833c29..e355905 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt
+@@ -17,10 +17,14 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
+     var kindName by rememberSaveable(account?.id) { mutableStateOf(account?.kind?.name ?: FinanceAccountKind.BANK_CARD.name) }
+     var balance by rememberSaveable(account?.id) { mutableStateOf(account?.let { FinanceMoney.input(it.openingBalanceMinor, it.currencyCode) } ?: "0.00") }
+     var kindsOpen by remember { mutableStateOf(false) }
++    var currenciesOpen by remember { mutableStateOf(false) }
++    var currency by rememberSaveable(account?.id) { mutableStateOf(account?.currencyCode ?: "CNY") }
++    // Includes voided entries, matching the repository's accountEntryCount guard.
++    val currencyLocked = account != null && state.snapshot.entries.any { it.accountId == account.id }
+     var confirmArchive by remember { mutableStateOf(false) }
+     val kind = FinanceAccountKind.valueOf(kindName)
+     FinanceReceipt(if (account == null) "建立真实账户" else "编辑账户", state.busy, state.error, onClose, actions = {
+-        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
++        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+             Text(if (state.busy) "正在保存……" else "保存账户")
+         }
+     }) {
+@@ -32,7 +36,9 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
+                     onClick = { kindName = choice.name; kindsOpen = false }) }
+             }
+         }
+-        Text("币种 · ${account?.currencyCode ?: "CNY"}", style = LifeText.caption, color = colors.muted)
++        TextButton({ currenciesOpen = true }, enabled = !state.busy && !currencyLocked) { Text("币种 · $currency${if (currencyLocked) " · 已锁定" else " · 选择"}") }
++        Text(if (currencyLocked) "此账户已有流水，币种不可更改。" else "不同币种分别统计；转账仅支持同币种账户。", style = LifeText.caption, color = colors.muted)
++        Text("$currency 金额最多 ${FinanceMoney.fractionDigits(currency)} 位小数", style = LifeText.caption)
+         OutlinedTextField(balance, { balance = it }, Modifier.fillMaxWidth(), label = { Text("期初余额") },
+             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy)
+         account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.balanceAnchorAt)}", style = LifeText.caption, color = colors.muted) }
+@@ -40,6 +46,10 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
+         if (account?.archivedAt != null) TextButton({ vm.unarchiveAccount(account.id, onClose) }, enabled = !state.busy) { Text("恢复使用此账户") }
+         else if (account != null) TextButton(onClick = { confirmArchive = true }, enabled = !state.busy) { Text("归档账户") }
+     }
++    if (currenciesOpen) FinanceChoiceSheet("币种", currency, FinanceCurrencies.choices, {
++        currency = it
++        if (balance.toBigDecimalOrNull()?.signum() == 0) balance = FinanceMoney.input(0, it)
++    }, { currenciesOpen = false }, common = FinanceCurrencies.common)
+     if (confirmArchive && account != null) AlertDialog(onDismissRequest = { if (!state.busy) confirmArchive = false },
+         title = { Text("归档 ${account.name}？") }, text = { Text("不再用于新增流水，历史记录和余额仍然保留。") },
+         confirmButton = { TextButton(onClick = { vm.archiveAccount(account.id) { confirmArchive = false; onClose() } }, enabled = !state.busy) { Text("确认归档") } },
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAutomationScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAutomationScreen.kt
+index 88456c4..d6323bb 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAutomationScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAutomationScreen.kt
+@@ -57,8 +57,8 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
+     }
+     BackHandler(onBack = onBack)
+     Column(Modifier.fillMaxSize().padding(16.dp)) {
+-        TextButton(onClick = onBack) { Text("返回账目") }
+-        Text("自动发现", style = MaterialTheme.typography.headlineSmall)
++        TextButton(onClick = onBack) { Text("返回") }
++        Text("账目 · 自动发现", style = MaterialTheme.typography.headlineSmall)
+         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+         settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt
+index 9dfeb48..e06459c 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt
+@@ -27,6 +27,14 @@ internal fun FinancePanel(modifier: Modifier = Modifier, color: Color = LocalLif
+     }
+ }
+ 
++@Composable
++internal fun FinanceSection(content: @Composable ColumnScope.() -> Unit) {
++    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++        content()
++        HorizontalDivider(Modifier.padding(top = 10.dp), color = LocalLifeOsColors.current.line)
++    }
++}
++
+ @Composable
+ internal fun FinanceMonthCard(state: FinanceUiState, onMonth: () -> Unit) {
+     val colors = LocalLifeOsColors.current
+@@ -49,7 +57,7 @@ internal fun FinanceBalanceSummary(state: FinanceUiState) {
+     val sums = remember(accounts, state.balances) { accounts.groupBy { it.currencyCode }.mapValues { (_, group) ->
+         group.fold(BigInteger.ZERO) { sum, a -> sum + BigInteger.valueOf(state.balances[a.id] ?: 0) }
+     } }
+-    FinancePanel(color = LocalLifeOsColors.current.warmSurface) {
++    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+         Text("账户余额合计", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
+         sums.forEach { (currency, total) ->
+             Text((if (currency == "CNY") "¥" else "$currency ") + BigDecimal(total, FinanceMoney.fractionDigits(currency)).toPlainString(), style = LifeText.number)
+@@ -70,10 +78,11 @@ internal fun FinanceAccountStrip(state: FinanceUiState, open: (String) -> Unit)
+ 
+ @Composable
+ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, index: Int,
+-    modifier: Modifier = Modifier, onClick: () -> Unit) {
++    modifier: Modifier = Modifier, flat: Boolean = false, onClick: () -> Unit) {
+     val colors = LocalLifeOsColors.current
+     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
+-    Surface(onClick = onClick, modifier = modifier, color = colors.card, shape = RoundedCornerShape(18.dp)) {
++    Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
++        shape = if (flat) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(18.dp)) {
+         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+             Box(Modifier.width(3.dp).height(48.dp).background(swatch, RoundedCornerShape(2.dp)))
+             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCharts.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCharts.kt
+index 0d84037..022d454 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCharts.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCharts.kt
+@@ -41,7 +41,7 @@ internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String
+             }.toList()
+         }
+     }
+-    FinancePanel {
++    FinanceSection {
+         Text("收支的节奏", style = LifeText.title)
+         Text("支出 / 收入 · 最近最多 12 个月 · 点按月份查看", style = LifeText.caption, color = colors.muted)
+         if (series.isEmpty()) Text("有了记录，这里会呈现你的收支变化。", style = LifeText.body)
+@@ -82,7 +82,7 @@ internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, onCategory:
+     val colors = LocalLifeOsColors.current
+     val byCurrency = remember(rows) { rows.groupBy { it.currencyCode } }
+     var allCurrency by remember { mutableStateOf<String?>(null) }
+-    FinancePanel {
++    FinanceSection {
+         Text("钱花在哪里", style = LifeText.title)
+         if (rows.isEmpty()) Text("这个范围还没有分类收支。", style = LifeText.body)
+         byCurrency.forEach { (currency, values) ->
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCurrencies.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCurrencies.kt
+new file mode 100644
+index 0000000..c67d8d6
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCurrencies.kt
+@@ -0,0 +1,13 @@
++package com.qq.closie.ui.lifeos.finance
++
++import com.qq.closie.life.finance.FinanceMoney
++import java.util.Currency
++import java.util.Locale
++
++internal object FinanceCurrencies {
++    val common = listOf("CNY", "HKD", "USD", "EUR", "JPY", "GBP", "SGD", "AUD", "CAD", "KRW")
++    val choices: List<Pair<String, String>> by lazy {
++        Currency.getAvailableCurrencies().filter { runCatching { FinanceMoney.fractionDigits(it.currencyCode) }.isSuccess }
++            .map { it.currencyCode to "${it.currencyCode} · ${it.getDisplayName(Locale.SIMPLIFIED_CHINESE)}" }.sortedBy { it.first }
++    }
++}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt
+index 33d8617..a815413 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceImportScreen.kt
+@@ -34,7 +34,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts:
+     val completed = state.stage == ImportStage.COMPLETED
+     val step = when { preview == null -> 0; completed -> 3; state.stage == ImportStage.ACCOUNTS -> 1; !summary -> 2; else -> 3 }
+     val groups = remember(preview?.rows) { FinanceImportGroup.entries.associateWith { group -> preview?.rows.orEmpty().filter { group in FinanceImportReview.groups(it) } } }
+-    fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv")) }
++    fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv", "application/octet-stream", "application/vnd.ms-excel")) }
+     BackHandler(enabled = !state.busy) { if (summary && !completed) summary = false else onBack() }
+     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+@@ -57,6 +57,8 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts:
+                 item { FinancePanel {
+                     Text("把过去的账本接过来", style = MaterialTheme.typography.headlineSmall)
+                     Text("选择 XLSX 或 CSV，在本机检查。确认前不会写入账目。", style = MaterialTheme.typography.bodyMedium)
++                    Text("无需先建立账户；预览后可把旧账户关联到已有账户，或在导入中建立。", style = MaterialTheme.typography.bodySmall)
++                    TextButton({ picker.launch(arrayOf("*/*")) }, enabled = !state.busy) { Text("找不到文件？浏览所有文件") }
+                     Button(::selectFile, enabled = !state.busy) { Text("选择 XLSX / CSV") }
+                 } }
+                 if (state.history.isNotEmpty()) item { Text("导入记录", style = MaterialTheme.typography.titleMedium) }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+index 1b36e2a..750d2bc 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+@@ -37,13 +37,25 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+     var editing by rememberSaveable { mutableStateOf(false) }
+     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
+     var accountEditing by rememberSaveable { mutableStateOf(false) }
++    var calendarMode by rememberSaveable { mutableStateOf(true) }
++    var selectedDay by rememberSaveable { mutableStateOf<String?>(null) }
+     var dates by rememberSaveable { mutableStateOf(false) }
+     var chartLabel by rememberSaveable { mutableStateOf<String?>(null) }
+     var chartCurrency by rememberSaveable { mutableStateOf("CNY") }
+     var reviewAdjustments by rememberSaveable { mutableStateOf(false) }
+     val listState = rememberLazyListState()
++    LaunchedEffect(viewName, calendarMode) {
++        if (view == FinanceView.TRANSACTIONS && calendarMode) vm.ensureCalendarMonth()
++    }
++    LaunchedEffect(state.filter.range, calendarMode) {
++        selectedDay?.let { day ->
++            val time = LocalDate.parse(day).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
++            if (calendarMode && !state.filter.range.contains(time)) selectedDay = null
++        }
++    }
+     LaunchedEffect(viewName, detailAccount, chartLabel) { listState.scrollToItem(0) }
+-    val allRows = remember(state.snapshot) { FinanceProjection.ledger(state.snapshot) }
++    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(editing || accountEditing || dates || detailAccount != null || chartLabel != null)
++    val allRows = state.allRows
+     val groupedDays = remember(state.ledger) { state.ledger.groupBy { it.localDay() } }
+     val roles = remember(state.snapshot.v4) { state.snapshot.v4?.activeLinks.orEmpty().groupBy { it.entryId }.mapValues { (_, links) ->
+         links.map { it.role }.filter { it in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT, FinanceFlowRole.SETTLEMENT) }.distinct().joinToString(" · ") { it.label }.ifBlank { null }
+@@ -63,13 +75,8 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+         // This bar belongs to Finance only. The Life OS root has no bottom navigation.
+         NavigationBar(containerColor = colors.card, tonalElevation = 0.dp, windowInsets = WindowInsets(0)) {
+             FinanceView.entries.forEach { target ->
+-                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name },
+-                    icon = { Icon(when (target) {
+-                        FinanceView.OVERVIEW -> Icons.Outlined.SpaceDashboard
+-                        FinanceView.TRANSACTIONS -> Icons.Outlined.ReceiptLong
+-                        FinanceView.ACCOUNTS -> Icons.Outlined.AccountBalanceWallet
+-                        FinanceView.INSIGHTS -> Icons.Outlined.BarChart
+-                    }, null, Modifier.size(22.dp)) }, label = { Text(target.label, style = LifeText.caption) },
++                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name; if (target == FinanceView.TRANSACTIONS && calendarMode) { vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null } },
++                    icon = { FinanceNavGlyph(target) }, label = { Text(target.label, style = LifeText.caption) },
+                     colors = NavigationBarItemDefaults.colors(indicatorColor = colors.paperTertiary,
+                         selectedIconColor = colors.accentDeep, selectedTextColor = colors.accentDeep))
+             }
+@@ -117,7 +124,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                 }
+             } else when (view) {
+                 FinanceView.OVERVIEW -> {
+-                    item { FinanceMonthCard(state) { vm.selectPeriod(FinancePeriod.MONTH); viewName = FinanceView.TRANSACTIONS.name } }
++                    item { FinanceMonthCard(state) { vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
+                     item { FinanceBalanceSummary(state) }
+                     item {
+                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+@@ -127,7 +134,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                         FinanceAccountStrip(state) { detailAccount = it }
+                         if (state.snapshot.accounts.none { it.archivedAt == null }) OutlinedButton({ accountId = null; accountEditing = true }) { Text("建立第一个账户") }
+                     }
+-                    item { FinancePanel { secondaryActions() } }
++                    item { HorizontalDivider(color = colors.line); Column(Modifier.padding(vertical = 8.dp)) { secondaryActions() }; HorizontalDivider(color = colors.line) }
+                     item { Text("最近流水", style = LifeText.title) }
+                     if (allRows.isEmpty()) item { Text("记下第一笔，让日常收支慢慢清晰。", style = LifeText.body, color = colors.muted) }
+                     items(allRows.take(6), key = { it.id }) { LedgerLine(it) { entryId = it.id; editing = true } }
+@@ -139,24 +146,25 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                         item { Text(if (archived) "已归档" else "正在使用", style = LifeText.title) }
+                         items(state.snapshot.accounts.filter { (it.archivedAt != null) == archived }, key = { it.id }) { account ->
+                             FinanceAccountCard(account, state.balances[account.id] ?: 0,
+-                                state.snapshot.accounts.indexOf(account), Modifier.fillMaxWidth()) { detailAccount = account.id }
++                                state.snapshot.accounts.indexOf(account), Modifier.fillMaxWidth(), flat = true) { detailAccount = account.id }
+                         }
+                     }
+                 }
+                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
+                     item {
+                         val month = state.filter.range.startInclusive?.let { YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) } ?: YearMonth.now()
+-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+-                            IconButton({ val m = month.minusMonths(1); vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) }) { Icon(Icons.Outlined.ChevronLeft, "上个月") }
+-                            TextButton({ dates = true }, Modifier.weight(1f)) {
+-                                Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp))
+-                                Text(state.filter.customLabel.ifBlank { state.filter.period.label + " · 选择日期" }, Modifier.padding(start = 8.dp), style = LifeText.body)
+-                            }
+-                            IconButton({ val m = month.plusMonths(1); vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) }) { Icon(Icons.Outlined.ChevronRight, "下个月") }
++                        if (view == FinanceView.TRANSACTIONS) Row {
++                            FilterChip(calendarMode, { calendarMode = true; selectedDay = null; vm.selectPeriod(FinancePeriod.MONTH) }, label = { Text("月历") })
++                            Spacer(Modifier.width(8.dp))
++                            FilterChip(!calendarMode, { calendarMode = false; selectedDay = null }, label = { Text("列表与范围") })
+                         }
++                        if (view == FinanceView.TRANSACTIONS && calendarMode) FinanceMonthLedger(month, state.ledger,
++                            selectedDay?.let(LocalDate::parse), { m -> selectedDay = null; vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) },
++                            { selectedDay = it?.toString() })
++                        else TextButton({ dates = true }) { Text(state.filter.customLabel.ifBlank { "选择日期范围" }) }
+                         OutlinedTextField(state.filter.query, vm::search, Modifier.fillMaxWidth(),
+                             label = { Text("搜索事由、分类、标签或账户") }, singleLine = true, shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), leadingIcon = { Icon(Icons.Outlined.Search, null) })
+-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
++                        if (view != FinanceView.TRANSACTIONS || !calendarMode) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                             items(FinancePeriod.entries) { period ->
+                                 FilterChip(state.filter.period == period, {
+                                     if (period == FinancePeriod.CUSTOM) dates = true else vm.selectPeriod(period)
+@@ -171,9 +179,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                             MoneySummary("个人支出", state.selected, true, Modifier.weight(1f))
+                             MoneySummary("个人收入", state.selected, false, Modifier.weight(1f))
+                         } } }
+-                        item { FinanceTrend(state.personalRows) { start, end -> vm.customRange(start, end); viewName = FinanceView.TRANSACTIONS.name } }
++                        item { FinanceTrend(state.personalRows) { start, end -> vm.customRange(start, end); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
+                         item { FinanceCategoryChart(state.categories) { label, currency -> chartLabel = label; chartCurrency = currency } }
+-                        item { FinancePanel {
++                        item { FinanceSection {
+                             Text("账户真实流量", style = LifeText.title)
+                             val real = FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId)
+                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+@@ -183,11 +191,11 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                         } }
+                     } else {
+                         item { Text("流水 · ${state.ledger.size} 笔", style = LifeText.title) }
+-                        groupedDays.forEach { (date, rows) ->
++                        groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }.forEach { (date, rows) ->
+                                 item(key = "date-$date") { Text(date.toString(), style = LifeText.caption, color = colors.muted) }
+                                 items(rows, key = { it.id }) { LedgerLine(it, roles[it.entry.id]) { entryId = it.id; editing = true } }
+                             }
+-                        if (state.ledger.isEmpty()) item { Text("这个范围还没有流水。", style = LifeText.body) }
++                        if (state.ledger.isEmpty() || (calendarMode && selectedDay != null && groupedDays.keys.none { it.toString() == selectedDay })) item { Text("这一天或范围还没有流水。", style = LifeText.body) }
+                     }
+                 }
+             }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceMonthLedger.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceMonthLedger.kt
+new file mode 100644
+index 0000000..ab7b1d8
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceMonthLedger.kt
+@@ -0,0 +1,92 @@
++package com.qq.closie.ui.lifeos.finance
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.ChevronLeft
++import androidx.compose.material.icons.outlined.ChevronRight
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.semantics.contentDescription
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import com.qq.closie.life.finance.*
++import com.qq.closie.ui.lifeos.theme.*
++import java.math.BigDecimal
++import java.math.BigInteger
++import java.time.LocalDate
++import java.time.YearMonth
++
++internal data class LedgerDay(val count: Int, val spending: BigInteger, val income: BigInteger)
++internal fun ledgerDays(rows: List<FinanceLedgerRow>, currency: String): Map<LocalDate, LedgerDay> =
++    rows.filter { it.currencyCode == currency }.groupBy { it.localDay() }.mapValues { (_, day) ->
++        fun sum(direction: FinanceDirection) = day.filter { it.transfer == null && it.entry.direction == direction }
++            .fold(BigInteger.ZERO) { total, row -> total + BigInteger.valueOf(row.entry.amountMinor) }
++        LedgerDay(day.size, sum(FinanceDirection.OUTFLOW), sum(FinanceDirection.INFLOW))
++    }
++
++@Composable
++internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, selected: LocalDate?,
++    onMonth: (YearMonth) -> Unit, onDay: (LocalDate?) -> Unit) {
++    val colors = LocalLifeOsColors.current
++    val currencies = remember(rows) { rows.map { it.currencyCode }.distinct().sorted().ifEmpty { listOf("CNY") } }
++    var preferredCurrency by rememberSaveable { mutableStateOf("CNY") }
++    val currency = preferredCurrency.takeIf { it in currencies } ?: currencies.first()
++    var currencyPicker by remember { mutableStateOf(false) }
++    val days = remember(rows, currency) { ledgerDays(rows, currency) }
++    fun amount(value: BigInteger) = BigDecimal(value, FinanceMoney.fractionDigits(currency)).toPlainString()
++    Column {
++        Row(verticalAlignment = Alignment.CenterVertically) {
++            IconButton({ onMonth(month.minusMonths(1)) }) { Icon(Icons.Outlined.ChevronLeft, "上个月") }
++            Text("${month.year} 年 ${month.monthValue} 月", Modifier.weight(1f), style = LifeText.title)
++            TextButton({ onMonth(YearMonth.now()); onDay(LocalDate.now()) }) { Text("今天") }
++            IconButton({ onMonth(month.plusMonths(1)) }) { Icon(Icons.Outlined.ChevronRight, "下个月") }
++        }
++        Row(verticalAlignment = Alignment.CenterVertically) {
++            Text("实际收付 · 转账不计收支", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
++            TextButton({ currencyPicker = true }, enabled = currencies.size > 1) { Text(currency) }
++        }
++        Row { listOf("一", "二", "三", "四", "五", "六", "日").forEach {
++            Box(Modifier.weight(1f).height(28.dp), contentAlignment = Alignment.Center) { Text(it, style = LifeText.caption, color = colors.muted) }
++        } }
++        val leading = month.atDay(1).dayOfWeek.value - 1
++        val weeks = (leading + month.lengthOfMonth() + 6) / 7
++        repeat(weeks) { week ->
++            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
++                repeat(7) { column ->
++                    val number = week * 7 + column - leading + 1
++                    val date = number.takeIf { it in 1..month.lengthOfMonth() }?.let(month::atDay)
++                    val day = days[date]
++                    Column(Modifier.weight(1f).heightIn(min = 66.dp)
++                        .background(if (date != null && date == selected) colors.paperTertiary else Color.Transparent, RoundedCornerShape(6.dp))
++                        .then(if (date != null) Modifier.clickable { onDay(if (selected == date) null else date) }
++                            .semantics { contentDescription = "$date，${day?.count ?: 0} 笔，$currency 支出 ${day?.let { amount(it.spending) } ?: "0"}，收入 ${day?.let { amount(it.income) } ?: "0"}" } else Modifier)
++                        .padding(vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
++                        if (date != null) {
++                            Text(number.toString(), style = LifeText.body, color = if (date == LocalDate.now()) colors.accentDeep else colors.ink)
++                            if (day != null) {
++                                if (day.spending.signum() > 0) Text("−${amount(day.spending)}", style = LifeText.caption.copy(fontSize = 9.sp, lineHeight = 12.sp, fontFeatureSettings = "tnum"), color = colors.inkSecondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
++                                if (day.income.signum() > 0) Text("+${amount(day.income)}", style = LifeText.caption.copy(fontSize = 9.sp, lineHeight = 12.sp, fontFeatureSettings = "tnum"), color = colors.accentDeep, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
++                                if (day.income.signum() == 0 && day.spending.signum() == 0) Text("·", style = LifeText.caption)
++                            }
++                        }
++                    }
++                }
++            }
++        }
++        selected?.let { date ->
++            Text("$date · $currency 支出 ${days[date]?.let { amount(it.spending) } ?: "0"} / 收入 ${days[date]?.let { amount(it.income) } ?: "0"}", style = LifeText.caption)
++            TextButton({ onDay(null) }) { Text("查看整月流水") }
++        }
++        if (currencies.size > 1) Text("日历显示 $currency；下方保留各币种流水，不做换算。", style = LifeText.caption, color = colors.muted)
++        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = colors.line)
++    }
++    if (currencyPicker) FinanceChoiceSheet("日历币种", currency, currencies.map { it to it }, { preferredCurrency = it }, { currencyPicker = false })
++}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt
+new file mode 100644
+index 0000000..1af57ca
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt
+@@ -0,0 +1,28 @@
++package com.qq.closie.ui.lifeos.finance
++
++import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.layout.size
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.StrokeCap
++import androidx.compose.ui.graphics.drawscope.Stroke
++import androidx.compose.ui.unit.dp
++import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
++
++@Composable
++internal fun FinanceNavGlyph(view: FinanceView) {
++    val color = LocalLifeOsColors.current.accentDeep
++    Canvas(Modifier.size(22.dp)) {
++        val unit = size.width / 24f
++        fun line(x: Float, y: Float, xx: Float, yy: Float) = drawLine(color, Offset(x * unit, y * unit), Offset(xx * unit, yy * unit), 1.45f * unit, StrokeCap.Round)
++        fun box(x: Float, y: Float, w: Float, h: Float) = drawRect(color, Offset(x * unit, y * unit), Size(w * unit, h * unit), style = Stroke(1.45f * unit))
++        when (view) {
++            FinanceView.OVERVIEW -> { box(3f, 3f, 18f, 18f); line(10f, 3f, 10f, 21f); line(10f, 11f, 21f, 11f) }
++            FinanceView.TRANSACTIONS -> { box(5f, 3f, 14f, 18f); line(8f, 8f, 16f, 8f); line(8f, 12f, 16f, 12f); line(8f, 16f, 13f, 16f) }
++            FinanceView.ACCOUNTS -> { box(3f, 5f, 18f, 15f); box(14f, 10f, 7f, 5f); line(4f, 5f, 17f, 2f) }
++            FinanceView.INSIGHTS -> { line(4f, 21f, 21f, 21f); line(6f, 17f, 6f, 10f); line(12f, 17f, 12f, 3f); line(18f, 17f, 18f, 7f) }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceScreen.kt
+index 5fd18d2..725db51 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceScreen.kt
+@@ -43,6 +43,7 @@ fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportR
+             value = snapshot.proposals.count { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
+         }
+     }
++    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(importOpen || automationOpen)
+     if (importOpen && importRepository != null) FinanceImportScreen(importRepository, state.snapshot.accounts) { importOpen = false }
+     else if (automationOpen && automationRepository != null) FinanceAutomationScreen(automationRepository, repository) { automationOpen = false }
+     else FinanceModuleScreen(state, vm, onBack) {
+@@ -65,8 +66,8 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
+ @Composable
+ internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: () -> Unit) {
+     val colors = LocalLifeOsColors.current
+-    Surface(color = colors.card, shape = RoundedCornerShape(16.dp)) {
+-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
++    Surface(color = androidx.compose.ui.graphics.Color.Transparent) {
++    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+         Surface(color = if (row.transfer != null) colors.paperSecondary else colors.warmSurface, shape = RoundedCornerShape(11.dp)) {
+             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                 Text(if (row.transfer != null) "⇄" else if (row.entry.direction == FinanceDirection.INFLOW) "↓" else "↑", color = colors.accentDeep)
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
+index d2a5510..fff6d39 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
+@@ -26,13 +26,14 @@ data class FinanceUiState(
+     val categories: List<FinanceDimensionTotal> = emptyList(), val tags: List<FinanceDimensionTotal> = emptyList(),
+     val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
+     val personalRows: List<FinanceLedgerRow> = emptyList(),
+-    val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList()
++    val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList(),
++    val allRows: List<FinanceLedgerRow> = emptyList()
+ )
+ data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
+     val targetAccountId: String, val occurredAt: String, val description: String,
+     val category: String = "", val tags: String = "", val preservedOccurredAt: Long? = null,
+     val subcategory: String = "", val relationship: FinanceRelationshipDraft = FinanceRelationshipDraft())
+-data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String)
++data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String, val currencyCode: String? = null)
+ 
+ /** Wall-clock input is explicit and strict; recordedAt remains owned by FinanceRepository. */
+ object FinanceTime {
+@@ -58,6 +59,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+     val state: StateFlow<FinanceUiState> = combine(snapshot, filter, error, busy) { data, selection, message, saving ->
+         if (data == null) FinanceUiState(filter = selection, loading = message == null, busy = saving, error = message)
+         else {
++            val allRows = FinanceProjection.ledger(data)
+             val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
+             val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
+             val natureEntries = data.v4?.activeLinks.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
+@@ -83,7 +85,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+                 FinanceProjection.totals(personal),
+                 FinanceProjection.categoryTotals(personal), FinanceProjection.tagTotals(personal),
+                 loading = false, busy = saving, error = message, personalRows = personal,
+-                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)))
++                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, allRows), allRows = allRows)
+         }
+     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
+ 
+@@ -103,6 +105,15 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+     fun filterTag(id: String?) { filter.value = filter.value.copy(tagId = id) }
+     fun filterNature(nature: FinanceNature?) { filter.value = filter.value.copy(nature = nature) }
+     fun search(query: String) { filter.value = filter.value.copy(query = query) }
++    /** A restored calendar tab must not accidentally show an unbounded ledger after VM recreation. */
++    fun ensureCalendarMonth() {
++        val current = filter.value
++        val month = current.range.startInclusive?.let {
++            java.time.YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))
++        } ?: java.time.YearMonth.now()
++        val range = FinanceDateRange.month(month.atDay(1))
++        if (current.range != range) customRange(month.atDay(1).toString(), month.atEndOfMonth().toString())
++    }
+     fun selectPeriod(period: FinancePeriod) {
+         if (period == FinancePeriod.CUSTOM) return
+         filter.value = filter.value.copy(period = period, customLabel = "", range = when (period) {
+@@ -125,7 +136,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+     }
+ 
+     fun saveAccount(id: String?, draft: FinanceAccountDraft, onSaved: () -> Unit) = mutate(onSaved) {
+-        val currency = snapshot.value?.accounts?.find { it.id == id }?.currencyCode ?: "CNY"
++        val currency = draft.currencyCode ?: snapshot.value?.accounts?.find { it.id == id }?.currencyCode ?: "CNY"
+         repository.saveAccount(id, draft.name, draft.kind, currency,
+             FinanceMoney.parse(draft.openingBalance.ifBlank { "0" }, currency, allowNegative = true))
+     }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/home/LifeOsHomeScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/home/LifeOsHomeScreen.kt
+index 2904228..fcb4786 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/home/LifeOsHomeScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/home/LifeOsHomeScreen.kt
+@@ -26,25 +26,31 @@ fun LifeOsHomeScreen(
+ ) {
+     val colors = LocalLifeOsColors.current
+     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
++    SuspendFunctionPageSwipe(viewerPhotoId != null)
+     Column(modifier.fillMaxSize()) {
+         LazyColumn(
+             Modifier.weight(1f).fillMaxWidth(),
+             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
+         ) {
+             item {
+-                Row(verticalAlignment = Alignment.CenterVertically) {
+-                    IconButton(onClick = onDrawer) { Icon(Icons.Outlined.Menu, "打开生活的抽屉", tint = colors.inkSecondary) }
+-                    Column(Modifier.weight(1f)) {
+-                        Text("Life OS", style = LifeText.display, color = colors.ink)
+-                        Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
++                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
++                    Text("Life OS", Modifier.weight(1f), style = LifeText.journal, color = colors.ink)
++                    IconButton(onClick = onDrawer) { Icon(Icons.Outlined.Menu, "打开生活的抽屉", Modifier.size(22.dp), tint = colors.accentDeep) }
++                }
++                Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
++                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
++                    TextButton(onClick = onCompanion, contentPadding = PaddingValues(end = 12.dp)) {
++                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(16.dp))
++                        Text(" 伙伴 · 聊一会儿", style = LifeText.caption)
+                     }
+-                    IconButton(onClick = onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", tint = colors.inkSecondary) }
+-                    IconButton(onClick = onMap) { Icon(Icons.Outlined.Map, "生活地图", tint = colors.inkSecondary) }
++                    Spacer(Modifier.weight(1f))
++                    IconButton(onClick = onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(19.dp), tint = colors.inkSecondary) }
++                    IconButton(onClick = onMap) { Icon(Icons.Outlined.Map, "生活地图", Modifier.size(19.dp), tint = colors.inkSecondary) }
+                 }
+-                TextButton(onClick = onCompanion) { Text("伙伴 · 聊一会儿", style = LifeText.caption) }
+-                Spacer(Modifier.height(10.dp))
++                HorizontalDivider(color = colors.line)
++                Spacer(Modifier.height(24.dp))
+                 Text(state.date.format(DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)), style = LifeText.caption, color = colors.muted)
+-                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)), style = LifeText.title, color = colors.ink)
++                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)), style = LifeText.journal, color = colors.ink)
+                 Text("把今天轻轻收好", style = LifeText.caption, color = colors.inkSecondary)
+             }
+             item {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/settings/LifeSettingsScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/settings/LifeSettingsScreen.kt
+index e58e99f..3f6c3b6 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/settings/LifeSettingsScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/settings/LifeSettingsScreen.kt
+@@ -6,9 +6,10 @@ import androidx.compose.runtime.Composable
+ import com.qq.closie.ui.lifeos.components.LifePage
+ 
+ @Composable
+-fun LifeSettingsScreen(onBack: () -> Unit, onAppearance: () -> Unit, onBackup: () -> Unit) {
++fun LifeSettingsScreen(onBack: () -> Unit, onAppearance: () -> Unit, onBackup: () -> Unit, onFinanceAutomation: () -> Unit = {}) {
+     LifePage("设置", onBack) {
+         OutlinedButton(onClick = onAppearance) { Text("主题与配色") }
++        OutlinedButton(onClick = onFinanceAutomation) { Text("账目 · 自动发现与通知") }
+         OutlinedButton(onClick = onBackup) { Text("备份与恢复") }
+     }
+ }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/finance/MonthLedgerTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/finance/MonthLedgerTest.kt
+new file mode 100644
+index 0000000..2a7eebe
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/finance/MonthLedgerTest.kt
+@@ -0,0 +1,32 @@
++package com.qq.closie.ui.lifeos.finance
++
++import com.qq.closie.life.finance.*
++import java.math.BigInteger
++import org.junit.Assert.*
++import org.junit.Test
++
++class MonthLedgerTest {
++    private fun row(id: String, currency: String, amount: Long, direction: FinanceDirection = FinanceDirection.OUTFLOW): FinanceLedgerRow {
++        val account = FinanceAccountEntity(currency, currency, FinanceAccountKind.CASH, currency, 0, 0, 0)
++        return FinanceLedgerRow(FinanceEntryEntity(id, account.id, direction, amount, id, 0, 0, 0), account, null, emptyList())
++    }
++    @Test fun `days keep currencies separate and transfers only contribute a presence marker`() {
++        val ordinary = row("a", "CNY", 100)
++        val transfer = row("t", "CNY", 900).copy(transfer = FinanceTransferEntity("t", "out", "in", 0, 0))
++        val rows = listOf(ordinary, row("b", "JPY", 800), transfer, row("c", "CNY", 50, FinanceDirection.INFLOW))
++        val cny = ledgerDays(rows, "CNY").values.single()
++        assertEquals(BigInteger.valueOf(100), cny.spending)
++        assertEquals(BigInteger.valueOf(50), cny.income)
++        assertEquals(3, cny.count)
++        assertEquals(BigInteger.valueOf(800), ledgerDays(rows, "JPY").values.single().spending)
++    }
++    @Test fun `day summary does not overflow when several valid entries are combined`() {
++        val rows = listOf(row("a", "USD", Long.MAX_VALUE), row("b", "USD", Long.MAX_VALUE))
++        assertEquals(BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.TWO), ledgerDays(rows, "USD").values.single().spending)
++    }
++    @Test fun `currency choices only offer precision supported by finance core`() {
++        assertTrue(FinanceCurrencies.choices.any { it.first == "JPY" })
++        assertTrue(FinanceCurrencies.choices.any { it.first == "KWD" })
++        FinanceCurrencies.choices.forEach { assertTrue(FinanceMoney.fractionDigits(it.first) in 0..3) }
++    }
++}
+diff --git a/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md b/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+new file mode 100644
+index 0000000..3efc786
+--- /dev/null
++++ b/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+@@ -0,0 +1,58 @@
++# Life OS V14 真机反馈迭代
++
++起点：`583acbf16c1c1bbc757f1cb72811911b1e1d9242`，远端 `feature/life-os-v13-product-refinement`。以 V13 代码和本轮六张真机截图、4.44 秒滚动录像为准；V11 HTML 和最后六张参考图只用于视觉历史与交互参考。
++
++**交付状态：代码候选版本，未通过本地 Android 编译、单元测试或真机验收。** 初次 Gradle 启动在下载发行包时因 TLS 握手失败终止，未进入测试；用户随后要求不进行依赖下载和构建，已停止。没有推送、合并或生成 APK。不能将 V13 的 479/479 测试成绩归给 V14。
++
++## 改动与反馈对应
++
++### 功能页排序、视觉和滚动
++
++- 删除独立 `ModuleOrderSheet`。在真实模块所在的双列 LazyVerticalGrid 长按抬起，在同一网格中拖动；稳定 module ID 作为 item key，周围模块使用 placement animation 让位。前六个位置继续代表“手边常用”。
++- 仅拖动物体有悬浮背景、缩放和小阴影，普通模块使用图标与文字平排，不再给前六项各放一张卡片。
++- 长按有一次触觉反馈；靠近上下 56dp 区域时按距离自动滚动；松手后一次性保存到既有 Appearance DataStore。取消手势或第一次返回恢复拖前顺序，写入失败同样回退并提示。TalkBack 自定义操作可逐项前移、后移。
++- 五个源色参与固定背景渐变；画刷按主题缓存，并置于滚动网格之外。网格使用独立模块 key/contentType，取消原先按“每两项”拼装和标识列表的结构。
++- V13 已缓存图标路径，也已使用后台 Finance 投影，这些不是本轮新发现的缺陷。本轮去掉普通模块 Surface 层、降低整页阴影，拖动指针主要在单一悬浮层的 graphicsLayer 阶段读取；没有添加滚动监听重组整页的机制。
++- GLASS 在 Android 12+、非 low-RAM 且未关闭动画时，给底下的模块内容施加复用的固定半径 RenderEffect，同时降低背景内容强度。玻璃页 alpha 约 0.68–0.72，保留彩色渐变和清晰前景。旧 Android/low-RAM 通过显著淡化底层文字回退；减少动画设置继续使用 FLAT。
++
++录屏已抽帧检查，但没有帧时间或 GPU 测量。因此这里只能说明减少了哪些成本，不能宣称滚动卡顿已被真机证实消除。玻璃模糊仍需检查低端设备和长时间滑动表现。
++
++### 全局模块切换与 Home
++
++- 壳层统一开放 Home、Finance、衣橱顶层、日历、收件匣、资料库、计划、阅读、普通模块入口及设置的右滑，不在模块里复制抽屉。
++- 两侧 24dp 留给系统边缘手势；先辨别方向，竖向滚动和已经消费事件的子控件保留手势所有权。地图/伙伴输入、Appearance、备份及详情编辑路由不开放全局右滑；衣橱内部非顶层、Home 照片查看器、Finance 详情/编辑/日期、导入与自动化页通过壳层 policy 暂停接管。
++- 功能页展开时，最后注册的壳层返回处理器优先关闭功能页；若正在排序则先取消排序。不会先触发衣橱等模块自己的返回。
++- 选择模块仍直接导航，不等待抽屉关完。移除外层 NavHost 默认交叉淡入淡出，避免与功能页自身过渡叠加。
++- Home 改成“衬线品牌 + 右侧菜单”首行、副标题、独立伙伴/日历/地图工具行、细分隔、日期和手账内容，保持清楚的两级结构。
++
++### 本地图片主题与字体
++
++- 路径：设置 → 主题与配色 → 从照片或截图取色。使用 Activity Result Photo Picker，适配系统回退；无新增存储权限、网络服务或图片永久副本。
++- 在 IO dispatcher 打开临时 URI，先读尺寸、采样到最长边不超过约 256px；最多约 12000 个像素样本，以 RGB 4-bit 分箱聚合。
++- 颜色评分综合频率的平方根、色度和明度，第二色按与主色的距离选择，暖色另筛；灰阶、全白、全黑、透明或缺少合适颜色时使用稳定的柔和后备色。纸色向白色混合，主色迭代调整到纸面足够对比度，再交由既有 ThemePalette 生成语义 token。并非直接选出现最多的五个像素。
++- 即时预览后可编辑五个 HEX 和名称，另存新主题。最多 24 个命名主题，支持重新选用和删除；JSON 只存在原 Appearance DataStore 的 `namedThemesV1` 中，保存 ID、名称和五色。旧 custom 字段继续可读，并显示为“以前的我的配色”；五个预置主题保留。无 Room 改动。
++- 继续使用打包的 Noto Sans SC 作为 UI/正文和密集 Finance 字体；Noto Serif SC 用于 Home 和功能页的编辑式标题。全局章节标题从 20sp 收到 17sp，正文 14sp/21sp、元信息 12sp/18sp，金融主数字保持专门的 `tnum` 样式。没有依赖 OEM 字体。
++
++### Finance 页面、月历和币种
++
++- 四个局部目的地仍是总览/流水/账户/分析。总览保留本月主卡；余额、辅助入口、流水使用留白与分隔；账户列表用平面行，账户横向速览仍保留卡片；趋势、分类及真实流量改成平面章节。
++- 底栏改为 1.45 viewport-unit 描边的轻线图形，保留 Material NavigationBarItem 的点击区域和标签。
++- 将 UI 中重复生成完整账目投影的工作移入现有后台 state 流，并复用同一次生成的完整流水给详情与未归属调整检查。没有改变 FinanceProjection 或 canonical 写入。
++- 流水默认月历入口：月份前后切换、今天、单日点选/取消、整月流水；搜索与账户/分类/标签/性质筛选仍可用。“列表与范围”保留原有日期范围筛选。
++- 日历显示实际收付，不假冒个人净成本：按币种分别累计、转账仅显示存在标记、不计入收支数值。退款/报销真实入账在此按实际收入显示；个人归属分析继续走既有投影。多币种可切换日历展示币种，下方流水保留各币种明细；使用 BigInteger 聚合，避免汇总溢出。大额在日格可能省略，点选日期后可看完整汇总及交易金额。
++- 建账提供可搜索、常用币种优先的选择器，仅提供 Core 支持的 0–3 位小数币种。已有任意 canonical entry（包括作废记录）的账户币种锁定；无流水的账户可按原 Repository 规则更改。切换币种不转换或舍入已有输入，精度不合时由原 exact-money 校验报错。转账仍仅同币种，无 FX。
++
++### 自动发现与旧账导入
++
++- 路径：设置 → 账目 · 自动发现与通知。复用原自动化页面，包含总开关、系统通知使用权状态及跳转、微信/支付宝开关、后台确认提醒、现有诊断和规则。
++- 总览继续可进入待确认及状态。Notification → Proposal → review → explicit confirm → Truth 保持不变；未修改通知解析、监听、提案或 canonical 确认逻辑。
++- XLSX/CSV 文件选择增加常见错误 MIME，并提供“浏览所有文件”回退入口。文件内容仍由原解析器严格识别。明确告知用户无需预建账户，映射阶段可选择既有账户或创建账户；原映射/检查/确认和错误提示继续使用。
++- 已在本地检查真实旧账工作簿，以核对异常 dimension 的兼容情况。私有工作簿及其内容、元数据均不提交。**Android picker → stage → mapping → review → commit 仍是真机验收项。** 本轮未执行该端到端流程，也未改写历史 XLSX/CSV 解析器。
++
++## 核对与待验收
++
++- `git diff --check` 已通过；交付补丁另以独立 Git index 从实际起点应用，并比对最终 tree。
++- Finance Core、Room schema、迁移、Manifest 权限和依赖声明没有变动。
++- 添加了图片极端输入与对比度、旧主题解码、集合坏记录隔离、月历币种/转账/大数聚合、货币精度候选的针对性测试；更新原 AppearanceViewModel 测试以匹配命名集合。**这些测试尚未运行。** 未添加截图或间距测试、基准项目。
++- 下一次 CI/本地具备 Android 环境时，仍需执行 `./gradlew :app:testDebugUnitTest` 和 `./gradlew :app:assembleDebug`。
++- 真机重点：四种功能页开合/返回；跨常用区拖动和长距离自动滚动；系统边缘返回、竖滚与子控件手势；各主题玻璃可读性及低端回退；字体缩放后月历大额显示；Photo Picker 取消/图片异常/主题重启持久化；有/无流水账户币种限制；设置启用发现后仅生成待确认提案；真实旧账完整导入。
+-- 
+2.53.0.windows.3
+
+
+From 9a2b12455e0e45eb6cd724463bbba17794c6a927 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 11 Oct 2026 17:43:15 +0800
+Subject: [PATCH 3/4] fix(lifeos): address V14 pre-CI review corrections
+
+---
+ .../data/appearance/AppearanceRepository.kt   |  7 +--
+ .../qq/closie/navigation/LifeOsNavigation.kt  | 34 +++++++++++---
+ .../ui/lifeos/drawer/FunctionModuleGrid.kt    | 31 ++++++++++---
+ .../closie/ui/lifeos/finance/FinanceCards.kt  |  3 +-
+ .../ui/lifeos/finance/FinanceModuleScreen.kt  | 33 ++++++++------
+ .../ui/lifeos/finance/FinanceNavGlyph.kt      |  4 +-
+ .../ui/lifeos/finance/FinanceViewModel.kt     |  4 +-
+ .../settings/AppearanceSettingsScreen.kt      | 23 +++++-----
+ .../ui/lifeos/settings/AppearanceViewModel.kt | 29 +++++++-----
+ .../com/qq/closie/AppearanceRepositoryTest.kt | 28 ++++++++++++
+ .../com/qq/closie/AppearanceViewModelTest.kt  | 26 +++++++++++
+ .../com/qq/closie/LifeOsNavigationTest.kt     | 12 +++++
+ .../ui/lifeos/finance/FinanceSmokeTest.kt     | 44 +++++++++++++++++++
+ docs/LIFE_OS_V14_DEVICE_REFINEMENT.md         | 18 +++++---
+ 14 files changed, 233 insertions(+), 63 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt b/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
+index af248f7..981a14c 100644
+--- a/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
++++ b/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
+@@ -65,15 +65,12 @@ class AppearanceRepository(
+     }
+ 
+     suspend fun deleteNamed(id: String) {
++        // Preserve old preference fields and their sole selectable compatibility entry.
++        require(id != "legacy-custom") { "旧配色暂时保留；可以另存为新主题" }
+         store.edit { values ->
+             val settings = AppearanceCodec.decode(values)
+             values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(settings.namedThemes.filterNot { it.id == id })
+             if (values[AppearanceCodec.selected] == id) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
+-            if (id == "legacy-custom") {
+-                values.remove(AppearanceCodec.customAccent); values.remove(AppearanceCodec.customPaper)
+-                values.remove(AppearanceCodec.customSecondary); values.remove(AppearanceCodec.customSoft); values.remove(AppearanceCodec.customWarm)
+-                if (values[AppearanceCodec.selected] == AppearanceSettings.CUSTOM_ID) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
+-            }
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt b/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt
+index 59b5d64..95ad439 100644
+--- a/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt
++++ b/app/src/main/java/com/qq/closie/navigation/LifeOsNavigation.kt
+@@ -1,6 +1,11 @@
+ package com.qq.closie.navigation
+ 
+ import androidx.compose.runtime.Composable
++import androidx.compose.animation.EnterTransition
++import androidx.compose.animation.ExitTransition
++import androidx.compose.animation.fadeIn
++import androidx.compose.animation.fadeOut
++import androidx.compose.animation.core.tween
+ import androidx.navigation.NavHostController
+ import androidx.navigation.NavType
+ import androidx.navigation.navArgument
+@@ -28,12 +33,24 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
+     nav: NavHostController, home: HomeUiState, onHomeDateSelected: (LocalDate) -> Unit,
+     appearanceViewModel: AppearanceViewModel, onDrawer: () -> Unit,
+     onCapture: () -> Unit, onFileToLibrary: (String) -> Unit) {
+-    // The function page already animates the switch; avoid a second default NavHost crossfade.
++    // Avoid stacking a crossfade on module switching; internal routes retain a short transition.
+     NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
+-        enterTransition = { androidx.compose.animation.EnterTransition.None },
+-        exitTransition = { androidx.compose.animation.ExitTransition.None },
+-        popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+-        popExitTransition = { androidx.compose.animation.ExitTransition.None }) {
++        enterTransition = {
++            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) EnterTransition.None
++            else fadeIn(tween(140))
++        },
++        exitTransition = {
++            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) ExitTransition.None
++            else fadeOut(tween(140))
++        },
++        popEnterTransition = {
++            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) EnterTransition.None
++            else fadeIn(tween(140))
++        },
++        popExitTransition = {
++            if (isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route)) ExitTransition.None
++            else fadeOut(tween(140))
++        }) {
+         composable(LifeOsRoute.HOME) {
+             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
+                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
+@@ -68,3 +85,10 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
+         }
+     }
+ }
++
++private val fastLifeModuleRoutes = setOf(LifeOsRoute.HOME, LifeOsRoute.FINANCE, LifeOsRoute.CLOSET,
++    LifeOsRoute.CAPTURE, LifeOsRoute.REFERENCE, LifeOsRoute.PLAN, LifeOsRoute.READING,
++    LifeOsRoute.CALENDAR, LifeOsRoute.MAP, LifeOsRoute.COMPANION, LifeOsRoute.MODULE)
++
++internal fun isFastLifeModuleSwitch(from: String?, to: String?): Boolean =
++    from != null && to != null && from in fastLifeModuleRoutes && to in fastLifeModuleRoutes
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+index 8f37b11..a59d7db 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+@@ -51,16 +51,23 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
+     var message by remember { mutableStateOf<String?>(null) }
+     val save by rememberUpdatedState(onSaveOrder)
+     LaunchedEffect(moduleOrder) { if (lifted == null && !saving) modules = orderedModules(moduleOrder) }
+-    fun cancel() { modules = baseline; lifted = null; message = "已取消移动" }
+     val policy = com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
++    fun cancel() {
++        policy?.cancelReorder = null
++        if (lifted == null || saving) return
++        modules = baseline; lifted = null; message = "已取消移动"
++    }
+     DisposableEffect(lifted?.id, policy) {
+         policy?.cancelReorder = if (lifted != null) ({ cancel() }) else null
+         onDispose { policy?.cancelReorder = null }
+     }
+-    fun persist(previous: List<LifeModule>) {
+-        if (modules == previous) return
++    fun persist(previous: List<LifeModule>, restoreDefault: Boolean = false) {
++        policy?.cancelReorder = null
++        if (!restoreDefault && modules == previous) return
+         saving = true
+-        save(modules.map { it.id }, { saving = false; message = "顺序已保存" }, {
++        save(if (restoreDefault) emptyList() else modules.map { it.id }, {
++            saving = false; message = if (restoreDefault) "已恢复默认顺序" else "顺序已保存"
++        }, {
+             modules = previous; saving = false; message = it
+         })
+     }
+@@ -111,7 +118,10 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
+                     }
+                 }, onDrag = { change, amount ->
+                     if (lifted != null) { change.consume(); pointer += amount; moveAtPointer() }
+-                }, onDragEnd = { if (lifted != null) { lifted = null; persist(baseline) } },
++                }, onDragEnd = {
++                    policy?.cancelReorder = null
++                    if (lifted != null) { lifted = null; persist(baseline) }
++                },
+                     onDragCancel = { if (lifted != null) cancel() })
+             }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+             item(key = "brand", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
+@@ -156,7 +166,16 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
+                 }
+             }
+             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
+-                Text(message ?: "左滑收起 · 顺序会随你保留", Modifier.padding(top = 20.dp, bottom = 16.dp), style = LifeText.caption, color = colors.inkSecondary)
++                Column(Modifier.padding(top = 20.dp, bottom = 16.dp)) {
++                    Text(message ?: "左滑收起 · 顺序会随你保留", style = LifeText.caption, color = colors.inkSecondary)
++                    TextButton(onClick = {
++                        val previous = modules
++                        modules = orderedModules(emptyList())
++                        persist(previous, restoreDefault = true)
++                    }, enabled = !saving && lifted == null, modifier = Modifier.testTag("drawer-restore-order")) {
++                        Text("恢复默认顺序", style = LifeText.caption)
++                    }
++                }
+             }
+         }
+         lifted?.let { module ->
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt
+index e06459c..3058a7b 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceCards.kt
+@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.RectangleShape
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.qq.closie.life.finance.*
+@@ -82,7 +83,7 @@ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, in
+     val colors = LocalLifeOsColors.current
+     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
+     Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
+-        shape = if (flat) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(18.dp)) {
++        shape = if (flat) RectangleShape else RoundedCornerShape(18.dp)) {
+         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+             Box(Modifier.width(3.dp).height(48.dp).background(swatch, RoundedCornerShape(2.dp)))
+             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+index 750d2bc..f5cf9a2 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+@@ -38,19 +38,22 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
+     var accountEditing by rememberSaveable { mutableStateOf(false) }
+     var calendarMode by rememberSaveable { mutableStateOf(true) }
++    // Independent of Insights/list range filters, and restored with the module's UI state.
++    var calendarMonth by rememberSaveable { mutableStateOf(state.filter.range.startInclusive?.let {
++        YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())).toString()
++    } ?: YearMonth.now().toString()) }
+     var selectedDay by rememberSaveable { mutableStateOf<String?>(null) }
+     var dates by rememberSaveable { mutableStateOf(false) }
+     var chartLabel by rememberSaveable { mutableStateOf<String?>(null) }
+     var chartCurrency by rememberSaveable { mutableStateOf("CNY") }
+     var reviewAdjustments by rememberSaveable { mutableStateOf(false) }
+     val listState = rememberLazyListState()
+-    LaunchedEffect(viewName, calendarMode) {
+-        if (view == FinanceView.TRANSACTIONS && calendarMode) vm.ensureCalendarMonth()
++    LaunchedEffect(viewName, calendarMode, calendarMonth) {
++        if (view == FinanceView.TRANSACTIONS && calendarMode) vm.ensureCalendarMonth(YearMonth.parse(calendarMonth))
+     }
+-    LaunchedEffect(state.filter.range, calendarMode) {
++    LaunchedEffect(calendarMonth) {
+         selectedDay?.let { day ->
+-            val time = LocalDate.parse(day).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+-            if (calendarMode && !state.filter.range.contains(time)) selectedDay = null
++            if (YearMonth.from(LocalDate.parse(day)).toString() != calendarMonth) selectedDay = null
+         }
+     }
+     LaunchedEffect(viewName, detailAccount, chartLabel) { listState.scrollToItem(0) }
+@@ -75,7 +78,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+         // This bar belongs to Finance only. The Life OS root has no bottom navigation.
+         NavigationBar(containerColor = colors.card, tonalElevation = 0.dp, windowInsets = WindowInsets(0)) {
+             FinanceView.entries.forEach { target ->
+-                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name; if (target == FinanceView.TRANSACTIONS && calendarMode) { vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null } },
++                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name },
+                     icon = { FinanceNavGlyph(target) }, label = { Text(target.label, style = LifeText.caption) },
+                     colors = NavigationBarItemDefaults.colors(indicatorColor = colors.paperTertiary,
+                         selectedIconColor = colors.accentDeep, selectedTextColor = colors.accentDeep))
+@@ -124,7 +127,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                 }
+             } else when (view) {
+                 FinanceView.OVERVIEW -> {
+-                    item { FinanceMonthCard(state) { vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
++                    item { FinanceMonthCard(state) { calendarMonth = YearMonth.now().toString(); vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
+                     item { FinanceBalanceSummary(state) }
+                     item {
+                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+@@ -152,14 +155,14 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                 }
+                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
+                     item {
+-                        val month = state.filter.range.startInclusive?.let { YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) } ?: YearMonth.now()
++                        val month = YearMonth.parse(calendarMonth)
+                         if (view == FinanceView.TRANSACTIONS) Row {
+-                            FilterChip(calendarMode, { calendarMode = true; selectedDay = null; vm.selectPeriod(FinancePeriod.MONTH) }, label = { Text("月历") })
++                            FilterChip(calendarMode, { calendarMode = true; vm.ensureCalendarMonth(month) }, label = { Text("月历") })
+                             Spacer(Modifier.width(8.dp))
+                             FilterChip(!calendarMode, { calendarMode = false; selectedDay = null }, label = { Text("列表与范围") })
+                         }
+                         if (view == FinanceView.TRANSACTIONS && calendarMode) FinanceMonthLedger(month, state.ledger,
+-                            selectedDay?.let(LocalDate::parse), { m -> selectedDay = null; vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) },
++                            selectedDay?.let(LocalDate::parse), { m -> selectedDay = null; calendarMonth = m.toString(); vm.ensureCalendarMonth(m) },
+                             { selectedDay = it?.toString() })
+                         else TextButton({ dates = true }) { Text(state.filter.customLabel.ifBlank { "选择日期范围" }) }
+                         OutlinedTextField(state.filter.query, vm::search, Modifier.fillMaxWidth(),
+@@ -179,7 +182,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                             MoneySummary("个人支出", state.selected, true, Modifier.weight(1f))
+                             MoneySummary("个人收入", state.selected, false, Modifier.weight(1f))
+                         } } }
+-                        item { FinanceTrend(state.personalRows) { start, end -> vm.customRange(start, end); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
++                        item { FinanceTrend(state.personalRows) { start, end -> calendarMonth = YearMonth.from(LocalDate.parse(start)).toString(); vm.customRange(start, end); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
+                         item { FinanceCategoryChart(state.categories) { label, currency -> chartLabel = label; chartCurrency = currency } }
+                         item { FinanceSection {
+                             Text("账户真实流量", style = LifeText.title)
+@@ -190,12 +193,14 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                             Text("转账只改变账户余额；真实流量与个人收支分别展示。", style = LifeText.caption)
+                         } }
+                     } else {
+-                        item { Text("流水 · ${state.ledger.size} 笔", style = LifeText.title) }
+-                        groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }.forEach { (date, rows) ->
++                        val shownDays = groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
++                        val heading = if (calendarMode && selectedDay != null) "$selectedDay 流水" else "流水"
++                        item { Text("$heading · ${shownDays.values.sumOf { it.size }} 笔", style = LifeText.title) }
++                        shownDays.forEach { (date, rows) ->
+                                 item(key = "date-$date") { Text(date.toString(), style = LifeText.caption, color = colors.muted) }
+                                 items(rows, key = { it.id }) { LedgerLine(it, roles[it.entry.id]) { entryId = it.id; editing = true } }
+                             }
+-                        if (state.ledger.isEmpty() || (calendarMode && selectedDay != null && groupedDays.keys.none { it.toString() == selectedDay })) item { Text("这一天或范围还没有流水。", style = LifeText.body) }
++                        if (shownDays.isEmpty()) item { Text("这一天或范围还没有流水。", style = LifeText.body) }
+                     }
+                 }
+             }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt
+index 1af57ca..322b283 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceNavGlyph.kt
+@@ -9,11 +9,11 @@ import androidx.compose.ui.geometry.Size
+ import androidx.compose.ui.graphics.StrokeCap
+ import androidx.compose.ui.graphics.drawscope.Stroke
+ import androidx.compose.ui.unit.dp
+-import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
++import androidx.compose.material3.LocalContentColor
+ 
+ @Composable
+ internal fun FinanceNavGlyph(view: FinanceView) {
+-    val color = LocalLifeOsColors.current.accentDeep
++    val color = LocalContentColor.current
+     Canvas(Modifier.size(22.dp)) {
+         val unit = size.width / 24f
+         fun line(x: Float, y: Float, xx: Float, yy: Float) = drawLine(color, Offset(x * unit, y * unit), Offset(xx * unit, yy * unit), 1.45f * unit, StrokeCap.Round)
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
+index fff6d39..250a81d 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceViewModel.kt
+@@ -106,9 +106,9 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel()
+     fun filterNature(nature: FinanceNature?) { filter.value = filter.value.copy(nature = nature) }
+     fun search(query: String) { filter.value = filter.value.copy(query = query) }
+     /** A restored calendar tab must not accidentally show an unbounded ledger after VM recreation. */
+-    fun ensureCalendarMonth() {
++    fun ensureCalendarMonth(viewedMonth: java.time.YearMonth? = null) {
+         val current = filter.value
+-        val month = current.range.startInclusive?.let {
++        val month = viewedMonth ?: current.range.startInclusive?.let {
+             java.time.YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))
+         } ?: java.time.YearMonth.now()
+         val range = FinanceDateRange.month(month.atDay(1))
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+index 55a7189..5689c02 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceSettingsScreen.kt
+@@ -33,29 +33,28 @@ fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit)
+     LaunchedEffect(viewModel) { viewModel.beginAppearanceEdit() }
+     DisposableEffect(viewModel) { onDispose { viewModel.cancelAppearanceEdit() } }
+     editor?.let { draft ->
+-        AppearanceSettingsScreen(draft, stored?.custom != null, viewModel::previewPreset,
+-            viewModel::previewSavedCustom, viewModel::editThemeField,
++        AppearanceSettingsScreen(draft, viewModel::previewPreset, viewModel::editThemeField,
+             onSave = { viewModel.saveAppearance() },
+             onCancel = { viewModel.cancelAppearanceEdit(); onBack() },
+             onRestore = viewModel::restoreOriginal,
+             functionPageStyle = stored?.functionPageStyle ?: FunctionPageStyle.LAYERED,
+             onFunctionPageStyle = viewModel::selectFunctionPageStyle,
+             namedThemes = stored?.namedThemes.orEmpty(), onNamed = viewModel::previewNamed, onDelete = viewModel::deleteNamed,
+-            onName = viewModel::nameTheme, onImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
++            onName = viewModel::nameTheme, onDuplicate = viewModel::duplicateTheme,
++            onImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+     }
+ }
+ 
+ @Composable
+ fun AppearanceSettingsScreen(
+     state: AppearanceEditorState,
+-    hasSavedCustom: Boolean,
+-    onPreset: (ThemePreset) -> Unit, onCustom: () -> Unit,
++    onPreset: (ThemePreset) -> Unit,
+     onField: (ThemeField, String) -> Unit,
+     onSave: () -> Unit, onCancel: () -> Unit, onRestore: () -> Unit,
+     functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
+     onFunctionPageStyle: (FunctionPageStyle) -> Unit = {},
+     namedThemes: List<NamedTheme> = emptyList(), onNamed: (String) -> Unit = {}, onDelete: (String) -> Unit = {},
+-    onName: (String) -> Unit = {}, onImage: () -> Unit = {}
++    onName: (String) -> Unit = {}, onImage: () -> Unit = {}, onDuplicate: () -> Unit = {}
+ ) {
+     val colors = LocalLifeOsColors.current
+     LifePage("主题与配色", onCancel) {
+@@ -70,7 +69,9 @@ fun AppearanceSettingsScreen(
+                         ColorSwatch(theme.colors.accent)
+                         Text(" ${theme.name}${if (state.selectedId == theme.id) " · 已选" else ""}")
+                     }
+-                    TextButton({ onDelete(theme.id) }, enabled = !state.isSaving && !state.extracting) { Text("删除") }
++                    if (theme.id != "legacy-custom") {
++                        TextButton({ onDelete(theme.id) }, enabled = !state.isSaving && !state.extracting) { Text("删除") }
++                    }
+                 }
+             }
+         }
+@@ -104,9 +105,6 @@ fun AppearanceSettingsScreen(
+                 if (row.size == 1) Spacer(Modifier.weight(1f))
+             }
+         }
+-        if (hasSavedCustom) OutlinedButton(onClick = onCustom, enabled = !state.isSaving && !state.extracting) {
+-            Text(if (state.selectedId == AppearanceSettings.CUSTOM_ID) "我的配色 · 已选" else "恢复上次的我的配色")
+-        }
+         Surface(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = colors.paperSecondary, shape = RoundedCornerShape(12.dp)) {
+             Column(Modifier.padding(18.dp)) {
+                 Text("实时试色", style = LifeText.caption, color = colors.muted)
+@@ -116,6 +114,9 @@ fun AppearanceSettingsScreen(
+             }
+         }
+         Text("自定义主题色", style = LifeText.title)
++        if (namedThemes.any { it.id == state.selectedId }) {
++            TextButton(onDuplicate, enabled = !state.isSaving && !state.extracting) { Text("另存为新主题") }
++        }
+         OutlinedTextField(state.themeName, onName, Modifier.fillMaxWidth(), label = { Text("主题名称") }, singleLine = true,
+             enabled = !state.isSaving && !state.extracting)
+         listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm).forEach { (field, value) ->
+@@ -137,5 +138,5 @@ fun AppearanceSettingsScreen(
+ @Preview(name = "Appearance · PreviewOnly", showBackground = true)
+ @Composable
+ private fun AppearanceSettingsPreview() {
+-    LifeOsTheme { AppearanceSettingsScreen(AppearanceEditorState.from(AppearanceSettings()), false, {}, {}, { _, _ -> }, {}, {}, {}) }
++    LifeOsTheme { AppearanceSettingsScreen(AppearanceEditorState.from(AppearanceSettings()), {}, { _, _ -> }, {}, {}, {}) }
+ }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt
+index c8c72fe..5b03473 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/settings/AppearanceViewModel.kt
+@@ -28,7 +28,7 @@ class AppearanceViewModel(
+     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+     fun beginAppearanceEdit() {
+         editGeneration++
+-        _editor.value = AppearanceEditorState.from(appearanceRepository.settings.value ?: AppearanceSettings())
++        _editor.value = savedEditor(appearanceRepository.settings.value ?: AppearanceSettings())
+     }
+ 
+     fun cancelAppearanceEdit() { editGeneration++; _editor.value = null }
+@@ -39,12 +39,6 @@ class AppearanceViewModel(
+         _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = preset.id))
+     }
+ 
+-    fun previewSavedCustom() {
+-        if (_editor.value == null || _editor.value?.isSaving == true) return
+-        val saved = appearanceRepository.settings.value ?: return
+-        if (saved.custom != null) _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID))
+-    }
+-
+     fun editThemeField(field: ThemeField, value: String) {
+         _editor.value?.takeUnless { it.isSaving }?.let { _editor.value = it.edit(field, value) }
+     }
+@@ -52,11 +46,26 @@ class AppearanceViewModel(
+     fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
+ 
+     fun previewNamed(id: String) {
+-        if (_editor.value?.isSaving == true) return
++        if (_editor.value == null || _editor.value?.isSaving == true || _editor.value?.extracting == true) return
+         val saved = savedAppearance.value ?: return
++        if (saved.namedThemes.none { it.id == id }) return
+         _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = id))
+     }
+ 
++    fun duplicateTheme() {
++        _editor.value?.takeUnless { it.isSaving || it.extracting }?.let {
++            _editor.value = it.copy(selectedId = AppearanceSettings.CUSTOM_ID,
++                themeName = (it.themeName.take(35) + " · 副本"), message = "保存后会新增一份主题")
++        }
++    }
++
++    // Old CUSTOM means an already saved palette, not an unsaved palette to append on Apply.
++    private fun savedEditor(saved: AppearanceSettings): AppearanceEditorState {
++        val selected = if (saved.selectedThemeId == AppearanceSettings.CUSTOM_ID &&
++            saved.namedThemes.any { it.id == "legacy-custom" }) saved.copy(selectedThemeId = "legacy-custom") else saved
++        return AppearanceEditorState.from(selected)
++    }
++
+     fun nameTheme(value: String) {
+         _editor.value?.takeUnless { it.isSaving }?.let {
+             _editor.value = it.copy(themeName = value.take(40), selectedId = AppearanceSettings.CUSTOM_ID)
+@@ -73,7 +82,7 @@ class AppearanceViewModel(
+                 appearanceRepository.deleteNamed(id)
+                 val saved = appearanceRepository.read()
+                 if (generation == editGeneration && _editor.value != null)
+-                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已删除")
++                    _editor.value = savedEditor(saved).copy(message = "主题已删除")
+             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+             catch (_: Exception) { if (generation == editGeneration) _editor.value = draft.copy(message = "删除失败，请重试") }
+         }
+@@ -133,7 +142,7 @@ class AppearanceViewModel(
+                 appearanceRepository.read()
+             }.onSuccess { saved ->
+                 if (generation == editGeneration && _editor.value != null) {
+-                    _editor.value = AppearanceEditorState.from(saved).copy(message = "主题已保存")
++                    _editor.value = savedEditor(saved).copy(message = "主题已保存")
+                 }
+             }.onFailure {
+                 if (generation == editGeneration && _editor.value != null) {
+diff --git a/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt b/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt
+index 0941508..38f251f 100644
+--- a/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt
++++ b/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt
+@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
+ import com.qq.closie.data.appearance.*
+ import java.io.File
+ import kotlinx.coroutines.*
++import kotlinx.coroutines.flow.first
+ import org.junit.Assert.*
+ import org.junit.Rule
+ import org.junit.Test
+@@ -46,6 +47,33 @@ class AppearanceRepositoryTest {
+         } finally { secondJob.cancelAndJoin() }
+     }
+ 
++    @Test
++    fun `reset order and deleting a new theme preserve legacy preference fields`() = runBlocking {
++        val job = SupervisorJob()
++        val scope = CoroutineScope(job + Dispatchers.IO)
++        val store = PreferenceDataStoreFactory.create(scope = scope) { File(temporary.root, "review.preferences_pb") }
++        val repository = AppearanceRepository(store, scope)
++        val custom = CustomTheme("#765432", "#EFEFEF", "#BBAADD")
++        try {
++            repository.saveCustom(custom)
++            repository.saveModuleOrder(listOf("calendar", "finance", "capture"))
++            repository.saveModuleOrder(emptyList())
++            assertTrue(repository.read().moduleOrder.isEmpty())
++            repository.saveNamed("副本", custom)
++            val saved = repository.read()
++            repository.deleteNamed(saved.selectedThemeId)
++            assertEquals(custom, repository.read().custom)
++            assertEquals("legacy-custom", repository.read().namedThemes.single().id)
++            assertTrue(runCatching { repository.deleteNamed("legacy-custom") }.isFailure)
++            val values = store.data.first()
++            assertEquals(custom.accent, values[AppearanceCodec.customAccent])
++            assertEquals(custom.paper, values[AppearanceCodec.customPaper])
++            assertEquals(custom.secondary, values[AppearanceCodec.customSecondary])
++            assertEquals(custom.soft, values[AppearanceCodec.customSoft])
++            assertEquals(custom.warm, values[AppearanceCodec.customWarm])
++        } finally { job.cancelAndJoin() }
++    }
++
+     @Test
+     fun `invalid save leaves the previously persisted palette untouched`() = runBlocking {
+         val job = SupervisorJob()
+diff --git a/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt b/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt
+index 00844c6..c248e22 100644
+--- a/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt
++++ b/app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt
+@@ -100,6 +100,32 @@ class AppearanceViewModelTest {
+         }
+     }
+ 
++    @Test
++    fun `applying and reselecting legacy palette does not append a named copy`() = runTest {
++        withEditor(saved.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID)) { repository, model ->
++            assertEquals("legacy-custom", model.editor.value!!.selectedId)
++            saveAndAwait(model)
++            assertEquals("legacy-custom", repository.read().selectedThemeId)
++            assertEquals(saved.namedThemes, repository.read().namedThemes)
++            assertEquals(custom, repository.read().custom)
++            repository.settings.first { it?.selectedThemeId == "legacy-custom" }
++
++            model.previewPreset(ThemePreset.ORIGINAL)
++            model.previewNamed("legacy-custom")
++            saveAndAwait(model)
++            assertEquals(saved.namedThemes, repository.read().namedThemes)
++
++            model.duplicateTheme()
++            assertEquals(AppearanceSettings.CUSTOM_ID, model.editor.value!!.selectedId)
++            assertEquals(saved.namedThemes, repository.read().namedThemes)
++            saveAndAwait(model)
++            val duplicated = repository.read()
++            assertEquals(2, duplicated.namedThemes.size)
++            assertEquals(custom, duplicated.namedThemes.last().colors)
++            assertEquals(custom, duplicated.custom)
++        }
++    }
++
+     @Test
+     fun `invalid hex retains last valid preview and cannot persist`() = runTest {
+         withEditor(saved) { repository, model ->
+diff --git a/app/src/test/java/com/qq/closie/LifeOsNavigationTest.kt b/app/src/test/java/com/qq/closie/LifeOsNavigationTest.kt
+index 786c2cf..ea20997 100644
+--- a/app/src/test/java/com/qq/closie/LifeOsNavigationTest.kt
++++ b/app/src/test/java/com/qq/closie/LifeOsNavigationTest.kt
+@@ -6,6 +6,18 @@ import org.junit.Assert.*
+ import org.junit.Test
+ 
+ class LifeOsNavigationTest {
++    @Test fun fastSwitchingIsLimitedToModuleRoots() {
++        assertTrue(isFastLifeModuleSwitch(LifeOsRoute.HOME, LifeOsRoute.FINANCE))
++        assertTrue(isFastLifeModuleSwitch(LifeOsRoute.CLOSET, LifeOsRoute.CAPTURE))
++        assertTrue(isFastLifeModuleSwitch(LifeOsRoute.FINANCE, LifeOsRoute.HOME))
++        listOf(LifeOsRoute.SETTINGS, LifeOsRoute.APPEARANCE, LifeOsRoute.FINANCE_AUTOMATION,
++            LifeOsRoute.CAPTURE_DETAIL, LifeOsRoute.REFERENCE_DETAIL, LifeOsRoute.REFERENCE_EDIT,
++            LifeOsRoute.PLAN_EDIT, null).forEach { internal ->
++            assertFalse(isFastLifeModuleSwitch(LifeOsRoute.HOME, internal))
++            assertFalse(isFastLifeModuleSwitch(internal, LifeOsRoute.HOME))
++        }
++    }
++
+     @Test fun rootAndRealModulesHaveOneCatalog() {
+         assertEquals("life/home", LifeOsRoute.DEFAULT)
+         val modules = LifeModules.groups.flatMap { it.modules }.associateBy { it.id }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+index e2de0ca..aba2190 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+@@ -10,6 +10,8 @@ import com.qq.closie.life.data.database.LifeDatabase
+ import com.qq.closie.life.finance.*
+ import com.qq.closie.ui.lifeos.theme.LifeOsTheme
+ import kotlinx.coroutines.runBlocking
++import java.time.YearMonth
++import java.time.ZoneId
+ import org.junit.*
+ import org.junit.Assert.*
+ import org.junit.runner.RunWith
+@@ -110,4 +112,46 @@ class FinanceSmokeTest {
+         assertTrue(snapshot().entries.all { it.voidedAt != null })
+         assertNotNull(snapshot().transfers.single().voidedAt)
+     }
++
++    @Test fun historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange() {
++        val month = YearMonth.now().minusMonths(1)
++        val day = month.atDay(1)
++        val monthLabel = "${month.year} 年 ${month.monthValue} 月"
++        val heading = "$day 流水 · 1 笔"
++        runBlocking {
++            val account = repository.saveAccount(name = "测试现金", kind = FinanceAccountKind.CASH)
++            (1..2).forEach { number ->
++                repository.saveEntry(accountId = account.id, direction = FinanceDirection.OUTFLOW,
++                    amountMinor = 100, description = "上月第 $number 日",
++                    occurredAt = month.atDay(number).atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
++            }
++        }
++        launch()
++        click("流水")
++        compose.onNodeWithContentDescription("上个月").performClick()
++        compose.onNodeWithText(monthLabel).assertIsDisplayed()
++        fun awaitHistoricalRows() {
++            compose.waitUntil(10_000) {
++                compose.onAllNodes(hasContentDescription("$day，1 笔", substring = true)).fetchSemanticsNodes().isNotEmpty()
++            }
++        }
++        awaitHistoricalRows()
++        compose.onNode(hasContentDescription("$day，", substring = true)).performClick()
++        fun assertSelectedRows() {
++            compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText(heading))
++            compose.onNodeWithText(heading).assertExists()
++            compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("上月第 1 日"))
++            compose.onNodeWithText("上月第 1 日").assertExists()
++            compose.onNodeWithText("上月第 2 日").assertDoesNotExist()
++        }
++        assertSelectedRows()
++        click("流水") // Tapping the already-selected tab must retain the month and day.
++        assertSelectedRows()
++        click("分析")
++        click("本月") // Insights has a different range; Transactions owns its viewed month.
++        click("流水")
++        compose.onNodeWithText(monthLabel).assertIsDisplayed()
++        awaitHistoricalRows()
++        assertSelectedRows()
++    }
+ }
+diff --git a/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md b/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+index 3efc786..916382a 100644
+--- a/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
++++ b/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+@@ -2,7 +2,7 @@
+ 
+ 起点：`583acbf16c1c1bbc757f1cb72811911b1e1d9242`，远端 `feature/life-os-v13-product-refinement`。以 V13 代码和本轮六张真机截图、4.44 秒滚动录像为准；V11 HTML 和最后六张参考图只用于视觉历史与交互参考。
+ 
+-**交付状态：代码候选版本，未通过本地 Android 编译、单元测试或真机验收。** 初次 Gradle 启动在下载发行包时因 TLS 握手失败终止，未进入测试；用户随后要求不进行依赖下载和构建，已停止。没有推送、合并或生成 APK。不能将 V13 的 479/479 测试成绩归给 V14。
++**交付状态：代码候选版本，未通过本地 Android 编译、单元测试或真机验收。** 初次 Gradle 启动在下载发行包时因 TLS 握手失败终止，未进入测试；用户随后要求停止依赖下载和构建。本轮 pre-CI 复核仍未找到可用 JDK、Android SDK 或完整 Gradle 发行包，因此未执行 Android 测试和构建。没有推送、合并或生成 APK。不能将 V13 的 479/479 测试成绩归给 V14。
+ 
+ ## 改动与反馈对应
+ 
+@@ -10,7 +10,7 @@
+ 
+ - 删除独立 `ModuleOrderSheet`。在真实模块所在的双列 LazyVerticalGrid 长按抬起，在同一网格中拖动；稳定 module ID 作为 item key，周围模块使用 placement animation 让位。前六个位置继续代表“手边常用”。
+ - 仅拖动物体有悬浮背景、缩放和小阴影，普通模块使用图标与文字平排，不再给前六项各放一张卡片。
+-- 长按有一次触觉反馈；靠近上下 56dp 区域时按距离自动滚动；松手后一次性保存到既有 Appearance DataStore。取消手势或第一次返回恢复拖前顺序，写入失败同样回退并提示。TalkBack 自定义操作可逐项前移、后移。
++- 长按有一次触觉反馈；靠近上下 56dp 区域时按距离自动滚动；松手后一次性保存到既有 Appearance DataStore。取消手势或第一次返回恢复拖前顺序，写入失败同样回退并提示。TalkBack 自定义操作可逐项前移、后移。底部“恢复默认顺序”清空该 owner 的排序偏好，重新使用标准顺序；拖动结束、取消和保存开始均同步清除壳层取消回调。
+ - 五个源色参与固定背景渐变；画刷按主题缓存，并置于滚动网格之外。网格使用独立模块 key/contentType，取消原先按“每两项”拼装和标识列表的结构。
+ - V13 已缓存图标路径，也已使用后台 Finance 投影，这些不是本轮新发现的缺陷。本轮去掉普通模块 Surface 层、降低整页阴影，拖动指针主要在单一悬浮层的 graphicsLayer 阶段读取；没有添加滚动监听重组整页的机制。
+ - GLASS 在 Android 12+、非 low-RAM 且未关闭动画时，给底下的模块内容施加复用的固定半径 RenderEffect，同时降低背景内容强度。玻璃页 alpha 约 0.68–0.72，保留彩色渐变和清晰前景。旧 Android/low-RAM 通过显著淡化底层文字回退；减少动画设置继续使用 FLAT。
+@@ -22,7 +22,7 @@
+ - 壳层统一开放 Home、Finance、衣橱顶层、日历、收件匣、资料库、计划、阅读、普通模块入口及设置的右滑，不在模块里复制抽屉。
+ - 两侧 24dp 留给系统边缘手势；先辨别方向，竖向滚动和已经消费事件的子控件保留手势所有权。地图/伙伴输入、Appearance、备份及详情编辑路由不开放全局右滑；衣橱内部非顶层、Home 照片查看器、Finance 详情/编辑/日期、导入与自动化页通过壳层 policy 暂停接管。
+ - 功能页展开时，最后注册的壳层返回处理器优先关闭功能页；若正在排序则先取消排序。不会先触发衣橱等模块自己的返回。
+-- 选择模块仍直接导航，不等待抽屉关完。移除外层 NavHost 默认交叉淡入淡出，避免与功能页自身过渡叠加。
++- 选择模块仍直接导航，不等待抽屉关完。仅两个普通模块根路由间免除 NavHost 交叉淡入淡出；设置、备份、详情和编辑路由进出保留 140ms 短淡入淡出，避免全局瞬间替换。
+ - Home 改成“衬线品牌 + 右侧菜单”首行、副标题、独立伙伴/日历/地图工具行、细分隔、日期和手账内容，保持清楚的两级结构。
+ 
+ ### 本地图片主题与字体
+@@ -30,15 +30,15 @@
+ - 路径：设置 → 主题与配色 → 从照片或截图取色。使用 Activity Result Photo Picker，适配系统回退；无新增存储权限、网络服务或图片永久副本。
+ - 在 IO dispatcher 打开临时 URI，先读尺寸、采样到最长边不超过约 256px；最多约 12000 个像素样本，以 RGB 4-bit 分箱聚合。
+ - 颜色评分综合频率的平方根、色度和明度，第二色按与主色的距离选择，暖色另筛；灰阶、全白、全黑、透明或缺少合适颜色时使用稳定的柔和后备色。纸色向白色混合，主色迭代调整到纸面足够对比度，再交由既有 ThemePalette 生成语义 token。并非直接选出现最多的五个像素。
+-- 即时预览后可编辑五个 HEX 和名称，另存新主题。最多 24 个命名主题，支持重新选用和删除；JSON 只存在原 Appearance DataStore 的 `namedThemesV1` 中，保存 ID、名称和五色。旧 custom 字段继续可读，并显示为“以前的我的配色”；五个预置主题保留。无 Room 改动。
++- 即时预览后可编辑五个 HEX 和名称，另存新主题。最多 24 个命名主题，支持重新选用和删除；JSON 只存在原 Appearance DataStore 的 `namedThemesV1` 中，保存 ID、名称和五色。旧 custom 字段继续保留，仅在集合显示一次“以前的我的配色”；打开编辑器或选用后应用只选择该兼容条目，明确“另存为新主题”并保存才创建副本。旧兼容条目暂不提供删除；五个预置主题保留。无 Room 改动。
+ - 继续使用打包的 Noto Sans SC 作为 UI/正文和密集 Finance 字体；Noto Serif SC 用于 Home 和功能页的编辑式标题。全局章节标题从 20sp 收到 17sp，正文 14sp/21sp、元信息 12sp/18sp，金融主数字保持专门的 `tnum` 样式。没有依赖 OEM 字体。
+ 
+ ### Finance 页面、月历和币种
+ 
+ - 四个局部目的地仍是总览/流水/账户/分析。总览保留本月主卡；余额、辅助入口、流水使用留白与分隔；账户列表用平面行，账户横向速览仍保留卡片；趋势、分类及真实流量改成平面章节。
+-- 底栏改为 1.45 viewport-unit 描边的轻线图形，保留 Material NavigationBarItem 的点击区域和标签。
++- 底栏改为 1.45 viewport-unit 描边的轻线图形，使用 Material `LocalContentColor` 跟随选中/未选中颜色，保留 NavigationBarItem 的点击区域和标签。
+ - 将 UI 中重复生成完整账目投影的工作移入现有后台 state 流，并复用同一次生成的完整流水给详情与未归属调整检查。没有改变 FinanceProjection 或 canonical 写入。
+-- 流水默认月历入口：月份前后切换、今天、单日点选/取消、整月流水；搜索与账户/分类/标签/性质筛选仍可用。“列表与范围”保留原有日期范围筛选。
++- 流水默认月历入口：月份前后切换、今天、单日点选/取消、整月流水；搜索与账户/分类/标签/性质筛选仍可用。“列表与范围”保留原有日期范围筛选。浏览月份由可恢复的 UI 状态独立记忆，重按流水或从分析返回不重置；明确点击总览“这个月”或月历“今天”才跳到当前月份。单日筛选的标题包含日期、计数仅计算该日显示的流水。
+ - 日历显示实际收付，不假冒个人净成本：按币种分别累计、转账仅显示存在标记、不计入收支数值。退款/报销真实入账在此按实际收入显示；个人归属分析继续走既有投影。多币种可切换日历展示币种，下方流水保留各币种明细；使用 BigInteger 聚合，避免汇总溢出。大额在日格可能省略，点选日期后可看完整汇总及交易金额。
+ - 建账提供可搜索、常用币种优先的选择器，仅提供 Core 支持的 0–3 位小数币种。已有任意 canonical entry（包括作废记录）的账户币种锁定；无流水的账户可按原 Repository 规则更改。切换币种不转换或舍入已有输入，精度不合时由原 exact-money 校验报错。转账仍仅同币种，无 FX。
+ 
+@@ -53,6 +53,10 @@
+ 
+ - `git diff --check` 已通过；交付补丁另以独立 Git index 从实际起点应用，并比对最终 tree。
+ - Finance Core、Room schema、迁移、Manifest 权限和依赖声明没有变动。
+-- 添加了图片极端输入与对比度、旧主题解码、集合坏记录隔离、月历币种/转账/大数聚合、货币精度候选的针对性测试；更新原 AppearanceViewModel 测试以匹配命名集合。**这些测试尚未运行。** 未添加截图或间距测试、基准项目。
++- 添加了图片极端输入与对比度、旧主题解码、集合坏记录隔离、月历币种/转账/大数聚合、货币精度候选的针对性测试；更新原 AppearanceViewModel 测试以匹配命名集合。本轮另加旧主题选用不增副本/明确另存、排序偏好复位和旧字段保留、导航动画范围及真实 Compose 月历切页/单日笔数回归。**这些测试尚未运行。** 未添加截图或间距测试、基准项目。
+ - 下一次 CI/本地具备 Android 环境时，仍需执行 `./gradlew :app:testDebugUnitTest` 和 `./gradlew :app:assembleDebug`。
+ - 真机重点：四种功能页开合/返回；跨常用区拖动和长距离自动滚动；系统边缘返回、竖滚与子控件手势；各主题玻璃可读性及低端回退；字体缩放后月历大额显示；Photo Picker 取消/图片异常/主题重启持久化；有/无流水账户币种限制；设置启用发现后仅生成待确认提案；真实旧账完整导入。
++
++## pre-CI 包名核对
++
++`FinanceCards` 改为正常导入 `androidx.compose.ui.graphics.RectangleShape`。清单建议的 `androidx.compose.foundation.shape.RectangleShape` 不存在；[官方 Compose graphics API](https://developer.android.com/reference/kotlin/androidx/compose/ui/graphics/package-summary#RectangleShape()) 列明其属于 `ui-graphics`，自 1.0.0 提供。没有通过换成不存在的包来“修复”正确引用。静态检查不能代替待运行的 Kotlin/Android 编译。
+-- 
+2.53.0.windows.3
+
+
+From 44050813f92bd1e3bfeb0bf281f0781b08312323 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 11 Oct 2026 18:02:15 +0800
+Subject: [PATCH 4/4] fix(lifeos): align V14 regression tests and legacy theme
+ persistence
+
+---
+ .../data/appearance/AppearanceRepository.kt   | 10 ++--
+ .../com/qq/closie/AppearanceRepositoryTest.kt | 48 +++++++++++++++++++
+ .../java/com/qq/closie/ThemeCollectionTest.kt |  7 ++-
+ .../qq/closie/ui/lifeos/ClosetSmokeTest.kt    | 37 +++++++++++++-
+ docs/LIFE_OS_V14_DEVICE_REFINEMENT.md         |  7 +++
+ 5 files changed, 102 insertions(+), 7 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt b/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
+index 981a14c..c09422c 100644
+--- a/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
++++ b/app/src/main/java/com/qq/closie/data/appearance/AppearanceRepository.kt
+@@ -59,7 +59,7 @@ class AppearanceRepository(
+             val existing = AppearanceCodec.decode(values).namedThemes
+             require(existing.size < 24) { "已保存 24 个主题，请先删除不再使用的主题" }
+             val theme = NamedTheme("palette-" + java.util.UUID.randomUUID(), name.trim(), valid)
+-            values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(existing + theme)
++            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(existing + theme)
+             values[AppearanceCodec.selected] = theme.id
+         }
+     }
+@@ -69,7 +69,7 @@ class AppearanceRepository(
+         require(id != "legacy-custom") { "旧配色暂时保留；可以另存为新主题" }
+         store.edit { values ->
+             val settings = AppearanceCodec.decode(values)
+-            values[AppearanceCodec.collection] = com.google.gson.Gson().toJson(settings.namedThemes.filterNot { it.id == id })
++            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(settings.namedThemes.filterNot { it.id == id })
+             if (values[AppearanceCodec.selected] == id) values[AppearanceCodec.selected] = ThemePreset.ORIGINAL.id
+         }
+     }
+@@ -130,12 +130,16 @@ internal object AppearanceCodec {
+         } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct(), themes)
+     }
+ 
++    // Compatibility entries are derived from old fields, never records in namedThemesV1.
++    fun encodeNamedThemes(themes: List<NamedTheme>): String =
++        com.google.gson.Gson().toJson(themes.filter { it.id.startsWith("palette-") })
++
+     private fun decodeThemes(raw: String?): List<NamedTheme> = runCatching {
+         com.google.gson.JsonParser.parseString(raw ?: "[]").asJsonArray.mapNotNull { element ->
+             runCatching {
+                 val json = element.asJsonObject
+                 val id = json.get("id").asString
+-                require(id == "legacy-custom" || id.startsWith("palette-"))
++                require(id.startsWith("palette-"))
+                 val name = json.get("name").asString.trim().take(40).also { require(it.isNotBlank()) }
+                 val c = json.getAsJsonObject("colors")
+                 NamedTheme(id, name, CustomTheme(c.get("accent").asString, c.get("paper").asString,
+diff --git a/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt b/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt
+index 38f251f..5a4c757 100644
+--- a/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt
++++ b/app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt
+@@ -74,6 +74,54 @@ class AppearanceRepositoryTest {
+         } finally { job.cancelAndJoin() }
+     }
+ 
++    @Test
++    fun `legacy stays derived when unrelated palettes are saved deleted and explicitly duplicated`() = runBlocking {
++        val job = SupervisorJob()
++        val scope = CoroutineScope(job + Dispatchers.IO)
++        val store = PreferenceDataStoreFactory.create(scope = scope) { File(temporary.root, "derived.preferences_pb") }
++        val repository = AppearanceRepository(store, scope)
++        val custom = CustomTheme("#765432", "#EFEFEF", "#BBAADD")
++        suspend fun rawIds(): List<String> = com.google.gson.JsonParser.parseString(
++            store.data.first()[AppearanceCodec.collection] ?: "[]"
++        ).asJsonArray.map { it.asJsonObject.get("id").asString }
++        try {
++            repository.saveCustom(custom)
++            repository.selectNamed("legacy-custom")
++            assertEquals("legacy-custom", repository.read().selectedThemeId)
++            assertEquals(custom, repository.read().selectedColors())
++            assertTrue(rawIds().isEmpty())
++
++            repository.saveNamed("另一个主题", CustomTheme("#112233", "#FFFFFF", "#CCDDEE"))
++            val unrelatedId = repository.read().selectedThemeId
++            assertEquals(listOf(unrelatedId), rawIds())
++            assertTrue(unrelatedId.startsWith("palette-"))
++            assertEquals(1, repository.read().namedThemes.count { it.id == "legacy-custom" })
++
++            repository.selectNamed("legacy-custom")
++            assertEquals(listOf(unrelatedId), rawIds())
++            // The explicit duplicate/save command appends exactly one real palette.
++            repository.saveNamed("旧配色副本", repository.read().selectedColors())
++            val duplicateId = repository.read().selectedThemeId
++            assertEquals(listOf(unrelatedId, duplicateId), rawIds())
++            assertTrue(rawIds().all { it.startsWith("palette-") })
++            assertEquals(custom, repository.read().namedThemes.single { it.id == duplicateId }.colors)
++
++            repository.selectNamed("legacy-custom")
++            repository.deleteNamed(unrelatedId)
++            assertEquals(listOf(duplicateId), rawIds())
++            val reloaded = repository.read()
++            assertEquals("legacy-custom", reloaded.selectedThemeId)
++            assertEquals(custom, reloaded.selectedColors())
++            assertEquals(1, reloaded.namedThemes.count { it.id == "legacy-custom" })
++            val fields = store.data.first()
++            assertEquals(custom.accent, fields[AppearanceCodec.customAccent])
++            assertEquals(custom.paper, fields[AppearanceCodec.customPaper])
++            assertEquals(custom.secondary, fields[AppearanceCodec.customSecondary])
++            assertEquals(custom.soft, fields[AppearanceCodec.customSoft])
++            assertEquals(custom.warm, fields[AppearanceCodec.customWarm])
++        } finally { job.cancelAndJoin() }
++    }
++
+     @Test
+     fun `invalid save leaves the previously persisted palette untouched`() = runBlocking {
+         val job = SupervisorJob()
+diff --git a/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt b/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt
+index 4278362..3e7912c 100644
+--- a/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt
++++ b/app/src/test/java/com/qq/closie/ThemeCollectionTest.kt
+@@ -6,13 +6,16 @@ import org.junit.Assert.*
+ import org.junit.Test
+ 
+ class ThemeCollectionTest {
+-    @Test fun `legacy custom colors remain selected and become a named theme`() {
++    @Test fun `legacy custom derives one compatibility entry from fields even after an old accidental serialization`() {
++        val stale = NamedTheme("legacy-custom", "旧兼容记录", CustomTheme("#112233", "#EEEEEE", "#8899AA"))
+         val values = mutablePreferencesOf(AppearanceCodec.selected to "custom",
+             AppearanceCodec.customAccent to "#765432", AppearanceCodec.customPaper to "#FFFFFF",
+-            AppearanceCodec.customSecondary to "#AABBCC")
++            AppearanceCodec.customSecondary to "#AABBCC",
++            AppearanceCodec.collection to com.google.gson.Gson().toJson(listOf(stale)))
+         val decoded = AppearanceCodec.decode(values)
+         assertEquals("custom", decoded.selectedThemeId)
+         assertEquals(decoded.custom, decoded.namedThemes.single().colors)
++        assertEquals("legacy-custom", decoded.namedThemes.single().id)
+         assertEquals(decoded.custom, decoded.selectedColors())
+     }
+ 
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+index d54cf64..74b5239 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+@@ -16,6 +16,8 @@ import androidx.compose.ui.test.hasAnyDescendant
+ import androidx.compose.ui.test.performTouchInput
+ import androidx.compose.ui.test.swipeLeft
+ import androidx.compose.ui.test.swipeRight
++import androidx.compose.ui.test.swipe
++import androidx.compose.ui.geometry.Offset
+ import androidx.compose.ui.test.swipeUp
+ import androidx.compose.ui.test.performClick
+ import androidx.compose.ui.test.onRoot
+@@ -60,7 +62,7 @@ class ClosetSmokeTest {
+     }
+ 
+     @Test
+-    fun drawerHasRestoredHeaderSearchAndQuickActions() {
++    fun drawerHasHeaderSearchModulesAndDirectReorderAffordances() {
+         openDrawer()
+         compose.onNodeWithText("生活的抽屉").assertIsDisplayed()
+         compose.onNodeWithText("把日子放回自己的位置").assertIsDisplayed()
+@@ -71,7 +73,9 @@ class ClosetSmokeTest {
+         compose.onNodeWithText("日历").assertIsDisplayed()
+         compose.onNodeWithText("搜索").assertIsDisplayed()
+         compose.onNodeWithTag("drawer-finance").assertIsDisplayed()
+-        compose.onNodeWithText("整理").assertIsDisplayed()
++        compose.onNodeWithText("长按直接移动").assertIsDisplayed()
++        compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
++        compose.onNodeWithTag("drawer-restore-order").assertExists().assertIsDisplayed()
+     }
+ 
+     @Test
+@@ -147,4 +151,33 @@ class ClosetSmokeTest {
+         compose.onNodeWithText("Life OS").assertIsDisplayed()
+     }
+ 
++    @Test
++    fun financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance() {
++        openDrawer()
++        compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
++        compose.onNodeWithTag("drawer-finance").performClick()
++        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
++        compose.mainClock.advanceTimeBy(500)
++        compose.waitForIdle()
++        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
++        compose.onNodeWithText("钱的位置").assertIsDisplayed()
++        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
++
++        // Real input on Finance content, away from system edges and horizontal account rows.
++        compose.onNodeWithTag("finance-ledger").performTouchInput {
++            swipe(Offset(width * .25f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
++        }
++        compose.mainClock.advanceTimeBy(500)
++        compose.waitForIdle()
++        compose.onNodeWithTag("life-drawer").assertIsDisplayed()
++        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
++
++        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
++        compose.mainClock.advanceTimeBy(500)
++        compose.waitForIdle()
++        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
++        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
++        compose.onNodeWithText("钱的位置").assertIsDisplayed()
++    }
++
+ }
+diff --git a/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md b/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+index 916382a..35994bd 100644
+--- a/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
++++ b/docs/LIFE_OS_V14_DEVICE_REFINEMENT.md
+@@ -57,6 +57,13 @@
+ - 下一次 CI/本地具备 Android 环境时，仍需执行 `./gradlew :app:testDebugUnitTest` 和 `./gradlew :app:assembleDebug`。
+ - 真机重点：四种功能页开合/返回；跨常用区拖动和长距离自动滚动；系统边缘返回、竖滚与子控件手势；各主题玻璃可读性及低端回退；字体缩放后月历大额显示；Photo Picker 取消/图片异常/主题重启持久化；有/无流水账户币种限制；设置启用发现后仅生成待确认提案；真实旧账完整导入。
+ 
++## 最终 pre-CI 对齐
++
++- 更新功能页冒烟测试，保留标题、搜索、模块和 Finance 入口断言；检查“长按直接移动”，滚到底部检查 `drawer-restore-order`。
++- 增加一项壳层所有权回归：从 Home 功能页进入 Finance，在 `finance-ledger` 上注入真实右滑，然后调用 Android Back；检查功能页关闭后仍显示 Finance 根页面。没有通过改状态或 Finance 菜单按钮代替手势。
++- `namedThemesV1` 编码仅写入真实 `palette-*` 条目，解码忽略曾意外序列化的 `legacy-custom`，并始终从保留的旧 custom 字段派生单一兼容入口。仓库回归直接检查原始集合：另存、选用和删除其他主题均不写入该派生条目，明确复制只新增一个真实主题。
++- 以上回归测试源码已补充，**尚未运行**；当前仍无可用 Android/JDK/Gradle 构建环境。前三个 V14 提交保留，本次作为独立第四提交交付。
++
+ ## pre-CI 包名核对
+ 
+ `FinanceCards` 改为正常导入 `androidx.compose.ui.graphics.RectangleShape`。清单建议的 `androidx.compose.foundation.shape.RectangleShape` 不存在；[官方 Compose graphics API](https://developer.android.com/reference/kotlin/androidx/compose/ui/graphics/package-summary#RectangleShape()) 列明其属于 `ui-graphics`，自 1.0.0 提供。没有通过换成不存在的包来“修复”正确引用。静态检查不能代替待运行的 Kotlin/Android 编译。
+-- 
+2.53.0.windows.3
+
