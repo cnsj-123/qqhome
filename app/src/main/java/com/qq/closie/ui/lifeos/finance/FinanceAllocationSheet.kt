@@ -15,7 +15,14 @@ internal fun FinanceAllocationSheet(state: FinanceUiState, row: FinanceLedgerRow
     var query by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val events = state.snapshot.v4?.events.orEmpty().filter { it.voidedAt == null && it.currencyCode == row.currencyCode && it.relatedTransferId == null }
-    FinanceReceipt("分配到多个事件", state.busy, error ?: state.error, close) {
+    FinanceReceipt("分配到多个事件", state.busy, error ?: state.error, close, actions = {
+        Button(onClick = {
+            try {
+                val values = parts.map { FinanceAllocation(it.eventId, it.role, FinanceMoney.parse(it.amount, row.currencyCode)) }
+                vm.allocate(row, values, close)
+            } catch (e: Exception) { error = e.message }
+        }, enabled = !state.busy && parts.isNotEmpty()) { Text("确认分配") }
+    }) {
         Text("真实流水 ${FinanceMoney.display(row.entry.amountMinor, row.currencyCode)} 保持一笔，分配总额必须与它相等。")
         parts.forEachIndexed { index, part ->
             Text(state.snapshot.v4?.events?.find { it.id == part.eventId }?.description ?: "事件已不可用")
@@ -34,11 +41,6 @@ internal fun FinanceAllocationSheet(state: FinanceUiState, row: FinanceLedgerRow
                 query = ""
             }, enabled = !state.busy) { Text("${FinanceTime.input(event.occurredAt)} · ${event.description}") }
         }
-        Button(onClick = {
-            try {
-                val values = parts.map { FinanceAllocation(it.eventId, it.role, FinanceMoney.parse(it.amount, row.currencyCode)) }
-                vm.allocate(row, values, close)
-            } catch (e: Exception) { error = e.message }
-        }, enabled = !state.busy && parts.isNotEmpty()) { Text("确认分配") }
+
     }
 }

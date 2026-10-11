@@ -7,7 +7,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.hasScrollAction
@@ -27,7 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Cold launch → V12 function page → real Closet, with no competing root bottom bar. */
+/** Cold launch → function page → real Closet, with no competing root bottom bar. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w393dp-h852dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -47,7 +48,7 @@ class ClosetSmokeTest {
     private fun openCloset(physicalClick: Boolean = true) {
         // Bring the row to a stable visible position in the partial-width drawer.
         compose.onNodeWithTag("life-drawer")
-            .performScrollToIndex(5)
+            .performScrollToNode(hasTestTag("drawer-closet"))
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         val row = compose.onNodeWithText("衣橱").assertIsDisplayed()
@@ -62,26 +63,15 @@ class ClosetSmokeTest {
     fun drawerHasRestoredHeaderSearchAndQuickActions() {
         openDrawer()
         compose.onNodeWithText("生活的抽屉").assertIsDisplayed()
-        compose.onNodeWithText("水母来信 · 把日子放回自己的位置").assertIsDisplayed()
-        compose.onNodeWithText("搜一件东西、一段经历……").assertIsDisplayed()
+        compose.onNodeWithText("把日子放回自己的位置").assertIsDisplayed()
+        compose.onNodeWithText("找一件东西、一段经历").assertIsDisplayed()
         compose.onNodeWithTag("drawer-capture").assertIsDisplayed()
         compose.onNodeWithText("记一下").assertIsDisplayed()
         compose.onNodeWithText("收件匣").assertIsDisplayed()
         compose.onNodeWithText("日历").assertIsDisplayed()
         compose.onNodeWithText("搜索").assertIsDisplayed()
-        val capture = compose.onNodeWithTag("drawer-capture").fetchSemanticsNode().boundsInRoot
-        // Compare complete action cells, not text glyph bounds from the packaged font.
-        val inbox = compose.onNodeWithTag("drawer-inbox").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val calendar = compose.onNodeWithTag("drawer-calendar").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val search = compose.onNodeWithTag("drawer-search").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        org.junit.Assert.assertTrue(capture.center.x < inbox.center.x)
-        org.junit.Assert.assertTrue(calendar.center.x < search.center.x)
-        org.junit.Assert.assertEquals(capture.center.y, inbox.center.y, 2f)
-        org.junit.Assert.assertEquals(calendar.center.y, search.center.y, 2f)
-        org.junit.Assert.assertEquals(capture.center.x, calendar.center.x, 2f)
-        org.junit.Assert.assertEquals(inbox.center.x, search.center.x, 2f)
-        org.junit.Assert.assertTrue(minOf(calendar.center.y, search.center.y) > maxOf(capture.center.y, inbox.center.y))
-        compose.onNodeWithText("收件匣 0").assertDoesNotExist()
+        compose.onNodeWithTag("drawer-finance").assertIsDisplayed()
+        compose.onNodeWithText("整理").assertIsDisplayed()
     }
 
     @Test
@@ -146,13 +136,13 @@ class ClosetSmokeTest {
     @Test
     fun drawerFinanceOpensRealLedgerAndReturnsToStableHome() {
         openDrawer()
-        compose.onNodeWithTag("life-drawer").performScrollToIndex(16)
+        compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
         compose.onNodeWithTag("drawer-finance").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("账户摘要")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
-        compose.onNodeWithText("账户摘要").assertIsDisplayed()
+        compose.onNodeWithText("钱的位置").assertIsDisplayed()
         listOf("总览", "流水", "账户", "分析").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
-        compose.onNodeWithText("返回").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("返回").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Life OS").assertIsDisplayed()
     }

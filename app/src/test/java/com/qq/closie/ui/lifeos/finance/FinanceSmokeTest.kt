@@ -36,12 +36,16 @@ class FinanceSmokeTest {
     private fun launch() {
         compose.setContent { LifeOsTheme { FinanceRoute(repository, {}) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithText("账户摘要").fetchSemanticsNodes().isNotEmpty() }
+            compose.onAllNodesWithText("钱的位置").fetchSemanticsNodes().isNotEmpty() }
     }
     private fun input(label: String, text: String) {
         compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
     }
-    private fun click(text: String) { compose.onNodeWithText(text).performScrollTo().performClick() }
+    private fun click(text: String) {
+        val node = compose.onNodeWithText(text)
+        if (runCatching { node.assertIsDisplayed() }.isFailure) node.performScrollTo()
+        node.performClick()
+    }
     private fun saved() {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("保存记录").fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("保存账户").fetchSemanticsNodes().isEmpty() }
@@ -73,7 +77,7 @@ class FinanceSmokeTest {
         assertEquals(original.occurredAt, snapshot().entries.single().occurredAt)
         assertEquals(99_000L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
         compose.onNodeWithText("流水").performClick()
-        compose.onNode(hasSetTextAction() and hasText("事由、分类、标签或账户")).performScrollTo().performTextReplacement("出门")
+        compose.onNode(hasSetTextAction() and hasText("搜索事由、分类、标签或账户")).performScrollTo().performTextReplacement("出门")
         compose.onNodeWithText("早餐豆浆").assertExists()
         click("早餐豆浆")
         click("作废这笔记录")

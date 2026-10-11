@@ -25,6 +25,8 @@ import com.qq.closie.navigation.modules.PresentationFactory
 import com.qq.closie.ui.lifeos.theme.*
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 
 @Composable
 fun FinanceRoute(repository: FinanceRepository, onBack: () -> Unit) = FinanceRoute(repository, null, null, onBack)
@@ -36,11 +38,16 @@ fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportR
     val state by vm.state.collectAsStateWithLifecycle()
     var importOpen by rememberSaveable { mutableStateOf(false) }
     var automationOpen by rememberSaveable { mutableStateOf(false) }
+    val pending by produceState<Int?>(null, automationRepository) {
+        automationRepository?.observe()?.catch { value = null }?.collect { snapshot ->
+            value = snapshot.proposals.count { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
+        }
+    }
     if (importOpen && importRepository != null) FinanceImportScreen(importRepository, state.snapshot.accounts) { importOpen = false }
     else if (automationOpen && automationRepository != null) FinanceAutomationScreen(automationRepository, repository) { automationOpen = false }
     else FinanceModuleScreen(state, vm, onBack) {
-        if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账") }
-        if (automationRepository != null) TextButton(onClick = { automationOpen = true }) { Text("自动发现 · 规则与待确认") }
+        if (automationRepository != null) TextButton(onClick = { automationOpen = true }) { Text("自动发现" + (pending?.let { " · $it 笔待确认" } ?: " · 查看状态")) }
+        if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账 →") }
     }
 }
 
@@ -50,26 +57,38 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
     Column(modifier) {
         Text(label, style = LifeText.caption, color = colors.muted)
         totals.ifEmpty { mapOf("CNY" to FinanceTotals()) }.forEach { (currency, sum) ->
-            Text(FinanceMoney.display(if (expense) sum.expenseMinor else sum.incomeMinor, currency), style = LifeText.title, color = colors.ink)
+            Text(FinanceMoney.display(if (expense) sum.expenseMinor else sum.incomeMinor, currency), style = LifeText.number, color = colors.ink)
         }
     }
 }
 
 @Composable
-internal fun LedgerLine(row: FinanceLedgerRow, onClick: () -> Unit) {
+internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(color = colors.card, shape = RoundedCornerShape(16.dp)) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(color = if (row.transfer != null) colors.paperSecondary else colors.warmSurface, shape = RoundedCornerShape(11.dp)) {
+            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                Text(if (row.transfer != null) "⇄" else if (row.entry.direction == FinanceDirection.INFLOW) "↓" else "↑", color = colors.accentDeep)
+            }
+        }
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(if (row.transfer != null) "${row.account.name} → ${row.targetAccount?.name}" else row.entry.description,
-                style = LifeText.body, color = colors.ink)
+                style = LifeText.body, color = colors.ink, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(if (row.transfer != null) "转账 · ${row.entry.description.ifBlank { "账户间转移" }}" else
-                listOfNotNull(row.account.name, row.category).plus(row.tags.map { "#$it" }).joinToString(" · "),
-                style = LifeText.caption, color = colors.muted)
+                listOfNotNull(row.category ?: "未分类", row.account.name).joinToString(" · "),
+                style = LifeText.caption, color = colors.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (role != null) Text(role, style = LifeText.caption, color = colors.accentDeep)
         }
         val prefix = if (row.transfer != null) "" else if (row.entry.direction == FinanceDirection.INFLOW) "+" else "−"
-        Text(prefix + FinanceMoney.display(row.entry.amountMinor, row.currencyCode), style = LifeText.body, color = colors.accentDeep)
+        Column(Modifier.widthIn(max = 136.dp).padding(start = 8.dp), horizontalAlignment = Alignment.End) {
+            Text(prefix + FinanceMoney.display(row.entry.amountMinor, row.currencyCode), style = LifeText.body.copy(fontFeatureSettings = "tnum", fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = colors.ink,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            Text(FinanceTime.input(row.entry.occurredAt).substringAfter(' '), style = LifeText.caption, color = colors.muted)
+        }
     }
-    HorizontalDivider(color = colors.line)
+    }
 }
 
 @Composable

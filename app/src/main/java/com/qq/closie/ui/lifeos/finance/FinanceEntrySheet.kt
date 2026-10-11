@@ -35,9 +35,15 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
     var confirmVoid by remember { mutableStateOf(false) }
     var allocationOpen by remember { mutableStateOf(false) }
+    var pickingCategory by remember { mutableStateOf(false) }
+    var pickingTag by remember { mutableStateOf(false) }
+    var pickingDate by remember { mutableStateOf(false) }
     val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
-    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose) {
+    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose, actions = {
+        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship), onClose) },
+            enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
+    }) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FinanceEditorKind.entries.forEach { tab ->
                 val editable = row == null || if (row.transfer != null) tab == FinanceEditorKind.TRANSFER else tab != FinanceEditorKind.TRANSFER
@@ -55,9 +61,14 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         }
         OutlinedTextField(occurredAt, { occurredAt = it }, Modifier.fillMaxWidth(), label = { Text("发生时间 · 年-月-日 时:分") },
             singleLine = true, enabled = !state.busy)
+        TextButton({ pickingDate = true }, enabled = !state.busy) { Text("从日历选择日期") }
         OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(),
             label = { Text(if (kind == FinanceEditorKind.TRANSFER) "备注（可留空）" else "具体事由 · 买了什么 / 为了什么") }, enabled = !state.busy)
         if (kind != FinanceEditorKind.TRANSFER) {
+            Row {
+                TextButton({ pickingCategory = true }, enabled = !state.busy) { Text("选择已有分类") }
+                TextButton({ pickingTag = true }, enabled = !state.busy) { Text("添加已有标签") }
+            }
             OutlinedTextField(category, { category = it }, Modifier.fillMaxWidth(), label = { Text("分类（可自定义）") }, singleLine = true, enabled = !state.busy)
             OutlinedTextField(subcategory, { subcategory = it }, Modifier.fillMaxWidth(), label = { Text("子分类（可留空）") }, enabled = !state.busy)
             val suggestions = (state.snapshot.categories.filter { it.parentId == null }.map { it.name } + listOf("餐饮", "交通", "日用", "其他")).distinct().take(6)
@@ -70,13 +81,25 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         if (row != null && row.transfer == null) TextButton(onClick = { allocationOpen = true }, enabled = !state.busy) {
             Text(if (multiple) "查看与修改多个事件分配" else "分配到多个事件")
         }
-        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship), onClose) },
-            enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
         if (row != null) {
             Text("记录时间 ${FinanceTime.input(row.entry.recordedAt)}", style = LifeText.caption, color = colors.muted)
             TextButton(onClick = { confirmVoid = true }, enabled = !state.busy) { Text("作废这笔记录") }
         }
     }
+    if (pickingCategory) FinanceChoiceSheet("分类", leaf?.id,
+        state.snapshot.categories.map { it.id to (FinanceProjection.categoryPath(state.snapshot.categories, it.id) ?: it.name) },
+        onSelect = { id ->
+            val selected = state.snapshot.categories.first { it.id == id }
+            val root = state.snapshot.categories.find { it.id == selected.parentId }
+            category = root?.name ?: selected.name
+            subcategory = if (root == null) "" else selected.name
+        }, onClose = { pickingCategory = false })
+    if (pickingTag) FinanceChoiceSheet("标签", null, state.snapshot.tags.map { it.id to it.name },
+        onSelect = { id -> state.snapshot.tags.find { it.id == id }?.let { selected ->
+            tags = (tags.split(Regex("[,，\\n]")).map(String::trim).filter(String::isNotBlank) + selected.name).distinct().joinToString("，")
+        } }, onClose = { pickingTag = false })
+    if (pickingDate) FinanceDateSheet(null, { start, _ -> occurredAt = start + " " + occurredAt.substringAfter(' ', "12:00"); true },
+        { pickingDate = false }, initial = runCatching { java.time.LocalDate.parse(occurredAt.substringBefore(' ')) }.getOrDefault(java.time.LocalDate.now()), singleDayOnly = true)
     if (allocationOpen && row != null) FinanceAllocationSheet(state, row, vm) { allocationOpen = false; onClose() }
     if (confirmVoid && row != null) AlertDialog(onDismissRequest = { if (!state.busy) confirmVoid = false },
         title = { Text(if (row.transfer != null) "作废整笔转账？" else "作废这笔记录？") },

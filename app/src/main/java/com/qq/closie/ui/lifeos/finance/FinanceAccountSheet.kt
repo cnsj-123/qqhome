@@ -19,7 +19,11 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
     var kindsOpen by remember { mutableStateOf(false) }
     var confirmArchive by remember { mutableStateOf(false) }
     val kind = FinanceAccountKind.valueOf(kindName)
-    FinanceReceipt(if (account == null) "建立真实账户" else "编辑账户", state.busy, state.error, onClose) {
+    FinanceReceipt(if (account == null) "建立真实账户" else "编辑账户", state.busy, state.error, onClose, actions = {
+        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (state.busy) "正在保存……" else "保存账户")
+        }
+    }) {
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("账户名称") }, singleLine = true, enabled = !state.busy)
         Box {
             TextButton(onClick = { kindsOpen = true }, enabled = !state.busy) { Text("账户类型 · ${kind.label}") }
@@ -33,9 +37,6 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy)
         account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.balanceAnchorAt)}", style = LifeText.caption, color = colors.muted) }
         Text("期初余额以显示的余额起点为准。当前余额仅计入该时刻及之后发生的有效流水；更早的补记仍保留在历史与统计中。", style = LifeText.caption, color = colors.muted)
-        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-            Text(if (state.busy) "正在保存……" else "保存账户")
-        }
         if (account?.archivedAt != null) TextButton({ vm.unarchiveAccount(account.id, onClose) }, enabled = !state.busy) { Text("恢复使用此账户") }
         else if (account != null) TextButton(onClick = { confirmArchive = true }, enabled = !state.busy) { Text("归档账户") }
     }

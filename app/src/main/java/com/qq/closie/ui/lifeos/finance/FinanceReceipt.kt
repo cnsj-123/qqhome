@@ -16,22 +16,28 @@ import com.qq.closie.ui.lifeos.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String? = null,
-    onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    onClose: () -> Unit, actions: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit) {
     val colors = LocalLifeOsColors.current
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false,
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
         confirmValueChange = { !busy || it != SheetValue.Hidden })
     ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
         containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
-        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .82f).dp)
-            .imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp).padding(bottom = 24.dp),
+        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
+            .imePadding().padding(horizontal = 20.dp).padding(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))
                 TextButton(onClick = onClose, enabled = !busy) { Text("收起") }
             }
             HorizontalDivider(color = colors.line)
-            error?.let { Text(it, style = LifeText.caption, color = colors.accentDeep) }
-            content()
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+            error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
+            if (actions != null) {
+                HorizontalDivider(color = colors.line)
+                actions()
+            }
         }
     }
 }
@@ -47,12 +53,9 @@ internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, 
             TextButton(onClick = { expanded = true }, enabled = enabled) {
                 Text(accounts.find { it.id == selected }?.let { "${it.name}${if (it.archivedAt != null) " · 已归档" else ""} · ${it.currencyCode}" } ?: "选择账户")
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                accounts.forEach { account ->
-                    DropdownMenuItem(text = { Text(account.name + if (account.archivedAt != null) " · 已归档" else "") },
-                        onClick = { expanded = false; onSelect(account.id) })
-                }
-            }
+            if (expanded) FinanceChoiceSheet(label, selected,
+                accounts.map { it.id to (it.name + if (it.archivedAt != null) " · 已归档" else "") },
+                onSelect = onSelect, onClose = { expanded = false })
         }
     }
 }

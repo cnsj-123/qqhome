@@ -6,6 +6,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.foundation.lazy.rememberLazyListState
+import java.time.LocalDate
+import java.time.YearMonth
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -32,13 +38,22 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
     var accountEditing by rememberSaveable { mutableStateOf(false) }
     var dates by rememberSaveable { mutableStateOf(false) }
+    var chartLabel by rememberSaveable { mutableStateOf<String?>(null) }
+    var chartCurrency by rememberSaveable { mutableStateOf("CNY") }
+    var reviewAdjustments by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    LaunchedEffect(viewName, detailAccount, chartLabel) { listState.scrollToItem(0) }
     val allRows = remember(state.snapshot) { FinanceProjection.ledger(state.snapshot) }
-    fun back() { if (detailAccount != null) detailAccount = null else onBack() }
-    BackHandler(detailAccount != null && !editing && !accountEditing) { detailAccount = null }
+    val groupedDays = remember(state.ledger) { state.ledger.groupBy { it.localDay() } }
+    val roles = remember(state.snapshot.v4) { state.snapshot.v4?.activeLinks.orEmpty().groupBy { it.entryId }.mapValues { (_, links) ->
+        links.map { it.role }.filter { it in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT, FinanceFlowRole.SETTLEMENT) }.distinct().joinToString(" · ") { it.label }.ifBlank { null }
+    } }
+    fun back() { if (chartLabel != null) chartLabel = null else if (detailAccount != null) detailAccount = null else onBack() }
+    BackHandler((detailAccount != null || chartLabel != null) && !editing && !accountEditing) { back() }
     Scaffold(containerColor = colors.paper, topBar = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = ::back) { Text("返回") }
-            Text(detailAccount?.let { id -> state.snapshot.accounts.find { it.id == id }?.name } ?: "账目",
+            IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
+            Text(chartLabel ?: detailAccount?.let { id -> state.snapshot.accounts.find { it.id == id }?.name } ?: "账目",
                 Modifier.weight(1f), style = LifeText.title)
             TextButton(onClick = { entryId = null; editing = true },
                 enabled = !state.busy && state.snapshot.accounts.any { it.archivedAt == null },
@@ -46,23 +61,33 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
     }, bottomBar = {
         // This bar belongs to Finance only. The Life OS root has no bottom navigation.
-        Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        NavigationBar(containerColor = colors.card, tonalElevation = 0.dp, windowInsets = WindowInsets(0)) {
             FinanceView.entries.forEach { target ->
-                FilterChip(view == target, onClick = { detailAccount = null; viewName = target.name },
-                    label = { Text(target.label) })
+                NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; viewName = target.name },
+                    icon = { Icon(when (target) {
+                        FinanceView.OVERVIEW -> Icons.Outlined.SpaceDashboard
+                        FinanceView.TRANSACTIONS -> Icons.Outlined.ReceiptLong
+                        FinanceView.ACCOUNTS -> Icons.Outlined.AccountBalanceWallet
+                        FinanceView.INSIGHTS -> Icons.Outlined.BarChart
+                    }, null, Modifier.size(22.dp)) }, label = { Text(target.label, style = LifeText.caption) },
+                    colors = NavigationBarItemDefaults.colors(indicatorColor = colors.paperTertiary,
+                        selectedIconColor = colors.accentDeep, selectedTextColor = colors.accentDeep))
             }
         }
     }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize().testTag("finance-ledger"),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            state = listState, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.loading) item { Text("正在打开账本……", style = LifeText.body) }
             state.error?.let { message -> item { Text(message, color = colors.accentDeep); TextButton(vm::clearError) { Text("知道了") } } }
-            if (detailAccount == null && view in setOf(FinanceView.OVERVIEW, FinanceView.INSIGHTS) && state.unassignedAdjustments.isNotEmpty()) {
+            if (detailAccount == null && chartLabel == null && view in setOf(FinanceView.OVERVIEW, FinanceView.INSIGHTS) && state.unassignedAdjustments.isNotEmpty()) {
                 item {
-                    Text("账本调整待归属", style = LifeText.title)
-                    Text("以下调整保留真实到账，尚未冲减个人成本；此列表包含账本全部待归属调整。", style = LifeText.caption)
+                    FinancePanel(color = colors.warmSurface) {
+                        Text("${state.unassignedAdjustments.size} 笔到账待整理", style = LifeText.body)
+                        Text("真实到账已保留；整理归属后才能冲减个人成本。", style = LifeText.caption)
+                        TextButton({ reviewAdjustments = !reviewAdjustments }) { Text(if (reviewAdjustments) "收起" else "查看并整理") }
+                    }
                 }
-                items(state.unassignedAdjustments, key = { "unassigned-${it.linkId}" }) { adjustment ->
+                if (reviewAdjustments) items(state.unassignedAdjustments, key = { "unassigned-${it.linkId}" }) { adjustment ->
                     Column {
                         Text(adjustment.role.label + " · " + FinanceMoney.display(adjustment.amountMinor, adjustment.row.currencyCode))
                         Text(adjustment.issue.label + " · " + adjustment.row.entry.description, style = LifeText.caption)
@@ -70,7 +95,16 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     }
                 }
             }
-            if (detailAccount != null) {
+            if (chartLabel != null) {
+                val matching = state.personalRows.filter { (it.category ?: "未分类") == chartLabel && it.currencyCode == chartCurrency }
+                val ids = matching.map { it.entry.id }.toSet()
+                item { FinancePanel {
+                    Text("个人收支归属 · $chartLabel", style = LifeText.title)
+                    MoneySummary("净支出", FinanceProjection.totals(matching), true)
+                    Text("下方显示相关真实流水；退款、报销金额保留原值。", style = LifeText.caption)
+                } }
+                items(allRows.filter { it.entry.id in ids }, key = { it.id }) { LedgerLine(it) { entryId = it.id; editing = true } }
+            } else if (detailAccount != null) {
                 val account = state.snapshot.accounts.find { it.id == detailAccount }
                 if (account != null) {
                     item {
@@ -83,44 +117,45 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }
             } else when (view) {
                 FinanceView.OVERVIEW -> {
+                    item { FinanceMonthCard(state) { vm.selectPeriod(FinancePeriod.MONTH); viewName = FinanceView.TRANSACTIONS.name } }
+                    item { FinanceBalanceSummary(state) }
                     item {
-                        Text("这个月", style = LifeText.title)
-                        Row {
-                            MoneySummary("个人支出", state.month, true, Modifier.weight(1f))
-                            MoneySummary("个人收入", state.month, false, Modifier.weight(1f))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("钱的位置", Modifier.weight(1f), style = LifeText.title)
+                            TextButton({ viewName = FinanceView.ACCOUNTS.name }) { Text("全部账户") }
                         }
+                        FinanceAccountStrip(state) { detailAccount = it }
+                        if (state.snapshot.accounts.none { it.archivedAt == null }) OutlinedButton({ accountId = null; accountEditing = true }) { Text("建立第一个账户") }
                     }
-                    item { secondaryActions() }
-                    item {
-                        Text("账户摘要", style = LifeText.title)
-                        state.snapshot.accounts.filter { it.archivedAt == null }.forEach { account ->
-                            TextButton({ detailAccount = account.id }) {
-                                Text(account.name + "  " + FinanceMoney.display(state.balances[account.id] ?: 0, account.currencyCode))
-                            }
-                        }
-                        if (state.snapshot.accounts.isEmpty()) TextButton({ accountId = null; accountEditing = true }) { Text("建立第一个账户") }
-                    }
+                    item { FinancePanel { secondaryActions() } }
                     item { Text("最近流水", style = LifeText.title) }
+                    if (allRows.isEmpty()) item { Text("记下第一笔，让日常收支慢慢清晰。", style = LifeText.body, color = colors.muted) }
                     items(allRows.take(6), key = { it.id }) { LedgerLine(it) { entryId = it.id; editing = true } }
                 }
                 FinanceView.ACCOUNTS -> {
-                    item { TextButton({ accountId = null; accountEditing = true }) { Text("建立账户") } }
+                    item { FinanceBalanceSummary(state) }
+                    item { FilledTonalButton({ accountId = null; accountEditing = true }) { Text("＋ 建立账户") } }
                     listOf(false, true).forEach { archived ->
                         item { Text(if (archived) "已归档" else "正在使用", style = LifeText.title) }
                         items(state.snapshot.accounts.filter { (it.archivedAt != null) == archived }, key = { it.id }) { account ->
-                            OutlinedButton({ detailAccount = account.id }, Modifier.fillMaxWidth()) {
-                                Column(Modifier.fillMaxWidth()) {
-                                    Text(account.name + " · " + account.kind.label)
-                                    Text(FinanceMoney.display(state.balances[account.id] ?: 0, account.currencyCode))
-                                }
-                            }
+                            FinanceAccountCard(account, state.balances[account.id] ?: 0,
+                                state.snapshot.accounts.indexOf(account), Modifier.fillMaxWidth()) { detailAccount = account.id }
                         }
                     }
                 }
                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
                     item {
+                        val month = state.filter.range.startInclusive?.let { YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) } ?: YearMonth.now()
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton({ val m = month.minusMonths(1); vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) }) { Icon(Icons.Outlined.ChevronLeft, "上个月") }
+                            TextButton({ dates = true }, Modifier.weight(1f)) {
+                                Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp))
+                                Text(state.filter.customLabel.ifBlank { state.filter.period.label + " · 选择日期" }, Modifier.padding(start = 8.dp), style = LifeText.body)
+                            }
+                            IconButton({ val m = month.plusMonths(1); vm.customRange(m.atDay(1).toString(), m.atEndOfMonth().toString()) }) { Icon(Icons.Outlined.ChevronRight, "下个月") }
+                        }
                         OutlinedTextField(state.filter.query, vm::search, Modifier.fillMaxWidth(),
-                            label = { Text("事由、分类、标签或账户") }, singleLine = true)
+                            label = { Text("搜索事由、分类、标签或账户") }, singleLine = true, shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), leadingIcon = { Icon(Icons.Outlined.Search, null) })
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(FinancePeriod.entries) { period ->
                                 FilterChip(state.filter.period == period, {
@@ -131,24 +166,26 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         if (state.filter.customLabel.isNotEmpty()) Text(state.filter.customLabel, style = LifeText.caption)
                         FinanceFilters(state, vm)
                     }
-                    if (view == FinanceView.INSIGHTS) item {
-                        Text("个人收支", style = LifeText.title)
-                        MoneySummary("支出", state.selected, true)
-                        MoneySummary("收入", state.selected, false)
-                        DimensionSummary("分类", state.categories)
-                        DimensionSummary("主分类", FinanceProjection.parentCategoryTotals(state.personalRows, state.snapshot.categories))
-                        DimensionSummary("标签", state.tags)
-                        DimensionSummary("账户", FinanceProjection.accountTotals(state.personalRows))
-                        Text("账户真实流入 / 流出", style = LifeText.title)
-                        MoneySummary("真实流出", FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId), true)
-                        MoneySummary("真实流入", FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId), false)
-                        Text("转账仅改变账户余额，不计入个人收支。", style = LifeText.caption)
+                    if (view == FinanceView.INSIGHTS) {
+                        item { FinancePanel { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MoneySummary("个人支出", state.selected, true, Modifier.weight(1f))
+                            MoneySummary("个人收入", state.selected, false, Modifier.weight(1f))
+                        } } }
+                        item { FinanceTrend(state.personalRows) { start, end -> vm.customRange(start, end); viewName = FinanceView.TRANSACTIONS.name } }
+                        item { FinanceCategoryChart(state.categories) { label, currency -> chartLabel = label; chartCurrency = currency } }
+                        item { FinancePanel {
+                            Text("账户真实流量", style = LifeText.title)
+                            val real = FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId)
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                MoneySummary("流出", real, true, Modifier.weight(1f)); MoneySummary("流入", real, false, Modifier.weight(1f))
+                            }
+                            Text("转账只改变账户余额；真实流量与个人收支分别展示。", style = LifeText.caption)
+                        } }
                     } else {
                         item { Text("流水 · ${state.ledger.size} 笔", style = LifeText.title) }
-                        state.ledger.groupBy { Instant.ofEpochMilli(it.entry.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
-                            .forEach { (date, rows) ->
+                        groupedDays.forEach { (date, rows) ->
                                 item(key = "date-$date") { Text(date.toString(), style = LifeText.caption, color = colors.muted) }
-                                items(rows, key = { it.id }) { LedgerLine(it) { entryId = it.id; editing = true } }
+                                items(rows, key = { it.id }) { LedgerLine(it, roles[it.entry.id]) { entryId = it.id; editing = true } }
                             }
                         if (state.ledger.isEmpty()) item { Text("这个范围还没有流水。", style = LifeText.body) }
                     }
@@ -158,27 +195,31 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     }
     if (editing && !state.loading) FinanceEntrySheet(state, allRows.find { it.id == entryId }, vm) { editing = false }
     if (accountEditing) FinanceAccountSheet(state, state.snapshot.accounts.find { it.id == accountId }, vm) { accountEditing = false }
-    if (dates) FinanceDateSheet(state.error, vm::customRange) { dates = false }
+    if (dates) FinanceDateSheet(state.error, vm::customRange, { dates = false },
+        initial = state.filter.range.startInclusive?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now(),
+        initialEnd = state.filter.range.endExclusive?.let { Instant.ofEpochMilli(it - 1).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now(),
+        transactionDays = remember(allRows) { allRows.map { it.localDay() }.toSet() })
 }
 
 @Composable
 private fun FinanceFilters(state: FinanceUiState, vm: FinanceViewModel) {
-    ChoiceFilter("账户", state.filter.accountId, state.snapshot.accounts.map { it.id to it.name }, vm::filterAccount)
-    ChoiceFilter("分类", state.filter.categoryId, state.snapshot.categories.map { it.id to it.name }, vm::filterCategory)
-    ChoiceFilter("标签", state.filter.tagId, state.snapshot.tags.map { it.id to it.name }, vm::filterTag)
-    ChoiceFilter("性质", state.filter.nature?.name, FinanceNature.entries.map { it.name to it.label }) { vm.filterNature(it?.let(FinanceNature::valueOf)) }
+    val categoryChoices = remember(state.snapshot.categories) { state.snapshot.categories.map {
+        it.id to (FinanceProjection.categoryPath(state.snapshot.categories, it.id) ?: it.name)
+    } }
+    val common = remember(state.snapshot.entries) { state.snapshot.entries.filter { it.voidedAt == null }
+        .mapNotNull { it.categoryId }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(6).map { it.key } }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        item { ChoiceFilter("账户", state.filter.accountId, state.snapshot.accounts.map { it.id to it.name }, onSelect = vm::filterAccount) }
+        item { ChoiceFilter("分类", state.filter.categoryId, categoryChoices, common, vm::filterCategory) }
+        item { ChoiceFilter("标签", state.filter.tagId, state.snapshot.tags.map { it.id to it.name }, onSelect = vm::filterTag) }
+        item { ChoiceFilter("性质", state.filter.nature?.name, FinanceNature.entries.map { it.name to it.label }) { vm.filterNature(it?.let(FinanceNature::valueOf)) } }
+    }
 }
 
 @Composable
-internal fun ChoiceFilter(label: String, selected: String?, choices: List<Pair<String, String>>, onSelect: (String?) -> Unit) {
+internal fun ChoiceFilter(label: String, selected: String?, choices: List<Pair<String, String>>,
+    common: List<String> = emptyList(), onSelect: (String?) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton({ expanded = true }) { Text("$label · " + (choices.find { it.first == selected }?.second ?: "全部")) }
-        DropdownMenu(expanded, { expanded = false }) {
-            DropdownMenuItem(text = { Text("全部") }, onClick = { onSelect(null); expanded = false })
-            choices.forEach { (id, name) ->
-                DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(id); expanded = false })
-            }
-        }
-    }
+    InputChip(selected != null, { expanded = true }, label = { Text(label + " · " + (choices.find { it.first == selected }?.second ?: "全部"), maxLines = 1) })
+    if (expanded) FinanceChoiceSheet(label, selected, choices, { onSelect(it) }, { expanded = false }, { onSelect(null) }, common)
 }

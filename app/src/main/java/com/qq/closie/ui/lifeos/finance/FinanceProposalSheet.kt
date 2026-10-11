@@ -54,7 +54,18 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
     val accounts = state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }
     fun later() = vm.dismiss(proposal, FinanceProposalStatus.SNOOZED, close)
     FinanceReceipt(if (proposal.source == FinanceSource.WECHAT) "微信 · 发现一笔" else "支付宝 · 发现一笔",
-        state.busy, state.error, ::later) {
+        state.busy, state.error, ::later, actions = {
+        Row {
+            TextButton(onClick = { editing = !editing }, enabled = !state.busy) { Text(if (editing) "收起修改" else "修改") }
+            Button(onClick = {
+                if (account.isBlank() || amount.isBlank()) editing = true
+                else vm.confirm(proposal, FinanceEntryDraft(FinanceEditorKind.valueOf(kind), amount, account, target,
+                    date, description, category, tags, proposal.occurredAt, subcategory, relation), close)
+            }, enabled = !state.busy) { Text("确认") }
+            TextButton(onClick = ::later, enabled = !state.busy) { Text("稍后") }
+            TextButton(onClick = { vm.dismiss(proposal, FinanceProposalStatus.REJECTED, close) }, enabled = !state.busy) { Text("忽略") }
+        }
+    }) {
         Text(if (amount.isBlank()) "金额待确认（通知中有多个金额）" else "¥$amount", style = MaterialTheme.typography.headlineMedium)
         Text(description)
         Text(listOf(category, subcategory).filter(String::isNotBlank).joinToString(" / ").ifBlank { "尚未分类" })
@@ -78,15 +89,6 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             Text("通知原文", style = MaterialTheme.typography.labelMedium)
             Text(proposal.evidenceText, style = MaterialTheme.typography.bodySmall)
         }
-        Row {
-            TextButton(onClick = { editing = !editing }, enabled = !state.busy) { Text(if (editing) "收起修改" else "修改") }
-            Button(onClick = {
-                if (account.isBlank() || amount.isBlank()) editing = true
-                else vm.confirm(proposal, FinanceEntryDraft(FinanceEditorKind.valueOf(kind), amount, account, target,
-                    date, description, category, tags, proposal.occurredAt, subcategory, relation), close)
-            }, enabled = !state.busy) { Text("确认") }
-            TextButton(onClick = ::later, enabled = !state.busy) { Text("稍后") }
-            TextButton(onClick = { vm.dismiss(proposal, FinanceProposalStatus.REJECTED, close) }, enabled = !state.busy) { Text("忽略") }
-        }
+
     }
 }
