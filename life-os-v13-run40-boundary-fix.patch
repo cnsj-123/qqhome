@@ -1,0 +1,30 @@
+From 72ec32e172e82002f0c732a51337aa01eccc9e52 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Sun, 11 Oct 2026 12:50:03 +0800
+Subject: [PATCH] test(finance): align proposal boundary guard with discovery
+ diagnostics
+
+---
+ app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+index 14d2561..b914c07 100644
+--- a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
++++ b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+@@ -45,9 +45,10 @@ class ArchitectureBoundaryTest {
+     }
+     @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
+         val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
+-        assertTrue(listener.contains("financeAutomationRepository.discover(proposal)"))
++        assertTrue(Regex("""\bfinanceAutomationRepository\.discover(?:WithResult)?\s*\(\s*proposal\s*\)""").containsMatchIn(listener))
+         for (forbidden in listOf("financeDao(", "financeIntakeDao(", "saveEntry(", "saveTransfer(",
+-            "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY")) {
++            "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY",
++            "financeAutomationRepository.confirm(")) {
+             assertFalse(forbidden, listener.contains(forbidden))
+         }
+     }
+-- 
+2.53.0.windows.3
+
