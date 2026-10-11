@@ -28,6 +28,14 @@ internal fun FinancePanel(modifier: Modifier = Modifier, color: Color = LocalLif
 }
 
 @Composable
+internal fun FinanceSection(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        content()
+        HorizontalDivider(Modifier.padding(top = 10.dp), color = LocalLifeOsColors.current.line)
+    }
+}
+
+@Composable
 internal fun FinanceMonthCard(state: FinanceUiState, onMonth: () -> Unit) {
     val colors = LocalLifeOsColors.current
     FinancePanel(color = colors.paperTertiary) {
@@ -49,7 +57,7 @@ internal fun FinanceBalanceSummary(state: FinanceUiState) {
     val sums = remember(accounts, state.balances) { accounts.groupBy { it.currencyCode }.mapValues { (_, group) ->
         group.fold(BigInteger.ZERO) { sum, a -> sum + BigInteger.valueOf(state.balances[a.id] ?: 0) }
     } }
-    FinancePanel(color = LocalLifeOsColors.current.warmSurface) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("账户余额合计", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
         sums.forEach { (currency, total) ->
             Text((if (currency == "CNY") "¥" else "$currency ") + BigDecimal(total, FinanceMoney.fractionDigits(currency)).toPlainString(), style = LifeText.number)
@@ -70,10 +78,11 @@ internal fun FinanceAccountStrip(state: FinanceUiState, open: (String) -> Unit) 
 
 @Composable
 internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, index: Int,
-    modifier: Modifier = Modifier, onClick: () -> Unit) {
+    modifier: Modifier = Modifier, flat: Boolean = false, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
-    Surface(onClick = onClick, modifier = modifier, color = colors.card, shape = RoundedCornerShape(18.dp)) {
+    Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
+        shape = if (flat) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(18.dp)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(3.dp).height(48.dp).background(swatch, RoundedCornerShape(2.dp)))
             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

@@ -28,7 +28,12 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
     nav: NavHostController, home: HomeUiState, onHomeDateSelected: (LocalDate) -> Unit,
     appearanceViewModel: AppearanceViewModel, onDrawer: () -> Unit,
     onCapture: () -> Unit, onFileToLibrary: (String) -> Unit) {
-    NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH) {
+    // The function page already animates the switch; avoid a second default NavHost crossfade.
+    NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
+        enterTransition = { androidx.compose.animation.EnterTransition.None },
+        exitTransition = { androidx.compose.animation.ExitTransition.None },
+        popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+        popExitTransition = { androidx.compose.animation.ExitTransition.None }) {
         composable(LifeOsRoute.HOME) {
             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
@@ -50,9 +55,13 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         composable(LifeOsRoute.MAP) { LifeMapScreen { nav.returnToLifeHome() } }
         composable(LifeOsRoute.COMPANION) { CompanionShellScreen { nav.returnToLifeHome() } }
         composable(LifeOsRoute.APPEARANCE) { AppearanceSettingsRoute(appearanceViewModel) { nav.returnWithinLifeModule() } }
+        composable(LifeOsRoute.FINANCE_AUTOMATION) {
+            com.qq.closie.ui.lifeos.finance.FinanceAutomationScreen(container.financeAutomationRepository, container.financeRepository) { nav.returnWithinLifeModule() }
+        }
         composable(LifeOsRoute.SETTINGS) {
             LifeSettingsScreen(onBack = { nav.returnToLifeHome() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
-                onBackup = { nav.navigateLifeTopLevel(LifeOsRoute.BACKUP) })
+                onBackup = { nav.navigateLifeTopLevel(LifeOsRoute.BACKUP) },
+                onFinanceAutomation = { nav.navigate(LifeOsRoute.FINANCE_AUTOMATION) })
         }
         composable(LifeOsRoute.MODULE, arguments = listOf(navArgument("moduleId") { type = NavType.StringType })) { entry ->
             ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.returnToLifeHome() }

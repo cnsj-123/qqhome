@@ -57,8 +57,8 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
     }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("返回账目") }
-        Text("自动发现", style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = onBack) { Text("返回") }
+        Text("账目 · 自动发现", style = MaterialTheme.typography.headlineSmall)
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {

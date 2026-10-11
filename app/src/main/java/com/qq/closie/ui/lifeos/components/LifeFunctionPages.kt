@@ -15,6 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -36,18 +39,33 @@ fun LifeFunctionPages(
     val currentOpen by rememberUpdatedState(open)
     val changeOpen by rememberUpdatedState(onOpenChange)
     val edge = with(LocalDensity.current) { 24.dp.toPx() }
+    val context = LocalContext.current
+    val blurRadius = with(LocalDensity.current) { 10.dp.toPx() }
+    val blur = remember(context, blurRadius, reducedMotion) {
+        val lowRam = (context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice
+        if (android.os.Build.VERSION.SDK_INT >= 31 && !lowRam && !reducedMotion)
+            android.graphics.RenderEffect.createBlurEffect(blurRadius, blurRadius, android.graphics.Shader.TileMode.CLAMP).asComposeRenderEffect()
+        else null
+    }
+    // Static atmosphere outside the scrolling grid; no per-item blur or gradient allocation.
+    val atmosphere = remember(colors) { Brush.linearGradient(listOf(
+        lerp(colors.paper, colors.secondary, .26f), lerp(colors.paper, colors.soft, .32f),
+        colors.paper, lerp(colors.paper, colors.warm, .30f), lerp(colors.paper, colors.accent, .09f))) }
+    val glass = remember(colors) { Brush.linearGradient(listOf(
+        lerp(colors.paper, colors.secondary, .22f).copy(alpha = .68f),
+        lerp(colors.paper, colors.soft, .28f).copy(alpha = .72f),
+        lerp(colors.paper, colors.warm, .26f).copy(alpha = .70f))) }
     LaunchedEffect(open, dragging, reducedMotion) {
         if (!dragging) {
             if (reducedMotion) progress = if (open) 1f else 0f
             else animate(progress, if (open) 1f else 0f, animationSpec = tween(230)) { value, _ -> progress = value }
         }
     }
-    BackHandler(open || revealed) { onOpenChange(false) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val revealWidth = maxWidth * .84f
         val travel = with(LocalDensity.current) { revealWidth.toPx() }
         val mode = if (reducedMotion) FunctionPageStyle.FLAT else style
-        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(colors.paperSecondary, colors.paperTertiary, colors.warmSurface)))
+        Box(Modifier.fillMaxSize().background(atmosphere)
             .pointerInput(enabled, travel, edge) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
@@ -116,7 +134,9 @@ fun LifeFunctionPages(
                 cameraDistance = 18.dp.toPx()
                 shape = RoundedCornerShape((22f * progress).dp)
                 clip = progress > 0f
-                shadowElevation = if (mode != FunctionPageStyle.FLAT) 24.dp.toPx() * progress else 0f
+                shadowElevation = if (mode == FunctionPageStyle.LAYERED || mode == FunctionPageStyle.DECK) 10.dp.toPx() * progress else 0f
+                renderEffect = if (mode == FunctionPageStyle.GLASS && progress > 0f) blur else null
+                alpha = if (mode == FunctionPageStyle.GLASS) 1f - progress * (if (blur == null) .86f else .48f) else 1f
             }.background(colors.paper)) {
                 Box(if (open) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) { content() }
                 if (open || dragging) Box(Modifier.fillMaxSize().clickable { changeOpen(false) })
@@ -127,11 +147,16 @@ fun LifeFunctionPages(
                     translationX = -(1f - progress) * travel
                     shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
                     clip = true
-                    shadowElevation = 18.dp.toPx()
-                }.background(Brush.linearGradient(listOf(colors.card.copy(alpha = .78f), colors.paperSecondary.copy(alpha = .86f), colors.warmSurface.copy(alpha = .92f))))) {
+                    shadowElevation = 6.dp.toPx()
+                }.background(glass)) {
                     functionPage()
                 }
             }
         }
+    }
+    // Register after nested module handlers: back closes this surface before navigating.
+    val policy = LocalFunctionPagePolicy.current
+    BackHandler(open || revealed) {
+        policy?.cancelReorder?.invoke() ?: onOpenChange(false)
     }
 }

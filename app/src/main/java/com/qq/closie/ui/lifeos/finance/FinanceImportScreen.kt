@@ -34,7 +34,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
     val completed = state.stage == ImportStage.COMPLETED
     val step = when { preview == null -> 0; completed -> 3; state.stage == ImportStage.ACCOUNTS -> 1; !summary -> 2; else -> 3 }
     val groups = remember(preview?.rows) { FinanceImportGroup.entries.associateWith { group -> preview?.rows.orEmpty().filter { group in FinanceImportReview.groups(it) } } }
-    fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv")) }
+    fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv", "application/octet-stream", "application/vnd.ms-excel")) }
     BackHandler(enabled = !state.busy) { if (summary && !completed) summary = false else onBack() }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -57,6 +57,8 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                 item { FinancePanel {
                     Text("把过去的账本接过来", style = MaterialTheme.typography.headlineSmall)
                     Text("选择 XLSX 或 CSV，在本机检查。确认前不会写入账目。", style = MaterialTheme.typography.bodyMedium)
+                    Text("无需先建立账户；预览后可把旧账户关联到已有账户，或在导入中建立。", style = MaterialTheme.typography.bodySmall)
+                    TextButton({ picker.launch(arrayOf("*/*")) }, enabled = !state.busy) { Text("找不到文件？浏览所有文件") }
                     Button(::selectFile, enabled = !state.busy) { Text("选择 XLSX / CSV") }
                 } }
                 if (state.history.isNotEmpty()) item { Text("导入记录", style = MaterialTheme.typography.titleMedium) }

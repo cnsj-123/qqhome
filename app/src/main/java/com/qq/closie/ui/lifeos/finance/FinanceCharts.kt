@@ -41,7 +41,7 @@ internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String
             }.toList()
         }
     }
-    FinancePanel {
+    FinanceSection {
         Text("收支的节奏", style = LifeText.title)
         Text("支出 / 收入 · 最近最多 12 个月 · 点按月份查看", style = LifeText.caption, color = colors.muted)
         if (series.isEmpty()) Text("有了记录，这里会呈现你的收支变化。", style = LifeText.body)
@@ -82,7 +82,7 @@ internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, onCategory:
     val colors = LocalLifeOsColors.current
     val byCurrency = remember(rows) { rows.groupBy { it.currencyCode } }
     var allCurrency by remember { mutableStateOf<String?>(null) }
-    FinancePanel {
+    FinanceSection {
         Text("钱花在哪里", style = LifeText.title)
         if (rows.isEmpty()) Text("这个范围还没有分类收支。", style = LifeText.body)
         byCurrency.forEach { (currency, values) ->

@@ -17,10 +17,14 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
     var kindName by rememberSaveable(account?.id) { mutableStateOf(account?.kind?.name ?: FinanceAccountKind.BANK_CARD.name) }
     var balance by rememberSaveable(account?.id) { mutableStateOf(account?.let { FinanceMoney.input(it.openingBalanceMinor, it.currencyCode) } ?: "0.00") }
     var kindsOpen by remember { mutableStateOf(false) }
+    var currenciesOpen by remember { mutableStateOf(false) }
+    var currency by rememberSaveable(account?.id) { mutableStateOf(account?.currencyCode ?: "CNY") }
+    // Includes voided entries, matching the repository's accountEntryCount guard.
+    val currencyLocked = account != null && state.snapshot.entries.any { it.accountId == account.id }
     var confirmArchive by remember { mutableStateOf(false) }
     val kind = FinanceAccountKind.valueOf(kindName)
     FinanceReceipt(if (account == null) "建立真实账户" else "编辑账户", state.busy, state.error, onClose, actions = {
-        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.busy) "正在保存……" else "保存账户")
         }
     }) {
@@ -32,7 +36,9 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
                     onClick = { kindName = choice.name; kindsOpen = false }) }
             }
         }
-        Text("币种 · ${account?.currencyCode ?: "CNY"}", style = LifeText.caption, color = colors.muted)
+        TextButton({ currenciesOpen = true }, enabled = !state.busy && !currencyLocked) { Text("币种 · $currency${if (currencyLocked) " · 已锁定" else " · 选择"}") }
+        Text(if (currencyLocked) "此账户已有流水，币种不可更改。" else "不同币种分别统计；转账仅支持同币种账户。", style = LifeText.caption, color = colors.muted)
+        Text("$currency 金额最多 ${FinanceMoney.fractionDigits(currency)} 位小数", style = LifeText.caption)
         OutlinedTextField(balance, { balance = it }, Modifier.fillMaxWidth(), label = { Text("期初余额") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy)
         account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.balanceAnchorAt)}", style = LifeText.caption, color = colors.muted) }
@@ -40,6 +46,10 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
         if (account?.archivedAt != null) TextButton({ vm.unarchiveAccount(account.id, onClose) }, enabled = !state.busy) { Text("恢复使用此账户") }
         else if (account != null) TextButton(onClick = { confirmArchive = true }, enabled = !state.busy) { Text("归档账户") }
     }
+    if (currenciesOpen) FinanceChoiceSheet("币种", currency, FinanceCurrencies.choices, {
+        currency = it
+        if (balance.toBigDecimalOrNull()?.signum() == 0) balance = FinanceMoney.input(0, it)
+    }, { currenciesOpen = false }, common = FinanceCurrencies.common)
     if (confirmArchive && account != null) AlertDialog(onDismissRequest = { if (!state.busy) confirmArchive = false },
         title = { Text("归档 ${account.name}？") }, text = { Text("不再用于新增流水，历史记录和余额仍然保留。") },
         confirmButton = { TextButton(onClick = { vm.archiveAccount(account.id) { confirmArchive = false; onClose() } }, enabled = !state.busy) { Text("确认归档") } },

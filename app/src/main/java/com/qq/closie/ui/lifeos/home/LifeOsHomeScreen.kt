@@ -26,25 +26,31 @@ fun LifeOsHomeScreen(
 ) {
     val colors = LocalLifeOsColors.current
     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
+    SuspendFunctionPageSwipe(viewerPhotoId != null)
     Column(modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDrawer) { Icon(Icons.Outlined.Menu, "打开生活的抽屉", tint = colors.inkSecondary) }
-                    Column(Modifier.weight(1f)) {
-                        Text("Life OS", style = LifeText.display, color = colors.ink)
-                        Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
-                    }
-                    IconButton(onClick = onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", tint = colors.inkSecondary) }
-                    IconButton(onClick = onMap) { Icon(Icons.Outlined.Map, "生活地图", tint = colors.inkSecondary) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Life OS", Modifier.weight(1f), style = LifeText.journal, color = colors.ink)
+                    IconButton(onClick = onDrawer) { Icon(Icons.Outlined.Menu, "打开生活的抽屉", Modifier.size(22.dp), tint = colors.accentDeep) }
                 }
-                TextButton(onClick = onCompanion) { Text("伙伴 · 聊一会儿", style = LifeText.caption) }
-                Spacer(Modifier.height(10.dp))
+                Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onCompanion, contentPadding = PaddingValues(end = 12.dp)) {
+                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(16.dp))
+                        Text(" 伙伴 · 聊一会儿", style = LifeText.caption)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(19.dp), tint = colors.inkSecondary) }
+                    IconButton(onClick = onMap) { Icon(Icons.Outlined.Map, "生活地图", Modifier.size(19.dp), tint = colors.inkSecondary) }
+                }
+                HorizontalDivider(color = colors.line)
+                Spacer(Modifier.height(24.dp))
                 Text(state.date.format(DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)), style = LifeText.caption, color = colors.muted)
-                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)), style = LifeText.title, color = colors.ink)
+                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)), style = LifeText.journal, color = colors.ink)
                 Text("把今天轻轻收好", style = LifeText.caption, color = colors.inkSecondary)
             }
             item {

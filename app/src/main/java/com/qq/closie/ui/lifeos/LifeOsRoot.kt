@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import com.qq.closie.ui.lifeos.components.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +66,7 @@ fun LifeOsRoot(
         val home by shellViewModel.home.collectAsStateWithLifecycle()
         var drawerOpen by rememberSaveable { mutableStateOf(false) }
         val reduced = reducedLifeMotion()
+        val gesturePolicy = remember { FunctionPagePolicy() }
         val scope = rememberCoroutineScope()
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
@@ -92,11 +96,12 @@ fun LifeOsRoot(
             }
         }
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
+        CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
             Box(Modifier.safeDrawingPadding().consumeWindowInsets(WindowInsets.safeDrawing)) {
                 com.qq.closie.ui.lifeos.components.LifeFunctionPages(
                     open = drawerOpen,
-                    enabled = entry?.destination?.route == LifeOsRoute.HOME,
+                    enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu,
                     style = appearance.functionPageStyle, reducedMotion = reduced,
                     onOpenChange = { drawerOpen = it },
                     functionPage = {
@@ -113,6 +118,7 @@ fun LifeOsRoot(
                         onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
                 }
             }
+        }
         }
         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },

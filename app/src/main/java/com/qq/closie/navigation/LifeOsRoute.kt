@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets
 
 /** One product graph; Closet's local graph is an embedded professional module. */
 object LifeOsRoute {
+    const val FINANCE_AUTOMATION = "life/settings/finance-automation"
     const val FINANCE = "life/finance"
     const val GRAPH = "life"
     const val HOME = "life/home"

@@ -26,13 +26,14 @@ data class FinanceUiState(
     val categories: List<FinanceDimensionTotal> = emptyList(), val tags: List<FinanceDimensionTotal> = emptyList(),
     val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
     val personalRows: List<FinanceLedgerRow> = emptyList(),
-    val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList()
+    val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList(),
+    val allRows: List<FinanceLedgerRow> = emptyList()
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
     val category: String = "", val tags: String = "", val preservedOccurredAt: Long? = null,
     val subcategory: String = "", val relationship: FinanceRelationshipDraft = FinanceRelationshipDraft())
-data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String)
+data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String, val currencyCode: String? = null)
 
 /** Wall-clock input is explicit and strict; recordedAt remains owned by FinanceRepository. */
 object FinanceTime {
@@ -58,6 +59,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     val state: StateFlow<FinanceUiState> = combine(snapshot, filter, error, busy) { data, selection, message, saving ->
         if (data == null) FinanceUiState(filter = selection, loading = message == null, busy = saving, error = message)
         else {
+            val allRows = FinanceProjection.ledger(data)
             val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
             val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
             val natureEntries = data.v4?.activeLinks.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
@@ -83,7 +85,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 FinanceProjection.totals(personal),
                 FinanceProjection.categoryTotals(personal), FinanceProjection.tagTotals(personal),
                 loading = false, busy = saving, error = message, personalRows = personal,
-                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)))
+                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, allRows), allRows = allRows)
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 
@@ -103,6 +105,15 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     fun filterTag(id: String?) { filter.value = filter.value.copy(tagId = id) }
     fun filterNature(nature: FinanceNature?) { filter.value = filter.value.copy(nature = nature) }
     fun search(query: String) { filter.value = filter.value.copy(query = query) }
+    /** A restored calendar tab must not accidentally show an unbounded ledger after VM recreation. */
+    fun ensureCalendarMonth() {
+        val current = filter.value
+        val month = current.range.startInclusive?.let {
+            java.time.YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))
+        } ?: java.time.YearMonth.now()
+        val range = FinanceDateRange.month(month.atDay(1))
+        if (current.range != range) customRange(month.atDay(1).toString(), month.atEndOfMonth().toString())
+    }
     fun selectPeriod(period: FinancePeriod) {
         if (period == FinancePeriod.CUSTOM) return
         filter.value = filter.value.copy(period = period, customLabel = "", range = when (period) {
@@ -125,7 +136,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     }
 
     fun saveAccount(id: String?, draft: FinanceAccountDraft, onSaved: () -> Unit) = mutate(onSaved) {
-        val currency = snapshot.value?.accounts?.find { it.id == id }?.currencyCode ?: "CNY"
+        val currency = draft.currencyCode ?: snapshot.value?.accounts?.find { it.id == id }?.currencyCode ?: "CNY"
         repository.saveAccount(id, draft.name, draft.kind, currency,
             FinanceMoney.parse(draft.openingBalance.ifBlank { "0" }, currency, allowNegative = true))
     }

@@ -43,6 +43,7 @@ fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportR
             value = snapshot.proposals.count { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
         }
     }
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(importOpen || automationOpen)
     if (importOpen && importRepository != null) FinanceImportScreen(importRepository, state.snapshot.accounts) { importOpen = false }
     else if (automationOpen && automationRepository != null) FinanceAutomationScreen(automationRepository, repository) { automationOpen = false }
     else FinanceModuleScreen(state, vm, onBack) {
@@ -65,8 +66,8 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
 @Composable
 internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
-    Surface(color = colors.card, shape = RoundedCornerShape(16.dp)) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(color = androidx.compose.ui.graphics.Color.Transparent) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(color = if (row.transfer != null) colors.paperSecondary else colors.warmSurface, shape = RoundedCornerShape(11.dp)) {
             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
                 Text(if (row.transfer != null) "⇄" else if (row.entry.direction == FinanceDirection.INFLOW) "↓" else "↑", color = colors.accentDeep)

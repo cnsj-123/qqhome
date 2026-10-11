@@ -114,6 +114,7 @@ fun ClosieNavHost(
     val current by nav.currentBackStackEntryAsState()
     val currentRoute = current?.destination?.route
     val showBottomBar = TopLevel.entries.any { it.route == currentRoute }
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(!showBottomBar)
 
     // At module roots, always offer an explicit return to the single Life OS shell.
     val showReturnAffordance = TopLevel.entries.any { it.route == currentRoute }
