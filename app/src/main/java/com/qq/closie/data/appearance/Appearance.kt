@@ -37,7 +37,8 @@ data class AppearanceSettings(
     val custom: CustomTheme? = null,
     val functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
     val moduleOrder: List<String> = emptyList(),
-    val namedThemes: List<NamedTheme> = emptyList()
+    val namedThemes: List<NamedTheme> = emptyList(),
+    val functionEffects: FunctionPageEffects = FunctionPageEffects()
 ) {
     fun selectedColors(): CustomTheme {
         if (selectedThemeId == CUSTOM_ID && custom != null) return custom.normalized()
@@ -62,4 +63,13 @@ object HexColor {
     fun requireValid(value: String): String = requireNotNull(normalizeOrNull(value)) {
         "颜色请填写六位 HEX，例如 #6F67A8"
     }
+}
+
+/** Bounded effect-layer controls; semantic theme colors always remain opaque. */
+data class FunctionPageEffects(val atmosphere: Int = 50, val opacity: Int = 50, val blur: Int = 50) {
+    fun normalized() = FunctionPageEffects(atmosphere.coerceIn(0, 100), opacity.coerceIn(0, 100), blur.coerceIn(0, 100))
+    val atmosphereScale: Float get() = normalized().atmosphere / 50f
+    val surfaceAlpha: Float get() = normalized().opacity / 100f
+    val blurDp: Float get() = normalized().blur / 5f
+    val diffusion: Float get() = normalized().blur / 100f * .35f
 }

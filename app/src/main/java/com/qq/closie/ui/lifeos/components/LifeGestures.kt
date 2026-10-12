@@ -65,6 +65,7 @@ fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? 
 
 /** Small, testable arbitration rule shared by content swipes; no Android state. */
 object LifeSwipeIntent {
+    const val systemBackEdgeDp = 24
     enum class Direction { LEFT, RIGHT, VERTICAL }
     fun resolve(dx: Float, dy: Float, slop: Float): Direction? = when {
         abs(dy) > slop && abs(dy) >= abs(dx) -> Direction.VERTICAL

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,28 @@ class AppearanceRepository(
 
     suspend fun selectFunctionPageStyle(style: FunctionPageStyle) {
         store.edit { it[AppearanceCodec.functionPageStyle] = style.name }
+    }
+
+    suspend fun saveFunctionEffects(effects: FunctionPageEffects) {
+        val valid = effects.normalized()
+        store.edit {
+            it[AppearanceCodec.atmosphere] = valid.atmosphere
+            it[AppearanceCodec.opacity] = valid.opacity
+            it[AppearanceCodec.blur] = valid.blur
+        }
+    }
+
+    suspend fun updateNamed(id: String, name: String, colors: CustomTheme) {
+        val valid = colors.normalized()
+        require(name.trim().length in 1..40)
+        store.edit { values ->
+            val existing = AppearanceCodec.decode(values).namedThemes
+            require(id.startsWith("palette-") && existing.any { it.id == id })
+            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(existing.map {
+                if (it.id == id) it.copy(name = name.trim(), colors = valid) else it
+            })
+            values[AppearanceCodec.selected] = id
+        }
     }
 
     suspend fun saveModuleOrder(ids: List<String>) {
@@ -99,6 +122,9 @@ class AppearanceRepository(
 }
 
 internal object AppearanceCodec {
+    val atmosphere = intPreferencesKey("functionAtmosphere")
+    val opacity = intPreferencesKey("functionOpacity")
+    val blur = intPreferencesKey("functionBlur")
     val collection = stringPreferencesKey("namedThemesV1")
     val moduleOrder = stringPreferencesKey("moduleOrder")
     val customSoft = stringPreferencesKey("customSoft")
@@ -127,7 +153,9 @@ internal object AppearanceCodec {
         }
         return AppearanceSettings(id, custom, FunctionPageStyle.entries.firstOrNull {
             it.name == values[functionPageStyle]
-        } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct(), themes)
+        } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct(), themes,
+            FunctionPageEffects(values[atmosphere] ?: 50,
+                values[opacity] ?: 50, values[blur] ?: 50).normalized())
     }
 
     // Compatibility entries are derived from old fields, never records in namedThemesV1.

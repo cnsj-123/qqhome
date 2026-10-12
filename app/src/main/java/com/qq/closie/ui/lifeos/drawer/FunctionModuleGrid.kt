@@ -162,7 +162,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                                     } else false
                                 }
                             }
-                        }.clickable(enabled = lifted == null && !saving) { onOpenModule(module) }, index < 6)
+                        }.clickable(enabled = lifted == null && !saving) { onOpenModule(module) })
                 }
             }
             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
@@ -189,11 +189,11 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
 }
 
 @Composable
-private fun ModuleRow(module: LifeModule, modifier: Modifier, quick: Boolean) {
+private fun ModuleRow(module: LifeModule, modifier: Modifier) {
     val colors = LocalLifeOsColors.current
     Row(modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("drawer-${module.id}").padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(module.icon(), null, Modifier.size(20.dp), colors.accentDeep)
-        Text(module.label, Modifier.padding(start = 10.dp), style = if (quick) LifeText.body else LifeText.caption,
+        Text(module.label, Modifier.padding(start = 10.dp), style = LifeText.caption,
             color = colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }

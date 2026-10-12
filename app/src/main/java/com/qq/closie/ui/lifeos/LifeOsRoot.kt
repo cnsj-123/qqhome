@@ -103,7 +103,7 @@ fun LifeOsRoot(
                 com.qq.closie.ui.lifeos.components.LifeFunctionPages(
                     open = drawerOpen,
                     enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu,
-                    style = appearance.functionPageStyle, reducedMotion = reduced,
+                    effects = appearance.functionEffects, style = appearance.functionPageStyle, reducedMotion = reduced,
                     onOpenChange = { drawerOpen = it },
                     functionPage = {
                         LifeOsDrawer(onOpenModule = { module ->

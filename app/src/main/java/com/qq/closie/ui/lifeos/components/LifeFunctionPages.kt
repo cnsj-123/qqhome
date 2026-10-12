@@ -6,17 +6,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -29,6 +24,8 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 @Composable
 fun LifeFunctionPages(
     open: Boolean, enabled: Boolean, style: FunctionPageStyle, reducedMotion: Boolean,
+    horizontalPages: Boolean = false,
+    effects: com.qq.closie.data.appearance.FunctionPageEffects = com.qq.closie.data.appearance.FunctionPageEffects(),
     onOpenChange: (Boolean) -> Unit, functionPage: @Composable () -> Unit, content: @Composable () -> Unit
 ) {
     val colors = LocalLifeOsColors.current
@@ -37,23 +34,9 @@ fun LifeFunctionPages(
     val revealed by remember { derivedStateOf { progress > 0f } }
     val currentOpen by rememberUpdatedState(open)
     val changeOpen by rememberUpdatedState(onOpenChange)
-    val edge = with(LocalDensity.current) { 24.dp.toPx() }
-    val context = LocalContext.current
-    val blurRadius = with(LocalDensity.current) { 10.dp.toPx() }
-    val blur = remember(context, blurRadius, reducedMotion) {
-        val lowRam = (context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice
-        if (android.os.Build.VERSION.SDK_INT >= 31 && !lowRam && !reducedMotion)
-            android.graphics.RenderEffect.createBlurEffect(blurRadius, blurRadius, android.graphics.Shader.TileMode.CLAMP).asComposeRenderEffect()
-        else null
-    }
-    // Static atmosphere outside the scrolling grid; no per-item blur or gradient allocation.
-    val atmosphere = remember(colors) { Brush.linearGradient(listOf(
-        lerp(colors.paper, colors.secondary, .26f), lerp(colors.paper, colors.soft, .32f),
-        colors.paper, lerp(colors.paper, colors.warm, .30f), lerp(colors.paper, colors.accent, .09f))) }
-    val glass = remember(colors) { Brush.linearGradient(listOf(
-        lerp(colors.paper, colors.secondary, .22f).copy(alpha = .68f),
-        lerp(colors.paper, colors.soft, .28f).copy(alpha = .72f),
-        lerp(colors.paper, colors.warm, .26f).copy(alpha = .70f))) }
+    val corridor = with(LocalDensity.current) { 56.dp.toPx() }
+    val edge = with(LocalDensity.current) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
+    val visuals = rememberFunctionPageVisuals(effects)
     LaunchedEffect(open, dragging, reducedMotion) {
         if (!dragging) {
             if (reducedMotion) progress = if (open) 1f else 0f
@@ -64,24 +47,29 @@ fun LifeFunctionPages(
         val revealWidth = maxWidth * .84f
         val travel = with(LocalDensity.current) { revealWidth.toPx() }
         val mode = if (reducedMotion) FunctionPageStyle.FLAT else style
-        Box(Modifier.fillMaxSize().background(atmosphere)
-            .pointerInput(enabled, travel, edge) {
+        Box(Modifier.fillMaxSize().background(colors.paper)
+            .pointerInput(enabled, travel, edge, horizontalPages) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                     if (down.position.x <= edge || down.position.x >= size.width - edge) return@awaitEachGesture
+                    val inCorridor = down.position.x < corridor
+                    if (!currentOpen && horizontalPages && !inCorridor) return@awaitEachGesture
+                    val pass = if (!currentOpen && horizontalPages && inCorridor)
+                        androidx.compose.ui.input.pointer.PointerEventPass.Initial else androidx.compose.ui.input.pointer.PointerEventPass.Main
                     var owned = false
                     val tracker = VelocityTracker()
                     tracker.addPosition(down.uptimeMillis, down.position)
                     val startedOpen = currentOpen
                     while (!owned) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                        val change = awaitPointerEvent(pass).changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
                         if (!change.pressed || change.isConsumed) return@awaitEachGesture
                         val delta = change.position - down.position
                         tracker.addPosition(change.uptimeMillis, change.position)
                         when (LifeSwipeIntent.resolve(delta.x, delta.y, viewConfiguration.touchSlop)) {
                             LifeSwipeIntent.Direction.VERTICAL -> return@awaitEachGesture
                             LifeSwipeIntent.Direction.LEFT, LifeSwipeIntent.Direction.RIGHT -> {
+                                if (!currentOpen && horizontalPages && !inCorridor) return@awaitEachGesture
                                 if ((!currentOpen && delta.x < 0f) || (currentOpen && delta.x > 0f)) return@awaitEachGesture
                                 dragging = true
                                 progress = (progress + delta.x / travel).coerceIn(0f, 1f)
@@ -92,10 +80,17 @@ fun LifeFunctionPages(
                         }
                     }
                     try {
-                        val released = horizontalDrag(down.id) {
-                            tracker.addPosition(it.uptimeMillis, it.position)
-                            progress = (progress + (it.position.x - it.previousPosition.x) / travel).coerceIn(0f, 1f)
-                            it.consume()
+                        // Keep the ownership pass for the entire drag. Switching from Initial to
+                        // Main here would encounter our own consumed slop event and cancel it.
+                        var released = false
+                        while (true) {
+                            val event = awaitPointerEvent(pass)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
+                            change.consume()
+                            if (!change.pressed) { released = true; break }
                         }
                         val velocity = tracker.calculateVelocity().x
                         val fling = 650.dp.toPx()
@@ -118,7 +113,7 @@ fun LifeFunctionPages(
                 rotationY = if (mode == FunctionPageStyle.DECK) -14f * (1f - progress) else 0f
                 transformOrigin = TransformOrigin(0f, .5f)
                 cameraDistance = 18.dp.toPx()
-            }) { functionPage() }
+            }.background(visuals.surface)) { functionPage() }
             Box(Modifier.fillMaxSize().graphicsLayer {
                 translationX = progress * travel * if (mode == FunctionPageStyle.GLASS) .18f else 1f
                 scaleX = when (mode) {
@@ -134,10 +129,10 @@ fun LifeFunctionPages(
                 shape = RoundedCornerShape((22f * progress).dp)
                 clip = progress > 0f
                 shadowElevation = if (mode == FunctionPageStyle.LAYERED || mode == FunctionPageStyle.DECK) 10.dp.toPx() * progress else 0f
-                renderEffect = if (mode == FunctionPageStyle.GLASS && progress > 0f) blur else null
-                alpha = if (mode == FunctionPageStyle.GLASS) 1f - progress * (if (blur == null) .86f else .48f) else 1f
+                renderEffect = if (progress > 0f) visuals.backdropBlur else null
             }.background(colors.paper)) {
                 Box(if (open) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) { content() }
+                if (revealed) Box(Modifier.fillMaxSize().background(visuals.backdropSoftening.copy(alpha = visuals.backdropSoftening.alpha * progress)))
                 if (open || dragging) Box(Modifier.fillMaxSize().clickable { changeOpen(false) })
             }
             if (revealed && mode == FunctionPageStyle.GLASS) {
@@ -147,7 +142,7 @@ fun LifeFunctionPages(
                     shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
                     clip = true
                     shadowElevation = 6.dp.toPx()
-                }.background(glass)) {
+                }.background(visuals.surface)) {
                     functionPage()
                 }
             }

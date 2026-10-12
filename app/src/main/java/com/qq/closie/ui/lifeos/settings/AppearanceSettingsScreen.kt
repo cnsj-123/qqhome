@@ -7,13 +7,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,6 +38,7 @@ fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit) 
             functionPageStyle = stored?.functionPageStyle ?: FunctionPageStyle.LAYERED,
             onFunctionPageStyle = viewModel::selectFunctionPageStyle,
             namedThemes = stored?.namedThemes.orEmpty(), onNamed = viewModel::previewNamed, onDelete = viewModel::deleteNamed,
+            onEffects = viewModel::previewFunctionEffects, onEffectsFinished = viewModel::saveFunctionEffects,
             onName = viewModel::nameTheme, onDuplicate = viewModel::duplicateTheme,
             onImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
     }
@@ -54,6 +53,7 @@ fun AppearanceSettingsScreen(
     functionPageStyle: FunctionPageStyle = FunctionPageStyle.LAYERED,
     onFunctionPageStyle: (FunctionPageStyle) -> Unit = {},
     namedThemes: List<NamedTheme> = emptyList(), onNamed: (String) -> Unit = {}, onDelete: (String) -> Unit = {},
+    onEffects: (FunctionPageEffects) -> Unit = {}, onEffectsFinished: () -> Unit = {},
     onName: (String) -> Unit = {}, onImage: () -> Unit = {}, onDuplicate: () -> Unit = {}
 ) {
     val colors = LocalLifeOsColors.current
@@ -61,44 +61,39 @@ fun AppearanceSettingsScreen(
         Text("从喜欢的画面开始", style = LifeText.journal)
         OutlinedButton(onImage, enabled = !state.isSaving && !state.extracting) { Text(if (state.extracting) "正在本机取色…" else "从照片或截图取色") }
         Text("只保存配色和名称，不保存原图。取色后可预览、调整，再收进主题集。", style = LifeText.caption, color = colors.muted)
-        if (namedThemes.isNotEmpty()) {
-            Text("我的主题 · ${namedThemes.size}/24", Modifier.padding(top = 16.dp), style = LifeText.title)
-            namedThemes.forEach { theme ->
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    TextButton({ onNamed(theme.id) }, Modifier.weight(1f), enabled = !state.isSaving && !state.extracting) {
-                        ColorSwatch(theme.colors.accent)
-                        Text(" ${theme.name}${if (state.selectedId == theme.id) " · 已选" else ""}")
-                    }
-                    if (theme.id != "legacy-custom") {
-                        TextButton({ onDelete(theme.id) }, enabled = !state.isSaving && !state.extracting) { Text("删除") }
-                    }
-                }
-            }
-        }
         Text("功能页", style = LifeText.title)
         Column {
             FunctionPageStyle.entries.forEach { style ->
-                FilterChip(functionPageStyle == style, { onFunctionPageStyle(style) }, label = { Text(style.label) })
+                FilterChip(functionPageStyle == style, { onFunctionPageStyle(style) }, label = { Text(style.label) },
+                    enabled = !state.isSaving && !state.extracting)
             }
         }
         Text(functionPageStyle.description, style = LifeText.caption, color = colors.muted)
         Text("样式即时保存；系统关闭动画时不使用缩放和视差。", style = LifeText.caption, color = colors.muted)
+        FunctionEffectControls(state.preview.functionEffects, onEffects, onEffectsFinished,
+            enabled = !state.isSaving && !state.extracting)
         Text("给日子换一种颜色", style = LifeText.title)
         Text("四份画里的灵感，还有最初的暮山紫。照片保留原来的颜色。", Modifier.padding(vertical = 12.dp), style = LifeText.body, color = colors.muted)
-        ThemePreset.entries.chunked(2).forEach { row ->
+        val library = ThemePreset.entries.map { NamedTheme(it.id, it.displayName,
+            CustomTheme(it.accent, it.paper, it.secondary, it.soft, it.warm)) } + namedThemes
+        library.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { preset ->
-                    val chosen = state.selectedId == preset.id
-                    Surface(onClick = { onPreset(preset) }, enabled = !state.isSaving && !state.extracting,
-                        modifier = Modifier.weight(1f).semantics { selected = chosen },
+                row.forEach { theme ->
+                    val chosen = state.selectedId == theme.id
+                    Surface(onClick = { ThemePreset.fromId(theme.id)?.let(onPreset) ?: onNamed(theme.id) },
+                        enabled = !state.isSaving && !state.extracting, modifier = Modifier.weight(1f).semantics { selected = chosen },
                         color = colors.card, shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(if (chosen) 2.dp else 1.dp, if (chosen) colors.accent else colors.line)) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(preset.displayName, style = LifeText.body)
-                            Text(if (chosen) "已选" else "试试这份", style = LifeText.caption, color = colors.inkSecondary)
-                            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                ColorSwatch(preset.accent); ColorSwatch(preset.paper); ColorSwatch(preset.secondary); ColorSwatch(preset.soft); ColorSwatch(preset.warm)
+                        Column(Modifier.padding(10.dp)) {
+                            Text(theme.name, style = LifeText.body)
+                            Text(if (chosen) "已选" else "试试这份", style = LifeText.caption)
+                            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                with(theme.colors) { listOf(accent, paper, secondary, soft, warm).forEach {
+                                    ColorSwatch(it, Modifier.weight(1f))
+                                } }
                             }
+                            if (theme.id.startsWith("palette-")) TextButton({ onDelete(theme.id) },
+                                enabled = !state.isSaving && !state.extracting) { Text("删除", style = LifeText.caption) }
                         }
                     }
                 }
@@ -119,16 +114,24 @@ fun AppearanceSettingsScreen(
         }
         OutlinedTextField(state.themeName, onName, Modifier.fillMaxWidth(), label = { Text("主题名称") }, singleLine = true,
             enabled = !state.isSaving && !state.extracting)
-        listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper, ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm).forEach { (field, value) ->
-            OutlinedTextField(value, { onField(field, it) }, Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                label = { Text(field.label) }, leadingIcon = { ColorSwatch(value) }, singleLine = true,
-                enabled = !state.isSaving && !state.extracting, isError = HexColor.normalizeOrNull(value) == null,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
+        var editingColor by remember { mutableStateOf<ThemeField?>(null) }
+        val fields = listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper,
+            ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm)
+        fields.forEach { (field, value) ->
+            TextButton({ editingColor = field }, enabled = !state.isSaving && !state.extracting,
+                modifier = Modifier.fillMaxWidth()) {
+                ColorSwatch(value); Text(field.label, Modifier.weight(1f).padding(start = 12.dp))
+                Text(value, style = LifeText.caption)
+            }
+        }
+        editingColor?.let { field ->
+            LocalColorEditor(field.label, fields.first { it.first == field }.second,
+                onColor = { onField(field, it) }, onDismiss = { editingColor = null })
         }
         Text(state.validationError ?: "文字和按钮会自动调整，以保持可读。", style = LifeText.caption, color = colors.inkSecondary)
         state.message?.let { Text(it, Modifier.padding(top = 10.dp), style = LifeText.body) }
         Button(onClick = onSave, enabled = !state.isSaving && !state.extracting && state.validationError == null && state.themeName.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-            Text(if (state.isSaving) "正在保存…" else if (state.selectedId == AppearanceSettings.CUSTOM_ID) "保存为新主题" else "使用当前主题")
+            Text(if (state.isSaving) "正在保存…" else if (state.editingNamedId != null) "保存主题修改" else if (state.selectedId == AppearanceSettings.CUSTOM_ID) "保存为新主题" else "使用当前主题")
         }
         OutlinedButton(onClick = onCancel, enabled = !state.isSaving && !state.extracting, modifier = Modifier.fillMaxWidth()) { Text("取消试色") }
         TextButton(onClick = onRestore, enabled = !state.isSaving && !state.extracting, modifier = Modifier.fillMaxWidth()) { Text("恢复暮山紫原色") }
