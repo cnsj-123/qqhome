@@ -183,7 +183,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                 translationX = pointer.x - grab.x; translationY = pointer.y - grab.y
                 scaleX = 1.035f; scaleY = 1.035f; shadowElevation = 8.dp.toPx()
                 shape = RoundedCornerShape(10.dp); clip = true
-            }.background(colors.card), true)
+            }.background(colors.card))
         }
     }
 }
