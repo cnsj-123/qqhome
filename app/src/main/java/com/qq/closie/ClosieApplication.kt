@@ -74,7 +74,25 @@ class ClosieApplication : Application() {
     }
 
     /** Life OS layer: Room database + repositories. Opened lazily on first access. */
-    val lifeContainer by lazy { LifeContainer.getInstance(this) }
+    val lifeContainer by lazy {
+        LifeContainer.getInstance(this).also { container ->
+            scheduleFinancePrivacyScrub(container)
+        }
+    }
+
+    private fun scheduleFinancePrivacyScrub(container: LifeContainer) {
+        // Maintenance follows container creation and waits for restore's business gate.
+        startupScope.launch {
+            try {
+                RestoreStartupGate.state.first { it.canAcquireBusinessLease }
+                container.financeAutomationRepository.sanitizeExistingProposals()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                FinanceAutomationSettings(this@ClosieApplication).status("通知隐私清理未完成，请打开账目复核或重试")
+                android.util.Log.w("ClosieApplication", "Finance 通知隐私清理未完成；可在账目中重试")
+            }
+        }
+    }
 
     /** UI preferences only; this owner never opens Room or wardrobe storage. */
     val appearanceRepository by lazy { AppearanceRepository.create(this) }
@@ -136,17 +154,6 @@ class ClosieApplication : Application() {
                 "上次恢复未全部完成（gate=${if (com.qq.closie.data.backup.RestoreStartupGate.isReady) "READY：数据一致，仅剩清理" else "BLOCKED：数据可能不一致"}）",
                 outcome.error
             )
-        }
-        // Wait without blocking startup, and never bypass a pending restore's business gate.
-        startupScope.launch {
-            try {
-                RestoreStartupGate.state.first { it.canAcquireBusinessLease }
-                lifeContainer.financeAutomationRepository.sanitizeExistingProposals()
-            } catch (e: CancellationException) { throw e }
-            catch (_: Exception) {
-                FinanceAutomationSettings(this@ClosieApplication).status("通知隐私清理未完成，请打开账目复核或重试")
-                android.util.Log.w("ClosieApplication", "Finance 通知隐私清理未完成；可在账目中重试")
-            }
         }
     }
 
