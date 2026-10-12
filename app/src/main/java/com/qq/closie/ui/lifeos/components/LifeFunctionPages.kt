@@ -52,12 +52,13 @@ fun LifeFunctionPages(
             .pointerInput(enabled, travel, edge, horizontalPages) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    val financeOpening = !currentOpen && horizontalPages
+                    val pass = if (financeOpening)
+                        androidx.compose.ui.input.pointer.PointerEventPass.Initial else androidx.compose.ui.input.pointer.PointerEventPass.Main
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
                     if (down.position.x <= edge || down.position.x >= size.width - edge) return@awaitEachGesture
                     val inCorridor = down.position.x < corridor
-                    if (!currentOpen && horizontalPages && !inCorridor) return@awaitEachGesture
-                    val pass = if (!currentOpen && horizontalPages && inCorridor)
-                        androidx.compose.ui.input.pointer.PointerEventPass.Initial else androidx.compose.ui.input.pointer.PointerEventPass.Main
+                    if (financeOpening && !inCorridor) return@awaitEachGesture
                     var owned = false
                     val tracker = VelocityTracker()
                     tracker.addPosition(down.uptimeMillis, down.position)
