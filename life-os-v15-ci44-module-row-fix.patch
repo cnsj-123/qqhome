@@ -1,0 +1,25 @@
+From 2a8eaef03b0267e9330dc12dab5b4784d7b9715a Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 12 Oct 2026 20:44:16 +0800
+Subject: [PATCH] fix(android): remove stale ModuleRow quick argument
+
+---
+ .../java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt   | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+index 7651d1f..6daf65c 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+@@ -183,7 +183,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
+                 translationX = pointer.x - grab.x; translationY = pointer.y - grab.y
+                 scaleX = 1.035f; scaleY = 1.035f; shadowElevation = 8.dp.toPx()
+                 shape = RoundedCornerShape(10.dp); clip = true
+-            }.background(colors.card), true)
++            }.background(colors.card))
+         }
+     }
+ }
+-- 
+2.53.0.windows.3
+
