@@ -54,6 +54,13 @@ class FinanceSmokeTest {
     }
     private fun snapshot() = runBlocking { repository.snapshot() }
 
+    @Test fun jumpingFromOverviewToInsightsDoesNotApplyTheIntermediateCalendarRange() {
+        launch()
+        click("分析")
+        compose.waitForIdle()
+        compose.onNodeWithText("全部").assertIsSelected()
+    }
+
     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {
         launch()
         click("建立第一个账户")
@@ -130,7 +137,10 @@ class FinanceSmokeTest {
         }
         launch()
         click("流水")
-        compose.onNodeWithContentDescription("上个月").performClick()
+        val current = YearMonth.now()
+        compose.onNodeWithText("${current.year} 年 ${current.monthValue} 月").performClick()
+        if (month.year != current.year) compose.onNodeWithText("上一年").performClick()
+        compose.onNodeWithText("${month.monthValue} 月").performClick()
         compose.onNodeWithText(monthLabel).assertIsDisplayed()
         fun awaitHistoricalRows() {
             compose.waitUntil(10_000) {

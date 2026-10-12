@@ -32,7 +32,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
     val colors = com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current
     val preview = state.preview
     val completed = state.stage == ImportStage.COMPLETED
-    val step = when { preview == null -> 0; completed -> 3; state.stage == ImportStage.ACCOUNTS -> 1; !summary -> 2; else -> 3 }
+    val step = if (summary || completed) ImportPhase.COMMIT.ordinal else state.diagnostic.phase.ordinal
     val groups = remember(preview?.rows) { FinanceImportGroup.entries.associateWith { group -> preview?.rows.orEmpty().filter { group in FinanceImportReview.groups(it) } } }
     fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv", "application/octet-stream", "application/vnd.ms-excel")) }
     BackHandler(enabled = !state.busy) { if (summary && !completed) summary = false else onBack() }
@@ -43,13 +43,23 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
             TextButton(::selectFile, enabled = !state.busy) { Text("选择文件") }
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("文件", "账户", "检查", if (completed) "完成" else "确认").forEachIndexed { index, label ->
+            listOf("文件", "解析", "账户", "检查", if (completed) "完成" else "确认").forEachIndexed { index, label ->
                 Surface(Modifier.weight(1f), color = if (index == step) colors.paperTertiary else colors.paperSecondary,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)) {
                     Text("${index + 1} $label", Modifier.padding(vertical = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = MaterialTheme.typography.labelMedium)
                 }
             }
+        }
+        if (state.error != null || state.busy) {
+            ImportDiagnosticPanel(state, onRetry = {
+                when (state.diagnostic.phase) {
+                    ImportPhase.FILE_ACCESS, ImportPhase.PARSE -> vm.retryFile(context)
+                    ImportPhase.MAPPING -> vm.prepare()
+                    ImportPhase.REVIEW -> state.preview?.batch?.id?.let(vm::open)
+                    ImportPhase.COMMIT -> { state.preview?.batch?.id?.let(vm::open) }
+                }
+            }, onChoose = ::selectFile, onBrowse = { picker.launch(arrayOf("*/*")) })
         }
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -154,7 +164,6 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                 }
             }
         }
-        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (!summary && !completed) state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (preview != null && preview.batch.status != FinanceImportStatus.UNDONE) {
             if (completed) Button(onBack, enabled = !state.busy, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {

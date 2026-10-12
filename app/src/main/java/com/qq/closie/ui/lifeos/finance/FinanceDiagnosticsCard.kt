@@ -36,18 +36,19 @@ internal fun FinanceDiagnosticsCard(access: Boolean, settings: FinanceDiscoveryS
             }) { Text("重新连接") }
             reconnectError?.let { Text(it, style = LifeText.caption) }
             listOf(FinanceSource.WECHAT to "微信", FinanceSource.ALIPAY to "支付宝").forEach { (source, name) ->
-                val trace = diagnostics.latest[source]
+                val traces = diagnostics.recent[source].orEmpty()
                 HorizontalDivider(color = colors.line)
-                DiagnosticLine("最近$name", trace?.receivedAt?.let {
-                    DateTimeFormatter.ofPattern("HH:mm:ss").format(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))
-                } ?: "本次运行尚未收到")
-                if (trace != null) {
+                Text("$name · 最近 ${traces.size} 条", style = LifeText.body)
+                if (traces.isEmpty()) Text("本次运行尚未收到", style = LifeText.caption)
+                traces.forEach { trace ->
+                    DiagnosticLine(name, DateTimeFormatter.ofPattern("HH:mm:ss").format(Instant.ofEpochMilli(trace.receivedAt).atZone(ZoneId.systemDefault())))
                     Text(trace.result.label, style = LifeText.body, color = colors.ink)
                     trace.amountMinor?.let { Text(FinanceMoney.display(it), style = LifeText.number) }
+                    Text(if (trace.proposalId != null) "已创建待确认记录" else if (trace.result == DiscoveryResult.RECEIVED) "正在处理" else "未创建待确认记录", style = LifeText.caption, color = colors.muted)
                     trace.proposalId?.let { id -> TextButton({ FinanceReviewRequests.open(id) }) { Text("查看待确认") } }
                 }
             }
-            Text("仅保留本次运行中两种来源的最近状态，不保存诊断原文。支付应用未发通知时无法发现。", style = LifeText.caption, color = colors.muted)
+            Text("仅在本次运行保留每种来源最近 ${FinanceDiscoveryDiagnostics.HISTORY_LIMIT} 条诊断，不保留标题、正文或联系人。缺少金额时请手动记账；支付应用未发通知时无法发现。", style = LifeText.caption, color = colors.muted)
             TextButton(FinanceDiscoveryDiagnostics::clear) { Text("清除诊断状态") }
         }
     }

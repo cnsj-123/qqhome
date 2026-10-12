@@ -27,7 +27,9 @@ data class FinanceUiState(
     val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
     val personalRows: List<FinanceLedgerRow> = emptyList(),
     val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList(),
-    val allRows: List<FinanceLedgerRow> = emptyList()
+    val allRows: List<FinanceLedgerRow> = emptyList(),
+    val previous: Map<String, FinanceTotals>? = null,
+    val previousCategories: List<FinanceDimensionTotal> = emptyList()
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
@@ -64,27 +66,35 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
             val natureEntries = data.v4?.activeLinks.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
             val linkedEntries = data.v4?.activeLinks.orEmpty().map { it.entryId }.toSet()
-            val baseRows = FinanceProjection.ledger(data, selection.range, selection.query).filter { row ->
+            fun baseFor(range: FinanceDateRange) = FinanceProjection.ledger(data, range, selection.query).filter { row ->
                 (selection.accountId == null || row.account.id == selection.accountId || row.targetAccount?.id == selection.accountId) &&
                 (selection.nature == null || row.entry.id in natureEntries ||
                     (selection.nature == FinanceNature.PERSONAL && row.transfer == null && row.entry.id !in linkedEntries))
             }
             val categoryIds = selection.categoryId?.let { FinanceCategoryTree(data.categories).descendants(it) }
             fun categoryMatches(row: FinanceLedgerRow) = categoryIds == null || row.entry.categoryId in categoryIds
+            val baseRows = baseFor(selection.range)
             val rows = baseRows.filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) }
             val selectedTag = data.tags.find { it.id == selection.tagId }?.name
             // Apply dimension filters after attribution, so a refund follows its payment category/tag.
             val personal = FinancePersonalProjection.rows(data, baseRows).filter {
                 categoryMatches(it) && (selection.tagId == null || (selectedTag != null && selectedTag in it.tags))
             }
+            val previousRows = previousFinanceRange(selection.range)?.let { range ->
+                FinancePersonalProjection.rows(data, baseFor(range)).filter {
+                    categoryMatches(it) && (selection.tagId == null || (selectedTag != null && selectedTag in it.tags))
+                }
+            }
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.month()))),
                 FinanceProjection.totals(FinancePersonalProjection.rows(data, FinanceProjection.ledger(data, FinanceDateRange.year()))),
                 FinanceProjection.totals(personal),
-                FinanceProjection.categoryTotals(personal), FinanceProjection.tagTotals(personal),
+                FinanceProjection.parentCategoryTotals(personal, data.categories), FinanceProjection.tagTotals(personal),
                 loading = false, busy = saving, error = message, personalRows = personal,
-                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, allRows), allRows = allRows)
+                unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, allRows), allRows = allRows,
+                previous = previousRows?.let(FinanceProjection::totals),
+                previousCategories = previousRows?.let { FinanceProjection.parentCategoryTotals(it, data.categories) }.orEmpty())
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 

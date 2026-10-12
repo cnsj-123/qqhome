@@ -30,6 +30,8 @@ private data class TrendBucket(val month: YearMonth, val expense: Long, val inco
 @Composable
 internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String) -> Unit) {
     val colors = LocalLifeOsColors.current
+    var selectedMonth by remember { mutableStateOf<YearMonth?>(null) }
+    var selectedCurrency by remember { mutableStateOf<String?>(null) }
     val series = remember(rows) {
         rows.groupBy { it.currencyCode }.mapValues { (currency, values) ->
             val grouped = values.groupBy { YearMonth.from(it.localDay()) }
@@ -43,7 +45,7 @@ internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String
     }
     FinanceSection {
         Text("收支的节奏", style = LifeText.title)
-        Text("支出 / 收入 · 最近最多 12 个月 · 点按月份查看", style = LifeText.caption, color = colors.muted)
+        Text("支出 / 收入 · 最近最多 12 个月 · 点按柱形看详情", style = LifeText.caption, color = colors.muted)
         if (series.isEmpty()) Text("有了记录，这里会呈现你的收支变化。", style = LifeText.body)
         series.forEach { (currency, buckets) ->
             Text("$currency · ${buckets.first().month} — ${buckets.last().month}", style = LifeText.caption)
@@ -53,7 +55,8 @@ internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String
                 buckets.forEach { bucket ->
                     Column(Modifier.weight(1f).fillMaxHeight().semantics {
                         contentDescription = "${bucket.month}，支出 ${FinanceMoney.display(bucket.expense, currency)}，收入 ${FinanceMoney.display(bucket.income, currency)}"
-                    }.clickable { onRange(bucket.month.atDay(1).toString(), bucket.month.atEndOfMonth().toString()) },
+                    }.background(if (selectedMonth == bucket.month && selectedCurrency == currency) colors.paperTertiary else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(5.dp))
+                        .clickable { selectedMonth = bucket.month; selectedCurrency = currency },
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Canvas(Modifier.fillMaxWidth().weight(1f)) {
                             val baseline = size.height * if (hasNegative) .5f else .95f
@@ -68,6 +71,17 @@ internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String
                     }
                 }
             }
+            val selected = buckets.find { it.month == selectedMonth && selectedCurrency == currency }
+            if (selected != null) {
+                Row(Modifier.fillMaxWidth().background(colors.paperSecondary).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(selected.month.toString(), style = LifeText.caption)
+                        Text("支出 " + FinanceMoney.display(selected.expense, currency), style = LifeText.body)
+                        Text("收入 " + FinanceMoney.display(selected.income, currency), style = LifeText.body)
+                    }
+                    TextButton({ onRange(selected.month.atDay(1).toString(), selected.month.atEndOfMonth().toString()) }) { Text("查看流水") }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("● 支出", color = colors.accentDeep, style = LifeText.caption)
                 Text("○ 收入", style = LifeText.caption)
@@ -78,7 +92,7 @@ internal fun FinanceTrend(rows: List<FinanceLedgerRow>, onRange: (String, String
 }
 
 @Composable
-internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, onCategory: (String, String) -> Unit) {
+internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, previous: List<FinanceDimensionTotal> = emptyList(), onCategory: (String, String) -> Unit) {
     val colors = LocalLifeOsColors.current
     val byCurrency = remember(rows) { rows.groupBy { it.currencyCode } }
     var allCurrency by remember { mutableStateOf<String?>(null) }
@@ -92,7 +106,8 @@ internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, onCategory:
             val swatches = listOf(colors.accent, colors.secondary, colors.soft, colors.warm, colors.accentDeep)
             Text("$currency · 个人净支出", style = LifeText.caption, color = colors.muted)
             if (total > 0) {
-                Canvas(Modifier.fillMaxWidth().height(130.dp).semantics { contentDescription = "正向净支出分布；下方分类列表提供金额与查看操作" }) {
+                Box(Modifier.fillMaxWidth().height(156.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize().semantics { contentDescription = "正向净支出分布；下方分类列表提供金额与查看操作" }) {
                     var start = -90f
                     val diameter = size.height - 22.dp.toPx()
                     positive.forEachIndexed { index, row ->
@@ -102,13 +117,24 @@ internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, onCategory:
                         start += sweep
                     }
                 }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("正向净支出", style = LifeText.caption, color = colors.muted)
+                    Text("${positive.size} 个分类", style = LifeText.body)
+                }
+                }
                 Text("环图仅含正向净支出；负值为净退款，保留在分类明细中。", style = LifeText.caption, color = colors.muted)
             }
             ranked.take(8).forEachIndexed { index, row ->
                 Column(Modifier.fillMaxWidth().clickable { onCategory(row.label, currency) }.padding(vertical = 6.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${index + 1}", style = LifeText.caption, color = swatches[index % swatches.size])
                         Text(row.label, Modifier.weight(1f), style = LifeText.body)
                         Text(FinanceMoney.display(row.totals.expenseMinor, currency), style = LifeText.body.copy(fontFeatureSettings = "tnum"))
+                    }
+                    val prior = previous.firstOrNull { it.currencyCode == currency && it.label == row.label }?.totals?.expenseMinor
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(if (row.totals.expenseMinor > 0 && total > 0) "%.1f%%".format(java.util.Locale.ROOT, row.totals.expenseMinor / total * 100) else "净退款 / 零支出", style = LifeText.caption, color = colors.muted)
+                        if (prior != null) Text(periodChange(row.totals.expenseMinor, prior), style = LifeText.caption, color = colors.muted)
                     }
                     if (row.totals.incomeMinor != 0L) Text("收入 ${FinanceMoney.display(row.totals.incomeMinor, currency)}", style = LifeText.caption, color = colors.muted)
                     if (total > 0 && row.totals.expenseMinor > 0) Box(Modifier.padding(top = 7.dp).fillMaxWidth().height(4.dp).background(colors.paperSecondary, RoundedCornerShape(2.dp))) {
