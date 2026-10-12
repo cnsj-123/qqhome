@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -80,17 +81,26 @@ fun LifeFunctionPages(
                         }
                     }
                     try {
-                        // Keep the ownership pass for the entire drag. Switching from Initial to
-                        // Main here would encounter our own consumed slop event and cancel it.
-                        var released = false
-                        while (true) {
-                            val event = awaitPointerEvent(pass)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
-                            tracker.addPosition(change.uptimeMillis, change.position)
-                            progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
-                            change.consume()
-                            if (!change.pressed) { released = true; break }
+                        val released = if (pass == androidx.compose.ui.input.pointer.PointerEventPass.Main) {
+                            // Ordinary content drags keep the established Main-pass continuation.
+                            horizontalDrag(down.id) { change ->
+                                tracker.addPosition(change.uptimeMillis, change.position)
+                                progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
+                                change.consume()
+                            }
+                        } else {
+                            // Finance keeps Initial ownership; Main would see our consumed slop event.
+                            var released = false
+                            while (true) {
+                                val event = awaitPointerEvent(pass)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
+                                tracker.addPosition(change.uptimeMillis, change.position)
+                                progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
+                                change.consume()
+                                if (!change.pressed) { released = true; break }
+                            }
+                            released
                         }
                         val velocity = tracker.calculateVelocity().x
                         val fling = 650.dp.toPx()

@@ -71,7 +71,7 @@ class FinanceSmokeTest {
         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
         input("金额 · CNY", "12.34")
         input("具体事由 · 买了什么 / 为了什么", "早餐豆浆")
-        input("分类（可自定义）", "餐饮")
+        input("新主分类（可留空）", "餐饮")
         input("标签 · 用逗号分隔，可自定义", "早餐，出门")
         click("保存记录"); saved()
         val original = snapshot().entries.single()
