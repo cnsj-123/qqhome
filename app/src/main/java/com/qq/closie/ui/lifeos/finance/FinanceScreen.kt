@@ -38,15 +38,17 @@ fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportR
     val state by vm.state.collectAsStateWithLifecycle()
     var importOpen by rememberSaveable { mutableStateOf(false) }
     var automationOpen by rememberSaveable { mutableStateOf(false) }
+    var relationsOpen by rememberSaveable { mutableStateOf(false) }
     val pending by produceState<Int?>(null, automationRepository) {
         automationRepository?.observe()?.catch { value = null }?.collect { snapshot ->
             value = snapshot.proposals.count { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
         }
     }
-    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(importOpen || automationOpen)
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(importOpen || automationOpen || relationsOpen)
     if (importOpen && importRepository != null) FinanceImportScreen(importRepository, state.snapshot.accounts) { importOpen = false }
     else if (automationOpen && automationRepository != null) FinanceAutomationScreen(automationRepository, repository) { automationOpen = false }
-    else FinanceModuleScreen(state, vm, onBack) {
+    else if (relationsOpen) FinanceRelationsScreen(state, vm) { relationsOpen = false }
+    else FinanceModuleScreen(state, vm, onBack, onRelations = { relationsOpen = true }) {
         if (automationRepository != null) TextButton(onClick = { automationOpen = true }) { Text("自动发现" + (pending?.let { " · $it 笔待确认" } ?: " · 查看状态")) }
         if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账 →") }
     }

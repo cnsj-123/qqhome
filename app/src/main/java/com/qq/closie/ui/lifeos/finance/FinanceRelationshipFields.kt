@@ -33,6 +33,15 @@ data class FinanceRelationshipDraft(
         expectedEventUpdatedAt = eventUpdatedAt
     )
     companion object {
+        fun fromProposal(proposal: FinanceProposalEntity): FinanceRelationshipDraft {
+            val role = if (proposal.kind != FinanceProposalKind.INCOME || proposal.role != FinanceFlowRole.OTHER) proposal.role
+            else when (proposal.nature) {
+                FinanceNature.REIMBURSABLE -> FinanceFlowRole.REIMBURSEMENT
+                FinanceNature.PROXY_PURCHASE, FinanceNature.SPLIT -> FinanceFlowRole.SETTLEMENT
+                else -> proposal.role
+            }
+            return FinanceRelationshipDraft(nature = proposal.nature, role = role)
+        }
         fun expectations(snapshot: FinanceSnapshot, event: FinanceEventEntity?) = snapshot.v4?.expected.orEmpty()
             .filter { it.eventId == event?.id && it.cancelledAt == null }.map {
                 FinanceExpectedFlowDraft(it.id, it.role, it.amountMinor?.let { amount ->

@@ -3,7 +3,7 @@ package com.qq.closie.life.finance
 import androidx.room.*
 
 enum class FinanceNature(val label: String) {
-    PERSONAL("个人"), SPLIT("分账"), PROXY_PURCHASE("代拍"), REIMBURSABLE("报销"), STORED_VALUE("储值"), OTHER("其他")
+    PERSONAL("个人"), SPLIT("分账"), PROXY_PURCHASE("代付·代拍"), REIMBURSABLE("报销"), STORED_VALUE("储值"), OTHER("其他")
 }
 enum class FinanceFlowRole(val label: String) {
     PAYMENT("付款"), REFUND("退款"), REIMBURSEMENT("报销到账"), SETTLEMENT("结算"),

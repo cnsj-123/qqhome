@@ -12,13 +12,14 @@ import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 
 @Composable
-internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm: FinanceViewModel, onClose: () -> Unit) {
+internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm: FinanceViewModel,
+    initialRelationship: FinanceRelationshipDraft? = null, initialKind: FinanceEditorKind = FinanceEditorKind.EXPENSE, onClose: () -> Unit) {
     val colors = LocalLifeOsColors.current
     val active = state.snapshot.accounts.filter { it.archivedAt == null }
     var kindName by rememberSaveable(row?.id) { mutableStateOf(when {
         row?.transfer != null -> FinanceEditorKind.TRANSFER.name
         row?.entry?.direction == FinanceDirection.INFLOW -> FinanceEditorKind.INCOME.name
-        else -> FinanceEditorKind.EXPENSE.name
+        else -> initialKind.name
     }) }
     val kind = FinanceEditorKind.valueOf(kindName)
     var amount by rememberSaveable(row?.id) { mutableStateOf(row?.let { FinanceMoney.input(it.entry.amountMinor, it.currencyCode) }.orEmpty()) }
@@ -31,7 +32,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     val parent = state.snapshot.categories.find { it.id == leaf?.parentId }
     var category by rememberSaveable(row?.id) { mutableStateOf(parent?.name ?: leaf?.name.orEmpty()) }
     var subcategory by rememberSaveable(row?.id) { mutableStateOf(if (parent == null) "" else leaf?.name.orEmpty()) }
-    var relationship by remember(row?.id) { mutableStateOf(FinanceRelationshipDraft.from(state.snapshot, row)) }
+    var relationship by remember(row?.id) { mutableStateOf(initialRelationship ?: FinanceRelationshipDraft.from(state.snapshot, row)) }
     var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
     var confirmVoid by remember { mutableStateOf(false) }
     var allocationOpen by remember { mutableStateOf(false) }

@@ -27,7 +27,7 @@ import java.time.ZoneId
 enum class FinanceView(val label: String) { OVERVIEW("总览"), TRANSACTIONS("流水"), ACCOUNTS("账户"), INSIGHTS("分析") }
 
 @Composable
-internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, onBack: () -> Unit,
+internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, onBack: () -> Unit, onRelations: () -> Unit = {},
     secondaryActions: @Composable () -> Unit = {}) {
     val colors = LocalLifeOsColors.current
     var viewName by rememberSaveable { mutableStateOf(FinanceView.OVERVIEW.name) }
@@ -129,6 +129,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 FinanceView.OVERVIEW -> {
                     item { FinanceMonthCard(state) { calendarMonth = YearMonth.now().toString(); vm.selectPeriod(FinancePeriod.MONTH); selectedDay = null; calendarMode = true; viewName = FinanceView.TRANSACTIONS.name } }
                     item { FinanceBalanceSummary(state) }
+                    item { FinanceFundsSummary(state.snapshot, onRelations) }
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("钱的位置", Modifier.weight(1f), style = LifeText.title)
