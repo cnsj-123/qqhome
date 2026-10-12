@@ -39,7 +39,7 @@ class FinanceImportRepositoryTest : FinanceRoomTest() {
         assertEquals(1, state.transfers.size)
         assertEquals(1, state.entries.count { it.direction == FinanceDirection.INFLOW })
         assertEquals(listOf("原始 单元格"), FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.tags)
-        assertEquals("服饰 / 衣服", FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.category)
+        assertEquals("服饰 › 衣服", FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.category)
         assertTrue(state.categories.any { it.parentId != null && it.name == "衣服" })
         assertEquals(29L, state.entries.single { it.description == "转账手续费" }.amountMinor)
         assertTrue(state.v4!!.events.any { it.nature == FinanceNature.REIMBURSABLE })

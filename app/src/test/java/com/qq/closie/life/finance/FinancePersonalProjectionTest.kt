@@ -25,12 +25,12 @@ class FinancePersonalProjectionTest {
             FinanceIntegrity.validate(data)
             val projected = rows(data)
             assertEquals(FinanceTotals(20_000, 0), FinanceProjection.totals(projected)["CNY"])
-            assertEquals(listOf(FinanceDimensionTotal("穿着 / 衣服", "CNY", FinanceTotals(20_000, 0))), FinanceProjection.categoryTotals(projected))
+            assertEquals(listOf(FinanceDimensionTotal("穿着 › 衣服", "CNY", FinanceTotals(20_000, 0))), FinanceProjection.categoryTotals(projected))
             assertEquals(FinanceTotals(20_000, 0), FinanceProjection.parentCategoryTotals(projected, categories).single().totals)
             assertEquals(listOf("穿着标签"), FinanceProjection.tagTotals(projected).map { it.label })
             assertEquals(20_000L, FinanceProjection.tagTotals(projected).single().totals.expenseMinor)
             // A refund selected in a later period still uses full payment context.
-            assertEquals("穿着 / 衣服", FinancePersonalProjection.rows(data,
+            assertEquals("穿着 › 衣服", FinancePersonalProjection.rows(data,
                 FinanceProjection.ledger(data).filter { it.entry.id == "adjust" }).single().category)
             assertEquals(-20_000L, FinanceProjection.balance(account, data.entries))
             assertTrue(FinancePersonalProjection.unassignedAdjustments(data, FinanceProjection.ledger(data)).isEmpty())
@@ -101,7 +101,7 @@ class FinancePersonalProjectionTest {
         val projected = rows(data)
         assertEquals(FinanceTotals(20_300, 0), FinanceProjection.totals(projected)["CNY"])
         val categoryTotals = FinanceProjection.categoryTotals(projected)
-        assertEquals(20_000L, categoryTotals.single { it.label == "穿着 / 衣服" }.totals.expenseMinor)
+        assertEquals(20_000L, categoryTotals.single { it.label == "穿着 › 衣服" }.totals.expenseMinor)
         assertEquals(300L, categoryTotals.single { it.label == "手续费" }.totals.expenseMinor)
         assertFalse(categoryTotals.any { it.label == "调整待归属" })
         val tagTotals = FinanceProjection.tagTotals(projected)
@@ -131,8 +131,8 @@ class FinancePersonalProjectionTest {
         assertEquals(FinanceTotals(20_000, 0), FinanceProjection.totals(projected)["CNY"])
         assertEquals(setOf("pay", "refund"), projected.map { it.entry.id }.toSet())
         val refund = projected.single { it.entry.id == "refund" }
-        assertEquals("穿着 / 衣服", refund.category)
-        assertEquals(listOf(FinanceDimensionTotal("穿着 / 衣服", "CNY", FinanceTotals(20_000, 0))),
+        assertEquals("穿着 › 衣服", refund.category)
+        assertEquals(listOf(FinanceDimensionTotal("穿着 › 衣服", "CNY", FinanceTotals(20_000, 0))),
             FinanceProjection.categoryTotals(projected))
         assertEquals(listOf("穿着标签"), FinanceProjection.tagTotals(listOf(refund)).map { it.label })
         assertTrue(FinancePersonalProjection.unassignedAdjustments(data, ledger).isEmpty())

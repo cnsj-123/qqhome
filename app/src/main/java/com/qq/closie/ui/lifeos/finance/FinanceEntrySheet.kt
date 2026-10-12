@@ -30,6 +30,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     var description by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.description.orEmpty()) }
     val leaf = state.snapshot.categories.find { it.id == row?.entry?.categoryId }
     val parent = state.snapshot.categories.find { it.id == leaf?.parentId }
+    var selectedCategoryId by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.categoryId) }
     var category by rememberSaveable(row?.id) { mutableStateOf(parent?.name ?: leaf?.name.orEmpty()) }
     var subcategory by rememberSaveable(row?.id) { mutableStateOf(if (parent == null) "" else leaf?.name.orEmpty()) }
     var relationship by remember(row?.id) { mutableStateOf(initialRelationship ?: FinanceRelationshipDraft.from(state.snapshot, row)) }
@@ -42,7 +43,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
     FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose, actions = {
-        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship), onClose) },
+        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship, selectedCategoryId), onClose) },
             enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
     }) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -70,11 +71,12 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
                 TextButton({ pickingCategory = true }, enabled = !state.busy) { Text("选择已有分类") }
                 TextButton({ pickingTag = true }, enabled = !state.busy) { Text("添加已有标签") }
             }
-            OutlinedTextField(category, { category = it }, Modifier.fillMaxWidth(), label = { Text("分类（可自定义）") }, singleLine = true, enabled = !state.busy)
-            OutlinedTextField(subcategory, { subcategory = it }, Modifier.fillMaxWidth(), label = { Text("子分类（可留空）") }, enabled = !state.busy)
-            val suggestions = (state.snapshot.categories.filter { it.parentId == null }.map { it.name } + listOf("餐饮", "交通", "日用", "其他")).distinct().take(6)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                suggestions.take(4).forEach { name -> TextButton(onClick = { category = name }, enabled = !state.busy) { Text(name, style = LifeText.caption) } }
+            if (selectedCategoryId != null) {
+                Text(FinanceProjection.categoryPath(state.snapshot.categories, selectedCategoryId) ?: "分类已不存在，请重新选择")
+                TextButton({ selectedCategoryId = null; category = ""; subcategory = "" }, enabled = !state.busy) { Text("改为自定义分类") }
+            } else {
+                OutlinedTextField(category, { category = it }, Modifier.fillMaxWidth(), label = { Text("新主分类（可留空）") }, singleLine = true, enabled = !state.busy)
+                OutlinedTextField(subcategory, { subcategory = it }, Modifier.fillMaxWidth(), label = { Text("新子分类（可留空）") }, enabled = !state.busy)
             }
             OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), label = { Text("标签 · 用逗号分隔，可自定义") }, enabled = !state.busy)
         }
@@ -87,14 +89,8 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             TextButton(onClick = { confirmVoid = true }, enabled = !state.busy) { Text("作废这笔记录") }
         }
     }
-    if (pickingCategory) FinanceChoiceSheet("分类", leaf?.id,
-        state.snapshot.categories.map { it.id to (FinanceProjection.categoryPath(state.snapshot.categories, it.id) ?: it.name) },
-        onSelect = { id ->
-            val selected = state.snapshot.categories.first { it.id == id }
-            val root = state.snapshot.categories.find { it.id == selected.parentId }
-            category = root?.name ?: selected.name
-            subcategory = if (root == null) "" else selected.name
-        }, onClose = { pickingCategory = false })
+    if (pickingCategory) FinanceCategoryPicker(state.snapshot, selectedCategoryId,
+        onSelect = { selectedCategoryId = it }, onClose = { pickingCategory = false })
     if (pickingTag) FinanceChoiceSheet("标签", null, state.snapshot.tags.map { it.id to it.name },
         onSelect = { id -> state.snapshot.tags.find { it.id == id }?.let { selected ->
             tags = (tags.split(Regex("[,，\\n]")).map(String::trim).filter(String::isNotBlank) + selected.name).distinct().joinToString("，")

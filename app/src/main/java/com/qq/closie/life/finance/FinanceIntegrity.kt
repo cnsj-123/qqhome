@@ -11,11 +11,7 @@ object FinanceIntegrity {
         val accounts = data.accounts.associateBy { it.id }
         val entries = data.entries.associateBy { it.id }
         val categories = data.categories.associateBy { it.id }
-        data.categories.forEach { category ->
-            category.parentId?.let { parent ->
-                require(parent != category.id && categories[parent]?.parentId == null && parent in categories) { "分类层级无效" }
-            }
-        }
+        FinanceCategoryTree(data.categories).validateParents()
         data.accounts.forEach {
             require(it.name.isNotBlank() && it.kind in FinanceAccountKind.entries) { "账户名称或类型无效" }
             FinanceMoney.fractionDigits(it.currencyCode)

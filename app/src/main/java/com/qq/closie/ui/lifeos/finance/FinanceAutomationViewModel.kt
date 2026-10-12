@@ -33,11 +33,7 @@ internal class FinanceAutomationViewModel(private val repository: FinanceAutomat
         }
     }
     fun confirm(proposal: FinanceProposalEntity, draft: FinanceEntryDraft, done: () -> Unit) = action {
-        repository.confirm(proposal.id, proposal.revision, FinanceProposalConfirmation(
-            FinanceProposalKind.valueOf(draft.kind.name), draft.accountId, draft.targetAccountId.ifBlank { null },
-            FinanceMoney.parse(draft.amount), draft.description, FinanceTime.resolve(draft.occurredAt, draft.preservedOccurredAt),
-            draft.category, draft.subcategory, draft.tags.split('，', ',').map(String::trim).filter(String::isNotBlank),
-            draft.relationship.resolve("CNY")))
+        repository.confirm(proposal.id, proposal.revision, draft.toProposalConfirmation())
         done()
     }
     fun confirmReceipt(receipt: FinanceReviewReceiptModel, done: () -> Unit) = action {

@@ -46,7 +46,8 @@ object FinanceProjection {
     fun ledger(snapshot: FinanceSnapshot, range: FinanceDateRange = FinanceDateRange(), search: String = ""): List<FinanceLedgerRow> {
         val accounts = snapshot.accounts.associateBy { it.id }
         val entries = snapshot.entries.associateBy { it.id }
-        val categories = snapshot.categories.associate { it.id to categoryPath(snapshot.categories, it.id) }
+        val tree = FinanceCategoryTree(snapshot.categories)
+        val categories = snapshot.categories.associate { it.id to tree.fullPath(it.id) }
         val tags = snapshot.tags.associate { it.id to it.name }
         val entryTags = snapshot.entryTags.groupBy { it.entryId }
         val legs = snapshot.transfers.flatMap { listOf(it.outflowEntryId, it.inflowEntryId) }.toSet()
@@ -67,9 +68,7 @@ object FinanceProjection {
                 .thenByDescending { it.entry.recordedAt }.thenBy { it.id })
     }
     fun categoryPath(categories: List<FinanceCategoryEntity>, id: String?): String? {
-        val leaf = categories.find { it.id == id } ?: return null
-        val parent = categories.find { it.id == leaf.parentId }
-        return if (parent == null) leaf.name else parent.name + " / " + leaf.name
+        return FinanceCategoryTree(categories).fullPath(id)
     }
     /** F1 ordinary flows only; F2 relationships will refine personal-consumption/income projections. */
     fun totals(rows: List<FinanceLedgerRow>): Map<String, FinanceTotals> = rows.filter { it.transfer == null && it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
@@ -78,12 +77,13 @@ object FinanceProjection {
             sum(values.filter { it.entry.direction == FinanceDirection.INFLOW })) }
     fun categoryTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.category ?: "未分类") }
     fun parentCategoryTotals(rows: List<FinanceLedgerRow>, categories: List<FinanceCategoryEntity>): List<FinanceDimensionTotal> {
-        val byId = categories.associateBy { it.id }
+        val tree = FinanceCategoryTree(categories)
         return dimensions(rows) { row ->
-            val leaf = byId[row.entry.categoryId]
-            listOf(row.categoryOverride ?: leaf?.parentId?.let { byId[it]?.name } ?: leaf?.name ?: "未分类")
+            listOf(parentCategoryLabel(row, tree))
         }
     }
+    fun parentCategoryLabel(row: FinanceLedgerRow, tree: FinanceCategoryTree): String =
+        row.categoryOverride ?: tree.root(row.entry.categoryId)?.name ?: "未分类"
     fun accountTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.account.name) }
     fun tagTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { it.tags }
     private fun dimensions(rows: List<FinanceLedgerRow>, names: (FinanceLedgerRow) -> List<String>): List<FinanceDimensionTotal> =

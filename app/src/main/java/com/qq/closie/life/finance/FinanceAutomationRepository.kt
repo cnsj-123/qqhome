@@ -11,7 +11,7 @@ data class FinanceAutomationSnapshot(val proposals: List<FinanceProposalEntity>,
     val rules: List<FinanceRuleSet>)
 data class FinanceProposalConfirmation(val kind: FinanceProposalKind, val accountId: String, val targetAccountId: String?,
     val amountMinor: Long, val description: String, val occurredAt: Long, val category: String, val subcategory: String,
-    val tags: List<String>, val event: FinanceEventInput)
+    val tags: List<String>, val event: FinanceEventInput, val categoryId: String? = null)
 
 /** The only path from a discovered proposal into truth is explicit confirm(), inside one Room transaction. */
 class FinanceAutomationRepository(private val database: LifeDatabase, private val finance: FinanceRepository) {
@@ -69,7 +69,7 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
         } else finance.saveEntryInTransaction(null, input.accountId,
             if (input.kind == FinanceProposalKind.INCOME) FinanceDirection.INFLOW else FinanceDirection.OUTFLOW,
             input.amountMinor, input.description, input.occurredAt, input.category, input.tags, input.subcategory,
-            input.event, authority = "USER_CONFIRMED_PROPOSAL").id
+            input.event, authority = "USER_CONFIRMED_PROPOSAL", categoryId = input.categoryId).id
         dao.updateProposal(proposal.copy(status = FinanceProposalStatus.CONFIRMED, canonicalId = canonical, revision = revision + 1))
         FinanceIntegrity.validate(readFinanceSnapshot(database))
         canonical

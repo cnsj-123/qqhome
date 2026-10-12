@@ -49,13 +49,16 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
     var date by rememberSaveable { mutableStateOf(FinanceTime.input(proposal.occurredAt)) }
     var category by rememberSaveable { mutableStateOf(proposal.category) }
     var subcategory by rememberSaveable { mutableStateOf(proposal.subcategory) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf(FinanceCategoryTree(state.finance.categories).find(proposal.category, proposal.subcategory)?.id) }
+    var pickingCategory by remember { mutableStateOf(false) }
     var tags by rememberSaveable { mutableStateOf(state.data.tags.filter { it.proposalId == proposal.id }.joinToString("，") { it.name }) }
-    var relation by remember { mutableStateOf(FinanceRelationshipDraft(nature = proposal.nature,
-        role = proposal.role)) }
+    var relation by remember { mutableStateOf(FinanceRelationshipDraft.fromProposal(proposal)) }
     val accounts = state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }
-    val receipt = FinanceReviewReceiptModel.from(proposal.copy(nature = relation.nature, role = relation.role), state.finance,
+    val draft = FinanceEntryDraft(FinanceEditorKind.valueOf(kind), amount, account, target, date,
+        description, category, tags, proposal.occurredAt, subcategory, relation, selectedCategoryId)
+    val receipt = FinanceReviewReceiptModel.from(proposal, state.finance,
         state.data.tags.filter { it.proposalId == proposal.id }.map { it.name },
-        FinanceProposalPrivacy.userDescriptions(state.data.rules.flatMap { it.actions }))
+        FinanceProposalPrivacy.userDescriptions(state.data.rules.flatMap { it.actions }), draft)
     fun later() = vm.dismiss(proposal, FinanceProposalStatus.SNOOZED, close)
     FinanceReceipt("消费小票",
         state.busy, state.error, ::later, actions = {
@@ -64,29 +67,35 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             Button(onClick = {
                 if (!editing) {
                     if (receipt.directlyConfirmable) vm.confirmReceipt(receipt, close) else editing = true
-                } else if (account.isBlank() || amount.isBlank() || (kind != FinanceProposalKind.TRANSFER.name && category.isBlank())) editing = true
-                else vm.confirm(proposal, FinanceEntryDraft(FinanceEditorKind.valueOf(kind), amount, account, target,
-                    date, description, category, tags, proposal.occurredAt, subcategory, relation), close)
+                } else if (account.isBlank() || amount.isBlank() || (kind != FinanceProposalKind.TRANSFER.name && selectedCategoryId == null && category.isBlank())) editing = true
+                else vm.confirm(proposal, draft, close)
             }, enabled = !state.busy) { Text(if (!editing && !receipt.directlyConfirmable) "需要完善" else "确认") }
             TextButton(onClick = ::later, enabled = !state.busy) { Text("稍后") }
             TextButton(onClick = { vm.dismiss(proposal, FinanceProposalStatus.REJECTED, close) }, enabled = !state.busy) { Text("忽略") }
         }
     }) {
         Text(if (amount.isBlank()) "金额待确认（通知中有多个金额）" else "¥$amount", style = MaterialTheme.typography.headlineMedium)
-        Text("${receipt.source} · ${when (proposal.kind) { FinanceProposalKind.INCOME -> "收入"; FinanceProposalKind.TRANSFER -> "转账"; else -> "支出" }}")
+        Text("${receipt.source} · ${when (receipt.direction) { FinanceProposalKind.INCOME -> "收入"; FinanceProposalKind.TRANSFER -> "转账"; else -> "支出" }}")
         Text("账户：${accounts.find { it.id == account }?.name ?: "待选择"}")
-        Text("分类：${listOf(category, subcategory).filter(String::isNotBlank).joinToString(" › ").ifBlank { "待选择" }}")
+        Text("分类：${FinanceProjection.categoryPath(state.finance.categories, selectedCategoryId) ?: listOf(category, subcategory).filter(String::isNotBlank).joinToString(" › ").ifBlank { "待选择" }}")
         Text("说明：$description")
         Text("业务性质", style = MaterialTheme.typography.labelMedium)
         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(4) { index ->
                 val nature = listOf(FinanceNature.PERSONAL, FinanceNature.REIMBURSABLE, FinanceNature.PROXY_PURCHASE, FinanceNature.SPLIT)[index]
-                FilterChip(relation.nature == nature, { relation = relation.copy(nature = nature) }, enabled = !state.busy,
+                FilterChip(relation.nature == nature, {
+                    val role = if (kind != FinanceProposalKind.INCOME.name) relation.role else when (nature) {
+                        FinanceNature.REIMBURSABLE -> FinanceFlowRole.REIMBURSEMENT
+                        FinanceNature.PROXY_PURCHASE, FinanceNature.SPLIT -> FinanceFlowRole.SETTLEMENT
+                        else -> if (proposal.role == FinanceFlowRole.REFUND) FinanceFlowRole.REFUND else FinanceFlowRole.OTHER
+                    }
+                    relation = relation.copy(nature = nature, role = role)
+                }, enabled = !state.busy,
                     label = { Text(if (nature == FinanceNature.PROXY_PURCHASE) "代付·代拍" else nature.label) })
             }
         }
         if (!editing) receipt.ambiguityReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-        Text("尚未入账 · ${FinanceTime.input(proposal.occurredAt)}", style = MaterialTheme.typography.bodySmall)
+        Text("尚未入账 · ${FinanceTime.input(receipt.occurredAt)}", style = MaterialTheme.typography.bodySmall)
         if (editing) {
             EnumChoice("类型", kind, FinanceEditorKind.entries.map { it.name to it.label }, !state.busy) {
                 kind = it; relation = relation.copy(role = if (it == FinanceProposalKind.INCOME.name) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
@@ -97,8 +106,11 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             OutlinedTextField(description, { description = it }, label = { Text("事由") }, enabled = !state.busy)
             OutlinedTextField(date, { date = it }, label = { Text("发生时间 · 年-月-日 时:分") }, enabled = !state.busy)
             if (kind != FinanceProposalKind.TRANSFER.name) {
-                OutlinedTextField(category, { category = it }, label = { Text("分类") }, enabled = !state.busy)
-                OutlinedTextField(subcategory, { subcategory = it }, label = { Text("子分类") }, enabled = !state.busy)
+                TextButton({ pickingCategory = true }, enabled = !state.busy) { Text("选择分类") }
+                if (selectedCategoryId == null) {
+                    OutlinedTextField(category, { category = it }, label = { Text("新主分类") }, enabled = !state.busy)
+                    OutlinedTextField(subcategory, { subcategory = it }, label = { Text("新子分类") }, enabled = !state.busy)
+                } else TextButton({ selectedCategoryId = null; category = ""; subcategory = "" }, enabled = !state.busy) { Text("改为自定义分类") }
                 OutlinedTextField(tags, { tags = it }, label = { Text("标签 · 逗号分隔") }, enabled = !state.busy)
                 FinanceRelationshipFields(state.finance, relation, !state.busy) { relation = it }
             }
@@ -109,4 +121,6 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
         }
 
     }
+    if (pickingCategory) FinanceCategoryPicker(state.finance, selectedCategoryId,
+        { selectedCategoryId = it }, { pickingCategory = false })
 }

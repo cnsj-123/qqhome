@@ -32,7 +32,7 @@ data class FinanceUiState(
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
     val category: String = "", val tags: String = "", val preservedOccurredAt: Long? = null,
-    val subcategory: String = "", val relationship: FinanceRelationshipDraft = FinanceRelationshipDraft())
+    val subcategory: String = "", val relationship: FinanceRelationshipDraft = FinanceRelationshipDraft(), val categoryId: String? = null)
 data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String, val currencyCode: String? = null)
 
 /** Wall-clock input is explicit and strict; recordedAt remains owned by FinanceRepository. */
@@ -69,9 +69,8 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 (selection.nature == null || row.entry.id in natureEntries ||
                     (selection.nature == FinanceNature.PERSONAL && row.transfer == null && row.entry.id !in linkedEntries))
             }
-            fun categoryMatches(row: FinanceLedgerRow) = selection.categoryId == null ||
-                row.entry.categoryId == selection.categoryId ||
-                data.categories.any { it.id == row.entry.categoryId && it.parentId == selection.categoryId }
+            val categoryIds = selection.categoryId?.let { FinanceCategoryTree(data.categories).descendants(it) }
+            fun categoryMatches(row: FinanceLedgerRow) = categoryIds == null || row.entry.categoryId in categoryIds
             val rows = baseRows.filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) }
             val selectedTag = data.tags.find { it.id == selection.tagId }?.name
             // Apply dimension filters after attribution, so a refund follows its payment category/tag.
@@ -160,7 +159,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             repository.saveEntry(row?.entry?.id, draft.accountId,
                 if (draft.kind == FinanceEditorKind.INCOME) FinanceDirection.INFLOW else FinanceDirection.OUTFLOW,
                 amount, draft.description, occurred, draft.category, draft.tags.split(Regex("[,，\\n]")), draft.subcategory,
-                if (multiple) null else draft.relationship.resolve(account.currencyCode), row?.entry?.revision)
+                if (multiple) null else draft.relationship.resolve(account.currencyCode), row?.entry?.revision, categoryId = draft.categoryId)
         }
     }
     fun voidRecord(row: FinanceLedgerRow, onSaved: () -> Unit) = mutate(onSaved) {

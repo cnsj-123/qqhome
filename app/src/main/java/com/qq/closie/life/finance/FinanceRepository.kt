@@ -59,14 +59,14 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     suspend fun saveEntry(id: String? = null, accountId: String, direction: FinanceDirection,
         amountMinor: Long, description: String, occurredAt: Long,
         category: String = "", tags: List<String> = emptyList(), subcategory: String = "",
-        event: FinanceEventInput? = null, expectedRevision: Long? = null): FinanceEntryEntity = transaction {
+        event: FinanceEventInput? = null, expectedRevision: Long? = null, categoryId: String? = null): FinanceEntryEntity = transaction {
         saveEntryInTransaction(id, accountId, direction, amountMinor, description, occurredAt,
-            category, tags, subcategory, event, expectedRevision).also { validateBalances() }
+            category, tags, subcategory, event, expectedRevision, categoryId = categoryId).also { validateBalances() }
     }
     internal suspend fun saveEntryInTransaction(id: String?, accountId: String, direction: FinanceDirection,
         amountMinor: Long, description: String, occurredAt: Long, category: String, tags: List<String>,
         subcategory: String = "", event: FinanceEventInput? = null, expectedRevision: Long? = null,
-        batchId: String? = null, authority: String? = null): FinanceEntryEntity {
+        batchId: String? = null, authority: String? = null, categoryId: String? = null): FinanceEntryEntity {
         require(amountMinor > 0) { "金额必须大于 0" }
         require(description.isNotBlank()) { "请写下具体事由" }
         val old = id?.let { requireNotNull(dao.entry(it)) { "流水已不存在" } }
@@ -75,9 +75,11 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         require(id == null || dao.transferForEntry(id) == null) { "请编辑整笔转账，不能单独修改一侧流水" }
         usableAccount(accountId, old?.accountId)
         val now = clock()
-        val categoryId = resolveCategory(category, subcategory)
+        val selectedCategory = categoryId?.also { selected ->
+            require(dao.categories().any { it.id == selected }) { "分类已不存在，请重新选择" }
+        } ?: resolveCategory(category, subcategory)
         val row = FinanceEntryEntity(old?.id ?: newId(), accountId, direction, amountMinor, description.trim(),
-            occurredAt, old?.recordedAt ?: now, now, categoryId,
+            occurredAt, old?.recordedAt ?: now, now, selectedCategory,
             statPolicy = event?.statPolicy ?: old?.statPolicy ?: FinanceStatPolicy.INCLUDE,
             budgetPolicy = event?.budgetPolicy ?: old?.budgetPolicy ?: FinanceBudgetPolicy.INCLUDE,
             revision = (old?.revision ?: 0) + 1, importBatchId = old?.importBatchId ?: batchId)
