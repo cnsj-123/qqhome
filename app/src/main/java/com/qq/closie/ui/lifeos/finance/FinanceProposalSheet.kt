@@ -86,8 +86,10 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
                 OutlinedTextField(tags, { tags = it }, label = { Text("标签 · 逗号分隔") }, enabled = !state.busy)
                 FinanceRelationshipFields(state.finance, relation, !state.busy) { relation = it }
             }
-            Text("通知原文", style = MaterialTheme.typography.labelMedium)
-            Text(proposal.evidenceText, style = MaterialTheme.typography.bodySmall)
+            Text("识别依据", style = MaterialTheme.typography.labelMedium)
+            Text("来源：${if (proposal.source == FinanceSource.WECHAT) "微信" else "支付宝"} · 通知自动发现", style = MaterialTheme.typography.bodySmall)
+            Text("时间：${FinanceTime.input(proposal.occurredAt)} · 金额：${proposal.amountMinor?.let { FinanceMoney.display(it, "CNY") } ?: "待核对"}", style = MaterialTheme.typography.bodySmall)
+            Text("原始通知仅用于本机即时识别，不保存。", style = MaterialTheme.typography.bodySmall)
         }
 
     }

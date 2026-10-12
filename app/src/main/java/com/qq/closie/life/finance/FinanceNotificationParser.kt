@@ -13,6 +13,9 @@ object FinanceNotificationParser {
     private val expense = Regex("支付成功|付款成功|成功付款|成功支付|扣款成功|已支付|已付款|已扣款|支付金额|付款金额|支出金额")
     private val income = Regex("收款到账|收款成功|成功收款|到账通知|已到账|已收款|退款成功|退款到账|已退款|收款金额")
     private val paymentTitle = Regex("支付|收款|到账|退款|扣款|交易提醒")
+    private val alipayExpense = Regex("^\\s*你有一笔\\s*$number\\s*元\\s*的支出(?:[，,。.!！\\s]|$)")
+    private val alipayReceipt = Regex("^\\s*(?:支付成功|付款成功|成功付款|成功支付|扣款成功|收款成功|收款到账|退款成功|退款到账|已退款)(?=[\\s：:，,¥￥]|$)")
+    private val transferCountTitle = Regex("^你收到\\s*[0-9]+\\s*笔转账$")
 
     fun parse(packageName: String, sourceKey: String, title: String, body: String, occurredAt: Long): FinanceProposalEntity? =
         inspect(packageName, sourceKey, title, body, occurredAt).proposal
@@ -24,9 +27,17 @@ object FinanceNotificationParser {
             return FinanceParseResult(DiscoveryResult.UNSUCCESSFUL)
         val genericTitle = title.trim().matches(Regex("(?:微信|支付宝)(?:[（(].*[）)])?"))
         val structuredBody = Regex("微信支付|支付凭证|交易提醒|付款金额|支付金额|收款到账|退款到账").containsMatchIn(body)
-        if (!paymentTitle.containsMatchIn(title) && !(genericTitle && (structuredBody || source == FinanceSource.ALIPAY)))
+        val explicitAlipayExpense = source == FinanceSource.ALIPAY && alipayExpense.containsMatchIn(body)
+        // An app-name title needs a structured receipt, not arbitrary order/chat text mentioning payment.
+        val alipayCompletedReceipt = source == FinanceSource.ALIPAY && alipayReceipt.containsMatchIn(body)
+        val transferNotice = transferCountTitle.matches(title.trim())
+        if (!paymentTitle.containsMatchIn(title) && !transferNotice &&
+            !(genericTitle && (structuredBody || explicitAlipayExpense || alipayCompletedReceipt)))
             return FinanceParseResult(DiscoveryResult.NOT_PAYMENT)
-        val outflow = expense.containsMatchIn(text)
+        // A transfer count is evidence of a notification, never evidence of money or ownership.
+        if (transferNotice) return FinanceParseResult(
+            if (money.containsMatchIn(text)) DiscoveryResult.TRANSFER_REVIEW else DiscoveryResult.NO_AMOUNT)
+        val outflow = expense.containsMatchIn(text) || explicitAlipayExpense
         val inflow = income.containsMatchIn(text) || (title.contains("收款") && !outflow)
         if (outflow == inflow) return FinanceParseResult(DiscoveryResult.UNKNOWN_DIRECTION)
         val amounts = money.findAll(text).mapNotNull { match ->
@@ -35,10 +46,10 @@ object FinanceNotificationParser {
         }.toSet()
         if (amounts.isEmpty()) return FinanceParseResult(DiscoveryResult.NO_AMOUNT)
         val refund = text.contains("退款")
-        val proposal = FinanceProposalEntity(UUID.randomUUID().toString(), source, sourceKey, text.take(1800),
+        val proposal = FinanceProposalPrivacy.sanitize(FinanceProposalEntity(UUID.randomUUID().toString(), source, sourceKey, "",
             System.currentTimeMillis(), occurredAt, if (inflow) FinanceProposalKind.INCOME else FinanceProposalKind.EXPENSE,
-            amounts.singleOrNull(), title.take(120), nature = if (refund) FinanceNature.OTHER else FinanceNature.PERSONAL,
-            role = if (refund) FinanceFlowRole.REFUND else if (inflow) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
+            amounts.singleOrNull(), "", nature = if (refund) FinanceNature.OTHER else FinanceNature.PERSONAL,
+            role = if (refund) FinanceFlowRole.REFUND else if (inflow) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT))
         return FinanceParseResult(if (amounts.size == 1) DiscoveryResult.CREATED else DiscoveryResult.AMBIGUOUS_AMOUNT, proposal)
     }
 }

@@ -8,7 +8,7 @@ internal suspend fun readFinanceSnapshot(database: LifeDatabase, includeIntake: 
     val intake = database.financeIntakeDao()
     val v4 = FinanceV4Snapshot(events = intake.events(), links = intake.links(), expected = intake.expected())
     return FinanceSnapshot(dao.accounts(), dao.entries(), dao.transfers(), dao.categories(), dao.tags(), dao.entryTags(),
-        if (!includeIntake) v4 else v4.copy(batches = intake.batches(), staging = intake.staging(),
+        if (!includeIntake) v4 else FinanceProposalPrivacy.sanitize(v4.copy(batches = intake.batches(), staging = intake.staging(),
             proposals = intake.proposals(), proposalTags = intake.proposalTags(), rules = intake.rules(),
-            conditions = intake.conditions(), actions = intake.actions(), changes = intake.changes()))
+            conditions = intake.conditions(), actions = intake.actions(), changes = intake.changes())))
 }

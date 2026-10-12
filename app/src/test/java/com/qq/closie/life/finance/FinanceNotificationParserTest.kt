@@ -46,4 +46,30 @@ class FinanceNotificationParserTest {
         assertEquals(DiscoveryResult.NO_AMOUNT, inspect("微信支付", "支付成功").result)
         assertNull(inspect("支付成功", "￥26.80", "unrelated.app").proposal)
     }
+
+    @Test fun explicitAlipayExpenseCreatesOnlyAnUnconfirmedProposal() {
+        val result = inspect("交易提醒", "你有一笔 37.26 元的支出，点此查看详情。", "com.eg.android.AlipayGphone")
+        assertEquals(DiscoveryResult.CREATED, result.result)
+        assertEquals(3726L, result.proposal?.amountMinor)
+        assertEquals(FinanceProposalKind.EXPENSE, result.proposal?.kind)
+        assertNull(result.proposal?.canonicalId)
+        assertNull(inspect("普通消息", "你有一笔 37.26 元的支出，点此查看详情。", "com.eg.android.AlipayGphone").proposal)
+        assertNull(inspect("朋友", "一起吃饭 37.26 元").proposal)
+    }
+
+    @Test fun expenseWithMultipleAmountsRequiresManualAmount() {
+        val result = inspect("交易提醒", "你有一笔 37.26 元的支出，余额 802.00 元。", "com.eg.android.AlipayGphone")
+        assertEquals(DiscoveryResult.AMBIGUOUS_AMOUNT, result.result)
+        assertNotNull(result.proposal)
+        assertNull(result.proposal?.amountMinor)
+    }
+
+    @Test fun transferCountNeverBecomesOneYuanOrAssumesOwnedAccounts() {
+        val count = inspect("你收到1笔转账", "已向你转了1笔钱，请查看。", "com.eg.android.AlipayGphone")
+        assertEquals(DiscoveryResult.NO_AMOUNT, count.result)
+        assertNull(count.proposal)
+        val amount = inspect("你收到1笔转账", "金额 48.90 元。", "com.eg.android.AlipayGphone")
+        assertEquals(DiscoveryResult.TRANSFER_REVIEW, amount.result)
+        assertNull(amount.proposal)
+    }
 }

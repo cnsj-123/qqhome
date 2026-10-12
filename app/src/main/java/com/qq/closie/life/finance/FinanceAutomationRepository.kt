@@ -17,7 +17,18 @@ data class FinanceProposalConfirmation(val kind: FinanceProposalKind, val accoun
 class FinanceAutomationRepository(private val database: LifeDatabase, private val finance: FinanceRepository) {
     private val dao get() = database.financeIntakeDao()
     private suspend fun <T> transaction(block: suspend () -> T): T =
-        RestoreStartupGate.withBusinessAccessSuspending { database.withTransaction { block() } }
+        RestoreStartupGate.withBusinessAccessSuspending { database.withTransaction {
+            scrubNotificationProposals()
+            block()
+        } }
+    private suspend fun scrubNotificationProposals() {
+        val descriptions = FinanceProposalPrivacy.userDescriptions(dao.actions())
+        dao.proposals().forEach { old ->
+            val safe = FinanceProposalPrivacy.sanitize(old, descriptions)
+            if (safe != old) dao.updateProposal(safe.copy(revision = old.revision + 1))
+        }
+    }
+    suspend fun sanitizeExistingProposals() = transaction { Unit }
     private suspend fun rules(): List<FinanceRuleSet> {
         val conditions = dao.conditions().groupBy { it.ruleId }
         val actions = dao.actions().groupBy { it.ruleId }
@@ -27,16 +38,18 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
         FinanceAutomationSnapshot(dao.proposals(), dao.proposalTags(), rules())
     } } }
     suspend fun discover(proposal: FinanceProposalEntity): FinanceProposalEntity? = discoverWithResult(proposal).proposal
-    suspend fun discoverWithResult(proposal: FinanceProposalEntity): FinanceParseResult = transaction {
+    suspend fun discoverWithResult(proposal: FinanceProposalEntity, transientText: String = proposal.evidenceText): FinanceParseResult = transaction {
         require(proposal.status == FinanceProposalStatus.ACTIVE && proposal.canonicalId == null && proposal.revision == 0L)
         if (dao.proposalByKey(proposal.sourceKey) != null) return@transaction FinanceParseResult(DiscoveryResult.DUPLICATE)
         // Old notifications are not replayed by the listener; this also bounds delayed system deliveries.
         if (System.currentTimeMillis() - proposal.occurredAt > 24 * 60 * 60 * 1000L) return@transaction FinanceParseResult(DiscoveryResult.STALE)
         val kind = if (proposal.source == FinanceSource.WECHAT) FinanceAccountKind.WECHAT else FinanceAccountKind.ALIPAY
         val suggested = database.financeDao().accounts().filter { it.kind == kind && it.currencyCode == "CNY" && it.archivedAt == null }.singleOrNull()?.id
-        val result = FinanceRuleEngine.apply(proposal.copy(accountId = proposal.accountId ?: suggested), rules())
+        val ruleSets = rules()
+        val result = FinanceRuleEngine.apply(FinanceProposalPrivacy.sanitize(proposal).copy(accountId = proposal.accountId ?: suggested), ruleSets, transientText)
         val account = result.proposal.accountId?.let { database.financeDao().account(it) }
-        val row = result.proposal.copy(accountId = account?.takeIf { it.archivedAt == null && it.currencyCode == "CNY" }?.id)
+        val row = FinanceProposalPrivacy.sanitize(result.proposal, FinanceProposalPrivacy.userDescriptions(ruleSets.flatMap { it.actions }))
+            .copy(accountId = account?.takeIf { it.archivedAt == null && it.currencyCode == "CNY" }?.id)
         dao.insertProposal(row)
         dao.insertProposalTags(result.tags.map { FinanceProposalTagEntity(row.id, it) })
         FinanceParseResult(DiscoveryResult.CREATED, row)

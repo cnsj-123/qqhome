@@ -156,7 +156,8 @@ internal object LifeBackupApplier {
 
     fun snapshotFile(id: Long, filesDir: File): File = File(filesDir, ".life_restore_dbsnap_$id.json")
 
-    fun writeSnapshot(file: File, snapshot: LifeBackupPayload) = AtomicJson.write(file, snapshot)
+    fun writeSnapshot(file: File, snapshot: LifeBackupPayload) = AtomicJson.write(file, snapshot.copy(
+        finance = snapshot.finance?.let { finance -> finance.copy(v4 = finance.v4?.let(com.qq.closie.life.finance.FinanceProposalPrivacy::sanitize)) }))
 
     /**
      * Reads the pre-restore snapshot, preserving the absent/corrupt distinction.

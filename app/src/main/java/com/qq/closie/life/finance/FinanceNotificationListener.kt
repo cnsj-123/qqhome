@@ -109,7 +109,8 @@ class FinanceNotificationListener : NotificationListenerService() {
                 if ((source == FinanceSource.WECHAT && !live.wechat) || (source == FinanceSource.ALIPAY && !live.alipay)) {
                     report(DiscoveryResult.SOURCE_OFF); return@launch
                 }
-                val outcome = LifeContainer.getInstance(applicationContext).financeAutomationRepository.discoverWithResult(proposal)
+                val outcome = LifeContainer.getInstance(applicationContext).financeAutomationRepository
+                    .discoverWithResult(proposal, title.take(240) + "\n" + body)
                 val created = outcome.proposal ?: run { report(outcome.result); return@launch }
                 FinanceDiscoveryDiagnostics.result(source, trace,
                     if (created.amountMinor == null) DiscoveryResult.AMBIGUOUS_AMOUNT else DiscoveryResult.CREATED,

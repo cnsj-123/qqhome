@@ -20,10 +20,10 @@ object FinanceRuleEngine {
         set.actions.forEach { action ->
             require(action.value.isNotBlank())
             if (action.kind == FinanceActionKind.SUGGEST_BUSINESS_NATURE) require(FinanceNature.entries.any { it.name == action.value })
-            if (action.kind == FinanceActionKind.SUGGEST_CATEGORY) require(action.value.split('/').size <= 2)
+            if (action.kind == FinanceActionKind.SUGGEST_CATEGORY) require(action.value.split('/').all { it.isNotBlank() })
         }
     }
-    fun apply(original: FinanceProposalEntity, rules: List<FinanceRuleSet>): FinanceRuleResult {
+    fun apply(original: FinanceProposalEntity, rules: List<FinanceRuleSet>, transientText: String = original.evidenceText): FinanceRuleResult {
         var proposal = original
         val assigned = mutableSetOf<FinanceActionKind>()
         val tags = linkedSetOf<String>()
@@ -33,7 +33,7 @@ object FinanceRuleEngine {
             val matches = set.conditions.all { c ->
                 when (c.kind) {
                     FinanceConditionKind.SOURCE -> original.source.name == c.value
-                    FinanceConditionKind.TEXT_CONTAINS -> original.evidenceText.contains(c.value, ignoreCase = true)
+                    FinanceConditionKind.TEXT_CONTAINS -> transientText.contains(c.value, ignoreCase = true)
                     FinanceConditionKind.DIRECTION -> original.kind.name == c.value
                     FinanceConditionKind.AMOUNT_MIN -> original.amountMinor?.let { it >= c.value.toLong() } == true
                     FinanceConditionKind.AMOUNT_MAX -> original.amountMinor?.let { it <= c.value.toLong() } == true

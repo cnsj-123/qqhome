@@ -5,7 +5,8 @@ import com.qq.closie.life.finance.*
 
 /** Runs inside the existing restore transaction; never opens or replaces a database. */
 internal object FinanceV4BackupRecovery {
-    suspend fun restore(db: LifeDatabase, saved: FinanceV4Snapshot, restoredEntryIds: Set<String>) {
+    suspend fun restore(db: LifeDatabase, incoming: FinanceV4Snapshot, restoredEntryIds: Set<String>) {
+        val saved = FinanceProposalPrivacy.sanitize(incoming)
         val dao = db.financeIntakeDao()
         val current = readFinanceSnapshot(db, true).v4!!
         val now = System.currentTimeMillis()
