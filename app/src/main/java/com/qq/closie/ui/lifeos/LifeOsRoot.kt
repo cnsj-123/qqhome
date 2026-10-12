@@ -64,17 +64,6 @@ fun LifeOsRoot(
         val reduced = reducedLifeMotion()
         val gesturePolicy = remember { FunctionPagePolicy() }
         val scope = rememberCoroutineScope()
-        val context = androidx.compose.ui.platform.LocalContext.current
-        LaunchedEffect(lifeContainer) {
-            try {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    lifeContainer.financeAutomationRepository.sanitizeExistingProposals()
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (_: Exception) {
-                com.qq.closie.life.finance.FinanceAutomationSettings(context).status("通知隐私清理未完成，请打开账目复核或重试")
-            }
-        }
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
         val intakeError by intake.error.collectAsStateWithLifecycle()

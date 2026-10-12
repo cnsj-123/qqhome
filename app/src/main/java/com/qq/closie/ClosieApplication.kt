@@ -10,6 +10,11 @@ import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.crash.LifeCrashLog
 import com.qq.closie.life.data.LifeContainer
 import com.qq.closie.ui.quickcapture.QuickCaptureTempFiles
+import com.qq.closie.data.backup.RestoreStartupGate
+import com.qq.closie.life.finance.FinanceAutomationSettings
+import com.qq.closie.life.finance.FinanceReviewDelivery
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 
 /**
  * Process-wide owner of the single [LocalWardrobeRepository] and the single [LifeContainer].
@@ -18,6 +23,11 @@ import com.qq.closie.ui.quickcapture.QuickCaptureTempFiles
  * No Hilt, no manual re-instantiation.
  */
 class ClosieApplication : Application() {
+    private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Application wiring; acquisition knows only the delivery port. */
+    fun createFinanceReviewDelivery(scope: CoroutineScope): FinanceReviewDelivery =
+        com.qq.closie.ui.lifeos.finance.FinanceReviewPresenter(this, scope) { lifeContainer.financeAutomationRepository }
 
     /**
      * The wardrobe repository, gated on restore recovery.
@@ -127,5 +137,21 @@ class ClosieApplication : Application() {
                 outcome.error
             )
         }
+        // Wait without blocking startup, and never bypass a pending restore's business gate.
+        startupScope.launch {
+            try {
+                RestoreStartupGate.state.first { it.canAcquireBusinessLease }
+                lifeContainer.financeAutomationRepository.sanitizeExistingProposals()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                FinanceAutomationSettings(this@ClosieApplication).status("通知隐私清理未完成，请打开账目复核或重试")
+                android.util.Log.w("ClosieApplication", "Finance 通知隐私清理未完成；可在账目中重试")
+            }
+        }
+    }
+
+    override fun onTerminate() {
+        startupScope.cancel()
+        super.onTerminate()
     }
 }

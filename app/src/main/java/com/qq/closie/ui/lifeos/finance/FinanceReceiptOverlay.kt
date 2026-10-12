@@ -41,7 +41,7 @@ internal class FinanceReceiptOverlay(private val context: Context, private val s
             val tokens = ThemePalette.resolve((context.applicationContext as ClosieApplication).appearanceRepository.read())
             withContext(Dispatchers.Main.immediate) {
                 val settings = FinanceAutomationSettings(context).read()
-                if (!settings.enhancedReceipt || !settings.enabled ||
+                if (settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.enabled ||
                     (proposal.source == FinanceSource.WECHAT && !settings.wechat) ||
                     (proposal.source == FinanceSource.ALIPAY && !settings.alipay) || FinanceReviewRequests.foreground ||
                     !Settings.canDrawOverlays(context)) return@withContext false
@@ -117,7 +117,7 @@ internal class FinanceReceiptOverlay(private val context: Context, private val s
                 observer = scope.launch(Dispatchers.Main.immediate) {
                     combine(container.financeAutomationRepository.observe(), FinanceReviewRequests.visible,
                         FinanceAutomationSettings(context).observe()) { data, foreground, settings ->
-                        foreground || !settings.enhancedReceipt || !settings.enabled ||
+                        foreground || settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.enabled ||
                             (proposal.source == FinanceSource.WECHAT && !settings.wechat) ||
                             (proposal.source == FinanceSource.ALIPAY && !settings.alipay) ||
                             data.proposals.none { it.id == id && it.revision == model.revision &&
