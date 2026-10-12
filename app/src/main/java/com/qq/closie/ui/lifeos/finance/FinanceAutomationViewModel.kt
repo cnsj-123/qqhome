@@ -12,7 +12,7 @@ internal data class AutomationUiState(
     val finance: FinanceSnapshot = FinanceSnapshot(), val loaded: Boolean = false,
     val busy: Boolean = false, val error: String? = null
 )
-internal class FinanceAutomationViewModel(private val repository: FinanceAutomationRepository, finance: FinanceRepository) : ViewModel() {
+internal class FinanceAutomationViewModel(private val repository: FinanceAutomationRepository, private val finance: FinanceRepository) : ViewModel() {
     private val mutable = MutableStateFlow(AutomationUiState())
     val state = mutable.asStateFlow()
     init {
@@ -39,6 +39,11 @@ internal class FinanceAutomationViewModel(private val repository: FinanceAutomat
     fun confirmReceipt(receipt: FinanceReviewReceiptModel, done: () -> Unit) = action {
         repository.confirm(receipt.proposalId, receipt.revision, requireNotNull(receipt.confirmation) { "请先完善小票" })
         done()
+    }
+    fun createCategory(parentId: String, name: String, onCreated: (String) -> Unit) = action {
+        val created = finance.createCategory(name, parentId)
+        mutable.update { it.copy(finance = finance.snapshot()) }
+        onCreated(created.id)
     }
     fun dismiss(proposal: FinanceProposalEntity, status: FinanceProposalStatus, done: () -> Unit) = action {
         repository.dismiss(proposal.id, proposal.revision, status); done()

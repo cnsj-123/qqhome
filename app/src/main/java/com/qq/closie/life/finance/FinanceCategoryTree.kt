@@ -5,7 +5,9 @@ class FinanceCategoryTree(categories: List<FinanceCategoryEntity>) {
     private val byId = categories.associateBy { it.id }
     private val children = categories.groupBy { it.parentId }
     fun node(id: String?) = byId[id]
-    fun children(id: String) = children[id].orEmpty().sortedBy { it.name }
+    fun children(id: String?) = children[id].orEmpty().sortedBy { it.name }
+    fun matchingChildren(parentId: String?, name: String) = children(parentId).filter { it.name.trim() == name.trim() }
+    fun hasValidAncestry(id: String): Boolean = path(id).firstOrNull()?.parentId == null && node(id) != null
     fun path(id: String?): List<FinanceCategoryEntity> {
         val result = mutableListOf<FinanceCategoryEntity>()
         val seen = mutableSetOf<String>()
@@ -50,9 +52,41 @@ class FinanceCategoryTree(categories: List<FinanceCategoryEntity>) {
         }
     }
     fun find(parent: String, child: String = ""): FinanceCategoryEntity? {
-        val direct = byId.values.find { it.parentId == null && it.name == parent }
-        if (direct != null) return if (child.isBlank()) direct else children(direct.id).find { it.name == child }
-        val names = (parent + if (child.isBlank()) "" else " › $child").split(Regex("\\s*[›/]\\s*")).filter(String::isNotBlank)
-        return byId.values.singleOrNull { row -> path(row.id).map { it.name } == names }
+        return proposalPath(parent, child)?.let(::resolvePath)
+    }
+    fun resolvePath(value: String): FinanceCategoryEntity? = splitPath(value)?.let(::resolvePath)
+    fun resolvePath(segments: List<String>): FinanceCategoryEntity? {
+        if (segments.isEmpty()) return null
+        val seen = mutableSetOf<String>()
+        var selected: FinanceCategoryEntity? = null
+        for (segment in segments) {
+            val name = singleName(segment) ?: return null
+            val next = matchingChildren(selected?.id, name).singleOrNull() ?: return null
+            if (!seen.add(next.id) || !hasValidAncestry(next.id)) return null
+            selected = next
+        }
+        return selected
+    }
+
+    companion object {
+        private val separator = Regex("[/›]")
+        fun splitPath(value: String): List<String>? {
+            if (value.isBlank()) return emptyList()
+            return value.split(separator).map(String::trim).takeIf { names -> names.all(String::isNotBlank) }
+        }
+        fun singleName(value: String): String? = splitPath(value)?.singleOrNull()
+        /** Existing v4 fields remain a first segment plus the rest; no new persisted path field. */
+        fun proposalPath(parent: String, child: String = ""): List<String>? {
+            val root = splitPath(parent) ?: return null
+            val rest = splitPath(child) ?: return null
+            return if (root.isEmpty() && rest.isNotEmpty()) null else root + rest
+        }
+        fun proposalFields(path: String): Pair<String, String> {
+            val segments = requireNotNull(splitPath(path)) { "分类路径含有空层级" }
+            require(segments.isNotEmpty()) { "请填写分类路径" }
+            return segments.first() to segments.drop(1).joinToString("/")
+        }
+        fun displayProposalPath(parent: String, child: String = ""): String? =
+            proposalPath(parent, child)?.takeIf { it.isNotEmpty() }?.joinToString(" › ")
     }
 }

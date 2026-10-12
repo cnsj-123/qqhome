@@ -77,7 +77,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
         Text(if (amount.isBlank()) "金额待确认（通知中有多个金额）" else "¥$amount", style = MaterialTheme.typography.headlineMedium)
         Text("${receipt.source} · ${when (receipt.direction) { FinanceProposalKind.INCOME -> "收入"; FinanceProposalKind.TRANSFER -> "转账"; else -> "支出" }}")
         Text("账户：${accounts.find { it.id == account }?.name ?: "待选择"}")
-        Text("分类：${FinanceProjection.categoryPath(state.finance.categories, selectedCategoryId) ?: listOf(category, subcategory).filter(String::isNotBlank).joinToString(" › ").ifBlank { "待选择" }}")
+        Text("分类：${FinanceProjection.categoryPath(state.finance.categories, selectedCategoryId) ?: FinanceCategoryTree.displayProposalPath(category, subcategory) ?: "待选择"}")
         Text("说明：$description")
         Text("业务性质", style = MaterialTheme.typography.labelMedium)
         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -122,5 +122,6 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
 
     }
     if (pickingCategory) FinanceCategoryPicker(state.finance, selectedCategoryId,
-        { selectedCategoryId = it }, { pickingCategory = false })
+        { selectedCategoryId = it }, { pickingCategory = false }, busy = state.busy, error = state.error,
+        onCreateChild = vm::createCategory)
 }

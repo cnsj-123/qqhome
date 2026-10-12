@@ -172,14 +172,32 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     }
 
     private suspend fun resolveCategory(parent: String, child: String): String? {
-        if (parent.isBlank()) { require(child.isBlank()) { "子分类需要主分类" }; return null }
-        val categories = dao.categories()
-        val root = categories.find { it.parentId == null && it.name == parent.trim() }?.id
-            ?: newId().also { dao.insertCategory(FinanceCategoryEntity(it, parent.trim())) }
-        return child.trim().takeIf { it.isNotEmpty() }?.let { name ->
-            categories.find { it.parentId == root && it.name == name }?.id
-                ?: newId().also { dao.insertCategory(FinanceCategoryEntity(it, name, root)) }
-        } ?: root
+        val names = requireNotNull(FinanceCategoryTree.proposalPath(parent, child)) { "分类路径无效，请重新选择分类" }
+        val categories = dao.categories().toMutableList()
+        var parentId: String? = null
+        // This upsert is only used by explicit manual/import/confirmation commands.
+        // Automatic suggestions use resolvePath and never create missing nodes.
+        for (name in names) {
+            val matches = FinanceCategoryTree(categories).matchingChildren(parentId, name)
+            require(matches.size <= 1) { "分类同名有歧义，请从分类列表明确选择" }
+            val selected = matches.singleOrNull() ?: FinanceCategoryEntity(newId(), name, parentId).also {
+                dao.insertCategory(it); categories.add(it)
+            }
+            parentId = selected.id
+        }
+        return parentId
+    }
+
+    /** One explicit user-created child under an existing node, at any depth. */
+    suspend fun createCategory(name: String, parentId: String): FinanceCategoryEntity = transaction {
+        val normalized = requireNotNull(FinanceCategoryTree.singleName(name)) { "请填写单个分类名称，不含 / 或 ›" }
+        val tree = FinanceCategoryTree(dao.categories())
+        require(tree.hasValidAncestry(parentId)) { "父分类已不存在或层级无效，请重新选择" }
+        require(tree.matchingChildren(parentId, normalized).isEmpty()) { "此分类下已有同名子分类，请选择已有分类" }
+        val row = FinanceCategoryEntity(newId(), normalized, parentId)
+        dao.insertCategory(row)
+        journal(row.id, "CATEGORY_CREATE")
+        row
     }
 
     private suspend fun attachEvent(entry: FinanceEntryEntity, input: FinanceEventInput, batchId: String?, authority: String?) {

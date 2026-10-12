@@ -12,10 +12,13 @@ import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeText
 
 @Composable
-internal fun FinanceCategoryPicker(snapshot: FinanceSnapshot, selected: String?, onSelect: (String) -> Unit, onClose: () -> Unit) {
+internal fun FinanceCategoryPicker(snapshot: FinanceSnapshot, selected: String?, onSelect: (String) -> Unit, onClose: () -> Unit,
+    busy: Boolean, error: String?, onCreateChild: (String, String, (String) -> Unit) -> Unit) {
     val tree = remember(snapshot.categories) { FinanceCategoryTree(snapshot.categories) }
     var query by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(tree.path(selected).map { it.id }.toSet()) }
+    var createUnder by remember { mutableStateOf<String?>(null) }
+    var childName by remember { mutableStateOf("") }
     val recent = remember(snapshot.entries, snapshot.categories) { snapshot.entries.filter { it.voidedAt == null }
         .sortedByDescending { it.updatedAt }.mapNotNull { tree.node(it.categoryId) }.distinctBy { it.id }.take(8) }
     val rows = remember(tree, query, expanded) {
@@ -35,11 +38,11 @@ internal fun FinanceCategoryPicker(snapshot: FinanceSnapshot, selected: String?,
             }
         }
     }
-    FinanceReceipt("分类", onClose = onClose) {
+    FinanceReceipt("分类", busy = busy, error = error, onClose = onClose) {
         if (recent.isNotEmpty()) {
             Text("最近使用", style = LifeText.caption)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(recent, key = { it.id }) { row ->
-                SuggestionChip({ onSelect(row.id); onClose() }, label = { Text(row.name) })
+                SuggestionChip({ onSelect(row.id); onClose() }, enabled = !busy, label = { Text(row.name) })
             } }
         }
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索分类名或完整路径") }, singleLine = true)
@@ -51,13 +54,29 @@ internal fun FinanceCategoryPicker(snapshot: FinanceSnapshot, selected: String?,
                     TextButton({
                         if (query.isNotBlank() || !hasChildren || depth >= 2) { onSelect(row.id); onClose() }
                         else expanded = if (row.id in expanded) expanded - row.id else expanded + row.id
-                    }, Modifier.weight(1f)) { Text((if (row.id == selected) "● " else "") +
+                    }, Modifier.weight(1f), enabled = !busy) { Text((if (row.id == selected) "● " else "") +
                         (if (query.isNotBlank() || depth >= 2) tree.fullPath(row.id).orEmpty() else row.name) +
                         if (hasChildren && query.isBlank() && depth < 2) if (row.id in expanded) " ▾" else " ▸" else "") }
-                    if (hasChildren && query.isBlank() && depth < 2) TextButton({ onSelect(row.id); onClose() }) { Text("选此类") }
+                    if (hasChildren && query.isBlank() && depth < 2) TextButton({ onSelect(row.id); onClose() }, enabled = !busy) { Text("选此类") }
+                    TextButton({ createUnder = row.id; childName = "" }, enabled = !busy && tree.hasValidAncestry(row.id)) { Text("新增子类") }
                 }
             }
         }
         Text("分类是消费内容；报销、代付和分账请在业务性质中选择。", style = LifeText.caption)
+    }
+    createUnder?.let { parentId ->
+        val validName = FinanceCategoryTree.singleName(childName)
+        AlertDialog(onDismissRequest = { if (!busy) createUnder = null },
+            title = { Text("在此分类下新增子分类") }, text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(tree.fullPath(parentId) ?: "父分类已不存在")
+                    OutlinedTextField(childName, { childName = it }, label = { Text("分类名称") }, singleLine = true, enabled = !busy)
+                    Text("日常以一至两层为主，需要时再细分；父分类仍可直接选择。", style = LifeText.caption)
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            }, confirmButton = {
+                TextButton({ onCreateChild(parentId, childName) { id -> createUnder = null; onSelect(id); onClose() } },
+                    enabled = !busy && validName != null && tree.hasValidAncestry(parentId)) { Text(if (busy) "正在保存……" else "新增并选择") }
+            }, dismissButton = { TextButton({ createUnder = null }, enabled = !busy) { Text("取消") } })
     }
 }

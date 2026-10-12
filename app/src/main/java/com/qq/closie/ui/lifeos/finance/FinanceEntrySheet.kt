@@ -90,7 +90,8 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         }
     }
     if (pickingCategory) FinanceCategoryPicker(state.snapshot, selectedCategoryId,
-        onSelect = { selectedCategoryId = it }, onClose = { pickingCategory = false })
+        onSelect = { selectedCategoryId = it }, onClose = { pickingCategory = false },
+        busy = state.busy, error = state.error, onCreateChild = vm::createCategory)
     if (pickingTag) FinanceChoiceSheet("标签", null, state.snapshot.tags.map { it.id to it.name },
         onSelect = { id -> state.snapshot.tags.find { it.id == id }?.let { selected ->
             tags = (tags.split(Regex("[,，\\n]")).map(String::trim).filter(String::isNotBlank) + selected.name).distinct().joinToString("，")

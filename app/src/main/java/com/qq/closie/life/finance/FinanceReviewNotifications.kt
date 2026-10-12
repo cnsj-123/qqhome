@@ -51,4 +51,3 @@ object FinanceReviewNotifications {
         catch (_: SecurityException) { false } // Proposal remains in Finance.
     }
 }
-

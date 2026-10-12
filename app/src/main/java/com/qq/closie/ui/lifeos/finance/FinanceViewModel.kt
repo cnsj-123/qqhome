@@ -178,6 +178,10 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     fun allocate(row: FinanceLedgerRow, parts: List<FinanceAllocation>, done: () -> Unit) = mutate(done) {
         repository.allocateEntry(row.entry.id, parts, row.entry.revision)
     }
+    fun createCategory(parentId: String, name: String, onCreated: (String) -> Unit) {
+        var created: String? = null
+        mutate({ created?.let(onCreated) }) { created = repository.createCategory(name, parentId).id }
+    }
     private fun mutate(onSaved: () -> Unit, operation: suspend () -> Unit) {
         if (busy.value || snapshot.value == null) return
         busy.value = true

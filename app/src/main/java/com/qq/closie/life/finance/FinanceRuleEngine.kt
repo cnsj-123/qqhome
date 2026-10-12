@@ -20,7 +20,7 @@ object FinanceRuleEngine {
         set.actions.forEach { action ->
             require(action.value.isNotBlank())
             if (action.kind == FinanceActionKind.SUGGEST_BUSINESS_NATURE) require(FinanceNature.entries.any { it.name == action.value })
-            if (action.kind == FinanceActionKind.SUGGEST_CATEGORY) require(action.value.split('/').all { it.isNotBlank() })
+            if (action.kind == FinanceActionKind.SUGGEST_CATEGORY) FinanceCategoryTree.proposalFields(action.value)
         }
     }
     fun apply(original: FinanceProposalEntity, rules: List<FinanceRuleSet>, transientText: String = original.evidenceText): FinanceRuleResult {
@@ -46,8 +46,10 @@ object FinanceRuleEngine {
                     if (a.kind == FinanceActionKind.ADD_TAG) tags += a.value.trim()
                     else if (assigned.add(a.kind)) proposal = when (a.kind) {
                         FinanceActionKind.SUGGEST_ACCOUNT -> proposal.copy(accountId = a.value)
-                        FinanceActionKind.SUGGEST_CATEGORY -> proposal.copy(category = a.value.substringBefore('/').trim(),
-                            subcategory = a.value.substringAfter('/', "").trim())
+                        FinanceActionKind.SUGGEST_CATEGORY -> {
+                            val (category, subcategory) = FinanceCategoryTree.proposalFields(a.value)
+                            proposal.copy(category = category, subcategory = subcategory)
+                        }
                         FinanceActionKind.NORMALIZE_DESCRIPTION -> proposal.copy(description = a.value)
                         FinanceActionKind.SUGGEST_BUSINESS_NATURE -> proposal.copy(nature = FinanceNature.valueOf(a.value))
                         FinanceActionKind.ADD_TAG -> proposal
