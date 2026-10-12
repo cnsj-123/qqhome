@@ -18,6 +18,7 @@ import com.qq.closie.ui.lifeos.theme.*
 internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String? = null,
     onClose: () -> Unit, actions: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit) {
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe()
     val colors = LocalLifeOsColors.current
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
         confirmValueChange = { !busy || it != SheetValue.Hidden })

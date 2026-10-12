@@ -39,6 +39,7 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
     val discovery by settingsFlow.collectAsStateWithLifecycle(initialValue = settings.read())
     var access by remember { mutableStateOf(false) }
     var notifications by remember { mutableStateOf(false) }
+    var overlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var settingsError by remember { mutableStateOf<String?>(null) }
     var editRule by remember { mutableStateOf<FinanceRuleSet?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -46,6 +47,7 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) {
             access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
             notifications = NotificationManagerCompat.from(context).areNotificationsEnabled()
+            overlayPermission = Settings.canDrawOverlays(context)
         } }
         lifecycle.addObserver(observer)
         access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
@@ -54,6 +56,11 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         notifications = NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    fun requestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,
+                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -65,7 +72,7 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
             item { FinanceDiagnosticsCard(access, discovery) }
             item {
                 Text("通知访问允许应用读取设备通知。本功能只处理下面选中的微信／支付宝支付提示，在本机解析，不上传内容，其他通知忽略。发现的信息仅供确认，不会自动记账。")
-                Row { Switch(discovery.enabled, { settings.save(discovery.copy(enabled = it)) }); Text("自动发现 ${if (discovery.enabled) "开启" else "关闭"}") }
+                Row { Switch(discovery.enabled, { settings.save(discovery.copy(enabled = it)); if (it && discovery.backgroundReview) requestNotifications() }); Text("自动发现 ${if (discovery.enabled) "开启" else "关闭"}") }
                 Text("系统通知访问：${if (access) "已允许" else "未允许"}")
                 TextButton(onClick = {
                     try { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
@@ -75,10 +82,31 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
                 Row { Checkbox(discovery.alipay, { settings.save(discovery.copy(alipay = it)) }); Text("支付宝 · ${installedSource(context, "com.eg.android.AlipayGphone")}") }
                 Row { Checkbox(discovery.backgroundReview, {
                     settings.save(discovery.copy(backgroundReview = it))
-                    if (it && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    if (it) requestNotifications()
                 }); Text("后台发现后发出确认提醒") }
-                if (discovery.backgroundReview && !notifications) Text("系统通知未允许，发现的记录仍可在这里查看。")
+                Text("支付后复核", style = MaterialTheme.typography.titleMedium)
+                Row {
+                    FilterChip(!discovery.immediateReview, { settings.save(discovery.copy(immediateReview = false, backgroundReview = true)); requestNotifications() }, label = { Text("普通提醒") })
+                    FilterChip(discovery.immediateReview, {
+                        settings.save(discovery.copy(immediateReview = true, backgroundReview = true))
+                        requestNotifications()
+                    }, label = { Text("即时提醒") })
+                }
+                Text("普通提醒使用系统通知；即时提醒允许横幅。无需显示在其他应用上层权限，系统可调整提醒方式。", style = MaterialTheme.typography.bodySmall)
+                Row {
+                    Switch(discovery.enhancedReceipt, { enabled ->
+                        settings.save(discovery.copy(enhancedReceipt = enabled))
+                        if (enabled && !Settings.canDrawOverlays(context)) {
+                            try { context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:${context.packageName}"))) }
+                            catch (_: Exception) { settingsError = "无法打开权限设置，仍使用即时提醒" }
+                        }
+                    })
+                    Text("增强小票弹屏")
+                }
+                Text("在其他应用上层显示半屏小票，仅展示已发现的账目，不读取其他应用画面。需“显示在其他应用上层”权限。", style = MaterialTheme.typography.bodySmall)
+                if (discovery.enhancedReceipt && !overlayPermission) Text("上层显示未授权，将使用即时提醒。")
+                if ((discovery.backgroundReview || discovery.enhancedReceipt) && !notifications) Text("系统通知未允许，发现的记录仍可在这里查看。")
                 if (discovery.lastStatus.isNotBlank()) Text(discovery.lastStatus, style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
                 Text("规则只提供建议", style = MaterialTheme.typography.titleMedium)

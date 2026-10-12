@@ -40,6 +40,10 @@ internal class FinanceAutomationViewModel(private val repository: FinanceAutomat
             draft.relationship.resolve("CNY")))
         done()
     }
+    fun confirmReceipt(receipt: FinanceReviewReceiptModel, done: () -> Unit) = action {
+        repository.confirm(receipt.proposalId, receipt.revision, requireNotNull(receipt.confirmation) { "请先完善小票" })
+        done()
+    }
     fun dismiss(proposal: FinanceProposalEntity, status: FinanceProposalStatus, done: () -> Unit) = action {
         repository.dismiss(proposal.id, proposal.revision, status); done()
     }

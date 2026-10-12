@@ -15,14 +15,17 @@ import kotlinx.coroutines.flow.*
 import java.security.MessageDigest
 
 data class FinanceDiscoverySettings(val enabled: Boolean = false, val wechat: Boolean = true,
-    val alipay: Boolean = true, val backgroundReview: Boolean = false, val lastStatus: String = "")
+    val alipay: Boolean = true, val backgroundReview: Boolean = true, val lastStatus: String = "",
+    val immediateReview: Boolean = true, val enhancedReceipt: Boolean = false)
 class FinanceAutomationSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("finance_discovery_device", Context.MODE_PRIVATE)
     fun read() = FinanceDiscoverySettings(prefs.getBoolean("enabled", false), prefs.getBoolean("wechat", true),
-        prefs.getBoolean("alipay", true), prefs.getBoolean("background", false), prefs.getString("status", "").orEmpty())
+        prefs.getBoolean("alipay", true), prefs.getBoolean("background", true), prefs.getString("status", "").orEmpty(),
+        prefs.getBoolean("immediateReview", true), prefs.getBoolean("enhancedReceipt", false))
     fun save(value: FinanceDiscoverySettings) {
         prefs.edit().putBoolean("enabled", value.enabled).putBoolean("wechat", value.wechat)
-            .putBoolean("alipay", value.alipay).putBoolean("background", value.backgroundReview).apply()
+            .putBoolean("alipay", value.alipay).putBoolean("background", value.backgroundReview)
+            .putBoolean("immediateReview", value.immediateReview).putBoolean("enhancedReceipt", value.enhancedReceipt).apply()
     }
     fun status(message: String) { prefs.edit().putString("status", message).apply() }
     fun observe() = callbackFlow {
@@ -35,7 +38,11 @@ class FinanceAutomationSettings(context: Context) {
 
 object FinanceReviewRequests {
     const val EXTRA_PROPOSAL = "finance_review_proposal"
-    @Volatile var foreground = false
+    private val foregroundState = MutableStateFlow(false)
+    val visible = foregroundState.asStateFlow()
+    var foreground: Boolean
+        get() = foregroundState.value
+        set(value) { foregroundState.value = value }
     private val mutable = MutableStateFlow<List<String>>(emptyList())
     val pending = mutable.asStateFlow()
     fun open(id: String) { mutable.update { if (id in it) it else (it + id).take(20) } }
@@ -44,23 +51,29 @@ object FinanceReviewRequests {
 
 object FinanceReviewNotifications {
     private const val CHANNEL = "finance_review"
+    const val IMMEDIATE_CHANNEL = "finance_receipt_immediate_v15"
     fun cancel(context: Context, id: String) { NotificationManagerCompat.from(context).cancel(id, 0) }
-    fun post(context: Context, proposal: FinanceProposalEntity) {
+    fun openIntent(context: Context, id: String) = Intent(context, MainActivity::class.java).apply {
+        putExtra(FinanceReviewRequests.EXTRA_PROPOSAL, id)
+        data = android.net.Uri.parse("lifeos://finance-review/$id")
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+    }
+    fun post(context: Context, proposal: FinanceProposalEntity, immediate: Boolean = true) {
         val manager = NotificationManagerCompat.from(context)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "账目确认", NotificationManager.IMPORTANCE_LOW)
+        val channel = if (immediate) IMMEDIATE_CHANNEL else CHANNEL
+        manager.createNotificationChannel(NotificationChannel(channel, if (immediate) "支付后即时复核" else "账目确认",
+            if (immediate) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_LOW)
             .apply { description = "发现可能的支付后，点按查看并确认"; lockscreenVisibility = Notification.VISIBILITY_PRIVATE })
         if (!manager.areNotificationsEnabled()) return
-        val intent = Intent(context, MainActivity::class.java).apply {
-            putExtra(FinanceReviewRequests.EXTRA_PROPOSAL, proposal.id)
-            data = android.net.Uri.parse("lifeos://finance-review/${proposal.id}")
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
+        val intent = openIntent(context, proposal.id)
         val content = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val amount = proposal.amountMinor?.let { " " + FinanceMoney.display(it, "CNY") }.orEmpty()
-        val notification = NotificationCompat.Builder(context, CHANNEL)
+        val amount = proposal.amountMinor?.let { FinanceMoney.display(it, "CNY") }
+        val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(com.qq.closie.R.drawable.ic_finance_review)
-            .setContentTitle("发现一笔可能的支付$amount")
-            .setContentText("点按查看并确认；尚未记入账目")
+            .setContentTitle(amount?.let { "发现一笔 $it 支付" } ?: "发现一笔支付 · 金额待核对")
+            .setContentText("点按核对账目，尚未入账")
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(if (immediate) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
             .setContentIntent(content).setAutoCancel(true).setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build()
         try { manager.notify(proposal.id, 0, notification) } catch (_: SecurityException) { /* Proposal remains in Finance. */ }
@@ -70,6 +83,7 @@ object FinanceReviewNotifications {
 /** Android adapter only: allowlist -> conservative parser -> proposal. No canonical commands here. */
 class FinanceNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val receiptOverlay by lazy { com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay(this, scope) }
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
         if (sbn.packageName !in FinanceNotificationParser.packages) return
@@ -117,13 +131,18 @@ class FinanceNotificationListener : NotificationListenerService() {
                     created.amountMinor, created.id)
                 settings.status("最近已发现一条待确认记录")
                 if (FinanceReviewRequests.foreground) FinanceReviewRequests.open(created.id)
-                else if (live.backgroundReview) runCatching { FinanceReviewNotifications.post(applicationContext, created) }
-                    .onFailure { settings.status("待确认已保存，但后台提醒未能送达；可在账目中查看") }
+                else {
+                    val overlayShown = live.enhancedReceipt && receiptOverlay.show(created.id)
+                    if (live.backgroundReview || (live.enhancedReceipt && !overlayShown))
+                        runCatching { FinanceReviewNotifications.post(applicationContext, created,
+                            immediate = !overlayShown && (live.immediateReview || live.enhancedReceipt)) }
+                            .onFailure { settings.status("待确认已保存，但后台提醒未能送达；可在账目中查看") }
+                }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { report(DiscoveryResult.SAVE_FAILED); settings.status("最近一次发现未保存，请打开应用检查恢复状态后重试") }
         }
     }
     override fun onListenerConnected() { super.onListenerConnected(); FinanceDiscoveryDiagnostics.connection(true) }
-    override fun onListenerDisconnected() { super.onListenerDisconnected(); FinanceDiscoveryDiagnostics.connection(false) }
-    override fun onDestroy() { FinanceDiscoveryDiagnostics.connection(false); scope.cancel(); super.onDestroy() }
+    override fun onListenerDisconnected() { receiptOverlay.close(); super.onListenerDisconnected(); FinanceDiscoveryDiagnostics.connection(false) }
+    override fun onDestroy() { receiptOverlay.close(); FinanceDiscoveryDiagnostics.connection(false); scope.cancel(); super.onDestroy() }
 }
