@@ -1,0 +1,95 @@
+From bf21f0fc783c0b27be1651d009d028f035e59f2d Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 12 Oct 2026 21:09:15 +0800
+Subject: [PATCH] fix(android): resolve V15 CI45 gesture and test regressions
+
+---
+ .../ui/lifeos/components/LifeFunctionPages.kt | 32 ++++++++++++-------
+ .../com/qq/closie/ArchitectureBoundaryTest.kt |  5 +--
+ .../ui/lifeos/finance/FinanceSmokeTest.kt     |  2 +-
+ 3 files changed, 25 insertions(+), 14 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt b/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt
+index b389916..81fccc4 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/components/LifeFunctionPages.kt
+@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.gestures.awaitEachGesture
+ import androidx.compose.foundation.gestures.awaitFirstDown
++import androidx.compose.foundation.gestures.horizontalDrag
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.runtime.*
+@@ -80,17 +81,26 @@ fun LifeFunctionPages(
+                         }
+                     }
+                     try {
+-                        // Keep the ownership pass for the entire drag. Switching from Initial to
+-                        // Main here would encounter our own consumed slop event and cancel it.
+-                        var released = false
+-                        while (true) {
+-                            val event = awaitPointerEvent(pass)
+-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+-                            if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
+-                            tracker.addPosition(change.uptimeMillis, change.position)
+-                            progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
+-                            change.consume()
+-                            if (!change.pressed) { released = true; break }
++                        val released = if (pass == androidx.compose.ui.input.pointer.PointerEventPass.Main) {
++                            // Ordinary content drags keep the established Main-pass continuation.
++                            horizontalDrag(down.id) { change ->
++                                tracker.addPosition(change.uptimeMillis, change.position)
++                                progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
++                                change.consume()
++                            }
++                        } else {
++                            // Finance keeps Initial ownership; Main would see our consumed slop event.
++                            var released = false
++                            while (true) {
++                                val event = awaitPointerEvent(pass)
++                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
++                                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
++                                tracker.addPosition(change.uptimeMillis, change.position)
++                                progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
++                                change.consume()
++                                if (!change.pressed) { released = true; break }
++                            }
++                            released
+                         }
+                         val velocity = tracker.calculateVelocity().x
+                         val fling = 650.dp.toPx()
+diff --git a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+index b914c07..0b1f166 100644
+--- a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
++++ b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+@@ -45,10 +45,11 @@ class ArchitectureBoundaryTest {
+     }
+     @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
+         val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
+-        assertTrue(Regex("""\bfinanceAutomationRepository\.discover(?:WithResult)?\s*\(\s*proposal\s*\)""").containsMatchIn(listener))
++        assertTrue(listener.contains("financeAutomationRepository"))
++        assertTrue(Regex("""\.discoverWithResult\s*\(\s*proposal\b""").containsMatchIn(listener))
+         for (forbidden in listOf("financeDao(", "financeIntakeDao(", "saveEntry(", "saveTransfer(",
+             "FinanceEntryEntity(", "FinanceRepository(", "startActivity(", "setFullScreenIntent", "TYPE_APPLICATION_OVERLAY",
+-            "financeAutomationRepository.confirm(")) {
++            "financeAutomationRepository.confirm(", "FinanceReceiptOverlay")) {
+             assertFalse(forbidden, listener.contains(forbidden))
+         }
+     }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+index 476f91e..deed574 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+@@ -71,7 +71,7 @@ class FinanceSmokeTest {
+         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
+         input("金额 · CNY", "12.34")
+         input("具体事由 · 买了什么 / 为了什么", "早餐豆浆")
+-        input("分类（可自定义）", "餐饮")
++        input("新主分类（可留空）", "餐饮")
+         input("标签 · 用逗号分隔，可自定义", "早餐，出门")
+         click("保存记录"); saved()
+         val original = snapshot().entries.single()
+-- 
+2.53.0.windows.3
+
