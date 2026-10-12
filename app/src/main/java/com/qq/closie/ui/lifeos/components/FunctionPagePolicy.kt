@@ -26,5 +26,5 @@ fun SuspendFunctionPageSwipe(active: Boolean = true) {
 fun supportsFunctionPage(route: String?): Boolean = route in setOf(
     LifeOsRoute.HOME, LifeOsRoute.FINANCE, LifeOsRoute.CLOSET, LifeOsRoute.CALENDAR,
     LifeOsRoute.CAPTURE, LifeOsRoute.REFERENCE, LifeOsRoute.PLAN, LifeOsRoute.READING,
-    LifeOsRoute.MODULE, LifeOsRoute.SETTINGS
+    LifeOsRoute.MODULE, LifeOsRoute.MAP, LifeOsRoute.SETTINGS
 )

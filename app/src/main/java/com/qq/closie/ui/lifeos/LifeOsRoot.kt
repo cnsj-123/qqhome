@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -22,8 +20,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -39,7 +35,6 @@ import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import com.qq.closie.ui.lifeos.drawer.LifeOsDrawer
-import com.qq.closie.ui.lifeos.components.lifeHorizontalSwipe
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
 import com.qq.closie.navigation.navigateLifeTopLevel
 import com.qq.closie.navigation.LifeOsRoute
@@ -99,10 +94,14 @@ fun LifeOsRoot(
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
         CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
-            Box(Modifier.safeDrawingPadding().consumeWindowInsets(WindowInsets.safeDrawing)) {
+            Box(Modifier.safeDrawingPadding().consumeWindowInsets(WindowInsets.safeDrawing)
+                .lifeCompanionSwipe(enabled = supportsFunctionPage(entry?.destination?.route) &&
+                    !drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
+                    onOpen = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) })) {
                 com.qq.closie.ui.lifeos.components.LifeFunctionPages(
                     open = drawerOpen,
-                    enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu,
+                    enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
+                    horizontalPages = entry?.destination?.route == LifeOsRoute.FINANCE,
                     effects = appearance.functionEffects, style = appearance.functionPageStyle, reducedMotion = reduced,
                     onOpenChange = { drawerOpen = it },
                     functionPage = {

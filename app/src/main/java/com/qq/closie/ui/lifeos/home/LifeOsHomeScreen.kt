@@ -8,6 +8,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -27,25 +30,23 @@ fun LifeOsHomeScreen(
     val colors = LocalLifeOsColors.current
     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
     SuspendFunctionPageSwipe(viewerPhotoId != null)
-    Column(modifier.fillMaxSize()) {
+    Column(modifier.fillMaxSize().semantics {
+        customActions = listOf(CustomAccessibilityAction("打开生活的抽屉") { onDrawer(); true },
+            CustomAccessibilityAction("找伙伴") { onCompanion(); true })
+    }) {
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
         ) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Life OS", Modifier.weight(1f), style = LifeText.journal, color = colors.ink)
-                    IconButton(onClick = onDrawer) { Icon(Icons.Outlined.Menu, "打开生活的抽屉", Modifier.size(22.dp), tint = colors.accentDeep) }
-                }
-                Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onCompanion, contentPadding = PaddingValues(end = 12.dp)) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(16.dp))
-                        Text(" 伙伴 · 聊一会儿", style = LifeText.caption)
+                    Column(Modifier.weight(1f)) {
+                        Text("Life OS", style = LifeText.journal, color = colors.ink)
+                        Text("收好自己的日子", style = LifeText.caption, color = colors.muted)
                     }
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(19.dp), tint = colors.inkSecondary) }
-                    IconButton(onClick = onMap) { Icon(Icons.Outlined.Map, "生活地图", Modifier.size(19.dp), tint = colors.inkSecondary) }
+                    IconButton(onCapture) { Icon(Icons.Outlined.Add, "记一下", Modifier.size(20.dp), tint = colors.accentDeep) }
+                    IconButton(onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(20.dp)) }
+                    IconButton(onMap) { Icon(Icons.Outlined.Map, "生活地图", Modifier.size(20.dp)) }
                 }
                 HorizontalDivider(color = colors.line)
                 Spacer(Modifier.height(24.dp))
@@ -88,14 +89,7 @@ fun LifeOsHomeScreen(
                 Spacer(Modifier.height(24.dp))
             }
         }
-        HorizontalDivider(color = colors.line)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            CompanionEntry(onCompanion, Modifier.weight(1f))
-            TextButton(onClick = onCapture, modifier = Modifier.heightIn(min = 48.dp)) {
-                Icon(Icons.Outlined.Add, contentDescription = null)
-                Text("记一下")
-            }
-        }
+
     }
     val selected = state.eligibleMedia.firstOrNull { it.id == viewerPhotoId }
     if (selected != null) LifePhotoViewer(state.eligibleMedia, selected.id, onDismiss = { viewerPhotoId = null })

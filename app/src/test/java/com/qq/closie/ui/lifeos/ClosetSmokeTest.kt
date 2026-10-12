@@ -42,7 +42,7 @@ class ClosetSmokeTest {
     private fun openDrawer() {
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("生活").assertDoesNotExist()
-        compose.onNodeWithContentDescription("打开生活的抽屉").performClick()
+        compose.onRoot().performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
     }
@@ -163,9 +163,9 @@ class ClosetSmokeTest {
         compose.onNodeWithText("钱的位置").assertIsDisplayed()
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
 
-        // Real input on Finance content, away from system edges and horizontal account rows.
+        // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
         compose.onNodeWithTag("finance-ledger").performTouchInput {
-            swipe(Offset(width * .25f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
+            swipe(Offset(width * .10f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
         }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()

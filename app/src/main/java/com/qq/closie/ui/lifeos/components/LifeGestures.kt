@@ -26,7 +26,7 @@ fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? 
     val left = rememberUpdatedState(onLeft)
     val right = rememberUpdatedState(onRight)
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }
-    val edge = with(LocalDensity.current) { 24.dp.toPx() }
+    val edge = with(LocalDensity.current) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
     return if (!enabled) this else pointerInput(threshold, edge) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -71,5 +71,44 @@ object LifeSwipeIntent {
         abs(dy) > slop && abs(dy) >= abs(dx) -> Direction.VERTICAL
         abs(dx) > slop && abs(dx) > abs(dy) -> if (dx < 0) Direction.LEFT else Direction.RIGHT
         else -> null
+    }
+}
+
+/** Shell-global entry, limited to the bottom content strip outside system-back edges.
+ * Horizontal intent is left to Function Pages/pagers; leased editors disable this owner. */
+@Composable
+fun Modifier.lifeCompanionSwipe(enabled: Boolean, onOpen: () -> Unit): Modifier {
+    val open = rememberUpdatedState(onOpen)
+    val density = LocalDensity.current
+    val zone = with(density) { 40.dp.toPx() }
+    val threshold = with(density) { 56.dp.toPx() }
+    val edge = with(density) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
+    return if (!enabled) this else pointerInput(zone, threshold, edge) {
+        awaitEachGesture {
+            val pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial
+            val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
+            if (down.position.y < size.height - zone || down.position.x <= edge ||
+                down.position.x >= size.width - edge) return@awaitEachGesture
+            var owned = false
+            while (true) {
+                val event = awaitPointerEvent(pass)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) return@awaitEachGesture
+                val delta = change.position - down.position
+                if (!owned) {
+                    if (!change.pressed) return@awaitEachGesture
+                    when (LifeSwipeIntent.resolve(delta.x, delta.y, viewConfiguration.touchSlop)) {
+                        LifeSwipeIntent.Direction.VERTICAL -> if (delta.y < 0f) owned = true else return@awaitEachGesture
+                        null -> continue
+                        else -> return@awaitEachGesture
+                    }
+                }
+                change.consume()
+                if (!change.pressed) {
+                    if (-delta.y >= threshold) open.value()
+                    break
+                }
+            }
+        }
     }
 }
