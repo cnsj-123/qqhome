@@ -3,6 +3,7 @@ package com.qq.closie.data.backup
 import android.content.Context
 import androidx.room.withTransaction
 import com.qq.closie.life.data.database.LifeDatabase
+import com.qq.closie.life.finance.FinanceSnapshot
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,7 +63,10 @@ internal object LifeBackupApplier {
             mediaLinks = database.mediaDao().getAllLinks(),
             captureItems = database.captureDao().getAllOnce(),
             referenceItems = database.referenceDao().getAllOnce(),
-            planItems = database.planDao().getAllOnce()
+            planItems = database.planDao().getAllOnce(),
+            finance = FinanceSnapshot(database.financeDao().accounts(), database.financeDao().entries(),
+                database.financeDao().transfers(), database.financeDao().categories(),
+                database.financeDao().tags(), database.financeDao().entryTags())
         )
     }
 
@@ -72,8 +76,9 @@ internal object LifeBackupApplier {
      * **Idempotent, on purpose.** Recovery calls this without knowing whether the interrupted restore's
      * transaction actually committed — that is exactly the ambiguity [RestoreState.DB_COMMITTING]
      * records. So this has to be safe to run an arbitrary number of times: it is a single transaction
-     * that deletes everything and re-inserts the snapshot, so the second run produces the same rows as
-     * the first. There is no incremental edit to re-apply and no counter to double.
+     * that replaces legacy tables and reconciles Finance through its recovery owner. Finance rows
+     * absent from the snapshot remain archived/voided; replay produces the same active facts and
+     * projections. There is no incremental amount to re-apply or counter to double.
      */
     suspend fun restoreSnapshot(database: LifeDatabase, snapshot: LifeBackupPayload) {
         database.withTransaction {
@@ -167,7 +172,8 @@ internal object LifeBackupApplier {
         AtomicJson.read<LifeBackupPayload>(file)
 
     /**
-     * Deletes every Life OS row, in reverse dependency order.
+     * Replaces legacy Life OS tables in reverse dependency order. Finance is excluded: its recovery
+     * owner retains canonical rows and reconciles them with insert/update/void/archive only.
      *
      * The order is not cosmetic. `media_resources` and `media_links` declare real
      * `ForeignKey(NO_ACTION)` constraints onto `media_assets`, and `entity_tag_cross_ref` onto both
@@ -190,9 +196,10 @@ internal object LifeBackupApplier {
     /**
      * Inserts the payload, in dependency order — the exact reverse of [applyDeleteOrder].
      *
-     * Every DAO used here inserts with `OnConflictStrategy.REPLACE`. That matters because the schema
+     * Legacy DAOs used here insert with `OnConflictStrategy.REPLACE`. That matters because the schema
      * carries UNIQUE indices the delete order cannot clear (they live on the rows themselves, e.g.
      * `reference_items.lifeEntityId` and `reference_items.originalCaptureId`).
+     * Finance uses its separate typed recovery owner, without canonical REPLACE or DELETE.
      */
     private suspend fun applyInsertOrder(
         database: LifeDatabase,
@@ -214,5 +221,6 @@ internal object LifeBackupApplier {
         database.captureDao().insertAll(payload.captureItems)
         database.referenceDao().insertAll(payload.referenceItems)
         database.planDao().insertAll(payload.planItems)
+        payload.finance?.let { FinanceBackupRecovery.restore(database, it) }
     }
 }

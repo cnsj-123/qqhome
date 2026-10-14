@@ -11,6 +11,7 @@ import com.qq.closie.life.media.MediaResourceEntity
 import com.qq.closie.life.media.MediaStoreImporter
 import com.qq.closie.life.plan.PlanItemEntity
 import com.qq.closie.life.reference.ReferenceItemEntity
+import com.qq.closie.life.finance.FinanceSnapshot
 
 /**
  * The complete Life OS half of a v2 backup, as typed rows rather than a copied database file.
@@ -53,7 +54,9 @@ data class LifeBackupPayload(
     val mediaLinks: List<MediaLinkEntity> = emptyList(),
     val captureItems: List<CaptureItemEntity> = emptyList(),
     val referenceItems: List<ReferenceItemEntity> = emptyList(),
-    val planItems: List<PlanItemEntity> = emptyList()
+    val planItems: List<PlanItemEntity> = emptyList(),
+    /** Absent in legacy archives: absence must not erase Finance created after that backup. */
+    val finance: FinanceSnapshot? = null
 ) {
 
     /**
@@ -73,7 +76,13 @@ data class LifeBackupPayload(
         "media_links" to mediaLinks,
         "capture_items" to captureItems,
         "reference_items" to referenceItems,
-        "plan_items" to planItems
+        "plan_items" to planItems,
+        "finance_accounts" to finance?.accounts.orEmpty(),
+        "finance_categories" to finance?.categories.orEmpty(),
+        "finance_tags" to finance?.tags.orEmpty(),
+        "finance_entries" to finance?.entries.orEmpty(),
+        "finance_transfers" to finance?.transfers.orEmpty(),
+        "finance_entry_tags" to finance?.entryTags.orEmpty()
     )
 
     /** Total row count, for the manifest and for logging a restore. */

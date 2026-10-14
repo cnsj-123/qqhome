@@ -1,5 +1,6 @@
 package com.qq.closie.life.data
 
+import com.qq.closie.life.finance.*
 import android.content.Context
 import androidx.room.Room
 import com.qq.closie.data.backup.RestoreStartupGate
@@ -68,6 +69,8 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
      * identical decision.
      */
     private fun gate() = RestoreStartupGate.requireReady()
+
+    val financeRepository: FinanceRepository by lazy { gate(); FinanceRepository(database) }
 
     val lifeRepository: LifeRepository by lazy { gate(); LifeRepository(database) }
     val mediaRepository: MediaRepository by lazy { gate(); MediaRepository(database) }
@@ -166,7 +169,7 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
          */
         val DATABASE_NAME: String get() = LifeDatabase.DATABASE_NAME
 
-        /** Entities registered in LifeDatabase v2 — kept here so docs/tests can assert on one list. */
+        /** Entities registered in LifeDatabase v3 — kept here so docs/tests can assert on one list. */
         val ENTITIES: List<Class<*>> = listOf(
             LifeEntityEntity::class.java,
             LifeRelationEntity::class.java,
@@ -177,7 +180,13 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
             MediaLinkEntity::class.java,
             CaptureItemEntity::class.java,
             ReferenceItemEntity::class.java,
-            PlanItemEntity::class.java
+            PlanItemEntity::class.java,
+            FinanceAccountEntity::class.java,
+            FinanceEntryEntity::class.java,
+            FinanceTransferEntity::class.java,
+            FinanceCategoryEntity::class.java,
+            FinanceTagEntity::class.java,
+            FinanceEntryTagCrossRef::class.java
         )
     }
 }

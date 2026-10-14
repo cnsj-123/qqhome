@@ -20,7 +20,8 @@ import java.io.File
  * media without a single warning. A backup that silently omits half the app is worse than no backup,
  * because it is trusted.
  */
-const val BACKUP_FORMAT_VERSION = 2
+// v3 requires the typed Finance section. Older clients reject it instead of silently losing money rows.
+const val BACKUP_FORMAT_VERSION = 3
 const val BACKUP_SCHEMA_VERSION = 1
 
 /** Backward/forward-compatible backup format version. */

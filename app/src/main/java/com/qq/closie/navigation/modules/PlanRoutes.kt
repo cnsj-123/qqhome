@@ -11,6 +11,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.qq.closie.life.data.LifeContainer
 import com.qq.closie.life.ui.plan.*
+import com.qq.closie.navigation.returnToLifeHome
+import com.qq.closie.navigation.returnWithinLifeModule
 import com.qq.closie.navigation.LifeOsRoute
 
 fun NavGraphBuilder.planRoutes(nav: NavHostController, container: LifeContainer) {
@@ -18,7 +20,7 @@ fun NavGraphBuilder.planRoutes(nav: NavHostController, container: LifeContainer)
         val owner = remember(entry) { nav.getBackStackEntry(LifeOsRoute.GRAPH) }
         val vm: PlanViewModel = viewModel(owner, key = "plans", factory = PlanViewModelFactory(container))
         PlanScreen(vm, onAddPlan = { nav.navigate(LifeOsRoute.planEdit(LifeOsRoute.NEW_ID)) },
-            onEditPlan = { nav.navigate(LifeOsRoute.planEdit(it.id)) }, onBack = { nav.popBackStack() })
+            onEditPlan = { nav.navigate(LifeOsRoute.planEdit(it.id)) }, onBack = { nav.returnToLifeHome() })
     }
     composable(LifeOsRoute.PLAN_EDIT, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
         val owner = remember(entry) { nav.getBackStackEntry(LifeOsRoute.GRAPH) }
@@ -28,7 +30,7 @@ fun NavGraphBuilder.planRoutes(nav: NavHostController, container: LifeContainer)
         PlanEditScreen(plan = item, onSave = { title, note, date, clearDate ->
             if (id == LifeOsRoute.NEW_ID) vm.create(title, note, date)
             else item?.let { vm.update(it, title, note, date, clearDate) }
-            nav.popBackStack()
-        }, onBack = { nav.popBackStack() })
+            nav.returnWithinLifeModule()
+        }, onBack = { nav.returnWithinLifeModule() })
     }
 }

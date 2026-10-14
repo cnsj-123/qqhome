@@ -750,15 +750,11 @@ class RestoreGateConcurrencyTest {
         val seeded = life.createEntity(entityType = "race")
         collectorStarted.await(5, TimeUnit.SECONDS)
 
-        // Once the delivery race is genuinely closed (the emission lease spans the *downstream collector
-        // body* — see `emitUnderBusinessLease`), the collector legitimately holds a lease while it hands
-        // the seeded row over, and `beginRestore` must refuse inside that handover — that is the whole
-        // point of the fix. Closing the gate there would fail the assertion below for the *wrong* reason:
-        // an ordinary emission still in delivery, not a restore-era row leaking. So wait here until the
-        // seed has been delivered and the emission lease is back to zero. The collector is then idle,
-        // and the only interleaving left to observe below is the one this test exists for.
+        // Prove seed delivery before trying to close the gate. The downstream collector legitimately
+        // holds an emission lease; observing activeBusinessOps == 0 does not reserve ownership because
+        // Room may acquire another lease immediately. beginRestore itself must acquire ownership.
         val seedDelivered = withTimeoutOrNull(GATE_PROBE_TIMEOUT_MS) {
-            while (!delivered.contains(seeded.id) || RestoreStartupGate.activeBusinessOps != 0) {
+            while (!delivered.contains(seeded.id)) {
                 delay(25)
             }
             true
@@ -767,7 +763,13 @@ class RestoreGateConcurrencyTest {
 
         // Close the gate, then insert a restore-era row directly at the DAO level. If the in-flight
         // emission guard were missing, this invalidation could be delivered after `beginRestore`.
-        assertThat(RestoreStartupGate.beginRestore()).isTrue()
+        val restoreBegan = withTimeoutOrNull(GATE_PROBE_TIMEOUT_MS) {
+            while (!RestoreStartupGate.beginRestore()) {
+                delay(25)
+            }
+            true
+        }
+        assertThat(restoreBegan).isTrue()
         db.lifeEntityDao().insert(
             com.qq.closie.life.core.LifeEntityEntity(
                 id = "race-era-row",

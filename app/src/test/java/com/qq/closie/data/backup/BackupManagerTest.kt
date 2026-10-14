@@ -410,6 +410,13 @@ class BackupManagerTest {
      */
     @Test
     fun completeExport_carriesEveryLifeOsTable() = runTest {
+        val finance = com.qq.closie.life.finance.FinanceRepository(db)
+        val bank = finance.saveAccount(name = "银行卡", kind = com.qq.closie.life.finance.FinanceAccountKind.BANK_CARD)
+        val wallet = finance.saveAccount(name = "微信", kind = com.qq.closie.life.finance.FinanceAccountKind.WECHAT)
+        finance.saveEntry(accountId = bank.id, direction = com.qq.closie.life.finance.FinanceDirection.OUTFLOW,
+            amountMinor = 1234, description = "早餐", occurredAt = 1, category = "餐饮", tags = listOf("早晨"))
+        finance.saveTransfer(sourceAccountId = bank.id, targetAccountId = wallet.id, amountMinor = 200,
+            description = "转账", occurredAt = 2)
         val captureId = seedCapture("导出的记录")
         seedReference("导出的资料")
         seedPlan("导出的计划")
@@ -435,6 +442,8 @@ class BackupManagerTest {
         val payload = readLifePayload(uri)
         assertThat(payload).isNotNull()
         assertThat(payload!!.captureItems.map { it.id }).contains(captureId)
+        assertThat(payload.finance).isEqualTo(finance.snapshot())
+        assertThat(BackupManager.FORMAT_VERSION).isEqualTo(3)
         assertThat(payload.referenceItems.map { it.title }).contains("导出的资料")
         assertThat(payload.planItems.map { it.title }).contains("导出的计划")
         assertThat(payload.mediaAssets.map { it.id }).contains("exp-asset")

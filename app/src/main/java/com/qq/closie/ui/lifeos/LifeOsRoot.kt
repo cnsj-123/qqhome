@@ -35,7 +35,9 @@ import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import com.qq.closie.ui.lifeos.drawer.LifeOsDrawer
+import com.qq.closie.ui.lifeos.components.lifeHorizontalSwipe
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
+import com.qq.closie.navigation.navigateLifeTopLevel
 import com.qq.closie.navigation.LifeOsRoute
 import com.qq.closie.ui.theme.ClosieColor
 import kotlinx.coroutines.launch
@@ -65,7 +67,7 @@ fun LifeOsRoot(
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
         val intakeError by intake.error.collectAsStateWithLifecycle()
-        val drawerWidth = (LocalConfiguration.current.screenWidthDp * .79f).coerceAtMost(380f).dp
+        val drawerWidth = (LocalConfiguration.current.screenWidthDp * .82f).dp
         suspend fun closeDrawer() {
             if (reduced) drawer.snapTo(DrawerValue.Closed) else drawer.close()
         }
@@ -81,14 +83,14 @@ fun LifeOsRoot(
                 scope.launch { closeDrawer() }
                 if (ExternalCommandResolver.isClosetCommand(command)) {
                     intake.supersede()
-                    nav.navigate(LifeOsRoute.CLOSET) { launchSingleTop = true }
+                    nav.navigateLifeTopLevel(LifeOsRoute.CLOSET)
                 } else intake.accept(command)
             }
         }
         LaunchedEffect(intakeNavigation) {
             intakeNavigation?.let { result ->
                 if (result.externalNonce == null || result.externalNonce == externalCommand?.nonce) {
-                    nav.navigate(result.route) { launchSingleTop = true }
+                    nav.navigateLifeTopLevel(result.route)
                     result.externalNonce?.let(onExternalCommandConsumed)
                 }
                 intake.acknowledge(result)
@@ -111,21 +113,27 @@ fun LifeOsRoot(
                             LifeOsDrawer(
                                 onOpenModule = { module ->
                                     if (module.id == "capture") scope.launch { closeDrawer(); captureMenu = true }
-                                    else nav.navigate(module.route) { launchSingleTop = true }
+                                    else nav.navigateLifeTopLevel(module.route)
                                 },
                                 onClose = { scope.launch { closeDrawer() } }
                             )
                         }
                     }
                 ) {
-                    LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
-                        shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
-                        onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                    Box(Modifier.fillMaxSize().lifeHorizontalSwipe(
+                        enabled = entry?.destination?.route == LifeOsRoute.HOME &&
+                            drawer.currentValue == DrawerValue.Closed && drawer.targetValue == DrawerValue.Closed,
+                        onLeft = ::openDrawer
+                    )) {
+                        LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
+                            shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
+                            onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                    }
                 }
             }
         }
         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
-            onManual = { nav.navigate(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
+            onManual = { nav.navigateLifeTopLevel(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
         intakeError?.let { message ->
             AlertDialog(onDismissRequest = intake::clearError, title = { Text("采集未完成") },
                 text = { Text(message) }, confirmButton = {

@@ -8,6 +8,29 @@ import org.junit.Test
 class ArchitectureBoundaryTest {
     private val app = sequenceOf(File("."), File("app")).first { File(it, "src/main/java/com/qq/closie").isDirectory }
     private val source = File(app, "src/main/java/com/qq/closie")
+    @Test fun financeOwnsTypedFactsInsideTheExistingDatabase() {
+        val owner = File(source, "life/finance")
+        owner.walkTopDown().filter { it.extension == "kt" }.forEach {
+            val text = it.readText()
+            assertFalse(it.name, text.contains("LifeEntityEntity"))
+            assertFalse(it.name, text.contains("metadataJson"))
+            assertFalse(it.name, text.contains("Room.databaseBuilder"))
+        }
+        File(source, "ui/lifeos/finance").walkTopDown().filter { it.extension == "kt" }.forEach {
+            val text = it.readText()
+            assertFalse(it.name, text.contains("financeDao("))
+            assertFalse(it.name, text.contains("life.data.database"))
+        }
+        val dao = File(source, "life/data/database/dao/FinanceDao.kt").readText()
+        assertFalse(dao.contains("@Delete"))
+        assertFalse(dao.contains("OnConflictStrategy.REPLACE"))
+        assertFalse(Regex("DELETE FROM finance_(accounts|entries|transfers|categories|tags)\\b").containsMatchIn(dao))
+        assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 3"))
+        assertTrue(File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/3.json").exists())
+        assertEquals("life_os.db", com.qq.closie.life.data.database.LifeDatabase.DATABASE_NAME)
+        assertEquals(com.qq.closie.navigation.LifeOsRoute.FINANCE,
+            com.qq.closie.ui.lifeos.drawer.LifeModules.find("finance").route)
+    }
     @Test fun captureHasNoUserLevelPhysicalDeleteApi() {
         val owners = listOf(
             com.qq.closie.life.repository.CaptureRepository::class.java,
