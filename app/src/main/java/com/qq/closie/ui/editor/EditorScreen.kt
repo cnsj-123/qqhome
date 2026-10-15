@@ -1,5 +1,7 @@
 package com.qq.closie.ui.editor
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import android.app.DatePickerDialog
 import android.content.ClipboardManager
 import android.graphics.BitmapFactory
@@ -850,7 +852,7 @@ private fun EditorTextField(
             focusedTextColor = ClosieColor.Ink,
             unfocusedTextColor = ClosieColor.Ink
         )
-    )
+    , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(value))
 }
 
 @Composable
@@ -932,7 +934,7 @@ private fun RatingRow(rating: Int, onRating: (Int) -> Unit) {
                 Text(
                     if (star <= rating) "★" else "☆",
                     color = if (star <= rating) ClosieColor.Rose else ClosieColor.InkTertiary,
-                    fontSize = 20.sp
+                    style = MaterialTheme.typography.headlineMedium
                 )
             }
         }
@@ -1054,7 +1056,7 @@ private fun MaterialRow(
                 value = part.percentage,
                 onValueChange = onPercentage,
                 modifier = Modifier.width(92.dp),
-                placeholder = { Text("占比", fontSize = 13.sp) },
+                placeholder = { Text("占比", style = MaterialTheme.typography.bodySmall) },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
@@ -1062,7 +1064,7 @@ private fun MaterialRow(
                     focusedBorderColor = ClosieColor.Rose,
                     unfocusedBorderColor = ClosieColor.Hairline
                 )
-            )
+            , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(part.percentage))
             IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
                 Icon(Icons.Default.Close, contentDescription = "删除材质", tint = ClosieColor.InkTertiary)
             }
@@ -1104,7 +1106,7 @@ private fun MeasurementRow(
             value = m.value,
             onValueChange = onValue,
             modifier = Modifier.width(64.dp),
-            placeholder = { Text("数值", fontSize = 13.sp) },
+            placeholder = { Text("数值", style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
@@ -1112,7 +1114,7 @@ private fun MeasurementRow(
                 focusedBorderColor = ClosieColor.Rose,
                 unfocusedBorderColor = ClosieColor.Hairline
             )
-        )
+        , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(m.value))
         Box(
             modifier = Modifier
                 .width(56.dp)

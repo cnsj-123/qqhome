@@ -1,5 +1,7 @@
 package com.qq.closie.ui.quickcapture
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -209,7 +211,7 @@ private fun CapturePreviewContent(
                 label = { Text("商品名") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp)
-            )
+            , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(name))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = price,
@@ -219,7 +221,7 @@ private fun CapturePreviewContent(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
+                , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(price))
                 OutlinedTextField(
                     value = platform,
                     onValueChange = { platform = it },
@@ -227,7 +229,7 @@ private fun CapturePreviewContent(
                     label = { Text("平台") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
-                )
+                , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(platform))
             }
             if (imagePath.isNotBlank()) {
                 Row(

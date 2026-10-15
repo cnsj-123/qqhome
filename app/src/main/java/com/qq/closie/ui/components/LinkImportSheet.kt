@@ -1,5 +1,7 @@
 package com.qq.closie.ui.components
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,7 +78,7 @@ fun LinkImportSheet(
                     focusedBorderColor = ClosieColor.Fig,
                     unfocusedBorderColor = ClosieColor.Hairline
                 )
-            )
+            , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(text))
 
             if (url != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

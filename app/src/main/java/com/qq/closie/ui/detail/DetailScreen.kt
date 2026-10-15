@@ -1,5 +1,7 @@
 package com.qq.closie.ui.detail
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import android.app.DatePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager

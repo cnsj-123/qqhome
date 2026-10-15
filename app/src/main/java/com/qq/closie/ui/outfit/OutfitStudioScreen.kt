@@ -1,5 +1,7 @@
 package com.qq.closie.ui.outfit
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -213,7 +215,7 @@ fun OutfitStudioScreen(repo: WardrobeRepository, outfitId: String?, draftId: Str
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = MaterialTheme.shapes.large
-            )
+            , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(name))
 
             // Canvas — takes the remaining vertical space (~55–65% of the screen).
             Box(

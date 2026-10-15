@@ -1,5 +1,7 @@
 package com.qq.closie.ui.settings
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings

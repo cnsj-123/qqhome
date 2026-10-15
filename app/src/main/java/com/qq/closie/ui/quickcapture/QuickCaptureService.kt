@@ -1,5 +1,7 @@
 package com.qq.closie.ui.quickcapture
 
+import com.qq.closie.life.ui.theme.applyLifeTypography
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -351,7 +353,7 @@ class QuickCaptureService : Service() {
         val size = dp(48)
         val bubble = TextView(this)
         bubble.text = "◆"
-        bubble.textSize = 15f
+        bubble.applyLifeTypography(com.qq.closie.life.ui.theme.LifeType.Action)
         bubble.setTextColor(Color.parseColor("#F7F6F2"))
         bubble.gravity = Gravity.CENTER
         bubble.background = GradientDrawable().apply {
@@ -482,7 +484,7 @@ class QuickCaptureService : Service() {
     private fun menuItem(label: String, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            textSize = 14f
+            applyLifeTypography(com.qq.closie.life.ui.theme.LifeType.BodySecondary)
             setTextColor(Color.parseColor("#171717"))
             setPadding(dp(16), dp(12), dp(16), dp(12))
             setOnClickListener { onClick() }

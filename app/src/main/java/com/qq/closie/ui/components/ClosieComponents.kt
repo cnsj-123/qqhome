@@ -1,5 +1,7 @@
 package com.qq.closie.ui.components
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -73,7 +75,7 @@ fun ClosieSearchBar(
             .clip(shape)
             .background(ClosieColor.Mist)
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = ClosieColor.Ink),
+        textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(value).copy(color = ClosieColor.Ink),
         singleLine = true,
         decorationBox = { innerTextField ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

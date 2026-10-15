@@ -1,5 +1,7 @@
 package com.qq.closie.life.ui.reading
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,7 +31,6 @@ import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.rememberLifeDimensions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material3.Text
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter

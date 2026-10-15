@@ -1,5 +1,7 @@
 package com.qq.closie.ui.components
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -120,7 +121,7 @@ fun SearchableChoiceSheet(
                         }
                     }
                 )
-            )
+            , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(query))
             Spacer(Modifier.height(12.dp))
 
             if (trimmed.isEmpty() && filteredPreferred.isNotEmpty()) {

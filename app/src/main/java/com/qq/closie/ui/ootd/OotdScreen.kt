@@ -1,5 +1,7 @@
 package com.qq.closie.ui.ootd
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -581,7 +583,7 @@ private fun OotdEditor(
             label = { Text("备注") },
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large
-        )
+        , textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(note))
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("OOTD 照片", style = MaterialTheme.typography.titleMedium)
