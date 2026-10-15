@@ -1,6 +1,8 @@
 package com.qq.closie.ui.lifeos.components
 
 import android.animation.ValueAnimator
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.horizontalDrag
@@ -11,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
@@ -26,7 +29,7 @@ fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? 
     val left = rememberUpdatedState(onLeft)
     val right = rememberUpdatedState(onRight)
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }
-    val edge = with(LocalDensity.current) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
+    val edge = systemBackEdgePx()
     return if (!enabled) this else pointerInput(threshold, edge) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -77,18 +80,20 @@ object LifeSwipeIntent {
 /** Shell-global entry, limited to the bottom content strip outside system-back edges.
  * Horizontal intent is left to Function Pages/pagers; leased editors disable this owner. */
 @Composable
-fun Modifier.lifeCompanionSwipe(enabled: Boolean, onOpen: () -> Unit): Modifier {
+fun Modifier.lifeCompanionSwipe(enabled: Boolean, onProgress: (Float) -> Unit = {}, onOpen: () -> Unit): Modifier {
+    val updateProgress = rememberUpdatedState(onProgress)
     val open = rememberUpdatedState(onOpen)
     val density = LocalDensity.current
     val zone = with(density) { 40.dp.toPx() }
     val threshold = with(density) { 56.dp.toPx() }
-    val edge = with(density) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
+    val edge = systemBackEdgePx()
     return if (!enabled) this else pointerInput(zone, threshold, edge) {
         awaitEachGesture {
             val pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial
             val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
             if (down.position.y < size.height - zone || down.position.x <= edge ||
                 down.position.x >= size.width - edge) return@awaitEachGesture
+            try {
             var owned = false
             while (true) {
                 val event = awaitPointerEvent(pass)
@@ -103,12 +108,24 @@ fun Modifier.lifeCompanionSwipe(enabled: Boolean, onOpen: () -> Unit): Modifier 
                         else -> return@awaitEachGesture
                     }
                 }
+                updateProgress.value((-delta.y / threshold).coerceIn(0f, 1f))
                 change.consume()
                 if (!change.pressed) {
                     if (-delta.y >= threshold) open.value()
                     break
                 }
             }
+            } finally { updateProgress.value(0f) }
         }
     }
+}
+
+/** Respect OEM/system gesture widths as well as the conservative app corridor. */
+@Composable
+internal fun systemBackEdgePx(): Float {
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    return maxOf(with(density) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() },
+        WindowInsets.systemGestures.getLeft(density, direction).toFloat(),
+        WindowInsets.systemGestures.getRight(density, direction).toFloat())
 }

@@ -26,8 +26,23 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         receiveIntent(intent, initial = true)
+        // Hold the launch window until saved appearance is available, bounded for IO failure.
+        // Avoid rendering an original-palette screen and immediately replacing it with the saved one.
+        val startedAt = android.os.SystemClock.uptimeMillis()
+        var compositionReady = false
+        val decor = window.decorView
+        val appearanceReady = object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                val ready = compositionReady ||
+                    android.os.SystemClock.uptimeMillis() - startedAt >= 1500L
+                if (ready) decor.viewTreeObserver.removeOnPreDrawListener(this)
+                return ready
+            }
+        }
+        decor.viewTreeObserver.addOnPreDrawListener(appearanceReady)
+        decor.postDelayed({ decor.invalidate() }, 1500L)
         setContent {
-            LifeOsApp(application as ClosieApplication, external) { dark ->
+            LifeOsApp(application as ClosieApplication, external, onContentReady = { compositionReady = true }) { dark ->
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = !dark
                     isAppearanceLightNavigationBars = !dark

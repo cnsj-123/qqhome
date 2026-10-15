@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.calendar
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState

@@ -1,12 +1,17 @@
 package com.qq.closie.ui.lifeos
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.*
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -60,6 +65,7 @@ fun LifeOsRoot(
         val entry by nav.currentBackStackEntryAsState()
         val legacySurface = entry?.destination?.route in setOf(LifeOsRoute.CLOSET, LifeOsRoute.BACKUP)
         val home by shellViewModel.home.collectAsStateWithLifecycle()
+        var companionProgress by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
         var drawerOpen by rememberSaveable { mutableStateOf(false) }
         val reduced = reducedLifeMotion()
         val gesturePolicy = remember { FunctionPagePolicy() }
@@ -94,14 +100,16 @@ fun LifeOsRoot(
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
         CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
-            Box(Modifier.safeDrawingPadding().consumeWindowInsets(WindowInsets.safeDrawing)
+            Box(Modifier.safeDrawingPadding()
                 .lifeCompanionSwipe(enabled = supportsFunctionPage(entry?.destination?.route) &&
                     !drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
+                    onProgress = { companionProgress = it },
                     onOpen = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) })) {
                 com.qq.closie.ui.lifeos.components.LifeFunctionPages(
                     open = drawerOpen,
                     enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
                     horizontalPages = entry?.destination?.route == LifeOsRoute.FINANCE,
+                    home = entry?.destination?.route == LifeOsRoute.HOME,
                     effects = appearance.functionEffects, style = appearance.functionPageStyle, reducedMotion = reduced,
                     onOpenChange = { drawerOpen = it },
                     functionPage = {
@@ -116,6 +124,13 @@ fun LifeOsRoot(
                     LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
                         shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
                         onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                }
+                if (companionProgress > 0f) Surface(
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).graphicsLayer {
+                        translationY = -32.dp.toPx() * companionProgress
+                    }, shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = colors.paperTertiary) {
+                    Text(if (companionProgress >= 1f) "松开找伙伴" else "上滑找伙伴", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = com.qq.closie.ui.lifeos.theme.LifeText.caption)
                 }
             }
         }

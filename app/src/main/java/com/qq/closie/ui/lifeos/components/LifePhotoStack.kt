@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.components
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring

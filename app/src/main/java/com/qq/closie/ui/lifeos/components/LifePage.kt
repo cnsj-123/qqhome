@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.components
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,10 +19,10 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LifePage(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun LifePage(title: String, onBack: () -> Unit, actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     val colors = LocalLifeOsColors.current
     Scaffold(containerColor = colors.paper, topBar = {
-        TopAppBar(title = { Text(title, style = LifeText.title) },
+        TopAppBar(actions = actions, title = { Text(title, style = LifeText.title) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回上一页") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.paper))
     }) { pad ->

@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
@@ -26,19 +27,18 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 fun LifeFunctionPages(
     open: Boolean, enabled: Boolean, style: FunctionPageStyle, reducedMotion: Boolean,
     horizontalPages: Boolean = false,
+    home: Boolean = false,
     effects: com.qq.closie.data.appearance.FunctionPageEffects = com.qq.closie.data.appearance.FunctionPageEffects(),
     onOpenChange: (Boolean) -> Unit, functionPage: @Composable () -> Unit, content: @Composable () -> Unit
 ) {
     val colors = LocalLifeOsColors.current
     var progress by remember { mutableFloatStateOf(if (open) 1f else 0f) }
     var dragging by remember { mutableStateOf(false) }
-    val revealed by remember { derivedStateOf { progress > 0f } }
     val currentOpen by rememberUpdatedState(open)
     val changeOpen by rememberUpdatedState(onOpenChange)
     val corridor = with(LocalDensity.current) { 56.dp.toPx() }
-    val edge = with(LocalDensity.current) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
-    val visuals = rememberFunctionPageVisuals(effects)
-    LaunchedEffect(open, dragging, reducedMotion) {
+    val edge = com.qq.closie.ui.lifeos.components.systemBackEdgePx()
+        LaunchedEffect(open, dragging, reducedMotion) {
         if (!dragging) {
             if (reducedMotion) progress = if (open) 1f else 0f
             else animate(progress, if (open) 1f else 0f, animationSpec = tween(230)) { value, _ -> progress = value }
@@ -115,17 +115,22 @@ fun LifeFunctionPages(
                     } finally { dragging = false }
                 }
             }) {
-            if (revealed && mode != FunctionPageStyle.GLASS) Box(Modifier.width(revealWidth).fillMaxHeight().graphicsLayer {
+            Box(Modifier.width(revealWidth).fillMaxHeight()
+                .zIndex(if (mode == FunctionPageStyle.GLASS) 1f else 0f)
+                .then(if (!open) Modifier.clearAndSetSemantics {} else Modifier).graphicsLayer {
                 translationX = when (mode) {
-                    FunctionPageStyle.FLAT -> -(1f - progress) * travel
+                    FunctionPageStyle.FLAT, FunctionPageStyle.GLASS -> -(1f - progress) * travel
                     FunctionPageStyle.DECK -> -(1f - progress) * travel * .24f
                     else -> -(1f - progress) * travel * .08f
                 }
                 rotationY = if (mode == FunctionPageStyle.DECK) -14f * (1f - progress) else 0f
                 transformOrigin = TransformOrigin(0f, .5f)
                 cameraDistance = 18.dp.toPx()
-            }.background(visuals.surface)) { functionPage() }
-            Box(Modifier.fillMaxSize().graphicsLayer {
+            }) {
+                LifePaperBackdrop(effects, Modifier.fillMaxSize())
+                functionPage()
+            }
+            Box(Modifier.fillMaxSize().zIndex(if (mode == FunctionPageStyle.GLASS) 0f else 1f).graphicsLayer {
                 translationX = progress * travel * if (mode == FunctionPageStyle.GLASS) .18f else 1f
                 scaleX = when (mode) {
                     FunctionPageStyle.LAYERED -> 1f - .085f * progress
@@ -140,22 +145,10 @@ fun LifeFunctionPages(
                 shape = RoundedCornerShape((22f * progress).dp)
                 clip = progress > 0f
                 shadowElevation = if (mode == FunctionPageStyle.LAYERED || mode == FunctionPageStyle.DECK) 10.dp.toPx() * progress else 0f
-                renderEffect = if (progress > 0f) visuals.backdropBlur else null
             }.background(colors.paper)) {
+                if (home) LifePaperBackdrop(effects, Modifier.fillMaxSize(), home = true)
                 Box(if (open) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) { content() }
-                if (revealed) Box(Modifier.fillMaxSize().background(visuals.backdropSoftening.copy(alpha = visuals.backdropSoftening.alpha * progress)))
                 if (open || dragging) Box(Modifier.fillMaxSize().clickable { changeOpen(false) })
-            }
-            if (revealed && mode == FunctionPageStyle.GLASS) {
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = progress }.background(colors.shade.copy(alpha = .12f)))
-                Box(Modifier.width(revealWidth).fillMaxHeight().graphicsLayer {
-                    translationX = -(1f - progress) * travel
-                    shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
-                    clip = true
-                    shadowElevation = 6.dp.toPx()
-                }.background(visuals.surface)) {
-                    functionPage()
-                }
             }
         }
     }

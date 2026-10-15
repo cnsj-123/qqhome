@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.chat
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -30,7 +32,7 @@ fun CompanionShellScreen(onBack: () -> Unit) {
             }
             Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = "", onValueChange = {}, enabled = false, modifier = Modifier.weight(1f),
-                    placeholder = { Text("连接后，在这里聊天") }, label = { Text("消息输入 · 待连接") })
+                    placeholder = { Text("连接后，在这里聊天") }, label = { Text("消息输入 · 待连接") }, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(""))
                 TextButton(onClick = {}, enabled = false) { Text("发送") }
             }
         }

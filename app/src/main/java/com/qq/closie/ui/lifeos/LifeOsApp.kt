@@ -1,9 +1,10 @@
 package com.qq.closie.ui.lifeos
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,11 +26,12 @@ import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 
 /** Android composition root. Preferences can load independently of the business restore barrier. */
 @Composable
-fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onDarkAppearance: (Boolean) -> Unit) {
+fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onContentReady: () -> Unit = {}, onDarkAppearance: (Boolean) -> Unit) {
     val appearance: AppearanceViewModel = viewModel(factory = AppearanceViewModel.Factory(app.appearanceRepository))
     val selected by appearance.appearance.collectAsStateWithLifecycle()
     val ready = remember { runCatching { RestoreStartupGate.requireReady() }.isSuccess }
     if (!ready) {
+        androidx.compose.runtime.SideEffect(onContentReady)
         LifeOsTheme { LifeEmptyState("恢复尚未完成，原数据已保留。请在系统设置中停止应用后重新打开，以重试启动恢复。") }
         return
     }
@@ -46,6 +48,7 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onDark
         return
     }
     val container = app.lifeContainer
+    androidx.compose.runtime.SideEffect(onContentReady)
     val intake: ExternalIntakeViewModel = viewModel(factory = PresentationFactory(ExternalIntakeViewModel::class.java) {
         ExternalIntakeViewModel(ExternalIntakeCoordinator(container.captureRepository, container.referenceImporter),
             container.captureRepository)
