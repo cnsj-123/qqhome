@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -45,18 +47,37 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
 
 @Composable
 internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, selected: String,
-    enabled: Boolean, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val colors = LocalLifeOsColors.current
+    enabled: Boolean, recentIds: List<String> = emptyList(), onSelect: (String) -> Unit) {
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     Column {
-        Text(label, style = LifeText.caption, color = colors.muted)
-        Box {
-            TextButton(onClick = { expanded = true }, enabled = enabled) {
-                Text(accounts.find { it.id == selected }?.let { "${it.name}${if (it.archivedAt != null) " · 已归档" else ""} · ${it.currencyCode}" } ?: "选择账户")
+        TextButton({ expanded = !expanded }, enabled = enabled) {
+            Text(label + " · " + (accounts.find { it.id == selected }?.let { "${it.name} · ${it.currencyCode}" } ?: "选择账户"))
+        }
+        if (expanded) {
+            val recent = recentIds.mapNotNull { id -> accounts.find { it.id == id } }
+            if (recent.isNotEmpty() && query.isBlank()) {
+                Text("最近使用", style = LifeText.caption)
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(recent.size) { index -> val account = recent[index]
+                        InputChip(account.id == selected, { onSelect(account.id); expanded = false }, enabled = enabled,
+                            label = { Text(account.name) })
+                    }
+                }
             }
-            if (expanded) FinanceChoiceSheet(label, selected,
-                accounts.map { it.id to (it.name + if (it.archivedAt != null) " · 已归档" else "") },
-                onSelect = onSelect, onClose = { expanded = false })
+            OutlinedTextField(query, { query = it }, label = { Text("搜索账户") }, singleLine = true, enabled = enabled, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(query))
+            accounts.filter { query.isBlank() || (it.name + it.kind.label).contains(query, true) }.groupBy { it.kind }.forEach { (kind, group) ->
+                Text(kind.label, style = LifeText.caption)
+                group.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { account ->
+                            FilterChip(account.id == selected, { onSelect(account.id); expanded = false }, enabled = enabled,
+                                modifier = Modifier.weight(1f), label = { Text(account.name + " · " + account.currencyCode, maxLines = 2) })
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }

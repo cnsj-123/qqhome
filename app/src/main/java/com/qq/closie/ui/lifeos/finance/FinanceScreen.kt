@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -82,13 +84,13 @@ internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: ()
             Text(if (row.transfer != null) "转账 · ${row.entry.description.ifBlank { "账户间转移" }}" else
                 listOfNotNull(row.category ?: "未分类", row.account.name).joinToString(" · "),
                 style = LifeText.caption, color = colors.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(FinanceTime.input(row.entry.occurredAt).substringAfter(' '), style = LifeText.caption, color = colors.muted)
             if (role != null) Text(role, style = LifeText.caption, color = colors.accentDeep)
         }
         val prefix = if (row.transfer != null) "" else if (row.entry.direction == FinanceDirection.INFLOW) "+" else "−"
         Column(Modifier.widthIn(max = 136.dp).padding(start = 8.dp), horizontalAlignment = Alignment.End) {
-            Text(prefix + FinanceMoney.display(row.entry.amountMinor, row.currencyCode), style = LifeText.body.copy(fontFeatureSettings = "tnum", fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = colors.ink,
+            Text(prefix + FinanceMoney.display(row.entry.amountMinor, row.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink,
                 textAlign = androidx.compose.ui.text.style.TextAlign.End)
-            Text(FinanceTime.input(row.entry.occurredAt).substringAfter(' '), style = LifeText.caption, color = colors.muted)
         }
     }
     }

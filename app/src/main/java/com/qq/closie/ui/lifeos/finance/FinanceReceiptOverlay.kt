@@ -18,6 +18,8 @@ import com.qq.closie.ClosieApplication
 import com.qq.closie.data.appearance.ThemePalette
 import com.qq.closie.life.data.LifeContainer
 import com.qq.closie.life.finance.*
+import com.qq.closie.life.ui.theme.LifeType
+import com.qq.closie.life.ui.theme.applyLifeTypography
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -36,14 +38,12 @@ internal class FinanceReceiptOverlay(private val context: Context, private val s
             val automation = container.financeAutomationRepository.observe().first()
             val proposal = automation.proposals.find { it.id == id } ?: return false
             val snapshot = container.financeRepository.observeSnapshot().first()
-            val model = FinanceReviewReceiptModel.from(proposal, snapshot,
+            val model = FinanceReviewReceiptModel.from(proposal, snapshot.copy(v4 = (snapshot.v4 ?: FinanceV4Snapshot()).copy(proposals = automation.proposals)),
                 automation.tags.filter { it.proposalId == id }.map { it.name }, FinanceProposalPrivacy.userDescriptions(automation.rules.flatMap { it.actions }))
             val tokens = ThemePalette.resolve((context.applicationContext as ClosieApplication).appearanceRepository.read())
             withContext(Dispatchers.Main.immediate) {
                 val settings = FinanceAutomationSettings(context).read()
-                if (settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.enabled ||
-                    (proposal.source == FinanceSource.WECHAT && !settings.wechat) ||
-                    (proposal.source == FinanceSource.ALIPAY && !settings.alipay) || FinanceReviewRequests.foreground ||
+                if (settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.permits(proposal) || FinanceReviewRequests.foreground ||
                     !Settings.canDrawOverlays(context)) return@withContext false
                 close()
                 val density = context.resources.displayMetrics.density
@@ -53,22 +53,25 @@ internal class FinanceReceiptOverlay(private val context: Context, private val s
                     setPadding(dp(20), dp(16), dp(20), dp(16))
                     background = GradientDrawable().apply { setColor(Color.parseColor(tokens.card)); cornerRadius = dp(24).toFloat() }
                 }
-                fun text(value: String, size: Float = 16f) = TextView(context).apply {
-                    text = value; textSize = size; setTextColor(Color.parseColor(tokens.ink)); setPadding(0, dp(5), 0, dp(5))
+                fun text(value: String, style: androidx.compose.ui.text.TextStyle = LifeType.Body) = TextView(context).apply {
+                    text = value; applyLifeTypography(style)
+                    setTextColor(Color.parseColor(tokens.ink)); setPadding(0, dp(5), 0, dp(5))
                 }.also(body::addView)
-                text("Life OS · 消费小票", 18f)
-                text(model.amountMinor?.let { FinanceMoney.display(it, "CNY") } ?: "金额待核对", 30f)
-                text("${model.source} · ${if (model.direction == FinanceProposalKind.INCOME) "收入" else "支出"} · ${FinanceTime.input(model.occurredAt)}", 14f)
+                text("Life OS · 消费小票", LifeType.SectionTitle)
+                text(model.amountMinor?.let { FinanceMoney.display(it, "CNY") } ?: "金额待核对", LifeType.Money)
+                text("${model.source} · ${if (model.direction == FinanceProposalKind.INCOME) "收入" else "支出"} · ${FinanceTime.input(model.occurredAt)}", LifeType.Caption)
                 text("账户：${model.accountName ?: "待选择"}")
                 text("分类：${model.categoryPath ?: "待选择"}")
                 text("说明：${model.safeDescription}")
-                text("性质：${model.nature.label} · 尚未入账", 14f)
-                val message = text(model.ambiguityReason ?: "核对后确认，原始通知不保存。", 14f)
+                text("性质：${model.nature.label} · 尚未入账", LifeType.Caption)
+                val message = text(model.ambiguityReason ?: "核对后确认，原始通知不保存。", LifeType.Caption)
                 val actions = LinearLayout(context)
                 body.addView(actions)
                 var busy = false
                 val confirm = Button(context).apply { text = if (model.directlyConfirmable) "确认" else "需要完善" }
                 val later = Button(context).apply { text = "稍后" }
+                confirm.applyLifeTypography(LifeType.Action)
+                later.applyLifeTypography(LifeType.Action)
                 confirm.setTextColor(Color.parseColor(tokens.onAccent))
                 confirm.background = GradientDrawable().apply { setColor(Color.parseColor(tokens.accent)); cornerRadius = dp(12).toFloat() }
                 later.setTextColor(Color.parseColor(tokens.ink))
@@ -117,9 +120,7 @@ internal class FinanceReceiptOverlay(private val context: Context, private val s
                 observer = scope.launch(Dispatchers.Main.immediate) {
                     combine(container.financeAutomationRepository.observe(), FinanceReviewRequests.visible,
                         FinanceAutomationSettings(context).observe()) { data, foreground, settings ->
-                        foreground || settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.enabled ||
-                            (proposal.source == FinanceSource.WECHAT && !settings.wechat) ||
-                            (proposal.source == FinanceSource.ALIPAY && !settings.alipay) ||
+                        foreground || settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.permits(proposal) ||
                             data.proposals.none { it.id == id && it.revision == model.revision &&
                                 it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
                     }.catch { emit(true) }.first { it }

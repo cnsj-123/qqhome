@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,7 +44,7 @@ internal fun FinanceChoiceSheet(title: String, selected: String?, choices: List<
                 TextButton(onClose) { Text("关闭") }
             }
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("搜索$title") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, shape = RoundedCornerShape(16.dp))
+                label = { Text("搜索$title") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, shape = RoundedCornerShape(16.dp), textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(query))
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp)) {
                 if (query.isBlank()) {
                     if (recent.isNotEmpty()) {

@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -23,7 +25,7 @@ import java.time.YearMonth
 @Composable
 internal fun Modifier.calendarMonthSwipe(onMonth: (Int) -> Unit): Modifier {
     val change by rememberUpdatedState(onMonth)
-    val edge = with(LocalDensity.current) { LifeSwipeIntent.systemBackEdgeDp.dp.toPx() }
+    val edge = com.qq.closie.ui.lifeos.components.systemBackEdgePx()
     val threshold = with(LocalDensity.current) { 40.dp.toPx() }
     var rootX by remember { mutableFloatStateOf(0f) }
     return onGloballyPositioned { rootX = it.positionInRoot().x }.pointerInput(edge, threshold) {

@@ -12,7 +12,8 @@ internal data class FinanceReviewReceiptModel(
     val directlyConfirmable get() = confirmation != null
     companion object {
         fun from(proposal: FinanceProposalEntity, snapshot: FinanceSnapshot, tags: List<String> = emptyList(),
-            userDescriptions: Set<String> = emptySet(), draft: FinanceEntryDraft? = null): FinanceReviewReceiptModel {
+            userDescriptions: Set<String> = emptySet(), draft: FinanceEntryDraft? = null,
+            reviewedDuplicateIds: Set<String> = emptySet()): FinanceReviewReceiptModel {
             val safe = FinanceProposalPrivacy.sanitize(proposal, userDescriptions)
             val tree = FinanceCategoryTree(snapshot.categories)
             val content = draft ?: FinanceEntryDraft(FinanceEditorKind.valueOf(proposal.kind.name),
@@ -25,8 +26,16 @@ internal data class FinanceReviewReceiptModel(
             val amount = runCatching { FinanceMoney.parse(content.amount) }.getOrNull()
             val occurred = runCatching { FinanceTime.resolve(content.occurredAt, content.preservedOccurredAt) }.getOrNull()
             val event = content.relationship.eventId?.let { id -> snapshot.v4?.events?.find { it.id == id && it.voidedAt == null } }
+            val duplicates = amount?.let { FinanceDuplicateReview.candidates(proposal.id, FinanceProposalKind.valueOf(content.kind.name),
+                it, occurred ?: proposal.occurredAt, snapshot.v4?.proposals.orEmpty(), snapshot) }.orEmpty()
             val reason = when {
+                FinanceEvidenceOrigin.blockingPeers(proposal, snapshot.v4?.proposals.orEmpty()).isNotEmpty() -> "同一交易编号存在冲突或已入账记录，请先核对并忽略重复小票"
+                !reviewedDuplicateIds.containsAll(duplicates) -> "存在相近记录，请打开完整小票核对；同一笔请忽略，其他交易须明确确认"
                 proposal.status !in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) -> "这笔已处理，请重新打开"
+                FinanceEvidenceOrigin.isVisible(proposal) && proposal.role == FinanceFlowRole.REFUND &&
+                    (content.kind != FinanceEditorKind.INCOME || content.relationship.role != FinanceFlowRole.REFUND) -> "退款须保留退款性质并关联原资金事项"
+                FinanceEvidenceOrigin.isVisible(proposal) && proposal.kind == FinanceProposalKind.TRANSFER &&
+                    content.kind != FinanceEditorKind.TRANSFER -> "还款候选须核对两端账户"
                 amount == null || amount <= 0 -> "金额需要核对"
                 occurred == null -> "时间需要核对"
                 account == null -> "需要选择账户"
@@ -38,10 +47,10 @@ internal data class FinanceReviewReceiptModel(
                 else -> null
             }
             val confirmation = if (reason != null) null else runCatching {
-                content.copy(categoryId = category!!.id).toProposalConfirmation()
+                content.copy(categoryId = category!!.id).toProposalConfirmation().copy(reviewedDuplicateIds = reviewedDuplicateIds)
             }.getOrNull()
             return FinanceReviewReceiptModel(proposal.id, proposal.revision, amount, FinanceProposalKind.valueOf(content.kind.name),
-                occurred ?: proposal.occurredAt, when (proposal.source) { FinanceSource.WECHAT -> "微信"; FinanceSource.ALIPAY -> "支付宝"; else -> "导入" },
+                occurred ?: proposal.occurredAt, proposal.discoverySourceLabel() + " · " + FinanceEvidenceOrigin.label(proposal),
                 account?.name, tree.fullPath(category?.id), content.description,
                 content.relationship.nature, content.relationship.role, reason ?: if (confirmation == null) "关系信息需要完善" else null, confirmation)
         }

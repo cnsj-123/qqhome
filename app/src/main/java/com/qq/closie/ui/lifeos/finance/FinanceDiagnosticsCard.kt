@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import androidx.compose.foundation.layout.*

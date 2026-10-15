@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -28,7 +30,7 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
             Text(if (state.busy) "正在保存……" else "保存账户")
         }
     }) {
-        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("账户名称") }, singleLine = true, enabled = !state.busy)
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("账户名称") }, singleLine = true, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(name))
         Box {
             TextButton(onClick = { kindsOpen = true }, enabled = !state.busy) { Text("账户类型 · ${kind.label}") }
             DropdownMenu(kindsOpen, onDismissRequest = { kindsOpen = false }) {
@@ -40,7 +42,7 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
         Text(if (currencyLocked) "此账户已有流水，币种不可更改。" else "不同币种分别统计；转账仅支持同币种账户。", style = LifeText.caption, color = colors.muted)
         Text("$currency 金额最多 ${FinanceMoney.fractionDigits(currency)} 位小数", style = LifeText.caption)
         OutlinedTextField(balance, { balance = it }, Modifier.fillMaxWidth(), label = { Text("期初余额") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(balance))
         account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.balanceAnchorAt)}", style = LifeText.caption, color = colors.muted) }
         Text("期初余额以显示的余额起点为准。当前余额仅计入该时刻及之后发生的有效流水；更早的补记仍保留在历史与统计中。", style = LifeText.caption, color = colors.muted)
         if (account?.archivedAt != null) TextButton({ vm.unarchiveAccount(account.id, onClose) }, enabled = !state.busy) { Text("恢复使用此账户") }

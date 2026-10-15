@@ -32,8 +32,8 @@ internal class FinanceAutomationViewModel(private val repository: FinanceAutomat
             finally { mutable.update { it.copy(busy = false) } }
         }
     }
-    fun confirm(proposal: FinanceProposalEntity, draft: FinanceEntryDraft, done: () -> Unit) = action {
-        repository.confirm(proposal.id, proposal.revision, draft.toProposalConfirmation())
+    fun confirm(proposal: FinanceProposalEntity, draft: FinanceEntryDraft, reviewedDuplicateIds: Set<String> = emptySet(), done: () -> Unit) = action {
+        repository.confirm(proposal.id, proposal.revision, draft.toProposalConfirmation().copy(reviewedDuplicateIds = reviewedDuplicateIds))
         done()
     }
     fun confirmReceipt(receipt: FinanceReviewReceiptModel, done: () -> Unit) = action {

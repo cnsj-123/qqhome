@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,6 +85,11 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                 item { FinancePanel {
                     Text(preview.batch.fileName, style = MaterialTheme.typography.titleMedium)
                     Text("共 ${preview.rows.size} 行 · ${state.mappings.size} 个账户", style = MaterialTheme.typography.bodySmall)
+                    val businessCounts = remember(preview.rows) { preview.rows.groupingBy(LegacyBusinessSemantics::state).eachCount() }
+                    LegacyBusinessState.entries.forEach { status ->
+                        Text("${status.label} · ${businessCounts[status] ?: 0} 行", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("以上为来源识别数量，不代表已经写入；已报销和需核对记录保留在导入预览。", style = MaterialTheme.typography.bodySmall)
                 } }
                 if (preview.batch.status == FinanceImportStatus.UNDONE) item { Text("此批次已撤销；后来修改或关联的记录仍保留。") }
                 else if (completed) {
@@ -136,16 +143,19 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                                 FinanceImportGroup.REIMBURSEMENT -> state.policy.reimbursement
                                 FinanceImportGroup.REFUND -> state.policy.refund
                                 FinanceImportGroup.FEES -> state.policy.fees
+                                FinanceImportGroup.PROXY -> state.policy.proxy
+                                FinanceImportGroup.SPLIT -> state.policy.split
                                 else -> false
                             }
                             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                if (group !in setOf(FinanceImportGroup.DUPLICATES, FinanceImportGroup.UNSUPPORTED)) Checkbox(checked, { vm.policy(group, it) }, enabled = !state.busy)
+                                if (group !in setOf(FinanceImportGroup.DUPLICATES, FinanceImportGroup.UNSUPPORTED, FinanceImportGroup.SETTLED)) Checkbox(checked, { vm.policy(group, it) }, enabled = !state.busy)
                                 Text("${group.label} · $count 行", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                                 TextButton({ detailGroup = group }) { Text("查看") }
                             }
                             Text(when(group) {
                                 FinanceImportGroup.DUPLICATES -> "默认跳过。只有明确需要重复入账时，才在明细中选择。"
                                 FinanceImportGroup.UNSUPPORTED -> "暂不导入；查看原始记录，修正文件副本后重选。"
+                                FinanceImportGroup.SETTLED -> "保留旧账已报销证据；到账账户未知，等待业务状态迁移。不会伪造收入或写成待报销。"
                                 FinanceImportGroup.FEES -> "勾选表示确认手续费是转账金额之外的实际支出。"
                                 else -> "勾选后导入真实流水，关系证据保留，之后可继续整理。"
                             }, style = MaterialTheme.typography.bodySmall)
@@ -197,7 +207,7 @@ private fun ImportGroupSheet(group: FinanceImportGroup, rows: List<FinanceImport
     ModalBottomSheet(onDismissRequest = close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxHeight(.88f).padding(horizontal = 16.dp).imePadding()) {
             Text("${group.label} · ${rows.size} 行", style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索事由、账户或行号") }, singleLine = true)
+            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索事由、账户或行号") }, singleLine = true, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(query))
             LazyColumn(Modifier.weight(1f)) {
                 items(filtered, key = { it.id }) { row ->
                     Row(Modifier.padding(vertical = 8.dp)) {
@@ -205,6 +215,7 @@ private fun ImportGroupSheet(group: FinanceImportGroup, rows: List<FinanceImport
                         Column(Modifier.weight(1f)) {
                             Text("第 ${row.rowNumber} 行 · ${row.description.ifBlank { "原备注为空" }}")
                             Text("${row.sourceAccount} · ${row.amountMinor?.let { FinanceMoney.display(it) } ?: "金额待处理"}", style = MaterialTheme.typography.bodySmall)
+                            Text(LegacyBusinessSemantics.state(row).label, style = MaterialTheme.typography.bodySmall)
                             if (row.issue.isNotBlank()) Text(row.issue, style = MaterialTheme.typography.bodySmall)
                             TextButton({ evidence(row) }) { Text("查看原始记录") }
                         }
@@ -230,7 +241,7 @@ private fun ImportAccountMapping(mapping: FinanceAccountMapping, accounts: List<
             onChange(mapping.copy(existingId = it.ifBlank { null }))
         }
         if (mapping.existingId == null) {
-            OutlinedTextField(mapping.name, { onChange(mapping.copy(name = it)) }, enabled = enabled, label = { Text("账户名称") })
+            OutlinedTextField(mapping.name, { onChange(mapping.copy(name = it)) }, enabled = enabled, label = { Text("账户名称") }, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(mapping.name))
             EnumChoice("类型", mapping.kind, FinanceAccountKind.entries.map { it to it.label }, enabled) { onChange(mapping.copy(kind = it)) }
             EnumChoice("余额起点", mapping.fromHistory, listOf(true to "从历史重建", false to "以当前余额为准"), enabled) {
                 onChange(mapping.copy(fromHistory = it, openingMinor = 0, anchorAt = System.currentTimeMillis(), openingValid = true))
@@ -243,7 +254,7 @@ private fun ImportAccountMapping(mapping: FinanceAccountMapping, accounts: List<
                         val parsed = java.math.BigDecimal(value).movePointRight(2).longValueExact()
                         onChange(mapping.copy(openingMinor = parsed, openingValid = true)); error = null
                     } catch (_: Exception) { error = "请输入最多两位小数的余额"; onChange(mapping.copy(openingValid = false)) }
-                }, enabled = enabled, label = { Text("当前余额（欠款填负数）") }, isError = error != null)
+                }, enabled = enabled, label = { Text("当前余额（欠款填负数）") }, isError = error != null, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(opening))
                 error?.let { Text(it) }
                 Text("起点：${Instant.ofEpochMilli(mapping.anchorAt).atZone(ZoneId.systemDefault()).toLocalDateTime()}", style = MaterialTheme.typography.bodySmall)
             }
@@ -255,12 +266,16 @@ private fun ImportAccountMapping(mapping: FinanceAccountMapping, accounts: List<
 @Composable
 internal fun <T> EnumChoice(label: String, selected: T, values: List<Pair<T, String>>, enabled: Boolean = true, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { expanded = true }, enabled = enabled) {
+    Column {
+        TextButton(onClick = { expanded = !expanded }, enabled = enabled) {
             Text("$label：${values.find { it.first == selected }?.second ?: "请选择"}")
         }
-        if (expanded) FinanceChoiceSheet(label, values.indexOfFirst { it.first == selected }.toString(),
-            values.mapIndexed { index, item -> index.toString() to item.second },
-            onSelect = { id -> values.getOrNull(id.toInt())?.let { onSelect(it.first) } }, onClose = { expanded = false })
+        if (expanded) values.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { (value, name) -> FilterChip(value == selected, { onSelect(value); expanded = false },
+                    enabled = enabled, modifier = Modifier.weight(1f), label = { Text(name) }) }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
     }
 }

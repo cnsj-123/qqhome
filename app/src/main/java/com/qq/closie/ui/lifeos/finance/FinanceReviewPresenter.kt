@@ -18,8 +18,7 @@ internal class FinanceReviewPresenter(private val context: Context, scope: Corou
                 it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) } ?: return
             val plan = withContext(Dispatchers.Main.immediate) {
                 val current = settings.read()
-                if (!current.enabled || (proposal.source == FinanceSource.WECHAT && !current.wechat) ||
-                    (proposal.source == FinanceSource.ALIPAY && !current.alipay)) return@withContext null
+                if (!current.permits(proposal)) return@withContext null
                 val plan = FinanceReviewDeliveryPolicy.plan(FinanceReviewRequests.foreground,
                     current.deliveryMode, current.enhancedReceiptOverlay, Settings.canDrawOverlays(context))
                 if (plan.inApp) FinanceReviewRequests.open(id)

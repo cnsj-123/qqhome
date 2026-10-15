@@ -14,8 +14,8 @@ import kotlinx.coroutines.launch
 
 enum class FinancePeriod(val label: String) { ALL("全部"), MONTH("本月"), YEAR("今年"), CUSTOM("自定义") }
 enum class FinanceEditorKind(val label: String) { EXPENSE("支出"), INCOME("收入"), TRANSFER("转账") }
-data class FinanceFilter(val query: String = "", val period: FinancePeriod = FinancePeriod.ALL,
-    val range: FinanceDateRange = FinanceDateRange(), val customLabel: String = "",
+data class FinanceFilter(val query: String = "", val period: FinancePeriod = FinancePeriod.MONTH,
+    val range: FinanceDateRange = FinanceDateRange.month(), val customLabel: String = "",
     val accountId: String? = null, val categoryId: String? = null, val tagId: String? = null,
     val nature: FinanceNature? = null)
 data class FinanceUiState(
@@ -29,7 +29,8 @@ data class FinanceUiState(
     val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList(),
     val allRows: List<FinanceLedgerRow> = emptyList(),
     val previous: Map<String, FinanceTotals>? = null,
-    val previousCategories: List<FinanceDimensionTotal> = emptyList()
+    val previousCategories: List<FinanceDimensionTotal> = emptyList(),
+    val calendarRows: List<FinanceLedgerRow> = emptyList()
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
@@ -94,7 +95,8 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 loading = false, busy = saving, error = message, personalRows = personal,
                 unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, allRows), allRows = allRows,
                 previous = previousRows?.let(FinanceProjection::totals),
-                previousCategories = previousRows?.let { FinanceProjection.parentCategoryTotals(it, data.categories) }.orEmpty())
+                previousCategories = previousRows?.let { FinanceProjection.parentCategoryTotals(it, data.categories) }.orEmpty(),
+                calendarRows = baseFor(FinanceDateRange()).filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) })
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 

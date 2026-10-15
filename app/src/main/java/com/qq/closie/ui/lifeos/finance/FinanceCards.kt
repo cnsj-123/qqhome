@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -37,16 +39,16 @@ internal fun FinanceSection(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-internal fun FinanceMonthCard(state: FinanceUiState, onMonth: () -> Unit) {
+internal fun FinanceMonthCard(state: FinanceUiState, rangeLabel: String, onMonth: () -> Unit) {
     val colors = LocalLifeOsColors.current
     FinancePanel(color = colors.paperTertiary) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("这个月", Modifier.weight(1f), style = LifeText.title)
+            Text(rangeLabel, Modifier.weight(1f), style = LifeText.title)
             TextButton(onMonth) { Text("查看流水 →") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            MoneySummary("个人支出", state.month, true, Modifier.weight(1f))
-            MoneySummary("个人收入", state.month, false, Modifier.weight(1f))
+            MoneySummary("个人支出", state.selected, true, Modifier.weight(1f))
+            MoneySummary("个人收入", state.selected, false, Modifier.weight(1f))
         }
         Text("转账不计收支 · 退款与报销按归属计算", style = LifeText.caption, color = colors.muted)
     }
@@ -59,7 +61,7 @@ internal fun FinanceBalanceSummary(state: FinanceUiState) {
         group.fold(BigInteger.ZERO) { sum, a -> sum + BigInteger.valueOf(state.balances[a.id] ?: 0) }
     } }
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("账户余额合计", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
+        Text("当前账户余额合计", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
         sums.forEach { (currency, total) ->
             Text((if (currency == "CNY") "¥" else "$currency ") + BigDecimal(total, FinanceMoney.fractionDigits(currency)).toPlainString(), style = LifeText.number)
         }
@@ -70,9 +72,9 @@ internal fun FinanceBalanceSummary(state: FinanceUiState) {
 @Composable
 internal fun FinanceAccountStrip(state: FinanceUiState, open: (String) -> Unit) {
     val active = remember(state.snapshot.accounts) { state.snapshot.accounts.filter { it.archivedAt == null } }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        itemsIndexed(active, key = { _, a -> a.id }) { index, account ->
-            FinanceAccountCard(account, state.balances[account.id] ?: 0, index, Modifier.width(208.dp)) { open(account.id) }
+    Column {
+        active.take(4).forEachIndexed { index, account ->
+            FinanceAccountCard(account, state.balances[account.id] ?: 0, index, Modifier.fillMaxWidth(), flat = true) { open(account.id) }
         }
     }
 }
@@ -84,13 +86,14 @@ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, in
     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
     Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
         shape = if (flat) RectangleShape else RoundedCornerShape(18.dp)) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(3.dp).height(48.dp).background(swatch, RoundedCornerShape(2.dp)))
-            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).height(30.dp).background(swatch, RoundedCornerShape(2.dp)))
+            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(account.name, style = LifeText.body)
-                Text(FinanceMoney.display(balance, account.currencyCode), style = LifeText.number.copy(fontSize = 18.sp))
                 Text(account.kind.label + if (account.archivedAt != null) " · 已归档" else "", style = LifeText.caption, color = colors.muted)
             }
+            Text(FinanceMoney.display(balance, account.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact,
+                modifier = Modifier.widthIn(max = 160.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
         }
     }
 }

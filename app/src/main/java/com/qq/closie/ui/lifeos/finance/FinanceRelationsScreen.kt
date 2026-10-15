@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,10 +19,12 @@ import com.qq.closie.ui.lifeos.theme.LifeText
 internal fun FinanceFundsSummary(snapshot: FinanceSnapshot, onOpen: () -> Unit) {
     val matters = remember(snapshot) { FinanceRelationsProjection.matters(snapshot) }
     val pending = matters.filter { !it.completed }
-    FinancePanel {
-        Text("资金事项 · 待处理 ${pending.size}", style = LifeText.title)
-        Text("报销 ${pending.count { it.event.nature == FinanceNature.REIMBURSABLE }} · 代付·代拍 ${pending.count { it.event.nature == FinanceNature.PROXY_PURCHASE }} · 分账 ${pending.count { it.event.nature == FinanceNature.SPLIT }}", style = LifeText.caption)
-        TextButton(onOpen) { Text("报销与代付 →") }
+    TextButton(onOpen, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f)) {
+            Text("资金事项 · ${pending.size} 待处理", style = LifeText.body)
+            Text("报销 ${pending.count { it.event.nature == FinanceNature.REIMBURSABLE }} · 代付 ${pending.count { it.event.nature == FinanceNature.PROXY_PURCHASE }} · 分账 ${pending.count { it.event.nature == FinanceNature.SPLIT }}", style = LifeText.caption)
+        }
+        Text("查看 →")
     }
 }
 

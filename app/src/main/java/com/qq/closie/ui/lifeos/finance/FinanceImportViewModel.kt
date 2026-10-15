@@ -141,6 +141,8 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
                 FinanceImportGroup.REIMBURSEMENT -> it.policy.copy(reimbursement = value)
                 FinanceImportGroup.REFUND -> it.policy.copy(refund = value)
                 FinanceImportGroup.FEES -> it.policy.copy(fees = value)
+                FinanceImportGroup.PROXY -> it.policy.copy(proxy = value)
+                FinanceImportGroup.SPLIT -> it.policy.copy(split = value)
                 else -> it.policy
             }
             // A group action replaces previous individual choices only within that group.

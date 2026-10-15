@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -33,6 +35,9 @@ data class FinanceRelationshipDraft(
         expectedEventUpdatedAt = eventUpdatedAt
     )
     companion object {
+        val Saver = androidx.compose.runtime.saveable.Saver<FinanceRelationshipDraft, String>(
+            save = { com.google.gson.Gson().toJson(it) },
+            restore = { runCatching { com.google.gson.Gson().fromJson(it, FinanceRelationshipDraft::class.java) }.getOrNull() })
         fun fromProposal(proposal: FinanceProposalEntity): FinanceRelationshipDraft {
             val role = if (proposal.kind != FinanceProposalKind.INCOME || proposal.role != FinanceFlowRole.OTHER) proposal.role
             else when (proposal.nature) {
@@ -78,7 +83,7 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
     }
     if (draft.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE)) {
         OutlinedTextField(draft.share, { onChange(draft.copy(share = it)) }, Modifier.fillMaxWidth(),
-            label = { Text("我承担的总额（未知可留空）") }, enabled = enabled)
+            label = { Text("我承担的总额（未知可留空）") }, enabled = enabled, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(draft.share))
     }
     Text("预计后续款项", style = LifeText.body)
     draft.expectedFlows.forEachIndexed { index, flow ->
@@ -87,9 +92,9 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
         if (!flow.cancelled) {
             EnumChoice("用途", flow.role, FinanceFlowRole.entries.map { it to it.label }, enabled) { update(flow.copy(role = it)) }
             OutlinedTextField(flow.amount, { update(flow.copy(amount = it)) }, Modifier.fillMaxWidth(),
-                label = { Text("预计金额（可留空）") }, enabled = enabled)
+                label = { Text("预计金额（可留空）") }, enabled = enabled, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(flow.amount))
             OutlinedTextField(flow.note, { update(flow.copy(note = it)) }, Modifier.fillMaxWidth(),
-                label = { Text("备注") }, enabled = enabled)
+                label = { Text("备注") }, enabled = enabled, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(flow.note))
             TextButton({ update(flow.copy(cancelled = true)) }, enabled = enabled) { Text("取消此项") }
         } else Text("此项将在保存时取消", style = LifeText.caption)
     }
@@ -97,8 +102,8 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
         role = if (draft.nature == FinanceNature.REIMBURSABLE) FinanceFlowRole.REIMBURSEMENT else FinanceFlowRole.SETTLEMENT),
         expectedEdited = true)) }, enabled = enabled) { Text("+ 添加预计款项") }
     Text("预计款项不改变余额；实际到账后再确认关联。", style = LifeText.caption)
-    ChoiceFilter("资金用途", draft.role.name, FinanceFlowRole.entries.map { it.name to it.label }) {
-        if (enabled) onChange(draft.copy(role = it?.let(FinanceFlowRole::valueOf) ?: FinanceFlowRole.OTHER))
+    EnumChoice("资金用途", draft.role, FinanceFlowRole.entries.map { it to it.label }, enabled) {
+        onChange(draft.copy(role = it))
     }
     Text("关联到之前的一笔", style = LifeText.body)
     val events = snapshot.v4?.events.orEmpty().filter { it.voidedAt == null }
@@ -106,7 +111,7 @@ internal fun FinanceRelationshipFields(snapshot: FinanceSnapshot, draft: Finance
         Text(events.find { it.id == id }?.description ?: "原事件暂不可用", style = LifeText.caption)
         TextButton({ onChange(draft.copy(eventId = null, eventUpdatedAt = null, expectedFlows = emptyList(), expectedEdited = false)) }, enabled = enabled) { Text("取消选择") }
     }
-    OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("搜事由、日期或付款金额") }, enabled = enabled)
+    OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("搜事由、日期或付款金额") }, enabled = enabled, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(search))
     if (search.isNotBlank()) {
         val amounts = snapshot.v4?.activeLinks.orEmpty().groupBy { it.eventId }.mapValues { (_, links) ->
             links.filter { it.role == FinanceFlowRole.PAYMENT }.sumOf { it.allocatedMinor }

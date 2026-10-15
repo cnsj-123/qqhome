@@ -1,5 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.ui.theme.BundledText as Text
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -69,6 +71,7 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { VisibleDetailSettings(discovery, settings) }
             item { FinanceDiagnosticsCard(access, discovery) }
             item {
                 Text("通知访问允许应用读取设备通知。本功能只处理下面选中的微信／支付宝支付提示，在本机解析，不上传内容，其他通知忽略。发现的信息仅供确认，不会自动记账。")
@@ -165,8 +168,8 @@ private fun FinanceRuleEditor(initial: FinanceRuleSet, state: AutomationUiState,
         Button(onClick = { try { vm.saveRule(draft(), onClose) } catch (e: Exception) { result = e.message } },
             modifier = Modifier.fillMaxWidth(), enabled = !state.busy) { Text("保存规则") }
     }) {
-        OutlinedTextField(name, { name = it }, label = { Text("规则名称") }, enabled = !state.busy)
-        OutlinedTextField(priority, { priority = it }, label = { Text("顺序（较小的先应用）") }, enabled = !state.busy)
+        OutlinedTextField(name, { name = it }, label = { Text("规则名称") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(name))
+        OutlinedTextField(priority, { priority = it }, label = { Text("顺序（较小的先应用）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(priority))
         Text("以下条件同时满足；多条规则命中时，靠前规则的单项建议优先，标签合并。")
         conditions.forEachIndexed { index, c ->
             EnumChoice("条件", c.kind, FinanceConditionKind.entries.map { it to conditionLabel(it) }, !state.busy) {
@@ -177,7 +180,7 @@ private fun FinanceRuleEditor(initial: FinanceRuleSet, state: AutomationUiState,
                 FinanceConditionKind.DIRECTION -> EnumChoice("方向", c.value, FinanceEditorKind.entries.map { it.name to it.label }, !state.busy) { conditions[index] = c.copy(value = it) }
                 FinanceConditionKind.ACCOUNT -> EnumChoice("账户", c.value, state.finance.accounts.filter { it.archivedAt == null }.map { it.id to it.name }, !state.busy) { conditions[index] = c.copy(value = it) }
                 else -> OutlinedTextField(c.value, { conditions[index] = c.copy(value = it) },
-                    label = { Text(if (c.kind in setOf(FinanceConditionKind.AMOUNT_MIN, FinanceConditionKind.AMOUNT_MAX)) "金额（分，例如 2680）" else "包含文字") }, enabled = !state.busy)
+                    label = { Text(if (c.kind in setOf(FinanceConditionKind.AMOUNT_MIN, FinanceConditionKind.AMOUNT_MAX)) "金额（分，例如 2680）" else "包含文字") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(c.value))
             }
             TextButton(onClick = { conditions.removeAt(index) }, enabled = !state.busy) { Text("移除此条件") }
         }
@@ -188,14 +191,14 @@ private fun FinanceRuleEditor(initial: FinanceRuleSet, state: AutomationUiState,
                 FinanceActionKind.SUGGEST_ACCOUNT -> EnumChoice("账户", a.value, state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }.map { it.id to it.name }, !state.busy) { actions[index] = a.copy(value = it) }
                 FinanceActionKind.SUGGEST_BUSINESS_NATURE -> EnumChoice("性质", a.value, FinanceNature.entries.map { it.name to it.label }, !state.busy) { actions[index] = a.copy(value = it) }
                 else -> OutlinedTextField(a.value, { actions[index] = a.copy(value = it) },
-                    label = { Text(if (a.kind == FinanceActionKind.SUGGEST_CATEGORY) "分类 / 子分类" else "建议内容") }, enabled = !state.busy)
+                    label = { Text(if (a.kind == FinanceActionKind.SUGGEST_CATEGORY) "分类 / 子分类" else "建议内容") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(a.value))
             }
             TextButton(onClick = { actions.removeAt(index) }, enabled = !state.busy) { Text("移除此建议") }
         }
         TextButton(onClick = { actions += FinanceRuleActionEntity(initial.rule.id, actions.size, FinanceActionKind.ADD_TAG, "") }, enabled = !state.busy) { Text("增加建议") }
         HorizontalDivider()
         EnumChoice("预览来源", source, listOf(FinanceSource.WECHAT to "微信", FinanceSource.ALIPAY to "支付宝")) { source = it }
-        OutlinedTextField(sample, { sample = it }, label = { Text("示例支付文字（例如：支付成功 26.80元 瑞幸）") })
+        OutlinedTextField(sample, { sample = it }, label = { Text("示例支付文字（例如：支付成功 26.80元 瑞幸）") }, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(sample))
         TextButton(onClick = {
             result = try {
                 val rule = draft(); FinanceRuleEngine.validate(rule)
