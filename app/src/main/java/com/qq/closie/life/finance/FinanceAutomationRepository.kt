@@ -11,7 +11,7 @@ data class FinanceAutomationSnapshot(val proposals: List<FinanceProposalEntity>,
     val rules: List<FinanceRuleSet>)
 data class FinanceProposalConfirmation(val kind: FinanceProposalKind, val accountId: String, val targetAccountId: String?,
     val amountMinor: Long, val description: String, val occurredAt: Long, val category: String, val subcategory: String,
-    val tags: List<String>, val event: FinanceEventInput, val categoryId: String? = null)
+    val tags: List<String>, val event: FinanceEventInput, val categoryId: String? = null, val reviewedDuplicateIds: Set<String> = emptySet())
 
 /** The only path from a discovered proposal into truth is explicit confirm(), inside one Room transaction. */
 class FinanceAutomationRepository(private val database: LifeDatabase, private val finance: FinanceRepository) {
@@ -38,21 +38,40 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
         FinanceAutomationSnapshot(dao.proposals(), dao.proposalTags(), rules())
     } } }
     suspend fun discover(proposal: FinanceProposalEntity): FinanceProposalEntity? = discoverWithResult(proposal).proposal
+    suspend fun discoverVisible(evidence: NormalizedTransactionEvidence, enabled: () -> Boolean): FinanceParseResult = transaction {
+        if (!enabled()) return@transaction FinanceParseResult(DiscoveryResult.MASTER_OFF)
+        val proposal = evidence.toProposal()
+        val identity = requireNotNull(FinanceEvidenceOrigin.strongReference(proposal))
+        val peers = dao.proposals().filter { FinanceEvidenceOrigin.strongReference(it) == identity }
+        if (peers.any { FinanceEvidenceOrigin.sameFacts(it, proposal) })
+            return@transaction FinanceParseResult(DiscoveryResult.DUPLICATE)
+        // Keep conflicting minimized facts in staging. Never mutate an earlier proposal or posted Truth.
+        val row = if (peers.isEmpty()) proposal else proposal.copy(sourceKey = FinanceEvidenceOrigin.conflictKey(proposal))
+        saveDiscovered(row, "")
+    }
+
     suspend fun discoverWithResult(proposal: FinanceProposalEntity, transientText: String = proposal.evidenceText): FinanceParseResult = transaction {
         require(proposal.status == FinanceProposalStatus.ACTIVE && proposal.canonicalId == null && proposal.revision == 0L)
+        require(!FinanceEvidenceOrigin.isVisible(proposal)) { "详情证据必须走规范化入口" }
+        require(proposal.source in setOf(FinanceSource.WECHAT, FinanceSource.ALIPAY)) { "通知来源未支持" }
         if (dao.proposalByKey(proposal.sourceKey) != null) return@transaction FinanceParseResult(DiscoveryResult.DUPLICATE)
-        // Old notifications are not replayed by the listener; this also bounds delayed system deliveries.
         if (System.currentTimeMillis() - proposal.occurredAt > 24 * 60 * 60 * 1000L) return@transaction FinanceParseResult(DiscoveryResult.STALE)
-        val kind = if (proposal.source == FinanceSource.WECHAT) FinanceAccountKind.WECHAT else FinanceAccountKind.ALIPAY
-        val suggested = database.financeDao().accounts().filter { it.kind == kind && it.currencyCode == "CNY" && it.archivedAt == null }.singleOrNull()?.id
+        saveDiscovered(proposal, transientText)
+    }
+
+    private suspend fun saveDiscovered(proposal: FinanceProposalEntity, transientText: String): FinanceParseResult {
         val ruleSets = rules()
-        val result = FinanceRuleEngine.apply(FinanceProposalPrivacy.sanitize(proposal).copy(accountId = proposal.accountId ?: suggested), ruleSets, transientText)
+        // App/provider identity cannot select a Finance account. Only explicit user rules may suggest one.
+        val result = FinanceRuleEngine.apply(FinanceProposalPrivacy.sanitize(proposal), ruleSets, transientText)
         val account = result.proposal.accountId?.let { database.financeDao().account(it) }
         val row = FinanceProposalPrivacy.sanitize(result.proposal, FinanceProposalPrivacy.userDescriptions(ruleSets.flatMap { it.actions }))
-            .copy(accountId = account?.takeIf { it.archivedAt == null && it.currencyCode == "CNY" }?.id)
+            .copy(accountId = if (FinanceEvidenceOrigin.isVisible(proposal)) null
+                else account?.takeIf { it.archivedAt == null && it.currencyCode == "CNY" }?.id)
+        // Visible evidence has no approved persistent payment-channel/account binding yet.
+        // Even a broad notification rule cannot choose an account for an unrelated shopping app.
         dao.insertProposal(row)
         dao.insertProposalTags(result.tags.map { FinanceProposalTagEntity(row.id, it) })
-        FinanceParseResult(DiscoveryResult.CREATED, row)
+        return FinanceParseResult(DiscoveryResult.CREATED, row)
     }
     suspend fun confirm(id: String, revision: Long, input: FinanceProposalConfirmation): String = transaction {
         val proposal = requireNotNull(dao.proposal(id)) { "待确认记录已不存在" }
@@ -61,6 +80,21 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
             "待确认记录已改变，请重新打开"
         }
         require(input.amountMinor > 0 && input.description.isNotBlank())
+        if (FinanceEvidenceOrigin.isVisible(proposal) && proposal.role == FinanceFlowRole.REFUND) {
+            require(input.kind == FinanceProposalKind.INCOME && input.event.role == FinanceFlowRole.REFUND &&
+                input.event.existingEventId != null) { "退款须保留退款性质并关联原资金事项，不能作为普通收入确认" }
+        }
+        if (FinanceEvidenceOrigin.isVisible(proposal) && proposal.kind == FinanceProposalKind.TRANSFER) {
+            require(input.kind == FinanceProposalKind.TRANSFER) { "还款候选须核对两端账户，不能作为普通收支确认" }
+        }
+        require(FinanceEvidenceOrigin.blockingPeers(proposal, dao.proposals()).isEmpty()) {
+            "同一交易编号存在冲突或已入账记录，请先核对并忽略重复小票；不能作为另一笔交易确认"
+        }
+        val candidates = FinanceDuplicateReview.candidates(id, input.kind, input.amountMinor, input.occurredAt,
+            dao.proposals(), readFinanceSnapshot(database))
+        require(input.reviewedDuplicateIds.containsAll(candidates)) {
+            "存在金额与时间接近的候选或已入账记录，请核对是否同一笔；同一笔请忽略当前小票"
+        }
         val account = requireNotNull(database.financeDao().account(input.accountId)) { "请选择账户" }
         require(account.archivedAt == null && account.currencyCode == "CNY") { "请选择有效的人民币账户" }
         val canonical = if (input.kind == FinanceProposalKind.TRANSFER) {

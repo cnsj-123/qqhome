@@ -32,7 +32,7 @@ class FinanceAutomationTest : FinanceRoomTest() {
     @Test fun sourceKeyDiscoveryIsIdempotentRejectAndSnoozeNeverCreateTruth() = runTest {
         account()
         val found = automation.discover(parse())!!
-        assertNotNull(found.accountId)
+        assertNull(found.accountId) // Provider identity alone must not choose a Finance account.
         assertNull(automation.discover(parse()))
         assertEquals(1, db.financeIntakeDao().proposals().size)
         assertTrue(finance.snapshot().entries.isEmpty())
@@ -45,6 +45,41 @@ class FinanceAutomationTest : FinanceRoomTest() {
         assertEquals(FinanceProposalStatus.REJECTED, db.financeIntakeDao().proposal(found.id)!!.status)
         assertTrue(finance.snapshot().entries.isEmpty())
         assertTrue(finance.snapshot().v4!!.events.isEmpty())
+    }
+
+    @Test fun visibleConflictIsStagedAndCannotCreateSecondTruth() = runTest {
+        val a = account()
+        val time = 1_700_000_000_000L
+        val evidence = NormalizedTransactionEvidence("wechat", 1234, "CNY", FinanceProposalKind.INCOME,
+            time, time + 1000, "a".repeat(64), "extractor-v1")
+        val first = automation.discoverVisible(evidence) { true }.proposal!!
+        assertNull(first.accountId)
+        assertEquals(DiscoveryResult.DUPLICATE, automation.discoverVisible(evidence.copy(extractionVersion = "extractor-v2")) { true }.result)
+        val conflict = automation.discoverVisible(evidence.copy(amountMinor = 9999)) { true }.proposal!!
+        assertEquals(2, db.financeIntakeDao().proposals().size)
+        assertTrue(finance.snapshot().entries.isEmpty())
+        val input = FinanceProposalConfirmation(FinanceProposalKind.INCOME, a.id, null, 9999,
+            "合成编号冲突审核", time, "", "", emptyList(), FinanceEventInput(role = FinanceFlowRole.OTHER))
+        assertTrue(runCatching { automation.confirm(conflict.id, conflict.revision, input) }.isFailure)
+        automation.dismiss(first.id, first.revision, FinanceProposalStatus.REJECTED)
+        val canonical = automation.confirm(conflict.id, conflict.revision, input)
+        assertEquals(canonical, automation.confirm(conflict.id, conflict.revision, input))
+        assertEquals(1, finance.snapshot().entries.size)
+    }
+
+    @Test fun visibleRefundCannotBeConfirmedAsOrdinaryIncomeOrWithoutOriginalEvent() = runTest {
+        val a = account()
+        val time = 1_700_000_000_000L
+        val evidence = NormalizedTransactionEvidence("unionpay", 200, "CNY", FinanceProposalKind.INCOME,
+            time, time + 1000, "b".repeat(64), "unionpay-detail-v2", role = FinanceFlowRole.REFUND)
+        val row = automation.discoverVisible(evidence) { true }.proposal!!
+        val input = FinanceProposalConfirmation(FinanceProposalKind.INCOME, a.id, null, 200,
+            "合成退款", time, "", "", emptyList(), FinanceEventInput(role = FinanceFlowRole.OTHER))
+        assertTrue(runCatching { automation.confirm(row.id, row.revision, input) }.isFailure)
+        assertTrue(runCatching { automation.confirm(row.id, row.revision,
+            input.copy(event = FinanceEventInput(role = FinanceFlowRole.REFUND))) }.isFailure)
+        assertEquals(FinanceFlowRole.REFUND, db.financeIntakeDao().proposal(row.id)!!.role)
+        assertTrue(finance.snapshot().entries.isEmpty())
     }
 
     @Test fun confirmationCreatesExactlyOneCanonicalResultAndOneRelationWithProposalAuthority() = runTest {

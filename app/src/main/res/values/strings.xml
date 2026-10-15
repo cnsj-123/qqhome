@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Life OS</string>
+    <string name="finance_visible_detail_disclosure">仅当你手动打开受支持的交易详情时，在本机读取当前可见的金额、时间和交易编号摘要，生成待确认小票。不会点击、跳页、滚动、读取聊天或密码，不保存完整页面，不自动记账。可随时在应用和系统无障碍设置中关闭。</string>
 </resources>

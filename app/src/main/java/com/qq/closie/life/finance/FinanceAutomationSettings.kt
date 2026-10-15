@@ -4,10 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
+import com.qq.closie.life.finance.acquisition.ProviderRegistry
 
 data class FinanceDiscoverySettings(val enabled: Boolean = false, val wechat: Boolean = true,
     val alipay: Boolean = true, val deliveryMode: FinanceReviewDeliveryMode = FinanceReviewDeliveryMode.IMMEDIATE,
-    val lastStatus: String = "", val enhancedReceiptOverlay: Boolean = false)
+    val lastStatus: String = "", val enhancedReceiptOverlay: Boolean = false,
+    val visibleDetailEnabled: Boolean = false, val enabledVisibleProviders: Set<String> = emptySet())
 
 /** Existing device-scoped owner/store. Only the actually published V14 key is migrated. */
 class FinanceAutomationSettings(context: Context) {
@@ -22,11 +24,14 @@ class FinanceAutomationSettings(context: Context) {
     }
     fun read() = FinanceDiscoverySettings(prefs.getBoolean("enabled", false), prefs.getBoolean("wechat", true),
         prefs.getBoolean("alipay", true), FinanceReviewDeliveryMode.entries.firstOrNull { it.name == prefs.getString(MODE, null) }
-            ?: FinanceReviewDeliveryMode.IMMEDIATE, prefs.getString("status", "").orEmpty(), prefs.getBoolean(OVERLAY, false))
+            ?: FinanceReviewDeliveryMode.IMMEDIATE, prefs.getString("status", "").orEmpty(), prefs.getBoolean(OVERLAY, false),
+        prefs.getBoolean(VISIBLE_MASTER, false), prefs.getStringSet(VISIBLE_PROVIDERS, emptySet()).orEmpty().toSet())
     fun save(value: FinanceDiscoverySettings) {
         synchronized(prefs) {
             prefs.edit().putBoolean("enabled", value.enabled).putBoolean("wechat", value.wechat)
                 .putBoolean("alipay", value.alipay).putString(MODE, value.deliveryMode.name)
+                .putBoolean(VISIBLE_MASTER, value.visibleDetailEnabled)
+                .putStringSet(VISIBLE_PROVIDERS, value.enabledVisibleProviders.filter { ProviderRegistry.find(it) != null }.toSet())
                 .putBoolean(OVERLAY, value.enhancedReceiptOverlay).remove("background").apply()
         }
     }
@@ -40,5 +45,16 @@ class FinanceAutomationSettings(context: Context) {
     private companion object {
         const val MODE = "reviewDeliveryMode"
         const val OVERLAY = "enhancedReceiptOverlay"
+        const val VISIBLE_MASTER = "visibleDetailEnabled"
+        const val VISIBLE_PROVIDERS = "enabledVisibleProviders"
     }
 }
+
+fun FinanceDiscoverySettings.permits(proposal: FinanceProposalEntity): Boolean =
+    if (FinanceEvidenceOrigin.isVisible(proposal)) visibleDetailEnabled &&
+        FinanceEvidenceOrigin.providerKey(proposal)?.let { it in enabledVisibleProviders && ProviderRegistry.find(it) != null } == true
+    else enabled && when (proposal.source) {
+        FinanceSource.WECHAT -> wechat
+        FinanceSource.ALIPAY -> alipay
+        else -> false
+    }

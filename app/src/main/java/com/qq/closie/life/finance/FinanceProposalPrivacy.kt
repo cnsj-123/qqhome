@@ -7,6 +7,7 @@ object FinanceProposalPrivacy {
         val source = when (row.source) {
             FinanceSource.WECHAT -> "微信"
             FinanceSource.ALIPAY -> "支付宝"
+            FinanceSource.VISIBLE_DETAIL -> "交易"
             FinanceSource.LEGACY_IMPORT -> return row
         }
         val action = when {

@@ -27,5 +27,11 @@
             android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>
+        <service android:name=".life.finance.acquisition.FinanceAccessibilityService"
+            android:label="Life OS 可见交易详情" android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/finance_visible_details" />
+        </service>
     </application>
 </manifest>
