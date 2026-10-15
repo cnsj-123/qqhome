@@ -62,6 +62,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
             val allRows = dao.rows(id)
             val rows = allRows.filter { it.id in selectedIds && it.canonicalId == null }
             if (rows.isEmpty()) return@transaction 0
+            require(rows.all(LegacyBusinessSemantics::canCommit)) { "旧账已报销或冲突状态仍待迁移／核对，不能写入待报销事件" }
             validateMappings(rows, mappings)
             require(rows.all { it.kind != null && it.amountMinor != null && it.occurredAt != null &&
                 it.status != FinanceRowStatus.INVALID && it.status != FinanceRowStatus.UNDONE }) { "所选记录仍有未解决的格式或类型" }
@@ -100,10 +101,11 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
                 } else {
                     // Received amounts embedded in source columns NEVER manufacture real inflows.
                     val uncertainIncome = row.hasRefund && row.kind == FinanceProposalKind.INCOME
+                    val (category, subcategory) = LegacyBusinessSemantics.categoryPath(row)
                     finance.saveEntryInTransaction(null, accountId,
                         if (row.kind == FinanceProposalKind.INCOME) FinanceDirection.INFLOW else FinanceDirection.OUTFLOW,
-                        row.amountMinor!!, description, row.occurredAt!!, row.category, tags, row.subcategory,
-                        FinanceEventInput(nature = if (row.reimbursable) FinanceNature.REIMBURSABLE else if (uncertainIncome) FinanceNature.OTHER else FinanceNature.PERSONAL,
+                        row.amountMinor!!, description, row.occurredAt!!, category, tags, subcategory,
+                        FinanceEventInput(nature = LegacyBusinessSemantics.nature(row),
                             role = if (row.kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT,
                             statPolicy = if (uncertainIncome) FinanceStatPolicy.EXCLUDE else row.statPolicy, budgetPolicy = row.budgetPolicy),
                         batchId = id).id
