@@ -1,5 +1,8 @@
 # Life OS 当前 UI 与 Finance 深度对齐研究
 
+## 新增
+Finance 自动发现的目标不限定微信/支付宝通知。Life OS 的长期采集层支持多个 Evidence Source，包括 Notification、用户主动打开的 Accessibility 可见交易详情页、Legacy Import，以及未来明确授权的官方 API。各来源只产生 Evidence/Proposal，不直接拥有 Finance Truth。Accessibility 采用 provider adapter 架构，覆盖常用支付、电商、本地生活与出行 App；只解析用户当前主动打开的已识别详情页，不后台遍历、不自动操作第三方 App。
+
 ## 研究范围与核心判断
 
 我这次不是只看你最后发的几张图，而是把几条线重新叠在一起看：**当前真实 GitHub 代码、Finance v4 数据模型、旧账 XLSX、你之前的 iCost 参考、这次的 Figma 截图、你给的 Soft Spatial Journal HTML prototype，以及 Actual Budget、GnuCash、Beancount、Plaid、Monekin、Finapp、iCost 官方资料。**
