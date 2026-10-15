@@ -66,8 +66,9 @@ object HexColor {
 }
 
 /** Bounded effect-layer controls; semantic theme colors always remain opaque. */
-data class FunctionPageEffects(val atmosphere: Int = 50, val opacity: Int = 50, val blur: Int = 50) {
-    fun normalized() = FunctionPageEffects(atmosphere.coerceIn(0, 100), opacity.coerceIn(0, 100), blur.coerceIn(0, 100))
+data class FunctionPageEffects(val atmosphere: Int = 50, val opacity: Int = 50, val blur: Int = 50,
+    val homeBlur: Int = 0, val gradient: Int = 50, val homeGradient: Int = 0) {
+    fun normalized() = FunctionPageEffects(atmosphere.coerceIn(0, 100), opacity.coerceIn(0, 100), blur.coerceIn(0, 100), homeBlur.coerceIn(0, 100), gradient.coerceIn(0, 100), homeGradient.coerceIn(0, 100))
     val atmosphereScale: Float get() = normalized().atmosphere / 50f
     val surfaceAlpha: Float get() = normalized().opacity / 100f
     val blurDp: Float get() = normalized().blur / 5f

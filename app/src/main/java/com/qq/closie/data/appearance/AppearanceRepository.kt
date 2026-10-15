@@ -34,29 +34,38 @@ class AppearanceRepository(
 
     suspend fun read(): AppearanceSettings = records.first()
 
-    suspend fun selectFunctionPageStyle(style: FunctionPageStyle) {
-        store.edit { it[AppearanceCodec.functionPageStyle] = style.name }
-    }
-
-    suspend fun saveFunctionEffects(effects: FunctionPageEffects) {
-        val valid = effects.normalized()
-        store.edit {
-            it[AppearanceCodec.atmosphere] = valid.atmosphere
-            it[AppearanceCodec.opacity] = valid.opacity
-            it[AppearanceCodec.blur] = valid.blur
-        }
-    }
-
-    suspend fun updateNamed(id: String, name: String, colors: CustomTheme) {
+    /** One DataStore transaction for the whole editor, including deletion and effect preferences. */
+    suspend fun saveTheme(selectedId: String, name: String, colors: CustomTheme, replacingId: String?,
+        style: FunctionPageStyle, effects: FunctionPageEffects, removedIds: Set<String>) {
         val valid = colors.normalized()
+        val effect = effects.normalized()
         require(name.trim().length in 1..40)
+        require("legacy-custom" !in removedIds)
         store.edit { values ->
-            val existing = AppearanceCodec.decode(values).namedThemes
-            require(id.startsWith("palette-") && existing.any { it.id == id })
-            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(existing.map {
-                if (it.id == id) it.copy(name = name.trim(), colors = valid) else it
-            })
+            var themes = AppearanceCodec.decode(values).namedThemes.filterNot { it.id in removedIds }
+            val id = when {
+                replacingId != null && replacingId != "legacy-custom" -> {
+                    require(themes.any { it.id == replacingId }) { "主题已不存在" }
+                    themes = themes.map { if (it.id == replacingId) it.copy(name = name.trim(), colors = valid) else it }
+                    replacingId
+                }
+                selectedId == AppearanceSettings.CUSTOM_ID || replacingId == "legacy-custom" -> {
+                    require(themes.size < 24) { "已保存 24 个主题，请先删除不再使用的主题" }
+                    val created = NamedTheme("palette-" + java.util.UUID.randomUUID(), name.trim(), valid)
+                    themes = themes + created
+                    created.id
+                }
+                else -> { require(ThemePreset.fromId(selectedId) != null || themes.any { it.id == selectedId }); selectedId }
+            }
+            values[AppearanceCodec.collection] = AppearanceCodec.encodeNamedThemes(themes)
             values[AppearanceCodec.selected] = id
+            values[AppearanceCodec.functionPageStyle] = style.name
+            values[AppearanceCodec.atmosphere] = effect.atmosphere
+            values[AppearanceCodec.opacity] = effect.opacity
+            values[AppearanceCodec.blur] = effect.blur
+            values[AppearanceCodec.homeBlur] = effect.homeBlur
+            values[AppearanceCodec.gradient] = effect.gradient
+            values[AppearanceCodec.homeGradient] = effect.homeGradient
         }
     }
 
@@ -122,6 +131,9 @@ class AppearanceRepository(
 }
 
 internal object AppearanceCodec {
+    val homeBlur = intPreferencesKey("homeBlur")
+    val gradient = intPreferencesKey("functionGradient")
+    val homeGradient = intPreferencesKey("homeGradient")
     val atmosphere = intPreferencesKey("functionAtmosphere")
     val opacity = intPreferencesKey("functionOpacity")
     val blur = intPreferencesKey("functionBlur")
@@ -155,7 +167,8 @@ internal object AppearanceCodec {
             it.name == values[functionPageStyle]
         } ?: FunctionPageStyle.LAYERED, values[moduleOrder].orEmpty().split(',').filter(String::isNotBlank).distinct(), themes,
             FunctionPageEffects(values[atmosphere] ?: 50,
-                values[opacity] ?: 50, values[blur] ?: 50).normalized())
+                values[opacity] ?: 50, values[blur] ?: 50, values[homeBlur] ?: 0,
+                values[gradient] ?: 50, values[homeGradient] ?: 0).normalized())
     }
 
     // Compatibility entries are derived from old fields, never records in namedThemesV1.

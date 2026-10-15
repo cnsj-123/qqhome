@@ -38,21 +38,19 @@ class AppearanceViewModel(
         val draft = _editor.value?.takeUnless { it.isSaving || it.extracting } ?: return
         val saved = appearanceRepository.settings.value ?: AppearanceSettings()
         _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = preset.id,
-            functionPageStyle = draft.preview.functionPageStyle, functionEffects = draft.preview.functionEffects))
+            functionPageStyle = draft.preview.functionPageStyle, functionEffects = draft.preview.functionEffects)).copy(removedThemeIds = draft.removedThemeIds)
     }
 
     fun editThemeField(field: ThemeField, value: String) {
         _editor.value?.takeUnless { it.isSaving }?.let { _editor.value = it.edit(field, value) }
     }
 
-    fun restoreOriginal() = previewPreset(ThemePreset.ORIGINAL)
-
     fun previewNamed(id: String) {
         val draft = _editor.value?.takeUnless { it.isSaving || it.extracting } ?: return
         val saved = savedAppearance.value ?: return
         if (saved.namedThemes.none { it.id == id }) return
         _editor.value = AppearanceEditorState.from(saved.copy(selectedThemeId = id,
-            functionPageStyle = draft.preview.functionPageStyle, functionEffects = draft.preview.functionEffects))
+            functionPageStyle = draft.preview.functionPageStyle, functionEffects = draft.preview.functionEffects)).copy(removedThemeIds = draft.removedThemeIds)
     }
 
     fun duplicateTheme() {
@@ -76,19 +74,13 @@ class AppearanceViewModel(
     }
 
     fun deleteNamed(id: String) {
-        val draft = _editor.value ?: return
-        if (draft.isSaving || draft.extracting) return
-        val generation = editGeneration
-        _editor.value = draft.copy(isSaving = true)
-        viewModelScope.launch {
-            try {
-                appearanceRepository.deleteNamed(id)
-                val saved = appearanceRepository.read()
-                if (generation == editGeneration && _editor.value != null)
-                    _editor.value = savedEditor(saved).copy(message = "主题已删除")
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { if (generation == editGeneration) _editor.value = draft.copy(message = "删除失败，请重试") }
-        }
+        val draft = _editor.value?.takeUnless { it.isSaving || it.extracting } ?: return
+        if (!id.startsWith("palette-")) return
+        val removed = draft.removedThemeIds + id
+        _editor.value = if (draft.selectedId == id || draft.editingNamedId == id)
+            AppearanceEditorState.from(draft.preview.copy(selectedThemeId = ThemePreset.ORIGINAL.id))
+                .copy(removedThemeIds = removed, message = "删除将在保存主题时生效")
+        else draft.copy(removedThemeIds = removed, message = "删除将在保存主题时生效")
     }
 
     fun extractImage(context: android.content.Context, uri: android.net.Uri) {
@@ -103,7 +95,7 @@ class AppearanceViewModel(
                 }
                 if (generation == editGeneration && _editor.value != null) {
                     val preview = (_editor.value ?: initial).preview.copy(selectedThemeId = AppearanceSettings.CUSTOM_ID, custom = palette)
-                    _editor.value = AppearanceEditorState.from(preview).copy(themeName = "图片里的颜色", message = "已在本机取色，可继续调整和命名；保存后可再次使用。")
+                    _editor.value = AppearanceEditorState.from(preview).copy(removedThemeIds = initial.removedThemeIds, themeName = "图片里的颜色", message = "已在本机取色，可继续调整和命名；保存后可再次使用。")
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (error: Exception) {
@@ -113,30 +105,14 @@ class AppearanceViewModel(
     }
 
     fun selectFunctionPageStyle(style: FunctionPageStyle) {
-        val generation = editGeneration
-        viewModelScope.launch {
-            try {
-                appearanceRepository.selectFunctionPageStyle(style)
-                if (generation == editGeneration)
-                    _editor.value?.let { _editor.value = it.copy(preview = it.preview.copy(functionPageStyle = style)) }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { if (generation == editGeneration) _editor.value = _editor.value?.copy(message = "功能页样式保存失败，请重试") }
+        _editor.value?.takeUnless { it.isSaving || it.extracting }?.let {
+            _editor.value = it.copy(preview = it.preview.copy(functionPageStyle = style), message = null)
         }
     }
 
-    // Preview is immediate; writes occur on slider release to avoid a DataStore write per frame.
     fun previewFunctionEffects(effects: FunctionPageEffects) {
         _editor.value?.takeUnless { it.isSaving || it.extracting }?.let {
-            _editor.value = it.copy(preview = it.preview.copy(functionEffects = effects.normalized()))
-        }
-    }
-    fun saveFunctionEffects() {
-        val effects = _editor.value?.preview?.functionEffects ?: return
-        val generation = editGeneration
-        viewModelScope.launch {
-            try { appearanceRepository.saveFunctionEffects(effects) }
-            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { if (generation == editGeneration) _editor.value = _editor.value?.copy(message = "效果未能保存，请重试") }
+            _editor.value = it.copy(preview = it.preview.copy(functionEffects = effects.normalized()), message = null)
         }
     }
 
@@ -155,18 +131,16 @@ class AppearanceViewModel(
         _editor.value = draft.copy(isSaving = true, message = null)
         viewModelScope.launch {
             runCatching {
-                when {
-                    draft.editingNamedId != null -> appearanceRepository.updateNamed(draft.editingNamedId, draft.themeName, CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
-                    draft.selectedId == AppearanceSettings.CUSTOM_ID -> appearanceRepository.saveNamed(draft.themeName, CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm))
-                    draft.preview.namedThemes.any { it.id == draft.selectedId } -> appearanceRepository.selectNamed(draft.selectedId)
-                    else -> appearanceRepository.selectPreset(requireNotNull(ThemePreset.fromId(draft.selectedId)))
-                }
+                appearanceRepository.saveTheme(draft.selectedId, draft.themeName,
+                    CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm), draft.editingNamedId,
+                    draft.preview.functionPageStyle, draft.preview.functionEffects, draft.removedThemeIds)
                 appearanceRepository.read()
             }.onSuccess { saved ->
                 if (generation == editGeneration && _editor.value != null) {
                     _editor.value = savedEditor(saved).copy(message = "主题已保存")
                 }
             }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
                 if (generation == editGeneration && _editor.value != null) {
                     _editor.value = draft.copy(isSaving = false, message = "主题保存失败，请重试")
                 }

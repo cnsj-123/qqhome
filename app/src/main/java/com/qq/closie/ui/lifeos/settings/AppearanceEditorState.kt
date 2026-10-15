@@ -13,7 +13,7 @@ data class AppearanceEditorState(
     val isSaving: Boolean = false,
     val message: String? = null,
     val soft: String = secondary, val warm: String = paper,
-    val themeName: String = "我的配色", val extracting: Boolean = false, val editingNamedId: String? = null
+    val themeName: String = "我的配色", val extracting: Boolean = false, val editingNamedId: String? = null, val removedThemeIds: Set<String> = emptySet()
 ) {
     fun edit(field: ThemeField, text: String): AppearanceEditorState {
         val changed = when (field) {

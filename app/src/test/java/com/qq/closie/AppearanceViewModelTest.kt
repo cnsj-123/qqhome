@@ -41,7 +41,7 @@ class AppearanceViewModelTest {
     @Test
     fun `restore previews original but cancel keeps the entire saved appearance`() = runTest {
         withEditor(saved) { repository, model ->
-            model.restoreOriginal()
+            model.previewPreset(ThemePreset.ORIGINAL)
             assertEquals(ThemePreset.ORIGINAL.id, model.editor.value!!.selectedId)
             assertEquals(ThemePreset.ORIGINAL.id, model.appearance.first { it?.selectedThemeId == ThemePreset.ORIGINAL.id }!!.selectedThemeId)
             assertEquals(saved, repository.read())
@@ -56,7 +56,7 @@ class AppearanceViewModelTest {
     @Test
     fun `restore is persisted only after save and retains custom values`() = runTest {
         withEditor(saved) { repository, model ->
-            model.restoreOriginal()
+            model.previewPreset(ThemePreset.ORIGINAL)
             assertEquals(saved, repository.read())
             saveAndAwait(model)
             val expected = saved.copy(selectedThemeId = ThemePreset.ORIGINAL.id)
