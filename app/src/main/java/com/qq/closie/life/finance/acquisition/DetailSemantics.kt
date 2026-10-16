@@ -23,6 +23,7 @@ internal object DetailSemantics {
     private val number = Regex("[+−-]?[¥￥]?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\\.[0-9]{1,2})?")
     private val dates = listOf("uuuu-M-d HH:mm:ss", "uuuu-M-d HH:mm", "uuuu/M/d HH:mm", "uuuu年M月d日 HH:mm:ss")
         .map { DateTimeFormatter.ofPattern(it).withResolverStyle(ResolverStyle.STRICT) }
+    private val baitiaoChannels = setOf("白条", "京东白条", "已出账白条", "未出账白条")
     fun compact(value: String) = value.trim().replace(Regex("\\s+"), "")
     fun source(value: String): TransactionSourceHint? = sources[value.removePrefix("退款-")]
     fun money(value: String): String? {
@@ -44,7 +45,7 @@ internal object DetailSemantics {
     fun channel(value: String): PaymentChannelHint? = when {
         value.startsWith("亲情卡") -> PaymentChannelHint.FAMILY_CARD
         value.startsWith("花呗") -> PaymentChannelHint.HUABEI
-        value.startsWith("白条") || value == "京东白条" -> PaymentChannelHint.JD_BAITIAO
+        compact(value) in baitiaoChannels -> PaymentChannelHint.JD_BAITIAO
         value.startsWith("美团月付") -> PaymentChannelHint.MEITUAN_MONTHLY
         value == "微信支付" || value == "微信" -> PaymentChannelHint.WECHAT_PAY
         value == "支付宝" -> PaymentChannelHint.ALIPAY

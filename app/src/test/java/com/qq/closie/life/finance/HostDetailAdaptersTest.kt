@@ -95,6 +95,45 @@ class HostDetailAdaptersTest {
         assertEquals(FinanceProposalKind.TRANSFER, result(JdDetailAdapter, repayment).kind)
     }
 
+    private fun jdBillingWithChannel(paymentRow: N) = page(N("账单详情"), node("京东平台商户", "-12.34", "交易成功"),
+        row("创建时间", time), paymentRow, row("总订单编号", "ORDER-123456"), row("商户单号", "MERCHANT-123456"))
+
+    @Test fun jdBaitiaoAcceptsSeparateStatusAndChannelChildren() {
+        listOf("已出账", "未出账").forEach { status ->
+            listOf(node("支付方式", status, "白条"), N("支付方式", nodes = listOf(N(status), N("白条")))).forEach { paymentRow ->
+                assertEquals(PaymentChannelHint.JD_BAITIAO, result(JdDetailAdapter, jdBillingWithChannel(paymentRow)).paymentChannelHint)
+            }
+        }
+    }
+
+    @Test fun jdBaitiaoAcceptsOnlyAllowlistedMergedValuesWithWhitespaceNormalization() {
+        listOf("白条", "京东白条", "已出账 白条", "未出账 白条", "  已出账\t白条\n").forEach { value ->
+            listOf(row("支付方式", value), N("支付方式", nodes = listOf(N(value)))).forEach { paymentRow ->
+                assertEquals(PaymentChannelHint.JD_BAITIAO, result(JdDetailAdapter, jdBillingWithChannel(paymentRow)).paymentChannelHint)
+            }
+        }
+    }
+
+    @Test fun jdBaitiaoTerminologyInUnrelatedTextDoesNotBecomeChannel() {
+        listOf("白条优惠说明", "了解京东白条", "已出账 白条优惠", "未出账 白条介绍", "白条 京东白条").forEach { value ->
+            assertNull(DetailSemantics.channel(value))
+            listOf(row("支付方式", value), N("支付方式", nodes = listOf(N(value)))).forEach { paymentRow ->
+                val p = jdBillingWithChannel(paymentRow)
+                assertNull(read(JdDetailAdapter, p)?.fields?.get("支付方式"))
+                assertNull(parse(JdDetailAdapter, p)?.evidence)
+            }
+        }
+    }
+
+    @Test fun jdChannelSubtreeWithMultipleChannelsOrPrivateLabelsFailsClosed() {
+        listOf(N("支付方式", nodes = listOf(N("已出账"), N("白条"), N("花呗"))),
+            N("支付方式", nodes = listOf(N("白条"), N("对方账户"), N("Example User")))).forEach { paymentRow ->
+            val p = jdBillingWithChannel(paymentRow)
+            assertNull(read(JdDetailAdapter, p)?.fields?.get("支付方式"))
+            assertNull(parse(JdDetailAdapter, p)?.evidence)
+        }
+    }
+
     @Test fun embeddedServicesDoNotBecomeNewHosts() {
         val flash = page(N("订单已送达"), N("闪购"), row("实付", "¥12.34"),
             row("订单号", "ORDER-123456"), row("下单时间", time))

@@ -82,8 +82,10 @@ internal object SemanticDetailReader {
             val match = label(value, adapter.fieldLabels)
             if (match != null) {
                 val (key, inline) = match
-                val values = if (inline != null) listOf(inline) else node.parent()?.use { parent ->
-                    local(parent)?.takeIf { texts -> texts.mapNotNull { label(it, adapter.fieldLabels + privateLabels)?.first }.toSet() == setOf(key) }
+                val values = if (inline != null) listOf(inline) else {
+                    val row = if (key in DetailSemantics.channelLabels && node.childCount > 0) local(node)
+                        else node.parent()?.use { parent -> local(parent) }
+                    row?.takeIf { texts -> texts.mapNotNull { label(it, adapter.fieldLabels + privateLabels)?.first }.toSet() == setOf(key) }
                         ?.filter { label(it, adapter.fieldLabels) == null && it !in setOf("复制", ">", "收起") }
                 }.orEmpty()
                 val parsed = if (key in DetailSemantics.referenceLabels) {
