@@ -9,7 +9,7 @@ import java.time.format.ResolverStyle
 
 /** Small field grammars shared by host adapters. No page concatenation or free-text summaries. */
 internal object DetailSemantics {
-    val timeLabels = setOf("支付时间", "付款时间", "转账时间", "收款时间", "创建时间", "下单时间", "订单时间", "退款时间", "消费时间")
+    val timeLabels = setOf("支付时间", "付款时间", "转账时间", "收款时间", "创建时间", "下单时间", "拼单时间", "订单时间", "退款时间", "消费时间")
     val referenceLabels = setOf("转账单号", "交易单号", "订单号", "订单编号", "总订单编号", "商户单号", "商家单号", "商家订单号", "商户订单号", "付款单号")
     val moneyLabels = setOf("实付款", "实付", "实际付款", "实付金额", "合计", "订单金额", "退款金额", "金额")
     val channelLabels = setOf("支付方式", "付款方式", "退款方式", "收款方式")

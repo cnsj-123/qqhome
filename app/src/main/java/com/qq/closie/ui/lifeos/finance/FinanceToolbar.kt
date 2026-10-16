@@ -33,7 +33,7 @@ internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: Strin
     val focus = LocalFocusManager.current
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
-        TextButton(onMonth, contentPadding = PaddingValues(horizontal = 4.dp)) {
+        TextButton(onMonth, modifier = Modifier.testTag("finance-date-control"), contentPadding = PaddingValues(horizontal = 4.dp)) {
             Text(monthLabel, style = LifeText.caption, maxLines = 2)
         }
         BasicTextField(query, onQuery,

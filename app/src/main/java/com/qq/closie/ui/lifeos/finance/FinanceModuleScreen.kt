@@ -144,9 +144,13 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         })
                         FinancePeriod.entries.filter { it != FinancePeriod.CUSTOM }.forEach { period ->
                             DropdownMenuItem(text = { Text(period.label) }, onClick = {
-                                queryMenu = false; selectedDay = null
-                                calendarMode = period == FinancePeriod.MONTH
-                                if (calendarMode) selectMonth(YearMonth.now()) else vm.selectPeriod(period)
+                                queryMenu = false
+                                // Overview/Insights ranges do not replace the saved Transactions month/day.
+                                if (view == FinanceView.TRANSACTIONS) {
+                                    selectedDay = null
+                                    calendarMode = period == FinancePeriod.MONTH
+                                    if (calendarMode) selectMonth(YearMonth.now()) else vm.selectPeriod(period)
+                                } else vm.selectPeriod(period)
                             })
                         }
                         if (view == FinanceView.TRANSACTIONS) DropdownMenuItem(
