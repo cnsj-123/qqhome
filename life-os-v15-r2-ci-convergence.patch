@@ -1,0 +1,284 @@
+From 784355335cc791e0b53c8423c49d533ae54fa543 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Fri, 16 Oct 2026 12:16:59 +0800
+Subject: [PATCH] fix(android): converge R2 finance tests with reviewed
+ semantics
+
+---
+ .../finance/acquisition/DetailSemantics.kt    |  2 +-
+ .../ui/lifeos/finance/FinanceModuleScreen.kt  | 10 ++-
+ .../ui/lifeos/finance/FinanceToolbar.kt       |  2 +-
+ .../finance/FinanceImportRepositoryTest.kt    | 78 +++++++++++++++----
+ .../ui/lifeos/finance/FinanceSmokeTest.kt     | 47 ++++++++---
+ 5 files changed, 110 insertions(+), 29 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/life/finance/acquisition/DetailSemantics.kt b/app/src/main/java/com/qq/closie/life/finance/acquisition/DetailSemantics.kt
+index 8109add599fef57eed2fdee268da326dc8935ca0..a9db716cc19662d159330bd52b63fc69af975979 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/acquisition/DetailSemantics.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/acquisition/DetailSemantics.kt
+@@ -9,7 +9,7 @@ import java.time.format.ResolverStyle
+ 
+ /** Small field grammars shared by host adapters. No page concatenation or free-text summaries. */
+ internal object DetailSemantics {
+-    val timeLabels = setOf("支付时间", "付款时间", "转账时间", "收款时间", "创建时间", "下单时间", "订单时间", "退款时间", "消费时间")
++    val timeLabels = setOf("支付时间", "付款时间", "转账时间", "收款时间", "创建时间", "下单时间", "拼单时间", "订单时间", "退款时间", "消费时间")
+     val referenceLabels = setOf("转账单号", "交易单号", "订单号", "订单编号", "总订单编号", "商户单号", "商家单号", "商家订单号", "商户订单号", "付款单号")
+     val moneyLabels = setOf("实付款", "实付", "实际付款", "实付金额", "合计", "订单金额", "退款金额", "金额")
+     val channelLabels = setOf("支付方式", "付款方式", "退款方式", "收款方式")
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+index 63e7c8174000ff091985d92b63af7afaae5e1106..830baaa28fc55fdd63a16c52f9d98878178c9ad3 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceModuleScreen.kt
+@@ -144,9 +144,13 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
+                         })
+                         FinancePeriod.entries.filter { it != FinancePeriod.CUSTOM }.forEach { period ->
+                             DropdownMenuItem(text = { Text(period.label) }, onClick = {
+-                                queryMenu = false; selectedDay = null
+-                                calendarMode = period == FinancePeriod.MONTH
+-                                if (calendarMode) selectMonth(YearMonth.now()) else vm.selectPeriod(period)
++                                queryMenu = false
++                                // Overview/Insights ranges do not replace the saved Transactions month/day.
++                                if (view == FinanceView.TRANSACTIONS) {
++                                    selectedDay = null
++                                    calendarMode = period == FinancePeriod.MONTH
++                                    if (calendarMode) selectMonth(YearMonth.now()) else vm.selectPeriod(period)
++                                } else vm.selectPeriod(period)
+                             })
+                         }
+                         if (view == FinanceView.TRANSACTIONS) DropdownMenuItem(
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceToolbar.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceToolbar.kt
+index c400dc2e98a9973d07cc46d5b347551ee255a255..9aa8a8a4c2523021e94ef8c581a14ff1541f5b2a 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceToolbar.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceToolbar.kt
+@@ -33,7 +33,7 @@ internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: Strin
+     val focus = LocalFocusManager.current
+     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+         IconButton(onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
+-        TextButton(onMonth, contentPadding = PaddingValues(horizontal = 4.dp)) {
++        TextButton(onMonth, modifier = Modifier.testTag("finance-date-control"), contentPadding = PaddingValues(horizontal = 4.dp)) {
+             Text(monthLabel, style = LifeText.caption, maxLines = 2)
+         }
+         BasicTextField(query, onQuery,
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt
+index cd88a67ffbf8de987692397ce5aae18e7ae4e375..500d1c8fe3b72e5e2b7aba0f27772ed8902b7f7d 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt
+@@ -30,34 +30,84 @@ class FinanceImportRepositoryTest : FinanceRoomTest() {
+         assertTrue(finance.snapshot().entries.isEmpty())
+         val mappings = listOf(FinanceAccountMapping("合成钱包"), FinanceAccountMapping("合成银行", kind = FinanceAccountKind.BANK_CARD))
+         val checked = imports.preview(preview.batch.id, mappings)
++        val blocked = checked.rows.single { it.description == "报销付款" }
++        assertEquals(FinanceRowStatus.REVIEW, blocked.status)
++        assertEquals(LegacyBusinessState.REVIEW, LegacyBusinessSemantics.state(blocked))
++        assertFalse(LegacyBusinessSemantics.canCommit(blocked))
++        assertEquals(setOf(FinanceImportGroup.UNSUPPORTED), FinanceImportReview.groups(blocked))
++        assertNull(blocked.canonicalId)
+         val selected = FinanceImportReview.selected(checked.rows,
+             FinanceImportReviewPolicy(reimbursement = true, refund = true, fees = true))
+-        assertEquals(4, selected.size)
+-        assertEquals(4, imports.commit(preview.batch.id, mappings, selected, emptySet(), false, true))
++        assertEquals(3, selected.size)
++        assertEquals(checked.rows.map { it.id }.toSet() - blocked.id, selected)
++        assertEquals(selected.size, imports.commit(preview.batch.id, mappings, selected, emptySet(), false, true))
+         val state = readFinanceSnapshot(db, true)
+-        assertEquals(6, state.entries.size) // Three real ordinary flows + transfer pair + real fee.
++        val v4 = requireNotNull(state.v4)
++        assertEquals(5, state.entries.size) // Ordinary payment + refund-evidence payment + transfer pair + real fee.
+         assertEquals(1, state.transfers.size)
++        val transfer = state.transfers.single()
++        val transferOut = state.entries.single { it.id == transfer.outflowEntryId }
++        val transferIn = state.entries.single { it.id == transfer.inflowEntryId }
++        val ordinary = state.entries.single { it.amountMinor == 1_234L }
++        val refundEvidence = state.entries.single { it.description == "退款证据" }
++        val fee = state.entries.single { it.description == "转账手续费" }
++        assertEquals(setOf(ordinary.id, refundEvidence.id, fee.id, transferOut.id, transferIn.id), state.entries.map { it.id }.toSet())
++        assertEquals(2_000L, transferOut.amountMinor)
++        assertEquals(transferOut.amountMinor, transferIn.amountMinor)
++        assertEquals(FinanceDirection.OUTFLOW, transferOut.direction)
++        assertEquals(FinanceDirection.INFLOW, transferIn.direction)
++        assertNotEquals(transferOut.accountId, transferIn.accountId)
+         assertEquals(1, state.entries.count { it.direction == FinanceDirection.INFLOW })
++        assertTrue(state.entries.none { it.description == blocked.description })
+         assertEquals(listOf("原始 单元格"), FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.tags)
+         assertEquals("服饰 › 衣服", FinanceProjection.ledger(state).single { it.entry.amountMinor == 1_234L }.category)
+         assertTrue(state.categories.any { it.parentId != null && it.name == "衣服" })
+-        assertEquals(29L, state.entries.single { it.description == "转账手续费" }.amountMinor)
+-        assertTrue(state.v4!!.events.any { it.nature == FinanceNature.REIMBURSABLE })
+-        assertTrue(state.entries.any { it.description == "退款证据" && it.statPolicy == FinanceStatPolicy.EXCLUDE })
+-        assertTrue(state.v4!!.expected.isEmpty())
++        assertEquals(29L, fee.amountMinor)
++        assertEquals(400L, refundEvidence.amountMinor)
++        assertEquals(FinanceDirection.OUTFLOW, refundEvidence.direction)
++        assertEquals(FinanceStatPolicy.EXCLUDE, refundEvidence.statPolicy)
++        assertEquals(3, v4.events.size)
++        assertTrue(v4.events.all { it.nature == FinanceNature.PERSONAL })
++        assertTrue(v4.expected.isEmpty())
++        assertEquals(3, v4.links.size)
++        assertEquals(setOf(ordinary.id, refundEvidence.id, fee.id), v4.activeLinks.map { it.entryId }.toSet())
++        val feeLink = v4.activeLinks.single { it.entryId == fee.id }
++        assertEquals(FinanceFlowRole.FEE, feeLink.role)
++        assertEquals(transfer.id, v4.events.single { it.id == feeLink.eventId }.relatedTransferId)
++        assertTrue(v4.activeLinks.none { it.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT) })
++        val committedRows = v4.staging.filter { it.status == FinanceRowStatus.COMMITTED }
++        assertEquals(selected, committedRows.map { it.id }.toSet())
++        assertEquals(setOf(ordinary.id, transfer.id, refundEvidence.id), committedRows.mapNotNull { it.canonicalId }.toSet())
++        assertEquals(blocked, v4.staging.single { it.id == blocked.id })
+         val wallet = state.accounts.single { it.importSourceName == "合成钱包" }
+         assertEquals(checked.rows.minOf { it.occurredAt!! }, wallet.balanceAnchorAt)
+-        assertEquals(-3_963L, FinanceProjection.balance(wallet, state.entries))
+-        assertEquals(FinanceTotals(1_263, 0), FinanceProjection.totals(FinancePersonalProjection.rows(state, FinanceProjection.ledger(state)))["CNY"])
++        val walletOutflows = listOf(ordinary, refundEvidence, fee, transferOut)
++        assertTrue(walletOutflows.all { it.accountId == wallet.id && it.direction == FinanceDirection.OUTFLOW })
++        val expectedWalletBalance = -walletOutflows.sumOf { it.amountMinor }
++        assertEquals(-3_663L, expectedWalletBalance)
++        assertEquals(expectedWalletBalance, FinanceProjection.balance(wallet, state.entries))
++        assertEquals(FinanceTotals(ordinary.amountMinor + fee.amountMinor, 0),
++            FinanceProjection.totals(FinancePersonalProjection.rows(state, FinanceProjection.ledger(state)))["CNY"])
+         assertEquals(0, imports.commit(preview.batch.id, mappings, selected, emptySet(), false, true))
+         val undo = imports.undo(preview.batch.id)
+-        assertEquals(FinanceUndoResult(6, 0), undo)
++        assertEquals(FinanceUndoResult(state.entries.size, 0), undo)
+         val retired = readFinanceSnapshot(db, true)
++        val retiredV4 = requireNotNull(retired.v4)
++        assertEquals(state.entries.map { it.id }.toSet(), retired.entries.map { it.id }.toSet())
+         assertTrue(retired.entries.all { it.voidedAt != null })
+-        assertTrue(retired.v4!!.events.all { it.voidedAt != null })
+-        assertTrue(retired.v4!!.activeLinks.isEmpty())
+-        assertEquals(4, retired.v4!!.links.size)
+-        assertTrue(retired.v4!!.staging.all { it.status == FinanceRowStatus.UNDONE && it.rawPayload.isNotBlank() })
++        assertNotNull(retired.transfers.single().voidedAt)
++        assertEquals(v4.events.map { it.id }.toSet(), retiredV4.events.map { it.id }.toSet())
++        assertTrue(retiredV4.events.all { it.voidedAt != null })
++        assertTrue(retiredV4.activeLinks.isEmpty())
++        assertEquals(v4.links.map { it.id }.toSet(), retiredV4.links.map { it.id }.toSet())
++        assertEquals(selected, retiredV4.staging.filter { it.status == FinanceRowStatus.UNDONE }.map { it.id }.toSet())
++        val preserved = retiredV4.staging.single { it.id == blocked.id }
++        assertEquals(blocked, preserved)
++        assertEquals(FinanceRowStatus.REVIEW, preserved.status)
++        assertFalse(LegacyBusinessSemantics.canCommit(preserved))
++        assertNull(preserved.canonicalId)
++        assertTrue(retiredV4.staging.all { it.rawPayload.isNotBlank() })
++        assertEquals(FinanceImportStatus.UNDONE, imports.open(preview.batch.id).batch.status)
+         assertEquals(FinanceUndoResult(0, 0), imports.undo(preview.batch.id))
+         FinanceIntegrity.validate(retired)
+     }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+index deed5743d0d503dd04c0863d6a507f86c1106197..75ff90c95c22d9d45eaaaf55cd948569487f7abf 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+@@ -53,12 +53,29 @@ class FinanceSmokeTest {
+             compose.onAllNodesWithText("保存账户").fetchSemanticsNodes().isEmpty() }
+     }
+     private fun snapshot() = runBlocking { repository.snapshot() }
++    private fun openFilters() {
++        compose.waitForIdle()
++        compose.onNode(hasContentDescription("筛选与日期", substring = true)).performClick()
++    }
++    private fun selectPeriod(label: String) {
++        openFilters()
++        click(label)
++        compose.waitForIdle()
++    }
++    private fun assertViewedMonth(month: YearMonth) {
++        val dateControl = hasTestTag("finance-date-control") and
++            hasText("${month.year}年", substring = true) and hasText("${month.monthValue}月", substring = true)
++        compose.waitUntil(10_000) { compose.onAllNodes(dateControl).fetchSemanticsNodes().isNotEmpty() }
++        compose.onNode(dateControl).assertIsDisplayed()
++    }
+ 
+     @Test fun jumpingFromOverviewToInsightsDoesNotApplyTheIntermediateCalendarRange() {
+         launch()
++        selectPeriod("全部")
+         click("分析")
+         compose.waitForIdle()
+-        compose.onNodeWithText("全部").assertIsSelected()
++        openFilters()
++        compose.onNodeWithText("日期 · 全部日期").assertIsDisplayed()
+     }
+ 
+     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {
+@@ -68,14 +85,19 @@ class FinanceSmokeTest {
+         input("期初余额", "1000.00")
+         click("保存账户"); saved()
+         assertEquals(100_000L, snapshot().accounts.single().openingBalanceMinor)
++        assertEquals("工资卡", snapshot().accounts.single().name)
+         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
+         input("金额 · CNY", "12.34")
+         input("具体事由 · 买了什么 / 为了什么", "早餐豆浆")
++        click("标签与新分类")
+         input("新主分类（可留空）", "餐饮")
+-        input("标签 · 用逗号分隔，可自定义", "早餐，出门")
++        input("标签 · 逗号分隔", "早餐，出门")
+         click("保存记录"); saved()
+         val original = snapshot().entries.single()
+         assertEquals(1_234L, original.amountMinor)
++        val originalRow = FinanceProjection.ledger(snapshot()).single()
++        assertEquals("餐饮", originalRow.category)
++        assertEquals(setOf("早餐", "出门"), originalRow.tags.toSet())
+         assertTrue(original.occurredAt >= snapshot().accounts.single().createdAt)
+         assertEquals(98_766L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
+         click("早餐豆浆")
+@@ -84,9 +106,13 @@ class FinanceSmokeTest {
+         assertEquals(1_000L, snapshot().entries.single().amountMinor)
+         assertEquals(original.recordedAt, snapshot().entries.single().recordedAt)
+         assertEquals(original.occurredAt, snapshot().entries.single().occurredAt)
++        val correctedRow = FinanceProjection.ledger(snapshot()).single()
++        assertEquals(originalRow.category, correctedRow.category)
++        assertEquals(originalRow.tags, correctedRow.tags)
+         assertEquals(99_000L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
+         compose.onNodeWithText("流水").performClick()
+-        compose.onNode(hasSetTextAction() and hasText("搜索事由、分类、标签或账户")).performScrollTo().performTextReplacement("出门")
++        compose.waitForIdle()
++        compose.onNodeWithTag("finance-search").performTextReplacement("出门")
+         compose.waitForIdle()
+         compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("早餐豆浆"))
+         compose.onNodeWithText("早餐豆浆").assertIsDisplayed()
+@@ -95,6 +121,7 @@ class FinanceSmokeTest {
+         compose.onNodeWithText("确认作废").performClick(); saved()
+         assertNotNull(snapshot().entries.single().voidedAt)
+         assertTrue(FinanceProjection.ledger(snapshot()).isEmpty())
++        compose.waitUntil(10_000) { compose.onAllNodesWithText("早餐豆浆").fetchSemanticsNodes().isEmpty() }
+     }
+ 
+     @Test fun transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid() {
+@@ -123,9 +150,9 @@ class FinanceSmokeTest {
+     }
+ 
+     @Test fun historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange() {
+-        val month = YearMonth.now().minusMonths(1)
++        val current = YearMonth.now()
++        val month = current.minusMonths(1)
+         val day = month.atDay(1)
+-        val monthLabel = "${month.year} 年 ${month.monthValue} 月"
+         val heading = "$day 流水 · 1 笔"
+         runBlocking {
+             val account = repository.saveAccount(name = "测试现金", kind = FinanceAccountKind.CASH)
+@@ -137,11 +164,11 @@ class FinanceSmokeTest {
+         }
+         launch()
+         click("流水")
+-        val current = YearMonth.now()
+-        compose.onNodeWithText("${current.year} 年 ${current.monthValue} 月").performClick()
++        compose.waitForIdle()
++        compose.onNodeWithTag("finance-date-control").performClick()
+         if (month.year != current.year) compose.onNodeWithText("上一年").performClick()
+         compose.onNodeWithText("${month.monthValue} 月").performClick()
+-        compose.onNodeWithText(monthLabel).assertIsDisplayed()
++        assertViewedMonth(month)
+         fun awaitHistoricalRows() {
+             compose.waitUntil(10_000) {
+                 compose.onAllNodes(hasContentDescription("$day，1 笔", substring = true)).fetchSemanticsNodes().isNotEmpty()
+@@ -160,9 +187,9 @@ class FinanceSmokeTest {
+         click("流水") // Tapping the already-selected tab must retain the month and day.
+         assertSelectedRows()
+         click("分析")
+-        click("本月") // Insights has a different range; Transactions owns its viewed month.
++        selectPeriod("本月") // Insights has a different range; Transactions owns its viewed month/day.
+         click("流水")
+-        compose.onNodeWithText(monthLabel).assertIsDisplayed()
++        assertViewedMonth(month)
+         awaitHistoricalRows()
+         assertSelectedRows()
+     }
+
+base-commit: f084e3609d888bf8ef3fec8c566c09bd75d2408d
