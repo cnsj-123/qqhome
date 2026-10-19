@@ -1,0 +1,2066 @@
+From 7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Mon, 19 Oct 2026 13:25:20 +0800
+Subject: [PATCH] fix(v16): scope reconciliation and enforce strict CI review
+ gates
+
+Preserve unknown posting evidence, cache Home projection dependencies, and exercise the committed 2000-row fixture through production repositories. Audit all V16 tests and enforce committed official schemas plus actual JUnit and metric reports. Official v5 schema requires a red CI bootstrap; Android execution remains unverified. Local-only review fix based on 9a0acf0; no remote actions.
+---
+ .gitattributes                                |   1 +
+ .github/workflows/android.yml                 |  79 ++-
+ .gitignore                                    |   3 +
+ app/build.gradle.kts                          |  13 +
+ .../qq/closie/data/backup/BackupImporter.kt   |   2 +-
+ .../qq/closie/data/backup/BackupManager.kt    |   2 +-
+ .../life/finance/FinanceAccountProjection.kt  |  47 +-
+ .../life/finance/FinanceAccountStatus.kt      |   3 +-
+ .../closie/life/finance/FinancePurposeRead.kt |  43 +-
+ .../finance/FinanceWorkspaceRepository.kt     |   3 +-
+ .../lifeos/home/FinanceHomeStateProvider.kt   |  21 +-
+ .../life/finance/FinanceMediaV16Test.kt       |   4 +-
+ .../life/finance/FinancePurposeReadV16Test.kt |  11 +
+ .../FinanceReconciliationScopeV16Test.kt      |  97 ++++
+ .../finance/FinanceReviewSessionV16Test.kt    |   5 +-
+ .../finance/FinanceSyntheticHistoryV16Test.kt | 103 ++++
+ .../life/finance/FinanceV16ContractTest.kt    |  24 +
+ .../home/FinanceHomeProjectionV16Test.kt      |  80 +++
+ engineering/v16/GITHUB-VALIDATION.md          |  48 +-
+ engineering/v16/PROGRESS.md                   |   8 +-
+ engineering/v16/REVIEW-FIX.md                 |  22 +
+ engineering/v16/TEST-AUDIT.md                 |  63 +++
+ engineering/v16/audit-v16-tests.py            |  33 ++
+ engineering/v16/feature-matrix.md             |   6 +-
+ engineering/v16/migration-sqlite-result.json  |   2 +-
+ engineering/v16/package-review-fix.py         |  92 ++++
+ .../ci-gate-unit-tests.json                   |   9 +
+ .../room-bootstrap-required.json              |  20 +
+ .../v16/review-fix-evidence/room-history.json |  18 +
+ .../review-fix-evidence/test-inventory.json   | 475 ++++++++++++++++++
+ engineering/v16/static-result.json            |   2 +-
+ engineering/v16/test-ci-gates.py              | 118 +++++
+ engineering/v16/verify-ci-tests.py            |  53 ++
+ engineering/v16/verify-room-schema.py         |  86 ++++
+ 34 files changed, 1504 insertions(+), 92 deletions(-)
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt
+ create mode 100644 app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt
+ create mode 100644 engineering/v16/REVIEW-FIX.md
+ create mode 100644 engineering/v16/TEST-AUDIT.md
+ create mode 100644 engineering/v16/audit-v16-tests.py
+ create mode 100644 engineering/v16/package-review-fix.py
+ create mode 100644 engineering/v16/review-fix-evidence/ci-gate-unit-tests.json
+ create mode 100644 engineering/v16/review-fix-evidence/room-bootstrap-required.json
+ create mode 100644 engineering/v16/review-fix-evidence/room-history.json
+ create mode 100644 engineering/v16/review-fix-evidence/test-inventory.json
+ create mode 100644 engineering/v16/test-ci-gates.py
+ create mode 100644 engineering/v16/verify-ci-tests.py
+ create mode 100644 engineering/v16/verify-room-schema.py
+
+diff --git a/.gitattributes b/.gitattributes
+index cc52ffb4ef55301ea6379a55a5a0013846d5f504..8e06b536d8e825b2e11e79c2eb7d1ccff39a465d 100644
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -1,2 +1,3 @@
+ # Keep deterministic BOM/LF synthetic fixture bytes equal to the published SHA-256 on every host.
+ engineering/v16/fixtures/*.csv text eol=lf
++app/schemas/com.qq.closie.life.data.database.LifeDatabase/*.json text eol=lf
+diff --git a/.github/workflows/android.yml b/.github/workflows/android.yml
+index f0b33c23c1b220c0ab50ad56852283782da21d71..e530dd7cf34cb3cffaa9fb8bc7931bb7e7d12fbd 100644
+--- a/.github/workflows/android.yml
++++ b/.github/workflows/android.yml
+@@ -2,7 +2,7 @@ name: Android CI
+ 
+ on:
+   push:
+-    branches: [main]
++    branches: [main, 'feature/life-os-v16-*']
+   pull_request:
+   workflow_dispatch:
+ 
+@@ -12,6 +12,10 @@ permissions:
+ jobs:
+   build:
+     runs-on: ubuntu-latest
++    timeout-minutes: 60
++    defaults:
++      run:
++        shell: bash
+     env:
+       CI_BUILD_NUMBER: ${{ github.run_number }}
+     steps:
+@@ -26,45 +30,80 @@ jobs:
+ 
+       - name: V16 source structure and production SQLite migration checks
+         run: |
+-          python3 engineering/v16/check-source.py
+-          python3 engineering/v16/check-migration.py
++          set -euo pipefail
++          mkdir -p engineering/v16/ci-logs
++          python3 engineering/v16/test-ci-gates.py 2>&1 | tee engineering/v16/ci-logs/schema-gate-tests.log
++          python3 engineering/v16/audit-v16-tests.py 2>&1 | tee engineering/v16/ci-logs/test-inventory.log
++          python3 engineering/v16/check-source.py 2>&1 | tee engineering/v16/ci-logs/source.log
++          python3 engineering/v16/check-migration.py 2>&1 | tee engineering/v16/ci-logs/sqlite.log
++          python3 engineering/v16/verify-room-schema.py --history-only --report engineering/v16/ci-logs/room-history.json
+ 
+       # Generate schema assets before the unit-test invocation merges debug assets.
+       - name: Generate Room schema
+-        run: ./gradlew :app:kspDebugKotlin --stacktrace
+-      - name: Verify preserved published Room schemas and generated V16 schema
+-        shell: bash
++        id: ksp
+         run: |
+-          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+-          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json
+-          git diff --exit-code -- \
+-            app/schemas/com.qq.closie.life.data.database.LifeDatabase/{1,2,3,4}.json
++          set -euo pipefail
++          ./gradlew :app:kspDebugKotlin --stacktrace 2>&1 | tee engineering/v16/ci-logs/ksp.log
++      - name: Strict committed official Room schema gate (bootstrap remains red until committed)
++        shell: bash
++        run: python3 engineering/v16/verify-room-schema.py --report engineering/v16/ci-logs/room-schema-check.json
+ 
+-      # Includes Room migration, repository and restore-safety regression tests.
+-      - name: Unit tests
+-        run: ./gradlew :app:testDebugUnitTest --stacktrace
++      # A missing committed v5 stays a failed gate. Still collect real test failures after successful
++      # KSP during bootstrap; no continue-on-error and no failure suppression on this or any test step.
++      - name: Full tests (populated migrations, Finance, D1-D5, backup, concurrency, UI, 2000-row fixture)
++        id: tests
++        if: ${{ !cancelled() && steps.ksp.outcome == 'success' }}
++        run: |
++          set -euo pipefail
++          ./gradlew :app:testDebugUnitTest --stacktrace 2>&1 | tee engineering/v16/ci-logs/unit-tests.log
++      - name: Require actual JUnit coverage and 2000-row metrics
++        if: ${{ !cancelled() && steps.tests.outcome == 'success' }}
++        run: python3 engineering/v16/verify-ci-tests.py
+       - name: Assemble CI debug APK
+-        run: ./gradlew :app:assembleDebug --stacktrace
++        id: assemble
++        run: |
++          set -euo pipefail
++          ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee engineering/v16/ci-logs/assemble-debug.log
++      - name: Record debug APK checksums and commit
++        if: steps.assemble.outcome == 'success'
++        run: |
++          git rev-parse HEAD > app/build/outputs/apk/debug/commit-sha.txt
++          sha256sum app/build/outputs/apk/debug/*.apk > app/build/outputs/apk/debug/SHA256SUMS.txt
+       - name: Upload CI debug APK (com.qqhome.lifeos.debug)
++        if: steps.assemble.outcome == 'success'
+         uses: actions/upload-artifact@v4
+         with:
+-          name: lifeos-ci-debug-apk
+-          path: app/build/outputs/apk/debug/*.apk
++          name: lifeos-ci-debug-run${{ github.run_number }}-${{ github.sha }}
++          path: app/build/outputs/apk/debug/
+           if-no-files-found: error
+       - name: Upload unit test report
+         uses: actions/upload-artifact@v4
+         if: always()
+         with:
+-          name: unit-test-report-build${{ github.run_number }}
+-          path: app/build/reports/tests/testDebugUnitTest/
++          name: unit-test-results-run${{ github.run_number }}-${{ github.sha }}
++          path: |
++            app/build/reports/tests/testDebugUnitTest/
++            app/build/test-results/testDebugUnitTest/
++            app/build/reports/v16/
+           if-no-files-found: ignore
+       - name: Upload Room schema
+         uses: actions/upload-artifact@v4
+         if: always()
+         with:
+-          name: room-schema-build${{ github.run_number }}
++          name: room-schema-run${{ github.run_number }}-${{ github.sha }}
+           path: app/schemas/com.qq.closie.life.data.database.LifeDatabase/*.json
+           if-no-files-found: error
++      - name: Upload V16 gate and execution evidence
++        uses: actions/upload-artifact@v4
++        if: always()
++        with:
++          name: v16-ci-evidence-run${{ github.run_number }}-${{ github.sha }}
++          path: |
++            engineering/v16/ci-logs/
++            engineering/v16/static-result.json
++            engineering/v16/migration-sqlite-result.json
++            engineering/v16/review-fix-evidence/test-inventory.json
++          if-no-files-found: warn
+ 
+       # These secret-bearing steps are skipped on PR/feature/manual feature runs.
+       - name: Check release signing availability
+@@ -99,7 +138,7 @@ jobs:
+         if: github.ref == 'refs/heads/main' && steps.signing.outputs.available == 'true'
+         uses: actions/upload-artifact@v4
+         with:
+-          name: lifeos-update-release-apk
++          name: lifeos-update-release-run${{ github.run_number }}-${{ github.sha }}
+           path: app/build/outputs/apk/release/*.apk
+           if-no-files-found: error
+       - name: Remove temporary release keystore
+diff --git a/.gitignore b/.gitignore
+index a485bf7b1681cbc8c54ab128d2a5a167850681a0..2896266a0c3aaa2e2def10a550e5249ddb6ab4af 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -13,3 +13,6 @@ web/dist/
+ *.jks
+ *.keystore
+ keystore.properties
++engineering/v16/ci-logs/
++engineering/v16/.ci-gate-test-*/
++engineering/v16/__pycache__/
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 391d499d419ea50462150ced013f8e78f1e65864..a80cc50a59b803fc91629276d0c9d1100d414134 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -1,4 +1,5 @@
+ import java.io.File
++import org.gradle.api.tasks.PathSensitivity
+ 
+ plugins {
+     id("com.android.application")
+@@ -67,6 +68,18 @@ android {
+     testOptions {
+         unitTests {
+             isIncludeAndroidResources = true
++            all { test ->
++                val fixtures=rootProject.file("engineering/v16/fixtures")
++                val metrics=project.layout.buildDirectory.dir("reports/v16/${test.name}").get().asFile
++                test.systemProperty("lifeos.v16.fixtureDir", fixtures.absolutePath)
++                test.systemProperty("lifeos.v16.metricsDir", metrics.absolutePath)
++                test.inputs.dir(fixtures).withPropertyName("v16SyntheticFixtures").withPathSensitivity(PathSensitivity.RELATIVE)
++                test.outputs.dir(metrics).withPropertyName("v16SyntheticMetrics")
++                if (System.getenv("CI") == "true") {
++                    test.outputs.upToDateWhen { false }
++                    test.outputs.cacheIf { false }
++                }
++            }
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt b/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt
+index b5c8991defdd141a149305ab248e7a939d1707d3..50eefc86170101dcca2af39dc5ab35c427589f75 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt
+@@ -40,7 +40,7 @@ internal class StagedRestore(
+ internal object BackupImporter {
+ 
+     /**
+-     * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 3):
++     * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 5):
+      * v1 archives from before v0.3.0 remain restorable forever.
+      */
+     val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3, 4, 5)
+diff --git a/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt b/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt
+index 9799416aa8d5723b7b0528a3b3c9a7146361ddda..6fea5f5eae9ac0a791eb34aea24efafa16e8da14 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/BackupManager.kt
+@@ -20,7 +20,7 @@ import java.io.File
+  * media without a single warning. A backup that silently omits half the app is worse than no backup,
+  * because it is trusted.
+  */
+-// v3 requires the typed Finance section. Older clients reject it instead of silently losing money rows.
++// v5 requires typed Finance V16 facts; the manifest schema and AEAD envelope have independent versions.
+ const val BACKUP_FORMAT_VERSION = 5
+ const val BACKUP_SCHEMA_VERSION = 1
+ 
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt
+index 18ac49f6066f37e9a73b9b1758cc4891b208c6c1..5277f6f82208f6090c8edde5e18daa50d9cc22d9 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt
+@@ -8,6 +8,7 @@ data class FinanceReconciliationResult(val observation: FinanceObservationEntity
+ 
+ /** Complete-account scans always precede filtering; the original inclusive anchor is unchanged. */
+ object FinanceAccountProjection {
++    const val RECONCILIATION_ALGORITHM=2
+     fun liabilitySignPending(s:FinanceSnapshot,account:FinanceAccountEntity):Boolean =
+         account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0 &&
+             s.v16?.accountPolicyRows.orEmpty().none {it.accountId==account.id && it.voidedAt==null}
+@@ -55,36 +56,44 @@ object FinanceAccountProjection {
+         return included.values.groupBy {it.currencyCode}.mapValues {(_,accounts)->exactSum(accounts.map {values.getValue(it.id).longValueExact()})}
+     }
+ 
+-    fun fingerprint(s: FinanceSnapshot, observation: FinanceObservationEntity): String {
++    private data class ScopedFact(val entry:FinanceEntryEntity,val effectiveAt:Long?)
++    private data class ReconciliationScope(val account:FinanceAccountEntity,val anchorBasis:FinanceBalanceBasis?,val facts:List<ScopedFact>)
++
++    private fun scope(s:FinanceSnapshot,observation:FinanceObservationEntity):ReconciliationScope {
+         val account = s.accounts.single { it.id == observation.accountId }
+         val timings = s.v16?.entryTimingRows.orEmpty().filter { it.voidedAt == null }.associateBy { it.entryId }
+         val anchorBasis = s.v16?.accountPolicyRows.orEmpty().singleOrNull { it.accountId == account.id && it.voidedAt == null }?.anchorBasis
+-        val facts = s.entries.filter { it.accountId == account.id && it.voidedAt == null }
+-            .sortedBy { it.id }.map {
+-                // Include membership outside the old conclusion too: a new/backfilled fact invalidates it.
+-                listOf(it.id, it.amountMinor, it.direction, it.occurredAt, it.recordedAt,
+-                    if (observation.basis == FinanceBalanceBasis.KNOWN_POSTED) timings[it.id]?.postedAt else null)
++        val facts=s.entries.filter {it.accountId==account.id && it.voidedAt==null}.mapNotNull {entry->
++            val time=if(observation.basis==FinanceBalanceBasis.LEGACY_CASH) entry.occurredAt else timings[entry.id]?.postedAt
++            // No reliable posting bounds exist for unknown dates in this model. Cash/recorded time
++            // and free-text source descriptions cannot prove exclusion, including before the anchor.
++            if(time==null || time in account.balanceAnchorAt..observation.observedAt) ScopedFact(entry,time) else null
++        }.sortedBy {it.entry.id}
++        return ReconciliationScope(account,anchorBasis,facts)
++    }
++
++    private fun fingerprint(scope:ReconciliationScope,observation:FinanceObservationEntity):String {
++        val account=scope.account
++        val facts=scope.facts.map {
++            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt)
+             }
+-        val encoded = com.google.gson.Gson().toJson(listOf(1, account.id, account.currencyCode,
+-            account.balanceAnchorAt, account.openingBalanceMinor, anchorBasis, observation.basis, observation.observedAt, facts))
++        val encoded = com.google.gson.Gson().toJson(listOf(RECONCILIATION_ALGORITHM, account.id, account.currencyCode,
++            account.balanceAnchorAt, account.openingBalanceMinor,
++            scope.anchorBasis.takeIf {observation.basis==FinanceBalanceBasis.KNOWN_POSTED},observation.basis,
++            observation.observedAt,observation.amountMinor,observation.precision,facts))
+         return MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray()).joinToString("") { "%02x".format(it) }
+     }
++    fun fingerprint(s:FinanceSnapshot,observation:FinanceObservationEntity):String=fingerprint(scope(s,observation),observation)
+ 
+     fun reconcile(s: FinanceSnapshot, observation: FinanceObservationEntity,
+         saved: FinanceReconciliationEntity? = null): FinanceReconciliationResult {
+-        val account = s.accounts.single { it.id == observation.accountId }
+-        val active = s.entries.filter { it.accountId == account.id && it.voidedAt == null }
+-        val timings = s.v16?.entryTimingRows.orEmpty().filter { it.voidedAt == null }.associateBy { it.entryId }
+-        val anchorBasis = s.v16?.accountPolicyRows.orEmpty().singleOrNull { it.accountId == account.id && it.voidedAt == null }?.anchorBasis
+-        val hash = fingerprint(s, observation)
++        val scope=scope(s,observation);val account=scope.account
++        val hash = fingerprint(scope, observation)
+         val book = if (observation.observedAt < account.balanceAnchorAt ||
+             (observation.basis == FinanceBalanceBasis.KNOWN_POSTED &&
+-                (anchorBasis != FinanceBalanceBasis.KNOWN_POSTED || active.any { timings[it.id]?.postedAt == null }))) null
+-        else exactSum(listOf(account.openingBalanceMinor) + active.filter {
+-            val time = if (observation.basis == FinanceBalanceBasis.LEGACY_CASH) it.occurredAt else requireNotNull(timings[it.id]?.postedAt)
+-            time >= account.balanceAnchorAt && time <= observation.observedAt
+-        }.map { if (it.direction == FinanceDirection.INFLOW) it.amountMinor else -it.amountMinor })
++                (scope.anchorBasis != FinanceBalanceBasis.KNOWN_POSTED || scope.facts.any {it.effectiveAt==null}))) null
++        else exactSum(listOf(account.openingBalanceMinor) + scope.facts.map {if(it.entry.direction==FinanceDirection.INFLOW) it.entry.amountMinor else -it.entry.amountMinor})
+         return FinanceReconciliationResult(observation, book, book?.let { Math.subtractExact(observation.amountMinor, it) },
+-            hash, saved != null && (saved.algorithmVersion != 1 || saved.fingerprint != hash))
++            hash, saved != null && (saved.algorithmVersion != RECONCILIATION_ALGORITHM || saved.fingerprint != hash))
+     }
+ }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt
+index 94d78b744043785933f45445e58c5017f9969e51..d1aecfd2869c9f6c4521f1bc83bdc3017045f4ba 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt
+@@ -22,8 +22,9 @@ object FinanceAccountStatusProjection {
+         if(last==null) return FinanceAccountStatus(FinanceTrust.DERIVED,"余额由起点及真实流水推算，尚无已保存的核对结论。")
+         val result=FinanceAccountProjection.reconcile(s,observations.getValue(last.observationId),last)
+         return when {
++            result.bookMinor==null -> FinanceAccountStatus(FinanceTrust.INCOMPLETE,
++                (if(result.invalidated) "旧核对已失效；" else "")+"当前时间口径缺少起点或确知入账范围证据，无法得出差额。",result)
+             result.invalidated -> FinanceAccountStatus(FinanceTrust.INVALIDATED,"起点、流水或入账事实已改变，请重新核对。",result)
+-            result.bookMinor==null -> FinanceAccountStatus(FinanceTrust.INCOMPLETE,"当前时间口径缺少起点或确知入账日，无法得出差额。",result)
+             result.differenceMinor!=0L -> FinanceAccountStatus(FinanceTrust.DIFFERENT,"观察余额与账面存在差额；没有生成调账流水。",result)
+             else -> FinanceAccountStatus(FinanceTrust.RECONCILED,"仅代表所选观察时点与口径相符；之后余额仍由流水推算。",result)
+         }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinancePurposeRead.kt b/app/src/main/java/com/qq/closie/life/finance/FinancePurposeRead.kt
+index e2c4f78322fbd4939eaf4a7d7fa2c10c55fdd329..092cd62d10e8b48dad013a5793ca369f9ed305cb 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinancePurposeRead.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinancePurposeRead.kt
+@@ -2,21 +2,44 @@ package com.qq.closie.life.finance
+ 
+ data class FinanceGrantedFact(val eventId:String,val currencyCode:String,val amountMinor:Long?,val incomplete:Boolean,
+     val occurredAt:Long?,val description:String?)
++
++/** Ephemeral derived facts. Expiry checks never re-enter the ledger/cost projection. */
++class FinancePurposeFacts internal constructor(private val candidates:List<Pair<FinanceGrantedFact,List<FinancePurposeGrantEntity>>>) {
++    fun at(now:Long):List<FinanceGrantedFact> = candidates.mapNotNull {(fact,grants)->
++        val live=grants.filter {it.expiresAt>now}
++        if(live.isEmpty()) null else fact.copy(amountMinor=fact.amountMinor.takeIf {live.any {it.allowAmount}},
++            incomplete=fact.incomplete && live.any {it.allowAmount},occurredAt=fact.occurredAt.takeIf {live.any {it.allowDate}},
++            description=fact.description.takeIf {live.any {it.allowDescription}})
++    }
++}
++
+ object FinancePurposeRead {
+-    fun facts(s:FinanceSnapshot,purpose:FinanceReadPurpose,provider:String,now:Long):List<FinanceGrantedFact> {
+-        val v=s.v16 ?: return emptyList()
++    /** Exact dependencies of facts(): intake, drafts, attachments and journal-only changes are irrelevant. */
++    fun factsInput(s:FinanceSnapshot)=s.copy(
++        v4=s.v4?.let {FinanceV4Snapshot(events=it.events,links=it.links)},
++        v16=s.v16?.let {FinanceV16Snapshot(economicRows=it.economicRows,shareRows=it.shareRows,costAdjustmentRows=it.costAdjustmentRows,
++            purposeGrantRows=it.purposeGrantRows,grantEventRows=it.grantEventRows,controlRows=it.controlRows)})
++
++    fun prepareFacts(s:FinanceSnapshot,purpose:FinanceReadPurpose,provider:String,now:Long):FinancePurposeFacts {
++        val v=s.v16 ?: return FinancePurposeFacts(emptyList())
+         val grants=v.purposeGrantRows.filter {it.purpose==purpose && it.providerId==provider && it.voidedAt==null && it.expiresAt>now}
+-        val costs=FinanceCostProjection.rows(s,includeExcluded=true).groupBy {it.eventId}
+-        return s.v4?.events.orEmpty().filter {it.voidedAt==null}.mapNotNull {event->
+-            val scoped=grants.filter {g->v.grantEventRows.any {it.grantId==g.id && it.eventId==event.id}}
+-            if(scoped.isEmpty()) return@mapNotNull null
++        if(grants.isEmpty()) return FinancePurposeFacts(emptyList())
++        val grantsById=grants.associateBy {it.id}
++        val scopes=v.grantEventRows.mapNotNull {row->grantsById[row.grantId]?.let {row.eventId to it}}.groupBy({it.first},{it.second})
++        if(scopes.isEmpty()) return FinancePurposeFacts(emptyList())
++        val costs=if(grants.any {it.allowAmount}) FinanceCostProjection.rows(s,includeExcluded=true).groupBy {it.eventId} else emptyMap()
++        return FinancePurposeFacts(s.v4?.events.orEmpty().filter {it.voidedAt==null && it.id in scopes}.map {event->
++            val scoped=scopes.getValue(event.id)
++            val amountsAllowed=scoped.any {it.allowAmount}
+             val total=FinanceCostProjection.total(costs[event.id].orEmpty())
+             val measurable=costs[event.id].orEmpty().any {it.amountMinor!=null} || event.personalShareMinor==0L
+-            FinanceGrantedFact(event.id,event.currencyCode,if(scoped.any {it.allowAmount} && measurable) total.confirmedMinor else null,
+-                scoped.any {it.allowAmount} && (!total.complete || !measurable),if(scoped.any {it.allowDate}) event.occurredAt else null,
+-                if(scoped.any {it.allowDescription}) event.description else null)
+-        }
++            FinanceGrantedFact(event.id,event.currencyCode,if(amountsAllowed && measurable) total.confirmedMinor else null,
++                amountsAllowed && (!total.complete || !measurable),event.occurredAt.takeIf {scoped.any {it.allowDate}},
++                event.description.takeIf {scoped.any {it.allowDescription}}) to scoped
++        })
+     }
++    fun facts(s:FinanceSnapshot,purpose:FinanceReadPurpose,provider:String,now:Long):List<FinanceGrantedFact> =
++        prepareFacts(s,purpose,provider,now).at(now)
+     fun query(s:FinanceSnapshot,spec:FinanceQuerySpec,grantId:String,now:Long):FinanceQueryResult {
+         val v=requireNotNull(s.v16)
+         val grant=requireNotNull(v.purposeGrantRows.singleOrNull {it.id==grantId && it.purpose==FinanceReadPurpose.LOCAL_QUERY &&
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt
+index 204d7c95dcc7250167c24419403526fe880e9f27..e1c9a14767be60aefc91c2531acee2f966548948 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt
+@@ -114,7 +114,8 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
+             require(projection.fingerprint==expectedFingerprint) { "核对范围发生变化，请重新计算" }
+             val result=id(); val now=clock()
+             val order=Math.addExact(dao.reconciliationRows().maxOfOrNull {it.confirmationOrder} ?: 0L,1L)
+-            dao.putReconciliation(listOf(FinanceReconciliationEntity(result,observationId,projection.bookMinor,projection.fingerprint,1,note,order,now,now)))
++            dao.putReconciliation(listOf(FinanceReconciliationEntity(result,observationId,projection.bookMinor,projection.fingerprint,
++                FinanceAccountProjection.RECONCILIATION_ALGORITHM,note,order,now,now)))
+             result
+         }
+     suspend fun setPostingDate(token:FinanceCommandToken,entryId:String,expectedRevision:Long,postedAt:Long?,
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/home/FinanceHomeStateProvider.kt b/app/src/main/java/com/qq/closie/ui/lifeos/home/FinanceHomeStateProvider.kt
+index 78ec494b4beb603f07404ece4d4115616d61fb3d..c64f1447de45ce93fa581efb57bf740d44d308f0 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/home/FinanceHomeStateProvider.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/home/FinanceHomeStateProvider.kt
+@@ -6,15 +6,26 @@ import java.time.Instant
+ import java.time.LocalDate
+ import java.time.ZoneId
+ import kotlinx.coroutines.delay
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.CoroutineDispatcher
++import kotlinx.coroutines.withContext
+ import kotlinx.coroutines.flow.*
+ 
+ /** Only explicitly scoped Canonical fields enter Home; evidence and extraction are never read. */
+ @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+-class FinanceHomeStateProvider(private val finance:FinanceRepository,private val clock:()->Long=System::currentTimeMillis):HomeStateProvider {
+-    override fun stateFor(date:LocalDate):Flow<HomeUiState> = RestoreStartupGate.state.map {it.status}.distinctUntilChanged().flatMapLatest {status->
++class FinanceHomeStateProvider(private val finance:FinanceRepository,private val clock:()->Long=System::currentTimeMillis,
++    private val prepare:(FinanceSnapshot,Long)->FinancePurposeFacts={s,now->FinancePurposeRead.prepareFacts(s,FinanceReadPurpose.HOME,"home-memory",now)}):HomeStateProvider {
++    override fun stateFor(date:LocalDate):Flow<HomeUiState> = states(date,finance.observeSnapshot(),
++        flow {while(true){emit(clock());delay(1_000)}},Dispatchers.Default)
++
++    internal fun states(date:LocalDate,snapshots:Flow<FinanceSnapshot>,time:Flow<Long>,dispatcher:CoroutineDispatcher):Flow<HomeUiState> =
++        RestoreStartupGate.state.map {it.status}.distinctUntilChanged().flatMapLatest {status->
+         if(status!=RestoreStartupGate.Status.READY) flowOf(HomeUiState(date))
+-        else combine(finance.observeSnapshot(),flow {while(true){emit(clock());delay(1_000)}}) {s,now->
+-            val facts=FinancePurposeRead.facts(s,FinanceReadPurpose.HOME,"home-memory",now)
++        else combine(snapshots.map {FinancePurposeRead.factsInput(it)}.distinctUntilChanged().mapLatest {input->
++            withContext(dispatcher) {prepare(input,clock())}
++        },time) {prepared,now->
++            if(!RestoreStartupGate.isReady) return@combine HomeUiState(date)
++            val facts=prepared.at(now)
+             fun title(f:FinanceGrantedFact)=listOfNotNull(f.description?.takeIf(String::isNotBlank),
+                 f.amountMinor?.let {"个人成本 "+FinanceMoney.display(it,f.currencyCode)+(if(f.incomplete) "，另有未知承担" else "")},
+                 "个人承担未知".takeIf {f.incomplete && f.amountMinor==null})
+@@ -22,6 +33,6 @@ class FinanceHomeStateProvider(private val finance:FinanceRepository,private val
+             val dated=facts.mapNotNull {fact->fact.occurredAt?.let {Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() to fact}}
+             HomeUiState(date,todayFacts=dated.filter {it.first==date}.map {HomeFactUi(it.second.eventId,title(it.second),"财务")},
+                 historyItems=dated.filter {it.first.isBefore(date)}.sortedByDescending {it.first}.take(20).map {HistoryItemUi(it.second.eventId,it.first,title(it.second))})
+-        }.catch {emit(HomeUiState(date))}
++        }.onStart {emit(HomeUiState(date))}.catch {emit(HomeUiState(date))}
+     }.distinctUntilChanged()
+ }
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt
+index 5b32406bf2cfe646dac818eb79cdcda6bedff086..3d18c752398a8685fb6862c11e86d14a60e30ef7 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt
+@@ -26,7 +26,9 @@ class FinanceMediaV16Test:FinanceRoomTest() {
+         finance.media.unlink(token(),first,1)
+         assertEquals(before.mediaAssets,LifeBackupApplier.snapshot(db).mediaAssets)
+         assertEquals(1,finance.snapshot().v16!!.mediaLinkRows.count {it.voidedAt==null})
+-        assertEquals(listOf(one,two),finance.snapshot().entries)
++        val cashAfter=finance.snapshot().entries
++        assertEquals(2,cashAfter.size)
++        assertEquals(listOf(one,two).associateBy {it.id},cashAfter.associateBy {it.id})
+     }
+     @Test fun olderRestoreCanRemoveSharedAssetWhileRetiringNewReferenceWithoutErasingCash()=runTest {
+         val a=account();val entry=payment(a.id)
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt
+index b54dc3427ec5f37e406d04c7dd47f53db43e99ac..fe5a1c21b0563aad2a875217bce509cf15d03861 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt
+@@ -26,6 +26,17 @@ class FinancePurposeReadV16Test:FinanceRoomTest() {
+         finance.workspace.revoke(token(),grant);s=finance.snapshot()
+         assertTrue(FinancePurposeRead.facts(s,FinanceReadPurpose.HOME,"home-memory",1_000).isEmpty())
+     }
++    @Test fun preparedFactsDropOnlyExpiredFieldsWithoutReenteringCostProjection()=runTest {
++        val a=account();val p=payment(a.id,123);val event=eventId(p.id)
++        finance.workspace.grant(token(),FinanceReadPurpose.HOME,"home-memory",setOf(event),emptySet(),true,true,false,3_000)
++        finance.workspace.grant(token(),FinanceReadPurpose.HOME,"home-memory",setOf(event),emptySet(),false,true,true,5_000)
++        val prepared=FinancePurposeRead.prepareFacts(finance.snapshot(),FinanceReadPurpose.HOME,"home-memory",1_000)
++        assertEquals(123L,prepared.at(2_999).single().amountMinor)
++        val after=prepared.at(3_000).single()
++        assertNull(after.amountMinor);assertFalse(after.incomplete)
++        assertEquals(p.description,after.description);assertEquals(p.occurredAt,after.occurredAt)
++        assertTrue(prepared.at(5_000).isEmpty())
++    }
+     @Test fun eventGrantDoesNotDiscloseWholeSharedCashEntry()=runTest {
+         val a=account();val entry=payment(a.id,10_000)
+         val s=finance.snapshot();val first=s.v4!!.events.single()
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..747b0f66c5408af5b9409d19a3f6a4c092b7c181
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt
+@@ -0,0 +1,97 @@
++package com.qq.closie.life.finance
++
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk=[34])
++class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
++    private fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
++    private suspend fun opening()=finance.saveAccount(name="合成核对账户",kind=FinanceAccountKind.BANK_CARD,openingBalanceMinor=10_000)
++    private suspend fun out(account:String,amount:Long=100,at:Long=2_000)=finance.saveEntry(accountId=account,
++        direction=FinanceDirection.OUTFLOW,amountMinor=amount,description="合成范围",occurredAt=at)
++    private suspend fun observed(account:String,basis:FinanceBalanceBasis):FinanceObservationEntity {
++        if(basis==FinanceBalanceBasis.KNOWN_POSTED) finance.workspace.setAccountPolicy(token(),account,true,
++            FinanceLiabilityConvention.SIGNED,basis,null)
++        val id=finance.workspace.saveObservation(token(),account,10_000,5_000,basis,FinanceTimePrecision.INSTANT,"")
++        return finance.snapshot().v16!!.observationRows.single {it.id==id}
++    }
++    private suspend fun post(entry:FinanceEntryEntity,at:Long)=finance.workspace.setPostingDate(token(),entry.id,entry.revision,
++        at,FinanceTimePrecision.INSTANT,"合成明确入账凭据")
++
++    @Test fun unknownPostingCannotBeExcludedUsingFutureOrPreAnchorCashDate()=runTest {
++        val a=opening();val o=observed(a.id,FinanceBalanceBasis.KNOWN_POSTED)
++        val future=out(a.id,300,9_000)
++        assertNull(FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++        assertNull(finance.snapshot().v16!!.entryTimingRows.singleOrNull {it.entryId==future.id})
++        post(future,1_500) // Posting before the cash date is supported; no fallback is permitted.
++        assertEquals(9_700L,FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++        val preAnchor=out(a.id,200,900)
++        assertNull(FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++        post(preAnchor,999) // Explicit posting evidence, not the earlier cash timestamp, excludes it.
++        assertEquals(9_700L,FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++    }
++
++    @Test fun explicitOutsidePostingAndOtherAccountUnknownDoNotInvalidateButBackfillIntoRangeDoes()=runTest {
++        val a=opening();val o=observed(a.id,FinanceBalanceBasis.KNOWN_POSTED)
++        val e=out(a.id,100,2_000);post(e,9_000)
++        var s=finance.snapshot();val initial=FinanceAccountProjection.reconcile(s,o)
++        assertEquals(10_000L,initial.bookMinor)
++        finance.workspace.confirmReconciliation(token(),o.id,initial.fingerprint,"")
++        val saved=finance.snapshot().v16!!.reconciliationRows.single()
++        val other=account("合成无关账户");out(other.id,1,1_500) // Unknown posted date on another account.
++        var row=finance.snapshot().entries.single {it.id==e.id}
++        finance.saveEntry(row.id,row.accountId,row.direction,200,"范围外更正",3_000,expectedRevision=row.revision)
++        s=finance.snapshot()
++        assertEquals(initial.fingerprint,FinanceAccountProjection.fingerprint(s,o))
++        assertFalse(FinanceAccountProjection.reconcile(s,o,saved).invalidated)
++        row=s.entries.single {it.id==e.id};post(row,5_000) // Inclusive observation boundary.
++        s=finance.snapshot();val changed=FinanceAccountProjection.reconcile(s,o,saved)
++        assertEquals(9_800L,changed.bookMinor);assertTrue(changed.invalidated)
++        finance.workspace.confirmReconciliation(token(),o.id,changed.fingerprint,"合成重新核对")
++        val reconfirmed=finance.snapshot().v16!!.reconciliationRows.maxBy {it.confirmationOrder}
++        finance.voidEntry(e.id)
++        assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,reconfirmed).invalidated)
++    }
++
++    @Test fun missingDateIntroducedAfterConfirmationIsIncompleteUntilExplicitOutsideEvidenceArrives()=runTest {
++        val a=opening();val o=observed(a.id,FinanceBalanceBasis.KNOWN_POSTED)
++        val first=FinanceAccountProjection.reconcile(finance.snapshot(),o)
++        finance.workspace.confirmReconciliation(token(),o.id,first.fingerprint,"")
++        val saved=finance.snapshot().v16!!.reconciliationRows.single()
++        val unknown=out(a.id,100,99_000)
++        var s=finance.snapshot();val unclear=FinanceAccountProjection.reconcile(s,o,saved)
++        assertNull(unclear.bookMinor);assertTrue(unclear.invalidated)
++        assertNull(unclear.differenceMinor)
++        assertEquals(FinanceTrust.INCOMPLETE,FinanceAccountStatusProjection.status(s,a.id).trust)
++        post(unknown,6_000)
++        s=finance.snapshot()
++        assertEquals(10_000L,FinanceAccountProjection.reconcile(s,o).bookMinor)
++        assertEquals(first.fingerprint,FinanceAccountProjection.fingerprint(s,o))
++        val edge=out(a.id,50,900);post(edge,a.balanceAnchorAt)
++        assertEquals(9_950L,FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++    }
++
++    @Test fun legacyScopeKeepsInclusiveAnchorAndOnlyRelevantEditsInvalidate()=runTest {
++        val a=opening();val o=observed(a.id,FinanceBalanceBasis.LEGACY_CASH)
++        val edge=out(a.id,100,a.balanceAnchorAt)
++        val initial=FinanceAccountProjection.reconcile(finance.snapshot(),o)
++        assertEquals(9_900L,initial.bookMinor)
++        finance.workspace.confirmReconciliation(token(),o.id,initial.fingerprint,"")
++        val saved=finance.snapshot().v16!!.reconciliationRows.single()
++        out(a.id,500,999);out(a.id,600,5_001)
++        assertEquals(initial.fingerprint,FinanceAccountProjection.fingerprint(finance.snapshot(),o))
++        assertFalse(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved).invalidated)
++        post(edge,8_000) // Posting changes are irrelevant to the legacy cash conclusion.
++        assertFalse(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved).invalidated)
++        assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=1)).invalidated)
++        assertNotEquals(initial.fingerprint,FinanceAccountProjection.fingerprint(finance.snapshot(),o.copy(amountMinor=9_899)))
++        val preview=finance.workspace.previewAnchor(a.id,10_000,999,false)
++        finance.workspace.confirmAnchor(token(),preview)
++        assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved).invalidated)
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt
+index 7492b8252d2437a374cc50fc6fbbfda2037019b9..6b7e1a9af2bee61abd310391d179eb7069418ad3 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt
+@@ -15,14 +15,15 @@ class FinanceReviewSessionV16Test:FinanceRoomTest() {
+     private suspend fun proposal(key:String="synthetic")=FinanceAutomationRepository(db,finance).discover(
+         FinanceNotificationParser.parse("com.tencent.mm",key,"微信支付","支付成功 ￥12.34",System.currentTimeMillis())!!)!!
+     private fun input(p:FinanceProposalEntity,account:String)=FinanceReviewSessionEntity(p.id,p.revision,0,"12.34",account,"","","未完成的中文备注",
+-        FinanceReviewState.EDITING,occurredAt=p.occurredAt,occurredText="未完成日期",createdAt=0,updatedAt=0)
++        FinanceReviewState.EDITING,occurredAt=p.occurredAt,occurredText=FinanceTime.input(p.occurredAt),createdAt=0,updatedAt=0)
+ 
+     @Test fun durablePartialEditsResumeLaterWithoutMoneyAndSecondProposalDoesNotReplaceThem()=runTest {
+-        val a=account();val p=proposal();val row=input(p,a.id)
++        val a=account();val p=proposal();val row=input(p,a.id).copy(occurredText="未完成日期")
+         finance.reviews.save(token(),row,null,emptyList())
+         proposal("synthetic-next")
+         val recreated=FinanceRepository(db){clock}
+         assertEquals(row.description,recreated.snapshot().v16!!.reviewSessionRows.single().description)
++        assertEquals("未完成日期",recreated.snapshot().v16!!.reviewSessionRows.single().occurredText)
+         assertTrue(recreated.snapshot().entries.isEmpty())
+         recreated.reviews.save(token(),row,1,emptyList(),later=true)
+         val saved=recreated.snapshot().v16!!.reviewSessionRows.single()
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..967b5b6025bf974533542e342f8555c891f23242
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt
+@@ -0,0 +1,103 @@
++package com.qq.closie.life.finance
++
++import com.google.gson.GsonBuilder
++import com.google.gson.JsonParser
++import com.qq.closie.ui.lifeos.finance.FinanceRegisterFilter
++import java.io.File
++import java.math.BigInteger
++import java.security.MessageDigest
++import kotlin.time.Duration.Companion.minutes
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++/** Reads the committed fixture and uses the actual staging, commit, DAO and cost projections. */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk=[34])
++class FinanceSyntheticHistoryV16Test:FinanceRoomTest() {
++    @get:Rule val files=TemporaryFolder()
++    @Test fun committedTwoThousandRowsImportBalancesCostsNetFiltersAndRepeatAreConsistent()=runTest(timeout=10.minutes) {
++        val report=linkedMapOf<String,Any>("status" to "FAIL", "fixture" to "synthetic-history-2000.csv",
++            "commitSha" to (System.getenv("GITHUB_SHA") ?: "LOCAL_UNVERIFIED"),
++            "processors" to Runtime.getRuntime().availableProcessors(),"memoryMetric" to "JVM used heap samples; not peak or Android frame metrics")
++        val start=System.nanoTime()
++        val runtime=Runtime.getRuntime()
++        report["heapBeforeBytes"]=runtime.totalMemory()-runtime.freeMemory()
++        try {
++            val root=File(requireNotNull(System.getProperty("lifeos.v16.fixtureDir")){"Gradle must provide the committed fixture directory"})
++            val fixture=File(root,"synthetic-history-2000.csv")
++            assertTrue("Missing committed fixture",fixture.isFile)
++            val manifest=JsonParser.parseString(File(root,"manifest.json").readText()).asJsonObject
++            val fileSpec=manifest.getAsJsonArray("files").single {it.asJsonObject.get("file").asString==fixture.name}.asJsonObject
++            val hash=MessageDigest.getInstance("SHA-256").digest(fixture.readBytes()).joinToString("") {"%02x".format(it)}
++            assertEquals(fileSpec.get("sha256").asString,hash)
++            val expected=manifest.getAsJsonObject("historyExpectedAfterFullImportWithZeroOpening")
++            val count=expected.get("activeEntries").asInt;assertEquals(2_000,count)
++            val imports=FinanceImportRepository(db,finance)
++            val stagedAt=System.nanoTime()
++            val preview=imports.stage(fixture,fixture.name)
++            report["stageNanos"]=System.nanoTime()-stagedAt
++            assertEquals(count,preview.rows.size)
++            assertTrue(preview.rows.all {it.status==FinanceRowStatus.READY})
++            assertTrue(finance.snapshot().entries.isEmpty())
++            val mappings=preview.rows.map {it.sourceAccount}.distinct().map {FinanceAccountMapping(it,fromHistory=true)}
++            val commitAt=System.nanoTime()
++            assertEquals(count,imports.commit(preview.batch.id,mappings,preview.rows.map {it.id}.toSet(),emptySet(),false,false))
++            report["commitNanos"]=System.nanoTime()-commitAt
++            val s=finance.portableSnapshot()
++            assertEquals(count,s.entries.count {it.voidedAt==null});assertEquals(2,s.accounts.size)
++            assertEquals(count,db.financeDao().entries().size)
++            val projectionAt=System.nanoTime()
++            val cost=FinanceCostProjection.total(FinanceCostProjection.rows(s))
++            assertTrue(cost.complete)
++            assertEquals(expected.get("confirmedPersonalCostMinor").asLong,cost.confirmedMinor)
++            assertEquals(mapOf("CNY" to expected.get("netMinor").asLong),FinanceAccountProjection.netByCurrency(s))
++            s.accounts.forEach {account->
++                val amount=expected.getAsJsonObject("accountBalancesMinor").get(account.name).asLong
++                assertEquals(0L,account.openingBalanceMinor)
++                assertEquals(amount,FinanceProjection.balance(account,s.entries))
++                val oracle=mutableMapOf<String,Long>();var running=BigInteger.ZERO
++                s.entries.filter {it.accountId==account.id && it.voidedAt==null}
++                    .sortedWith(compareBy<FinanceEntryEntity> {it.occurredAt}.thenBy {it.recordedAt}.thenBy {it.id}).forEach {entry->
++                        running+=if(entry.direction==FinanceDirection.INFLOW) entry.amountMinor.toBigInteger() else -entry.amountMinor.toBigInteger()
++                        oracle[entry.id]=running.longValueExact()
++                    }
++                val register=FinanceAccountProjection.register(s,account.id)
++                assertEquals(oracle.keys,register.map {it.entry.id}.toSet())
++                register.forEach {assertEquals(oracle.getValue(it.entry.id),it.balanceMinor)}
++                val filtered=FinanceRegisterFilter(query="合成压力记录001",direction="OUTFLOW").apply(register,s)
++                assertFalse(filtered.isEmpty())
++                filtered.forEach {assertEquals(oracle.getValue(it.entry.id),it.balanceMinor)}
++                assertEquals(oracle.size,register.size)
++            }
++            val query=FinanceQueryEngine.execute(s,FinanceQuerySpec(text="合成压力记录001",currencyCode="CNY"))
++            assertEquals(10,query.costs.size)
++            val selected=s.entries.filter {it.description.startsWith("合成压力记录001")}
++            assertEquals(selected.sumOf {it.amountMinor},query.totals.getValue("CNY").confirmedMinor)
++            report["projectionAndFilterNanos"]=System.nanoTime()-projectionAt
++            assertEquals(0,imports.commit(preview.batch.id,mappings,preview.rows.map {it.id}.toSet(),emptySet(),false,false))
++            assertEquals(preview.batch.id,imports.stage(fixture,"renamed.csv").batch.id)
++            assertEquals(s,finance.portableSnapshot())
++            val copy=files.newFile("same-records-crlf.csv")
++            copy.writeText(fixture.readText().replace("\n","\r\n"))
++            val repeated=imports.stage(copy,copy.name)
++            assertEquals(count,repeated.rows.size)
++            assertTrue(repeated.rows.all {it.status==FinanceRowStatus.DUPLICATE})
++            assertEquals(s.entries,finance.snapshot().entries)
++            FinanceIntegrity.validate(finance.portableSnapshot())
++            report["activeEntries"]=count;report["netMinor"]=expected.get("netMinor").asLong
++            report["status"]="PASS"
++        } catch(error:Throwable) {report["failureType"]=error.javaClass.name;throw error}
++        finally {
++            report["totalNanos"]=System.nanoTime()-start
++            report["heapAfterBytes"]=runtime.totalMemory()-runtime.freeMemory()
++            val dir=File(requireNotNull(System.getProperty("lifeos.v16.metricsDir")));check(dir.isDirectory || dir.mkdirs())
++            File(dir,"synthetic-history-2000.json").writeText(GsonBuilder().setPrettyPrinting().create().toJson(report))
++        }
++    }
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt
+index 3712d71d3cd84c5fbfa22481786a37a0f7c59520..1399fe60258844d91a48ff4b87953682bff55c72 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt
+@@ -106,6 +106,15 @@ class FinanceV16ContractTest {
+             expectedRevision = before.v16!!.economicRows.single().revision, allocationsComplete = true)); fail() }
+         catch (_: IllegalArgumentException) { }
+         assertEquals(before, cash.snapshot())
++        val complete=input.copy(eventId=eventId,expectedRevision=before.v16!!.economicRows.single().revision,
++            allocationsComplete=true,shares=input.shares+FinanceShareInput("three",12_000,"self","self","fund",FinanceShareRelation.REPAYABLE_CONFIRMED))
++        economics.confirmEconomic(economics.token(),complete)
++        val after=cash.snapshot()
++        assertEquals(30_000L,exactSum(after.v16!!.shareRows.filter {it.voidedAt==null}.map {requireNotNull(it.amountMinor)}))
++        assertEquals(PersonalCostTotal(12_000,0),FinanceCostProjection.eventTotal(after,eventId))
++        assertEquals(12_000L,FinanceObligationProjection.rows(after).single().openMinor)
++        assertTrue(after.entries.isEmpty())
++        FinanceIntegrity.validate(after)
+     }
+ 
+     @Test fun T06_historicalResolutionClosesWorkWithoutManufacturingBankEvidence() = runTest {
+@@ -154,6 +163,21 @@ class FinanceV16ContractTest {
+         val first = economics.recordSettlement(token, debt.id, debt.revision, request)
+         assertEquals(first, economics.recordSettlement(token, debt.id, debt.revision, request))
+         assertEquals(1, cash.snapshot().entries.size)
++        val before=cash.snapshot();val v=before.v16!!
++        val economic=v.economicRows.single();val funding=v.fundingRows.single();val share=v.shareRows.single()
++        val edit=FinanceEconomicInput(eventId=debt.eventId,expectedRevision=economic.revision,description="",currencyCode="CNY",
++            occurredAt=day(9),valueMinor=12_000,valueBasis="合成明确更正",categoryId=null,allocationsComplete=true,
++            funding=listOf(FinanceFundingInput(funding.id,funding.partyId,funding.amountMinor,funding.entryLinkId,funding.basis)),
++            shares=listOf(FinanceShareInput(share.id,share.amountMinor,share.beneficiaryId,share.bearerId,share.fundingId,share.relation)))
++        try {economics.confirmEconomic(economics.token(),edit.copy(expectedRevision=economic.revision-1));fail()}
++        catch (_:IllegalArgumentException) { }
++        assertEquals(before,cash.snapshot())
++        val gift=edit.copy(shares=listOf(edit.shares.single().copy(bearerId=funding.partyId,relation=FinanceShareRelation.GIFT_CONFIRMED)))
++        try {economics.confirmEconomic(economics.token(),gift);fail()}
++        catch (_:IllegalArgumentException) { }
++        assertEquals(before,cash.snapshot()) // Existing repayment and its obligation cannot be erased by an enum edit.
++        assertEquals(4_000L,FinanceObligationProjection.rows(cash.snapshot()).single().openMinor)
++        assertEquals(12_000L,FinanceCostProjection.eventTotal(cash.snapshot(),debt.eventId).confirmedMinor)
+         val snapshot = LifeBackupApplier.snapshot(db)
+         LifeBackupApplier.restoreSnapshot(db, snapshot)
+         try { economics.recordSettlement(token, debt.id, debt.revision, request); fail() }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt b/app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..7f8749bc1bf748d3af0222e17fd14ea547af4fe6
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt
+@@ -0,0 +1,80 @@
++package com.qq.closie.ui.lifeos.home
++
++import com.qq.closie.data.backup.RestoreStartupGate
++import com.qq.closie.data.backup.LifeBackupApplier
++import com.qq.closie.life.finance.*
++import java.time.Instant
++import java.time.ZoneId
++import kotlinx.coroutines.ExperimentalCoroutinesApi
++import kotlinx.coroutines.flow.*
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.test.*
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++/** Controlled clock/notifications, real Room snapshots and the real production cost calculation. */
++@OptIn(ExperimentalCoroutinesApi::class)
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk=[34])
++class FinanceHomeProjectionV16Test:FinanceRoomTest() {
++    private fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
++    @Test fun ticksAndJournalNotificationsDoNotRecomputeWhileFinancialEditsAndRevocationDo()=runTest {
++        val a=account();val entry=payment(a.id,100);val event=eventId(entry.id)
++        val grant=finance.workspace.grant(token(),FinanceReadPurpose.HOME,"home-memory",setOf(event),emptySet(),true,true,true,5_000)
++        var now=1_000L;var calculations=0
++        val provider=FinanceHomeStateProvider(finance,{now}) {s,time->
++            calculations++;FinancePurposeRead.prepareFacts(s,FinanceReadPurpose.HOME,"home-memory",time)
++        }
++        val snapshots=MutableStateFlow(finance.portableSnapshot());val ticks=MutableStateFlow(now)
++        val date=Instant.ofEpochMilli(entry.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
++        val seen=mutableListOf<HomeUiState>()
++        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
++            provider.states(date,snapshots,ticks,UnconfinedTestDispatcher(testScheduler)).collect {seen+=it}
++        }
++        runCurrent();assertEquals(1,calculations);assertEquals(1,seen.last().todayFacts.size)
++        repeat(100) {now++;ticks.value=now;runCurrent()}
++        assertEquals(1,calculations)
++        val actual=snapshots.value
++        assertTrue(actual.v4!!.changes.isNotEmpty())
++        snapshots.value=actual.copy(v4=actual.v4!!.copy(changes=emptyList()))
++        runCurrent();assertEquals(1,calculations) // A journal-only notification has no Home dependency.
++        finance.saveEntry(entry.id,entry.accountId,entry.direction,200,entry.description,entry.occurredAt,
++            event=FinanceEventInput(existingEventId=event,expectedEventUpdatedAt=actual.v4!!.events.single().updatedAt),expectedRevision=entry.revision)
++        snapshots.value=finance.portableSnapshot();runCurrent()
++        assertEquals(2,calculations);assertTrue(seen.last().todayFacts.single().title.contains("2.00"))
++        now=5_000;ticks.value=now;runCurrent()
++        assertTrue(seen.last().todayFacts.isEmpty());assertEquals(2,calculations)
++        finance.workspace.revoke(token(),grant);snapshots.value=finance.portableSnapshot();runCurrent()
++        assertEquals(3,calculations);assertTrue(seen.last().todayFacts.isEmpty())
++        repeat(100) {now++;ticks.value=now;runCurrent()};assertEquals(3,calculations)
++    }
++
++    @Test fun restoreGateClearsHomeAndNewCollectorReadsRevokedRestoredGrants()=runTest {
++        val a=account();val entry=payment(a.id,100);val event=eventId(entry.id)
++        finance.workspace.grant(token(),FinanceReadPurpose.HOME,"home-memory",setOf(event),emptySet(),true,true,true,10_000)
++        val provider=FinanceHomeStateProvider(finance,{1_000})
++        val snapshots=MutableStateFlow(finance.snapshot());val ticks=MutableStateFlow(1_000L)
++        val date=Instant.ofEpochMilli(entry.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
++        val seen=mutableListOf<HomeUiState>()
++        val collector=backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
++            provider.states(date,snapshots,ticks,UnconfinedTestDispatcher(testScheduler)).collect {seen+=it}
++        }
++        runCurrent();assertEquals(1,seen.last().todayFacts.size)
++        RestoreStartupGate.markRestoreUnfinished(IllegalStateException("synthetic interrupted restore"))
++        runCurrent();assertTrue(seen.last().todayFacts.isEmpty())
++        collector.cancel();runCurrent()
++        RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady()
++        LifeBackupApplier.restoreSnapshot(db,LifeBackupApplier.snapshot(db))
++        snapshots.value=finance.snapshot()
++        val restarted=mutableListOf<HomeUiState>()
++        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
++            FinanceHomeStateProvider(finance,{1_000}).states(date,snapshots,ticks,UnconfinedTestDispatcher(testScheduler)).collect {restarted+=it}
++        }
++        runCurrent()
++        assertTrue(restarted.isNotEmpty());assertTrue(restarted.all {it.todayFacts.isEmpty() && it.historyItems.isEmpty()})
++        assertTrue(snapshots.value.v16!!.purposeGrantRows.all {it.voidedAt!=null})
++    }
++}
+diff --git a/engineering/v16/GITHUB-VALIDATION.md b/engineering/v16/GITHUB-VALIDATION.md
+index 7f0c9c11ff363070cd29ffc6eeb7f3c13293b913..440d306f4fe56df22bbd03fb48c1341bb2efcd81 100644
+--- a/engineering/v16/GITHUB-VALIDATION.md
++++ b/engineering/v16/GITHUB-VALIDATION.md
+@@ -1,32 +1,30 @@
+-# V16 GitHub 验证交接（2026-10-19，尚未执行）
++# V16 严格 CI 与官方 Schema Bootstrap（2026-10-19）
+ 
+-Owner 要求本机不下载 JDK/SDK/Gradle/模拟器，后续由 GitHub 验证。本文件不授权 push、PR、merge 或发布；本地未触发任何远端运行。
++本轮增量基线为 `9a0acf0da84544750bd37f1e15e5220c4a899a95`，R2 仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。以交接包 manifest 中最终 HEAD 和补丁 SHA-256 为准。本机按 Owner 要求未下载工具链，未 push、PR、merge、发布或触发 CI。
+ 
+-Android 基线为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`，文档依据为独立文档分支 `60bdce7361649c47699c2a328a0cc1ecd746b1b5`。核对交接包 manifest 的 HEAD、补丁 SHA-256 和本地分支，不与文档分支混合历史。当前交接仍属施工 checkpoint，所有 40 项均未完成整体验收，没有候选 APK。
++官方 Room `1.json`–`4.json` 已跟踪且 Git 内容与 R2 相同；官方 `5.json` 尚未生成或提交。`engineering/v16/schema-v5.json` 只是设计契约，不能替代官方导出。当前严格门禁真实状态是 FAIL（缺少已提交的官方5），不是 Android 编译失败或通过的证据。
+ 
+-现有 `.github/workflows/android.yml` 已按以下顺序准备。仅在 Owner 后续自行授权的 GitHub 环境运行；本机不执行 Gradle。
++Owner 授权后，在干净的上述 V16 HEAD 上用 `git am` 应用本轮 format-patch，再推送匹配 `feature/life-os-v16-*` 的功能分支，例如现有 `feature/life-os-v16-g0-g7-local`，自动触发 Android CI。main push、pull_request 和 Actions 页 Android CI 的 Run workflow 入口保留；手动运行时选择同一功能分支。每次先核对 Actions 的完整 commit SHA，禁止混用旧运行的报告或 APK。
+ 
+-1. 记录 `git rev-parse HEAD`、JDK/Gradle/SDK 实际版本。使用工程现有 JDK 17、Gradle wrapper、compileSdk 35 配置。
+-2. `python3 engineering/v16/check-source.py` 与 `python3 engineering/v16/check-migration.py`。这是结构/SQLite辅助证据，不替代 Room/Kotlin。
+-3. `./gradlew :app:kspDebugKotlin --stacktrace`。修复所有实际 Kotlin/KSP 错误，由 KSP 生成 `app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json`；不得手写此官方 schema。已发布 1–4.json 与基线必须完全一致。
+-4. `./gradlew :app:testDebugUnitTest --stacktrace`，完整执行，保留 XML 和 HTML 报告。任何 failure、ignored 或超时都按实际记录，禁止删测试或改弱断言使其变绿。
+-5. 上述通过后执行 `./gradlew :app:assembleDebug --stacktrace`，保留 APK、SHA-256、applicationId、versionCode、versionName 和对应 HEAD。
+-6. 对唯一修复后 SHA 做完整独立审查，修复确定问题，再执行受影响及必要完整回归。独立 Reviewer 本轮因使用额度未完成复查，上轮静态意见不能自动覆盖当前 HEAD。
+-7. 全部本机可替代的验证通过后，统一使用 `OWNER-ONE-ROUND.md` 做一轮设备验证。七宿主、vivo/IME/Back/旋转/锁屏/撤权和性能不能由 Robolectric 结果冒充通过。
++首次 Bootstrap 及后续门禁：
+ 
+-重点回归位置：
++1. CI 完整 checkout，使用 JDK 17、工程 Gradle wrapper 和 compileSdk 35。源码检查、9例工程门禁测试、测试清单、真实 SQLite 辅助检查及历史1–4校验先执行；这些结果不替代 Kotlin/Room。
++2. 执行 `./gradlew :app:kspDebugKotlin --stacktrace`，日志在 `ksp.log`。若此处失败，先按实际编译/KSP根因修复；不能手写官方5来绕开。
++3. 严格脚本要求5同时被跟踪、存在于 HEAD、KSP生成字节与HEAD一致，且整个schema目录无diff；1–4同时检查R2。第一次缺少已提交5时必须红灯。
++4. KSP成功后，即使Bootstrap门禁失败也继续 `./gradlew :app:testDebugUnitTest --stacktrace` 收集完整测试结果，job仍为失败。真实JUnit不得失败或跳过；`verify-ci-tests.py` 检查V16清单中的类/方法数量及本次SHA的实际2000条指标，缺报告、缺指标或错SHA均FAIL。CSV目录声明为测试输入，CI禁用该Test任务的旧结果缓存和up-to-date跳过。
++5. 下载本次 `room-schema-run<run>-<SHA>` 中KSP导出的官方5，核对运行SHA、KSP日志及 `database.version=5`、实体集合、identityHash；原样放入 `app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json` 并本地提交。由Owner决定下一次推送；不能用设计JSON重写文件。此动作产生新的代码SHA。
++6. 下一轮KSP再次生成并严格逐字节比较，任何变化仍FAIL。只有所有必要门禁与完整测试通过才运行 `./gradlew :app:assembleDebug --stacktrace`。Sol负责定位实际首个失败根因并提供新的本地增量修复，Owner决定推送。
+ 
+-| 范围 | 已准备的真实用例 |
++| Artifact 名称（`<run>`为run number，`<SHA>`为完整提交SHA） | 内容与检查方法 |
+ |---|---|
+-| G0/D1–D5 | FinanceV16ContractTest（含正债务起点/还款不反转/超额/新起点） |
+-| 迁移 | FinanceV5MigrationTest：已发布1–4→5，有数据、旧ID/anchor；原3/4迁移用例继续保留 |
+-| 草稿/生命周期 | FinanceEconomicDraftV16Test、FinanceWorkspaceV16Test、FinanceReviewSessionV16Test |
+-| 预计/商品 | FinanceExpectedTasksV16Test、FinancePurchaseAllocationV16Test、FinanceInsightsV16Test |
+-| 导入 | FinanceImportRepositoryTest：后段真实失败整批回滚、空备注、绑定/附件后撤销、去重与原ID |
+-| 备份/隐私 | EncryptedBackupEnvelopeTest、EncryptedBackupManagerV16Test、FinancePurposeReadV16Test、FinanceShareV16Test及原Restore/Backup全套 |
+-| 来源/OCR/附件 | FinanceProvenanceV16Test、FinanceMediaV16Test、FinanceLocalOcrParserTest、HostDetailAdaptersTest及原采集测试 |
+-| Compose | FinanceSmokeTest（含真实还款两腿与净额）、LifeSwipeOwnershipTest、FinanceFilterStateV16Test |
+-
+-本地现有可复核证据：`static-result.json`（403 Kotlin 文件/75实体，结构检查）、`migration-sqlite-result.json`（旧27表/新48表/外键/3故障回滚）。这些文件没有 Kotlin、Room、Compose、Android 或设备 PASS。
+-
+-不接真实云、不发送真实数据。若需补充现场记录，仅用新建合成账本和不含私密信息的所选测试图。目标机不存在某个宿主或没有安全测试形态时记录 NOT_TESTED，不填写虚构 App 版本。
++| `room-schema-run<run>-<SHA>` | 官方1–5 JSON；首次KSP成功才会有5，先核对本次运行再原样归档。没有5时查ksp.log |
++| `unit-test-results-run<run>-<SHA>` | JUnit XML、HTML和 `reports/v16/testDebugUnitTest/synthetic-history-2000.json`；检查failures/errors/skipped、144个V16源码方法对应执行及真实指标 |
++| `v16-ci-evidence-run<run>-<SHA>` | KSP/全套测试/assemble等日志、严格schema报告、执行报告校验、结构/SQLite/测试清单；失败时也上传可取得的材料 |
++| `lifeos-ci-debug-run<run>-<SHA>` | 仅assemble成功后上传；debug APK（applicationId `com.qqhome.lifeos.debug`）、`commit-sha.txt` 和 `SHA256SUMS.txt`。校验SHA文件与本次运行/下载APK哈希 |
++| `lifeos-update-release-run<run>-<SHA>` | 保留的main正式签名流程产物；feature不读取release signing secrets，不将此产物作为功能分支CI必要项 |
++
++报告/schema/logs使用 `always()` 上传。没有APK表示本次尚未完成构建，不能取旧APK补齐。2000条报告包含实际分阶段/总耗时和JVM堆采样，属于CI算法与数据回归，不能冒充真机帧率或峰值内存验收。
++
++新增/修改测试逐文件自审见 `TEST-AUDIT.md`，问题/文件矩阵见 `REVIEW-FIX.md`。Room数据库5、备份格式5、manifest schema1、AEAD envelope2和核对指纹算法2是不同版本空间。本轮没有更改实体DDL或typed备份结构。
++
++所有Android/KSP/Room/Compose、2000条真实运行、Actions实际执行和APK均UNVERIFIED；本地只有工程门禁9例、历史schema、结构与SQLite辅助证据。完整CI通过后才对唯一SHA进行最终独立Reviewer审查；无阻断后按 `OWNER-ONE-ROUND.md` 集中一次设备验收。七宿主、vivo/IME/Back/锁屏/撤权和真机性能保持DEVICE UNVERIFIED，不安排逐阶段Owner手验。
+diff --git a/engineering/v16/PROGRESS.md b/engineering/v16/PROGRESS.md
+index d45c12c991a5ee169fc1b811cebeb7fc26ea08c6..c2128130a62e40e6a26ffcaf8998c8f78ea22e9d 100644
+--- a/engineering/v16/PROGRESS.md
++++ b/engineering/v16/PROGRESS.md
+@@ -38,7 +38,7 @@ Owner 后续明确：本机没有 Android 工具链，不要下载；继续代
+     node engineering/v16/integrate-schema.cjs
+     python engineering/v16/check-source.py
+ 
+-当前源码结构检查：403 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
++当前源码结构检查：406 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
+ SQL 检查：旧27表逐行保留、新48表、FK检查、3个事务故障点回滚 PASS。
+ 全部 Kotlin/Room/Compose 测试、KSP、assemble 和设备场景仍 UNVERIFIED。
+ 
+@@ -59,3 +59,9 @@ Home未知/排除政策、整笔现金独立授权、复核并发确认、自动
+ 
+ 不要以这个 checkpoint 代替任务完成。所有40项最终验收仍0/40，不代表没有已写代码。
+ 后续 GitHub 必须先 KSP，再运行全套 Kotlin/Room/Compose 测试和 assembleDebug；本地不下载工具链。
++
++2026-10-19 Review Fix 增量：基于 `9a0acf0da84544750bd37f1e15e5220c4a899a95` 继续，修复范围/指纹、Home每秒成本重算，接入真实2000条fixture回归及严格CI。Owner已确认：只有明确时间证据才能排除范围外；无法定位postedAt的同账户交易保持INCOMPLETE，不能凭occurredAt排除。未重做40项或丢弃已有V16。
++
++本轮新增3个Kotlin测试文件，V16新增/修改测试自审共32文件/144方法，运行全部UNVERIFIED。工程门禁9例本地通过，严格官方Schema门禁因缺少已提交5.json明确FAIL；历史1–4保留，首次CI Bootstrap仍红，原样归档KSP产物后再次运行完整门禁。矩阵见REVIEW-FIX.md，逐测试自审见TEST-AUDIT.md，CI/Artifacts方法见GITHUB-VALIDATION.md。
++
++本轮只做本地逻辑提交及9a0acf0之后的format-patch，等待Owner授权推送；没有push/PR/merge/发布或触发CI。完整CI通过后再最终独立Review，无阻断后才统一一轮设备验收。
+diff --git a/engineering/v16/REVIEW-FIX.md b/engineering/v16/REVIEW-FIX.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ce4540ec2f173b1ff18fab1f69c9e16003aa3ae
+--- /dev/null
++++ b/engineering/v16/REVIEW-FIX.md
+@@ -0,0 +1,22 @@
++# V16 Review 修复与 CI 门禁交接（2026-10-19）
++
++本轮增量基线：`9a0acf0da84544750bd37f1e15e5220c4a899a95`。保留所有已有 V16 代码；原 R2 基线仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。交接只包含该 V16 HEAD 之后的 format-patch，本地未 push、PR、merge、发布或触发 CI。
++
++| 问题 | 修改文件/实际行为 | 新增或补强验证 |
++|---|---|---|
++| P0 官方 Schema 门禁 | android.yml、verify-room-schema.py、.gitattributes：1–4 与 R2 及提交版一致；5 必须同时已跟踪、已提交、KSP生成后字节与HEAD一致，整个schema目录无diff；设计JSON不能替代官方文件 | test-ci-gates.py 实际创建合成文本Git仓库，覆盖相同/未跟踪/仅暂存/生成变化/缺文件；本地5例通过。当前严格门禁因无官方5.json明确FAIL |
++| P1 对账范围/指纹 | FinanceAccountProjection、WorkspaceRepository、AccountStatus：计算和指纹共用同一证据范围；已知postedAt按闭区间[anchor,observation]；未知同账户保留不确定性；指纹算法2不含明确范围外流水或无关录入/备注变化，旧算法1提示重新核对 | FinanceReconciliationScopeV16Test：入账早于收付、anchor前/未来收付但入账未知、明确posted范围外、其他账户未知、后补范围内/边界、作废、起点及算法版本 |
++| P1 Home每秒全量成本 | FinancePurposeRead、FinanceHomeStateProvider：先裁取真实成本/授权依赖并distinct，再在Default dispatcher计算；时钟只掩去过期字段，未授权金额不计算/缓存金额；关闭恢复门禁即输出空，重新收集读取新事实 | FinanceHomeProjectionV16Test：真实Room快照/真实生产投影，100次时钟更新及journal-only通知不重算，改账/撤销重算，过期清空，恢复/新collector不读过期授权；PurposeRead覆盖不同字段到期 |
++| P1 2000条fixture未执行 | FinanceSyntheticHistoryV16Test、app/build.gradle.kts：直接读取已提交CSV和SHA清单，调用真实导入、DAO、投影及账户筛选；重复导入同批0新增、不同编码换行仍识别重复 | 验证2000条、两个账户、净额-294950分、成本294950分、完整逐笔累计独立算术对照及筛选同行余额；实际执行时输出耗时/堆采样，不设性能毫秒通过线 |
++| 完整CI门禁/证据 | android.yml、verify-ci-tests.py：main与feature/life-os-v16-* push/PR/manual；pipefail保留真实失败；KSP成功后即使Bootstrap门禁失败仍执行全套unit tests，job继续红；检查实际JUnit无失败/跳过、V16类执行数量及本次SHA的2000条指标，全部通过才assemble/debug artifact；失败也上传XML/HTML/schema/logs | 工程门禁共9例本地通过（5例提交字节、4例报告解析），GitHub执行UNVERIFIED。所有artifact名含run number和commit SHA，debug含commit-sha.txt及SHA256SUMS.txt；feature不触及release签名步骤 |
++| 测试自审 | TEST-AUDIT.md、audit-v16-tests.py、Media/ReviewSession/Contract测试：排除DAO未定义顺序依赖，分离可提交和未完成日期夹具，补T05完整分配及T08已有结算后更正/过期revision拒绝；不删除测试、不降低金额预期、不跳过失败 | 32个V16新增/修改测试文件、144个测试方法的源码清单；未发现Ignore/Disabled/Assume/return@runTest旁路。数量不是执行通过证据 |
++
++对账边界已经 Owner 本轮明确确认：证据不足不能视为范围外。当前 EntryTiming 没有可证明范围外的未知日期上下界字段，不能从 occurredAt、recordedAt 或自由备注推断；这类记录保持 INCOMPLETE。若以后增加可靠的区间证据，必须有 typed 来源/边界验证及相应回归后才能用于排除。本轮没有新增猜测日期或更改旧 anchor。
++
++版本是不同命名空间：Room DB 5（4→5显式迁移）；备份格式5（强制typed V16）；备份manifest schema 1；分段AEAD envelope 2；核对指纹算法2。不存在“把所有版本号改为5”的迁移。实体/DDL/typed备份结构本轮没有更改，官方5.json仍待KSP Bootstrap。
++
++本轮diff自审：没有新增Canonical写入路径，核对保存仍走原Workspace事务；范围和指纹共享投影，算法版本只改变新结论，旧记录保持可读并提示重核。Home准备事实只在内存中派生，复用真实成本Projection，不持久化余额或另一套金额事实；tick不访问Repository/DAO，恢复门禁与撤销重建事实。Event/Entry/Cost/Obligation以及跨月调整算法均沿用原实现，金额预期未修改。备份变更仅纠正文档注释，Entity/DAO/Migration及typed结构无diff，历史1–4无diff。没有新增Composable或万能Manager，Overlay/IME/Back实现本轮无改动；这些现有设备行为仍待CI后的集中验收。Kotlin引用与新增Gradle配置完成静态自查，实际类型/KSP验证仍以CI为准。
++
++已执行本地辅助验证：9例工程门禁通过（5例Schema提交字节、4例实际报告校验器的合成输入）、历史1–4完整性通过、结构检查406 Kotlin/75实体通过、真实SQLite旧27/新48/FK/3故障回滚通过、diff空白检查通过。严格官方Schema门禁本地实际FAIL，原因是5.json未提交；报告保存在review-fix-evidence。没有本地Kotlin、KSP、Room、Compose、fixture运行或APK PASS。
++
++下一步由 Owner 授权推送匹配的功能分支。按 GITHUB-VALIDATION.md 完成Bootstrap与完整CI；Sol随后根据首个实际失败日志定位并提供新的本地增量补丁，不能要求Owner自行排查。完整CI通过且最终独立Review无阻断后，才启动现有OWNER-ONE-ROUND.md的一轮集中设备验收。厂商行为仍为DEVICE UNVERIFIED。
+diff --git a/engineering/v16/TEST-AUDIT.md b/engineering/v16/TEST-AUDIT.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e9463d1751ac43e363833af1cebc4f70b026234e
+--- /dev/null
++++ b/engineering/v16/TEST-AUDIT.md
+@@ -0,0 +1,63 @@
++# V16 测试源码自审（2026-10-19）
++
++范围：R2以来新增或修改的32个Kotlin测试文件，含本轮3个新文件；逐文件清单、方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有Kotlin测试运行仍UNVERIFIED。
++
++| 测试文件/类 | 检查内容与真实边界 | 自审说明 |
++|---|---|---|
++| ArchitectureBoundaryTest | 源码依赖、唯一Root、debug标识、schema只进debug assets | 架构静态断言，不冒充运行UI |
++| BackupManagerTest | 实际URI归档、typed数据库、媒体、恢复后可继续写 | 保留原失败/坏包/回滚断言；备份格式与受支持旧包兼容 |
++| EncryptedBackupEnvelopeTest | 真正分段AEAD、盐、错密钥、篡改/截断/乱序/尾随字节 | 有界真实加解密，不是JSON模拟 |
++| EncryptedBackupManagerV16Test | 实际manager导出文件/解密/跨库恢复/损坏/错密码/写入失败 | 密码清零、暂存清理、失败数据库不变，真实Room |
++| FinanceAssistantProviderTest | T09/T10用途/范围/撤销/恶意建议 | 使用获准的离线Fake transport，测试真实Coordinator；没有真实云或网络执行，建议仅惰性数据 |
++| FinanceAutomationTest | 候选、正式确认、原子失败、重复确认、规则顺序 | 真实Repository/DAO与纯规则引擎；保留权威来源断言 |
++| FinanceCalculatorTest | 精确表达式/非法/溢出 | 调生产计算器，不改变正确金额 |
++| FinanceMoneyTest | 十进制精度、符号、范围、日期解析与原时间保留 | 无Double近似，无默认时区固定epoch假设 |
++| FinanceEconomicDraftV16Test | 原始草稿/恢复/epoch/确认幂等/报销500/50/450 | 真实Room；300+150结算后成本仍50，不用假现金替代 |
++| FinanceExpectedTasksV16Test | 未知/部分到账/明确结束/恢复/历史累计目标 | 不把预计写收入；固定clock用来证明非按墙钟猜顺序 |
++| FinanceImportRepositoryTest | 真CSV/XLSX、去重、后段失败整批回滚、后续关系保留、空备注 | 调生产stage/commit/undo；新typed兼容断言保留完整事实 |
++| FinanceInsightsV16Test | 独立统计/预算、商品退款、未分配、账期 | 保留D4和原付款；原流水关联检查完整ID集合 |
++| FinanceLocalOcrParserTest | 原文候选、歧义/余额/编号/不完整日期 | 纯parser测试，不冒充MLKit或手机OCR运行 |
++| FinanceMediaV16Test | 真实跨域引用、恢复缺源、重连、OCR候选 | 本轮修复DAO无ORDER BY下的插入顺序假设：比较两条完整实体的ID映射并另断言数量2，内容断言未降低 |
++| FinanceMigrationTest | populated v2、旧记录/ID/精度 | 真实MigrationTestHelper及Room打开到v5 |
++| FinanceV4MigrationTest | populated v2/v3→4与继续打开v5、anchor/旧语义 | 不只建空库；官方已发布schema保留 |
++| FinanceV5MigrationTest | populated v1/v2/v3/v4→5 | 4个入口版本，旧capture/账户/Entry/anchor，typed不伪造；依赖KSP官方5.json |
++| FinancePortableExportTest | 真实ZIP条目与CSV公式防护 | 是导出单元边界；Manager实际恢复由其他文件覆盖 |
++| FinanceProvenanceV16Test | 编号/身份/工具/时效绑定/旧证据版本/恢复 | 真实Repository/DAO；无真实账号，恢复先禁用匹配 |
++| FinancePurchaseAllocationV16Test | 更正/解绑、释放调整、跨事项错误覆盖 | 真实事务；失败前后完整快照相等，现金及成本值不减弱 |
++| FinancePurposeReadV16Test | 用途隔离、整笔现金不继承事项授权、未知、字段独立到期 | 真实Room+生产投影；本轮补prepared字段到期 |
++| FinanceRecoveryV16Test | 双腿整组/单调版本/批量冲突/安全恢复 | 真实Room，无部分提交；后续无关新增不阻止安全恢复 |
++| FinanceReviewSessionV16Test | 草稿/稍后/跨表面竞争/明确退款/已有现金关联 | 本轮将helper日期设为可提交值，仅未完成场景显式使用“未完成日期”并断言保存；不改钱数或成功/失败预期 |
++| FinanceShareV16Test | 单grant片段、撤销/改账/到期/恢复后拒绝旧预览 | 真实Repository；没有实际发送消息或启动外部接收应用 |
++| FinanceV16ContractTest | T01–T08/T11/T12、gift/debt/unknown、D4、净额起点/还款 | 真实Room及加密typed恢复；本轮补T05完整100/80/120分配、T08过期revision及已有还款拒绝改赠与，失败前后完整快照相等；正确金额保持200/-40/160及报销500/50/450 |
++| FinanceWorkspaceV16Test | 真实草稿/连续editGeneration/提交后取消/anchor/posted/单调核对 | 固定clock制造竞争边界；post已知测试不拿occurredAt回填 |
++| FinanceCalendarStopsTest | 纯停靠状态函数 | 不能替代系统Back/IME/厂商手势 |
++| FinanceFilterStateV16Test | Bundle条件恢复、完整账扫描后筛选、posted精确区间 | 同行余额与完整算术一致，cash与posted不混 |
++| FinanceSmokeTest | 真实Compose→VM→Repository→Room，账户/流水/转账/筛选/还款 | 操作前等真实loaded，不操作真实设备；Compose未运行 |
++| FinanceReconciliationScopeV16Test | 本轮新增：范围外/未知/早于cash/后补/anchor/void/算法升级 | 无法定位时book与difference均null；真实保存结论再作废验证失效，不把模拟saved当持久命令 |
++| FinanceSyntheticHistoryV16Test | 本轮新增：真实已提交2000条fixture→导入/DAO/投影/重复/过滤 | SHA对照、独立逐笔加减oracle、最终金额；指标仅在实际运行时写出，无假性能PASS |
++| FinanceHomeProjectionV16Test | 本轮新增：时钟/相关依赖/到期/撤销/门禁/恢复 | 控制时间和通知调度，财务快照来自真实Room，计数器委托真实生产成本计算；100tick不重算 |
++
++旁路检查：未发现新增/修改测试里的Ignore、Disabled、Assume或return@runTest绕过；CI无忽略Gradle失败的`|| true`/continue-on-error，日志管道用pipefail。断言个数、源码文字检查不能证明Kotlin类型正确，因此KSP、真实JUnit XML和完整测试仍是强制门禁。
++
++状态隔离：Room用例每例新建in-memory DB，Before/After重置RestoreStartupGate；备份额外目标库在finally关闭。新Home用例使用testScheduler/backgroundScope，时区由同一默认时区计算比较日期，不依赖固定墙钟。2000条测试金额与时区无关，10分钟仅是防卡死超时，不是性能通过线。现有真实线程restore竞争用例保留有界等待，运行稳定性仍由CI报告验证。
++
++D1/D2/D3/D4主要由FinanceV16Contract/Workspace/Insights/Purchase/Recovery覆盖；D5与T09/T10由PurposeRead/Share/Assistant/Backup覆盖。
++
++| G0 不变量 | 对应现有方法/本轮补强（全部运行UNVERIFIED） |
++|---|---|
++| T01 赠与无本人现金/债务 | Contract.T01，价值120、成本0、Entry/义务为空 |
++| T02 垫付及还款不重复消费 | Contract.T02，承担120、还款120后成本仍120/义务0 |
++| T03 赠与/债务混合 | Contract.T03，300中赠100/需还200，还80后义务120 |
++| T04 未知不等于0 | Contract.T04、PurposeRead.unknownLegacyShareNeverBecomesConfirmedZeroOnHome |
++| T05 精确分配 | Contract.T05，缺120时不完整；本轮补100/80/120闭合、只需还部分形成义务 |
++| T06 历史结清非银行证据 | Contract.T06，无Entry、现金证据仍不足 |
++| T07 跨月调整 | Contract.T07、Insights.purchasePartialRefundTimeline…，200/-40/160保留 |
++| T08 关系更正/版本/恢复 | Contract.T08，本轮补过期revision和已还80后拒绝删除需还关系；原重复确认/restore epoch拒绝不变 |
++| T09 关闭/未授权不出站 | Assistant.T09、PurposeRead、Share；Fake transport只观察真实Coordinator边界 |
++| T10 在途撤销/恶意结果 | Assistant.T10，生产Coordinator拒绝落地及扩范围 |
++| T11 加密跨库恢复 | Contract.T11、EncryptedBackupManagerV16Test/EnvelopeTest，typed金额守恒及撤销授权 |
++| T12 分币/负债/旧anchor | Contract.T12及positiveLegacyDebt…/negativeOpening…、Workspace.anchorPreview… |
++
++F44/F46/F48真实宿主、MLKit离线与vivo/IME/权限/Back仍DEVICE UNVERIFIED。40项功能映射沿用feature-matrix.md，不把源码测试清单写成40项验收通过。
++
++本地已实际运行的另9例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节校验、4例JUnit/指标报告解析，使用合成文本仓库和报告，不是上述144个Kotlin方法。首次Windows运行失败在只读Git对象清理；已加限定合成目录的只读标志处理，原断言不变，最终9例通过。未添加/下载任何Android工具链或YAML依赖；Actions实际解析和执行待Owner推送。
+diff --git a/engineering/v16/audit-v16-tests.py b/engineering/v16/audit-v16-tests.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f508da505a3ed82cc83e787a5c9bdf37d010bc4
+--- /dev/null
++++ b/engineering/v16/audit-v16-tests.py
+@@ -0,0 +1,33 @@
++"""Inventory all V16 new/modified Kotlin tests. Structural audit only, never a test execution claim."""
++import hashlib, json, pathlib, re, subprocess
++
++ROOT = pathlib.Path(__file__).resolve().parents[2]
++BASE = "245e1475cd1d47a4205ab49f75d5e06d22de701c"
++def names(*args):
++    return subprocess.check_output(["git", *args], cwd=ROOT, encoding="utf-8").splitlines()
++
++paths = set(names("diff", "--name-only", BASE, "--", "app/src/test")) | set(names("ls-files", "--others", "--exclude-standard", "--", "app/src/test"))
++rows, errors = [], []
++for relative in sorted(paths):
++    file = ROOT / relative
++    if file.suffix != ".kt" or not file.is_file():
++        continue
++    raw = file.read_bytes()
++    source = raw.decode("utf-8-sig")
++    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.S)
++    tests = re.findall(r"@Test(?:\([^)]*\))?\s+fun\s+(\w+)", code)
++    bypass = re.findall(r"@(?:Ignore|Disabled)\b|\bAssume\.|\bassumeTrue\(|return@runTest\b", code)
++    if bypass:
++        errors.append({"file": relative, "bypass": bypass})
++    rows.append({"file": relative, "sha256": hashlib.sha256(raw).hexdigest(), "tests": tests,
++                 "assertionCalls": len(re.findall(r"\b(?:assert\w+|fail)\s*\(", code)),
++                 "realRoom": "FinanceRoomTest()" in code or "Room.inMemoryDatabaseBuilder" in code or "MigrationTestHelper" in code,
++                 "runtime": "UNVERIFIED", "bypass": bypass})
++result = {"check": "V16-test-source-inventory", "comparisonBase": BASE, "testFiles": len(rows),
++          "testMethods": sum(len(row["tests"]) for row in rows), "bypassFindings": errors, "files": rows,
++          "semanticAudit": "See TEST-AUDIT.md; counts and flags cannot prove test correctness", "execution": "UNVERIFIED"}
++output = ROOT / "engineering/v16/review-fix-evidence/test-inventory.json"
++output.parent.mkdir(parents=True, exist_ok=True)
++output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
++print(json.dumps({key: value for key, value in result.items() if key != "files"}, ensure_ascii=False))
++raise SystemExit(bool(errors))
+diff --git a/engineering/v16/feature-matrix.md b/engineering/v16/feature-matrix.md
+index 9ec90631eacc45ea1fc73761e5cf8262cb6dd4b6..dc05cb47c52c6d6f598b973f137094dc19c019b9 100644
+--- a/engineering/v16/feature-matrix.md
++++ b/engineering/v16/feature-matrix.md
+@@ -67,12 +67,12 @@ V16 已完整验收：0/40。PARTIAL 不是完成，不计算为已交付。随
+ | F14 | BatchEditor选择真实流水、预览、原子修改与恢复 | Room/Compose未运行 |
+ | F16 | MonthPicker跨年年月选择、账簿独立月份 | 进程恢复/手势待验 |
+ | F17 | 完整register先扫描，账户页备注/方向/日期筛选，同行余额不重算 | 过滤一致性测试已写未运行 |
+-| F18 | AccountWorkbench观察点/核对保存，指纹失效 | Room测试已写未运行 |
++| F18 | AccountWorkbench观察点/核对保存；算法2计算和指纹共用证据范围，无法定位postedAt保持INCOMPLETE | 新增真实Room范围/后补/失效用例，UNVERIFIED |
+ | F19 | AccountSheet三种新起点、原anchor保留、旧起点影响预览/从零约束及版本保护 | 边界/旧版本测试已写未运行 |
+ | F20 | Trust读模型与净额范围展开；显式正债务只转换旧期初，原口径另列，币种分列 | 内部还款/超额/排除/符号测试未运行；独立复查待补 |
+ | F22 | 信用账期、确知入账编辑、短月/时区推导、原双腿转账还款入口 | 新还款Compose及未知入账设备未验 |
+ | F24 | 多观察点同口径区间比较，精确(first,last]流水钻取；posted未知不列入 | 筛选余额一致性/边界测试已写未运行 |
+-| F25 | R2导入入口/阶段反馈，空备注保留，撤销保留后续typed关系和账户配置 | 故障回滚/空备注/绑定和附件撤销测试已写未运行 |
++| F25 | R2导入入口/阶段反馈，空备注保留，撤销保留后续typed关系和账户配置；2000条已提交CSV接真实导入/DAO/成本/净额/筛选余额/重复回归 | 旧故障回滚用例保留，新回归实际执行时输出耗时/堆采样，无固定毫秒通过线；UNVERIFIED |
+ | F32 | Finance专用typed媒体引用，事项/购买/小票入口；单原件复用、缺源检查/同摘要重连 | URI权限/恢复/取消与设备回归未运行 |
+ | F33 | Workspace确认义务列表/部分结算/历史声明/复用已有真实结算 | 旧关系合流与结算UI回归未运行 |
+ | F34 | 本人实际垫付→显式报销草稿模板→确认个人承担/报销方承担→分次真实结算 | 500/50/450与300/150回归已写未运行 |
+@@ -92,7 +92,7 @@ V16 已完整验收：0/40。PARTIAL 不是完成，不计算为已交付。随
+ | F55 | Budget独立纳入政策、负已用/剩余及说明；编辑范围/上限与停用 | D4综合/Compose测试未运行 |
+ | F56 | 标签组合/专题保存条件，真实成本全量聚合、结果分页，tab条件/滚动独立保存 | Compose/大数据设备性能未验证 |
+ | F60 | 完整typed+CSV携出/明文提示/读回校验；加密备份；单SHARE授权片段预览与发送前复验 | Manager真实URI故障/跨库用例已写未运行，分享chooser/设备测试未运行 |
+-| F61 | HomeStateProvider真实Canonical分用途有限授权，撤销/到期清空 | 授权/恢复/字段隐藏端到端待跑 |
++| F61 | HomeStateProvider真实Canonical有限授权；依赖变化准备事实，时钟只检查字段到期，撤销/恢复清空 | 新真实Room/生产投影计数、到期/撤销/恢复用例，UNVERIFIED |
+ | F62 | 固定本地语法→可见QuerySpec→独立授权范围读取 | 歧义/权限/IME/解释UI回归待跑 |
+ 
+ 这些均为 PARTIAL 或待验证；代码路径接入不等于验收通过，不得宣称40项已交付。
+diff --git a/engineering/v16/migration-sqlite-result.json b/engineering/v16/migration-sqlite-result.json
+index dc16386da104d89697f104af77716b431bc1f8ac..b452713082761f26c86335f91a8473197d9ea788 100644
+--- a/engineering/v16/migration-sqlite-result.json
++++ b/engineering/v16/migration-sqlite-result.json
+@@ -4,6 +4,6 @@
+   "legacyTablesPreserved": 27,
+   "newTables": 48,
+   "faultPoints": 3,
+-  "elapsedSeconds": 0.094,
++  "elapsedSeconds": 0.047,
+   "roomKspAndAndroidRuntime": "UNVERIFIED"
+ }
+diff --git a/engineering/v16/package-review-fix.py b/engineering/v16/package-review-fix.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ef8512d63cf0573197c19cd4b5a327d87262db1
+--- /dev/null
++++ b/engineering/v16/package-review-fix.py
+@@ -0,0 +1,92 @@
++"""Export only the committed review fix after the Owner-pinned V16 HEAD. No remote actions."""
++import argparse, hashlib, json, os, pathlib, subprocess
++
++ROOT = pathlib.Path(__file__).resolve().parents[2]
++BASE = "9a0acf0da84544750bd37f1e15e5220c4a899a95"
++
++def git(*args, env=None):
++    return subprocess.check_output(["git", *args], cwd=ROOT, env=env, encoding="utf-8", stderr=subprocess.PIPE).strip()
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=pathlib.Path, required=True, help="New sibling directory in this workspace")
++    args=parser.parse_args()
++    if git("status", "--porcelain"):
++        raise RuntimeError("Commit all review-fix changes before exporting")
++    head=git("rev-parse", "HEAD")
++    branch=git("symbolic-ref", "--short", "HEAD")
++    git("merge-base", "--is-ancestor", BASE, head)
++    commits=git("rev-list", "--reverse", f"{BASE}..{head}").splitlines()
++    if not commits:
++        raise RuntimeError("No incremental commits after the pinned V16 HEAD")
++    git("diff", "--check", BASE, head)
++    out=args.output.resolve()
++    if out.parent != ROOT.parent.resolve():
++        raise ValueError("Output must be a new sibling directory within the workspace")
++    out.mkdir(exist_ok=False)
++    git("format-patch", "--binary", "--full-index", f"--base={BASE}", "--output-directory", str(out), f"{BASE}..{head}")
++    patches=sorted(out.glob("*.patch"))
++    if len(patches) != len(commits):
++        raise RuntimeError("Patch count differs from incremental commit count")
++
++    # Apply the real mail patches to a separate index, then compare the entire resulting tree.
++    # The actual checkout and index are never reset or modified by this verification.
++    index=out / ".validation.index"
++    env=os.environ.copy()
++    env["GIT_INDEX_FILE"]=str(index)
++    try:
++        git("read-tree", BASE, env=env)
++        for patch in patches:
++            git("apply", "--cached", "--check", str(patch), env=env)
++            git("apply", "--cached", str(patch), env=env)
++        expected=git("rev-parse", "HEAD^{tree}")
++        actual=git("write-tree", env=env)
++        if actual != expected:
++            raise RuntimeError(f"Patch tree mismatch: {actual} != {expected}")
++    finally:
++        if index.exists():
++            index.unlink()  # Only this newly created verification file, never the real Git index.
++    if git("status", "--porcelain"):
++        raise RuntimeError("Checkout changed during export; do not deliver this package")
++
++    files=[{"file":p.name,"bytes":p.stat().st_size,"sha256":hashlib.sha256(p.read_bytes()).hexdigest()} for p in patches]
++    manifest={
++        "kind":"LOCAL_V16_REVIEW_FIX_INCREMENT", "repository":"cnsj-123/qqhome", "branch":branch,
++        "base":BASE,"head":head,"tree":expected,"commits":commits,"files":files,
++        "changedFiles":git("diff","--name-status",BASE,head).splitlines(),
++        "patchApplyAtBaseAndFullTreeComparison":"PASS",
++        "engineeringGateTests":json.loads((ROOT / "engineering/v16/review-fix-evidence/ci-gate-unit-tests.json").read_text(encoding="utf-8")),
++        "historicalRoomSchemas":json.loads((ROOT / "engineering/v16/review-fix-evidence/room-history.json").read_text(encoding="utf-8")),
++        "officialRoom5":"NOT_GENERATED_NOT_COMMITTED_BOOTSTRAP_REQUIRED_STRICT_GATE_FAIL",
++        "testSourceInventory": {k:v for k,v in json.loads((ROOT / "engineering/v16/review-fix-evidence/test-inventory.json").read_text(encoding="utf-8")).items() if k!="files"},
++        "androidKspBuild":"UNVERIFIED","allKotlinRoomComposeTests":"UNVERIFIED",
++        "synthetic2000ExecutionAndPerformance":"UNVERIFIED","actionsExecution":"UNVERIFIED",
++        "deviceAcceptance":"DEVICE UNVERIFIED","finalIndependentReview":"AFTER_COMPLETE_CI_GREEN",
++        "candidateApk":None,"remoteActionsExecuted":False,
++        "handoff": {"issueFileMatrix":"engineering/v16/REVIEW-FIX.md","testAudit":"engineering/v16/TEST-AUDIT.md",
++                    "workflow":".github/workflows/android.yml","ciBootstrapArtifacts":"engineering/v16/GITHUB-VALIDATION.md"}
++    }
++    (out / "manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
++    checksums="".join(f"{row['sha256']}  {row['file']}\n" for row in files)
++    (out / "SHA256SUMS.txt").write_text(checksums,encoding="utf-8")
++    (out / "README.md").write_text(
++        f"# V16 Review Fix 增量交接\n\n本地代码SHA：`{head}`\n\n增量基线：`{BASE}`\n\n"
++        f"完整代码树：`{expected}`\n\n"
++        "本包只含基线之后的本地修复format-patch，没有重复导出旧V16全量补丁。"
++        "每个补丁SHA-256见SHA256SUMS.txt和manifest.json；已在独立Git index从指定基线应用全部补丁并逐树核对当前HEAD，通过。\n\n"
++        "在有该基线对象的干净独立checkout，先确认HEAD等于基线、核对补丁哈希，然后按文件序号执行 `git am <补丁文件>`。"
++        "git am可能因提交者元数据产生新commit SHA；代码树应与上述tree一致，CI以实际推送SHA为准。"
++        "本轮未push/PR/merge/发布/触发CI，交付后等待Owner授权推送。\n\n"
++        "问题与文件矩阵：engineering/v16/REVIEW-FIX.md；新增/修改测试逐项自审及32文件/144方法清单："
++        "engineering/v16/TEST-AUDIT.md 和 review-fix-evidence/test-inventory.json；更新工作流：.github/workflows/android.yml；"
++        "CI运行、Schema Bootstrap、预期artifact名称和检查方法：engineering/v16/GITHUB-VALIDATION.md。\n\n"
++        "本地工程门禁9例通过，历史schema/结构/SQLite辅助检查通过。Android/KSP、全部Kotlin/Room/Compose测试、"
++        "实际2000条指标、Actions执行和APK均UNVERIFIED；没有候选APK。官方5.json未生成/提交，严格门禁当前FAIL。"
++        "首次Owner授权的功能分支CI先KSP并上传官方schema，缺提交版时保持红；原样归档5.json后再运行完整门禁。\n\n"
++        "对账遵循Owner确认的保守证据边界：未知postedAt且无法证明范围外的同账户交易保持INCOMPLETE，"
++        "不使用occurredAt或recordedAt排除。之后由Sol定位实际CI失败并交新的本地修复；完整CI通过后再最终独立Review，"
++        "无阻断才集中一轮设备验收。厂商特性保持DEVICE UNVERIFIED。\n",encoding="utf-8")
++    print(json.dumps({"output":str(out),"head":head,"base":BASE,"patches":files,"fullTreeComparison":"PASS","remoteActionsExecuted":False},ensure_ascii=False))
++
++if __name__ == "__main__":
++    main()
+diff --git a/engineering/v16/review-fix-evidence/ci-gate-unit-tests.json b/engineering/v16/review-fix-evidence/ci-gate-unit-tests.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a86ff0a6a533fbd6e9a53bc7adfd82f241185a4
+--- /dev/null
++++ b/engineering/v16/review-fix-evidence/ci-gate-unit-tests.json
+@@ -0,0 +1,9 @@
++{
++  "check": "offline-engineering-ci-gates",
++  "status": "PASS",
++  "cases": 9,
++  "failures": 0,
++  "errors": 0,
++  "fixtures": "Synthetic text Git repository and synthetic JUnit documents; not Android execution",
++  "androidTests": "UNVERIFIED"
++}
+diff --git a/engineering/v16/review-fix-evidence/room-bootstrap-required.json b/engineering/v16/review-fix-evidence/room-bootstrap-required.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..b13904eb299a4a825680944dc126b2129ebc1071
+--- /dev/null
++++ b/engineering/v16/review-fix-evidence/room-bootstrap-required.json
+@@ -0,0 +1,20 @@
++{
++  "check": "strict-committed-official-room-schema",
++  "status": "FAIL",
++  "errors": [
++    "Committed KSP official Room 5 (bootstrap must fail until committed): Command '['git', 'ls-files', '--error-unmatch', '--', 'app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json']' returned non-zero exit status 1."
++  ],
++  "schemaSha256": {
++    "1": "af8a75debb4670529fbe2ec2e40b37acbdda7e00d3851f86dd42e19937666db1",
++    "2": "9e59e50eeefec1286dbd2fd1dacedb4200c4a4bb2ccfb6fd5c2f2b48d9718786",
++    "3": "d11e8bcebd9b3ae61a88a373a9072159100b8571eb03fe5ab588de0c1e545fff",
++    "4": "c88b489e9c8b1edb148805cf2dbe021e89384eee75043fe7dbd13d1511c23d7a"
++  },
++  "versions": {
++    "roomDatabase": 5,
++    "backupFormat": 5,
++    "backupManifestSchema": 1,
++    "aeadEnvelope": 2
++  },
++  "androidRuntime": "UNVERIFIED"
++}
+diff --git a/engineering/v16/review-fix-evidence/room-history.json b/engineering/v16/review-fix-evidence/room-history.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0bc270cf2eca2c28e169b5be9deca492d9999b7
+--- /dev/null
++++ b/engineering/v16/review-fix-evidence/room-history.json
+@@ -0,0 +1,18 @@
++{
++  "check": "published-history",
++  "status": "PASS",
++  "errors": [],
++  "schemaSha256": {
++    "1": "af8a75debb4670529fbe2ec2e40b37acbdda7e00d3851f86dd42e19937666db1",
++    "2": "9e59e50eeefec1286dbd2fd1dacedb4200c4a4bb2ccfb6fd5c2f2b48d9718786",
++    "3": "d11e8bcebd9b3ae61a88a373a9072159100b8571eb03fe5ab588de0c1e545fff",
++    "4": "c88b489e9c8b1edb148805cf2dbe021e89384eee75043fe7dbd13d1511c23d7a"
++  },
++  "versions": {
++    "roomDatabase": 5,
++    "backupFormat": 5,
++    "backupManifestSchema": 1,
++    "aeadEnvelope": 2
++  },
++  "androidRuntime": "UNVERIFIED"
++}
+diff --git a/engineering/v16/review-fix-evidence/test-inventory.json b/engineering/v16/review-fix-evidence/test-inventory.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..a28e7bae40738fbe4156e73a9ca38d1c019215b9
+--- /dev/null
++++ b/engineering/v16/review-fix-evidence/test-inventory.json
+@@ -0,0 +1,475 @@
++{
++  "check": "V16-test-source-inventory",
++  "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
++  "testFiles": 32,
++  "testMethods": 144,
++  "bypassFindings": [],
++  "files": [
++    {
++      "file": "app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt",
++      "sha256": "c94594b8d7c7be991517e5fe4125ce1de85d3b84e02481093d4cab2fbeb7496b",
++      "tests": [
++        "financeOwnsTypedFactsInsideTheExistingDatabase",
++        "financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay",
++        "captureHasNoUserLevelPhysicalDeleteApi",
++        "appearanceLoadingRendersBeforeBusinessStorageIsObtained",
++        "migrationSchemaFixturesAreDebugOnly",
++        "thereIsOnlyOneProductRootAndNoObsoleteShell",
++        "projectionsCannotOwnDomainStorageOrDependOnClosetCalendar",
++        "galleryCopyBackendIsNotExposedByTheCompositionRoot",
++        "debugIdentityCannotOccupyTheReleaseUpdateChain"
++      ],
++      "assertionCalls": 48,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/BackupManagerTest.kt",
++      "sha256": "2ad1d8be032cca233f5a75e6ba91f64aaac73d10ce3ae1ca17ba0e6ced602358",
++      "tests": [
++        "backupV2_containsLifeData",
++        "backupV2_containsManagedMedia",
++        "backupV2_restoresCaptureReferenceAndPlan",
++        "backupV2_restoresTagsAndRelations",
++        "backupV2_restoresManagedMediaToCurrentFilesDir",
++        "backupV2_rewritesManagedPathForCurrentDevice",
++        "backupV2_afterRestoreDatabaseRemainsUsable",
++        "backupV1_stillRestoresClosie",
++        "backupV1_doesNotEraseExistingLifeData",
++        "wardrobeOnlyArchive_isBuiltOnlyByTheTestFixture_andRestoresWithoutTouchingLifeOs",
++        "completeExport_alwaysCarriesTheLifeOsSection",
++        "completeExport_carriesEveryLifeOsTable",
++        "export_isASingleConsistentSnapshot",
++        "export_failsWhenAManagedMediaFileIsMissing",
++        "backupV2_failureDoesNotHalfRestore"
++      ],
++      "assertionCalls": 61,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/EncryptedBackupEnvelopeTest.kt",
++      "sha256": "5f543589fe0fd143e76bd1575209020848ffa319d17bd72e3a68662f8b2b66eb",
++      "tests": [
++        "T11_portableRoundTripUsesFreshSaltAndAuthenticatesAllBytes",
++        "malformedHeaderIsRejectedBeforeAnUnboundedKdfCanRun",
++        "authenticatedSegmentsRejectTruncationDuplicationOrderAndTrailingBytes"
++      ],
++      "assertionCalls": 13,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/EncryptedBackupManagerV16Test.kt",
++      "sha256": "cc72cc16f22b2cc95291a28dc5fce979ab11b08feffa730c8e6d19fb29d4f62d",
++      "tests": [
++        "wrongPasswordAndLateCorruptionCannotReachCanonicalRestoreAndScratchIsRemoved",
++        "verifiedManagerArchiveRestoresTypedUnknownToAnotherDatabaseAndRevokesGrant",
++        "inaccessibleOutputReportsFailureWithoutChangingFactsAndErasesPassword"
++      ],
++      "assertionCalls": 26,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAssistantProviderTest.kt",
++      "sha256": "67cb3dc38542c81e248e5b6c2f3a1726f706722bbf14de651423b07c8103e493",
++      "tests": [
++        "T09_defaultOffAndSeparatePurposeScopeStopProviderBeforeData",
++        "T10_inFlightRevocationAndHostileResultCannotWriteOrExpandScope"
++      ],
++      "assertionCalls": 9,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt",
++      "sha256": "6b4e3b2e045cfa73519e9af7b330c6a969d578091c0d3163061b9e8ae1e090cb",
++      "tests": [
++        "allowlistPaymentEvidenceAndAmountAmbiguityProduceOnlyTypedProposals",
++        "sourceKeyDiscoveryIsIdempotentRejectAndSnoozeNeverCreateTruth",
++        "visibleConflictIsStagedAndCannotCreateSecondTruth",
++        "visibleRefundCannotBeConfirmedAsOrdinaryIncomeOrWithoutOriginalEvent",
++        "confirmationCreatesExactlyOneCanonicalResultAndOneRelationWithProposalAuthority",
++        "snoozedProposalCanConfirmOnceAndFailedConfirmationKeepsProposalUnchanged",
++        "rulesSortByPriorityThenIdFirstScalarWinsAndTagsMergeInStableOrder"
++      ],
++      "assertionCalls": 53,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCalculatorTest.kt",
++      "sha256": "b86259a3e82092b00c2ed1bb6daf88679bbdea30ab680006eeb03285096c525e",
++      "tests": [
++        "exactArithmeticAndPrecedence",
++        "rejectsRoundingOverflowBadInputAndExecutableText"
++      ],
++      "assertionCalls": 6,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceEconomicDraftV16Test.kt",
++      "sha256": "9561662e76c4fb8baa90d164f9a3d0e388d2c629b403bc681e7eff443a85430a",
++      "tests": [
++        "incompleteDraftSurvivesRecreationAndBackupWithoutCreatingFinancialFacts",
++        "explicitCommitConsumesExactDraftVersionAndReplayCreatesOnlyOneNonCashEvent",
++        "legacyEventChangingAfterDraftStartsRejectsConversionAndKeepsDraft",
++        "explicitReimbursementTemplateKeeps500Cash50CostAnd450ReceivableThroughTwoReceipts",
++        "reimbursementSplitsAcrossFundingAndRejectsTooManySharesBeforeReplacingDraft"
++      ],
++      "assertionCalls": 32,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceExpectedTasksV16Test.kt",
++      "sha256": "7ebf9fd65a581d14520fec9c610ec5e26511ba7d0bfb0e286bb1effcc2622a8b",
++      "tests": [
++        "unknownPlanPartialReceiptExplicitEndingAndRestoreDoNotInventMoneyOrReopenTask",
++        "duplicateTargetAndStalePlanEditAreRejectedAtomically",
++        "closedCumulativeTargetsWithEqualClockArePresentedSeparatelyAndNeverAdded"
++      ],
++      "assertionCalls": 23,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt",
++      "sha256": "6e040555ef568a3eb8fe06f95dc15ea6fa995ccb71e7df35ff623a3f2f5dc011",
++      "tests": [
++        "confirmedXlsxBatchCreatesOnlyRealFlowsFeeAndHierarchyThenUndoRetiresAllSemantics",
++        "csvSameFileIdempotencyWithinFileAndExistingCanonicalDuplicatesNeedExplicitOverride",
++        "currentBalanceAnchorKeepsBackfilledEntriesInHistoryWithoutChangingCurrentBalance",
++        "lateCanonicalFailureRollsBackEntriesRelationsJournalAndStagingAsOneBatch",
++        "importedBlankNotesStayBlankAndRepeatedSourceStillRequiresDuplicateReview",
++        "importUndoRetainsLaterMediaRelationsAndDoesNotArchiveAnActivelyBoundAccount",
++        "undoPreservesAccountBindingEvenWhenAllImportedCashCanBeRetired",
++        "undoKeepsLaterEditedOrLinkedImportedEntriesAndTheirLiveRelations"
++      ],
++      "assertionCalls": 91,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt",
++      "sha256": "30cf4d24006c45f66f04fd680f552bef254dbeb55a64bc057ef5ab2577225224",
++      "tests": [
++        "budgetsUseIndependentPolicyForBothLegacyAndEconomicFacts",
++        "legacyPrincipalSettlementDoesNotCreateSecondCostOrDuplicateDebtOnConversion",
++        "purchasePartialRefundTimelinePreservesOriginalMonthAndRejectsOverAllocatedLine",
++        "creditShortMonthUsesKnownPostingAndRepaymentIsOnlyCashMovement",
++        "explicitQueryNeverBroadensUnknownIdsAndLocalLanguageIsFullyConsumed",
++        "ordinaryRelinkCannotBypassTypedRefundAndEditingKeepsConfirmedAllocationIdentity",
++        "assigningAlreadyReceivedRefundChangesCostWithoutAddingOrRewritingCash"
++      ],
++      "assertionCalls": 38,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceLocalOcrParserTest.kt",
++      "sha256": "a8642d789014c6ab3cc63434a3e9fe20e663bfe5d85713e29995d111f144f4b6",
++      "tests": [
++        "balanceAndIdentifierAreNotTransactionAmounts",
++        "ambiguousFactsAndDateWithoutTimeRemainUnknown"
++      ],
++      "assertionCalls": 7,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt",
++      "sha256": "5dd8f08644d5160aac73ea30bb482915cecb664b5e5907d1ff7995f19957c80d",
++      "tests": [
++        "oneSharedOriginalCanServeTwoFinancialTargetsAndUnlinkDoesNotDeleteIt",
++        "olderRestoreCanRemoveSharedAssetWhileRetiringNewReferenceWithoutErasingCash",
++        "reconnectionRejectsDifferentFileAndPreservesStableMediaIdentity",
++        "ocrCandidateIsDurableAndIncompleteWithoutKeepingImageOrWritingMoney",
++        "explicitlyRetainedOcrReceiptUsesSameMediaAndRefundCannotBecomeExpense"
++      ],
++      "assertionCalls": 35,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt",
++      "sha256": "d94102c4bb462ff7c303b28d10da21ddc634d0fac5b33e6a80cdb4d960be404c",
++      "tests": [
++        "populatedV2IsAdditivelyMigratedAndFinanceWorksThroughRoom"
++      ],
++      "assertionCalls": 10,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMoneyTest.kt",
++      "sha256": "40a48868ab3f9c70a9a6a3038b3a57981cede3a6744da24f9dbaad5009ef6b93",
++      "tests": [
++        "decimalMoneyNeverUsesFloatingPointRounding",
++        "excessPrecisionInvalidAmountsAndOverflowAreRejected",
++        "malformedCalendarDatesCannotBeSilentlyAdjusted",
++        "untouchedMinuteDisplayPreservesExactOccurrenceWhileEditsUseExplicitTime"
++      ],
++      "assertionCalls": 15,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePortableExportTest.kt",
++      "sha256": "22807f30432ed65ce34da0bc83841cbe7a71c8e5bc3a7b15be911aa0b4b6ff4b",
++      "tests": [
++        "csvProtectsTextFormulasAndKeepsNumericNegativeAdjustmentsNumeric",
++        "emptyPortableArchiveContainsTypedFactsAndSeparateReadableTables"
++      ],
++      "assertionCalls": 5,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceProvenanceV16Test.kt",
++      "sha256": "10a81d254cfd6c18060bf87cd5c03798b2c3524d14d45d331fb75c86eae1a0fd",
++      "tests": [
++        "sameOrderDoesNotCollapseDistinctPaymentsAndDiscoveryNeverCreatesCash",
++        "explicitDistinctIdentitiesResolvePotentialReferenceCollisionAndBindingIsDated",
++        "restoredIdentitiesCannotDisambiguateUntilExplicitlyApproved",
++        "olderRestoreRetiresEvidenceWithNewerIdentityAndBindingProofVersions",
++        "finalEditedDateMustBelongToCapturedBindingAndExplicitAdoptionUpdatesSession"
++      ],
++      "assertionCalls": 21,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePurchaseAllocationV16Test.kt",
++      "sha256": "abad78c3f03bab75021b78257ea8af2f2389f5cbc03ed7388297de5fd0fc434c",
++      "tests": [
++        "removingPurchaseAttributionRequiresExplicitReleaseOfRefundsAndNeverChangesCashOrEventCost",
++        "anotherEventOnSameLineCannotCoverThisEventsRefundAfterCorrection"
++      ],
++      "assertionCalls": 18,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt",
++      "sha256": "4ef53ee12a7e0e5a9cbb7d639455acd6cc760c7b9a56d7de5a96fd46c05e38a0",
++      "tests": [
++        "excludedStatisticsAreStillFactsAndPurposesExpireIndependently",
++        "preparedFactsDropOnlyExpiredFieldsWithoutReenteringCostProjection",
++        "eventGrantDoesNotDiscloseWholeSharedCashEntry",
++        "unknownLegacyShareNeverBecomesConfirmedZeroOnHome"
++      ],
++      "assertionCalls": 18,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt",
++      "sha256": "27f469c1a60dccdfa4004b8ec0be88727ecad716212e2133a0fa4656ba63c822",
++      "tests": [
++        "unknownPostingCannotBeExcludedUsingFutureOrPreAnchorCashDate",
++        "explicitOutsidePostingAndOtherAccountUnknownDoNotInvalidateButBackfillIntoRangeDoes",
++        "missingDateIntroducedAfterConfirmationIsIncompleteUntilExplicitOutsideEvidenceArrives",
++        "legacyScopeKeepsInclusiveAnchorAndOnlyRelevantEditsInvalidate"
++      ],
++      "assertionCalls": 25,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRecoveryV16Test.kt",
++      "sha256": "d03a47392fcc81a362d42eec67b605c1ac990ee81ddb7a7728f6e234cff8e8f0",
++      "tests": [
++        "transferVoidAndRecoveryRestoreBothLegsWithMonotonicRevisions",
++        "batchPreviewBindsPayloadAndConflictHasNoPartialCommit",
++        "successfulBatchCanRecoverBeforeAnUnrelatedNewEntry"
++      ],
++      "assertionCalls": 13,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt",
++      "sha256": "b3f4eea46b10644576b7e82e361305639ab64da231be11dabc6453d16a0432fe",
++      "tests": [
++        "durablePartialEditsResumeLaterWithoutMoneyAndSecondProposalDoesNotReplaceThem",
++        "explicitConfirmationIsAtomicAndReplayDoesNotProduceSecondEntry",
++        "staleEditorAndRestoreCannotConfirmOldCandidateOrReceipt",
++        "competingSurfaceConfirmationCannotPretendSavedEditsWerePosted",
++        "typedRefundRequiresExplicitReductionAndCreatesCashAndCostTogether",
++        "linkingAnAlreadyRecordedEntryOnlyAddsProvenanceAndNeverChangesCanonicalCash",
++        "visibleRefundCannotBeLinkedAsTransferOrAsUnrelatedOrdinaryIncome",
++        "cnyCandidateCannotBeLinkedToAnotherCurrency"
++      ],
++      "assertionCalls": 36,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt",
++      "sha256": "3a4c96280e747c411878d4172efbc98a89e55dfee5e8771966bb41fa1628bf52",
++      "tests": [
++        "shareGrantDoesNotInheritFieldsOrScopeFromHomeOrOtherShareGrants",
++        "changedFactRevocationExpiryAndRestoreAllRejectStaleSharePreview"
++      ],
++      "assertionCalls": 12,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt",
++      "sha256": "0e6e76a071e030f7fef3b2a6b21fc98849fa669059fc76c3402dfdd44db07659",
++      "tests": [
++        "committedTwoThousandRowsImportBalancesCostsNetFiltersAndRepeatAreConsistent"
++      ],
++      "assertionCalls": 28,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt",
++      "sha256": "7c3efd58983e5b2127b9193a7cbf41cf1dd224ead2263ab2609c3f5ad73817d6",
++      "tests": [
++        "T01_giftHasValueButNoOwnCashCostOrDebt",
++        "T02_repayableCreatesDebtAndRepaymentDoesNotConsumeTwice",
++        "T03_mixedGiftDebtAndPartialSettlementConserveAmounts",
++        "T04_unknownRelationshipIsNotZeroAndDoesNotInventDebt",
++        "T05_incompleteUnequalAllocationRetainsUnassignedPortion",
++        "T06_historicalResolutionClosesWorkWithoutManufacturingBankEvidence",
++        "T07_refundAndRebateBelongToActualMonthAndAllowNegativeBudgetUse",
++        "T08_duplicateConfirmationAndRestoreEpochCannotCreateSecondCash",
++        "T12_currencyNetAndLegacyAnchorDoNotChangeByAccountKind",
++        "positiveLegacyDebtNormalizesOpeningOnlyAndInternalRepaymentPreservesNet",
++        "negativeOpeningCannotBeConvertedTwiceAndNetExclusionIsExplicit",
++        "accountCreationAnchorsAndStaleMetadataKeepCanonicalHistoryIntact",
++        "settlementCannotExceedItsEventAllocationAfterRelinking",
++        "restorationRetiresPolicyAndSelfCanBeUsedAgain",
++        "T11_encryptedTypedPayloadRestoresOnAnotherDatabaseWithGrantsRevoked"
++      ],
++      "assertionCalls": 83,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt",
++      "sha256": "b7da84e4c25c2657407304bd2f0e629731ddd97dce42c67895a07a47919e247e",
++      "tests": [
++        "populatedV3PreservesDomainFinanceAnchorsAndBalanceAndAcceptsV4Semantics",
++        "v2ThroughV3ToV4KeepsOldPlanIdentityCaptureAndRevision"
++      ],
++      "assertionCalls": 16,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
++      "sha256": "d6a9e16f19a2cdfc8ea66695c9d0554218a1b1dab8e7cd3c679661d4b27d68b3",
++      "tests": [
++        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
++      ],
++      "assertionCalls": 9,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceWorkspaceV16Test.kt",
++      "sha256": "5994945f5c8d40333462c77808369e0eeac2d46048146b1099f0123daea72192",
++      "tests": [
++        "partialDraftDoesNotAffectCashAndConfirmIsAtomicIdempotent",
++        "invalidConfirmRollsBackAllCanonicalAndKeepsRecoverableDraft",
++        "continuousIncomeResetsRelationshipButPreservesLockedFieldsAndRejectsStaleEditor",
++        "transferDraftFailureCannotLeaveOneLegAndOldEpochCannotReplayReceipt",
++        "anchorPreviewBindsProposedContentAndDoesNotRewriteHistory",
++        "postedBasisNeverFallsBackToCashAndHistoricalInsertInvalidatesConclusion",
++        "reconfirmationUsesMonotonicOrderEvenWithIdenticalWallClock",
++        "cancellationAfterCommitCannotStrandAutosaveAtOldExpectedRevision"
++      ],
++      "assertionCalls": 51,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceCalendarStopsTest.kt",
++      "sha256": "ba4133263844ec3f1b0fc07aec92d80298cebd275ffe713eddf84d6cb4b805fd",
++      "tests": [
++        "releaseDocksAtOneStopAndVelocityMovesOnlyToNextAvailableStop"
++      ],
++      "assertionCalls": 6,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceFilterStateV16Test.kt",
++      "sha256": "214f33a854a30b6a2ba1966f19923b9208b00e9c044bd3e40c394027f7d8951f",
++      "tests": [
++        "processStatePreservesIndependentRangeAndNegativeAmountBoundsWithoutFinancialTotals",
++        "intervalDrilldownUsesExactOpenClosedBoundsAndKeepsPostingSeparateFromCash",
++        "actualAccountFilterKeepsEveryVisibleRunningBalanceIdenticalToCompleteRegister"
++      ],
++      "assertionCalls": 12,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt",
++      "sha256": "59132a0bd4c5cec75aa085901e5e0815690b8f7820c653d2cdd09aaf867545cb",
++      "tests": [
++        "insightsStartsWithItsOwnRangeAfterLedgerSelectedAllDates",
++        "establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets",
++        "transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid",
++        "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
++        "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
++      ],
++      "assertionCalls": 47,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt",
++      "sha256": "2cc7c2eca08855e35dfaf52998516fb533d1cf34326c659b32bad126b4f71f50",
++      "tests": [
++        "ticksAndJournalNotificationsDoNotRecomputeWhileFinancialEditsAndRevocationDo",
++        "restoreGateClearsHomeAndNewCollectorReadsRevokedRestoredGrants"
++      ],
++      "assertionCalls": 17,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    }
++  ],
++  "semanticAudit": "See TEST-AUDIT.md; counts and flags cannot prove test correctness",
++  "execution": "UNVERIFIED"
++}
+diff --git a/engineering/v16/static-result.json b/engineering/v16/static-result.json
+index 24d6ba49a92dcb70871fc5b1307cd36540795f66..ebead1af73bad07be7fa3ef8edeacb5d3c225aec 100644
+--- a/engineering/v16/static-result.json
++++ b/engineering/v16/static-result.json
+@@ -1,7 +1,7 @@
+ {
+   "check": "static-structure-only",
+   "status": "PASS",
+-  "kotlinFilesScanned": 403,
++  "kotlinFilesScanned": 406,
+   "registeredEntities": 75,
+   "errors": [],
+   "compilation": "UNVERIFIED"
+diff --git a/engineering/v16/test-ci-gates.py b/engineering/v16/test-ci-gates.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..bee3069fbb990b13e77e93589c33baa3368f595a
+--- /dev/null
++++ b/engineering/v16/test-ci-gates.py
+@@ -0,0 +1,118 @@
++"""Offline regression for the tracked-HEAD byte gate, using a disposable synthetic text repository."""
++import importlib.util, json, os, pathlib, shutil, stat, subprocess, unittest, uuid
++
++ROOT = pathlib.Path(__file__).resolve().parents[2]
++spec = importlib.util.spec_from_file_location("room_gate", pathlib.Path(__file__).with_name("verify-room-schema.py"))
++gate = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(gate)
++report_spec=importlib.util.spec_from_file_location("report_gate",pathlib.Path(__file__).with_name("verify-ci-tests.py"))
++report_gate=importlib.util.module_from_spec(report_spec)
++report_spec.loader.exec_module(report_gate)
++
++def remove_fixture(root):
++    resolved=root.resolve()
++    assert resolved.parent == (ROOT / "engineering/v16").resolve() and resolved.name.startswith(".ci-gate-test-")
++    def readonly_object(function, path, error):
++        candidate=pathlib.Path(path).resolve()
++        assert candidate.is_relative_to(resolved)
++        if not isinstance(error[1], PermissionError):
++            raise error[1]
++        # Git deliberately writes read-only loose objects. Windows requires clearing that flag
++        # before deleting our own synthetic repository; test assertions are never suppressed.
++        os.chmod(candidate, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
++        function(path)
++    shutil.rmtree(resolved, onerror=readonly_object)
++
++class CommittedByteGateTest(unittest.TestCase):
++    def setUp(self):
++        self.root = ROOT / "engineering/v16" / (".ci-gate-test-" + uuid.uuid4().hex)
++        self.root.mkdir()
++        self.git("init", "--quiet")
++        self.file = self.root / "sample.txt"  # This is not an official Room schema or a fabricated 5.json.
++        self.file.write_bytes(b"committed\n")
++        self.git("-c", "core.autocrlf=false", "add", "sample.txt")
++        self.commit()
++
++    def git(self, *args):
++        return subprocess.run(["git", *args], cwd=self.root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++
++    def commit(self):
++        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@local.invalid", "commit", "--quiet", "-m", "synthetic text")
++
++    def tearDown(self):
++        remove_fixture(self.root)
++
++    def test_identical_tracked_and_committed_bytes_pass(self):
++        self.assertEqual(b"committed\n", gate.committed_file(self.root, "sample.txt"))
++
++    def test_existing_but_untracked_is_rejected(self):
++        (self.root / "untracked.txt").write_bytes(b"not committed\n")
++        with self.assertRaises(subprocess.CalledProcessError):
++            gate.committed_file(self.root, "untracked.txt")
++
++    def test_staged_new_file_without_head_is_rejected(self):
++        (self.root / "staged.txt").write_bytes(b"staged only\n")
++        self.git("add", "staged.txt")
++        with self.assertRaises(subprocess.CalledProcessError):
++            gate.committed_file(self.root, "staged.txt")
++
++    def test_regenerated_change_and_staged_change_are_rejected(self):
++        self.file.write_bytes(b"regenerated difference\n")
++        with self.assertRaises(ValueError):
++            gate.committed_file(self.root, "sample.txt")
++        self.git("add", "sample.txt")
++        with self.assertRaises(ValueError):
++            gate.committed_file(self.root, "sample.txt")
++
++    def test_missing_generated_file_is_rejected(self):
++        self.file.unlink()
++        with self.assertRaises(FileNotFoundError):
++            gate.committed_file(self.root, "sample.txt")
++
++class ExecutedReportGateTest(unittest.TestCase):
++    def setUp(self):
++        self.root=ROOT / "engineering/v16" / (".ci-gate-test-reports-"+uuid.uuid4().hex)
++        self.root.mkdir()
++        self.commit="a"*40
++        self.xml=self.root / "app/build/test-results/testDebugUnitTest/TEST-synthetic.xml"
++        self.xml.parent.mkdir(parents=True)
++        self.xml.write_text('<testsuite><testcase classname="example.FixtureTest" name="works"/></testsuite>',encoding="utf-8")
++        inventory=self.root / "engineering/v16/review-fix-evidence/test-inventory.json"
++        inventory.parent.mkdir(parents=True)
++        inventory.write_text(json.dumps({"files":[{"file":"app/src/test/java/example/FixtureTest.kt","tests":["works"]}]}),encoding="utf-8")
++        self.metric=self.root / "app/build/reports/v16/testDebugUnitTest/synthetic-history-2000.json"
++        self.metric.parent.mkdir(parents=True)
++        self.data={"status":"PASS","commitSha":self.commit,"activeEntries":2000,"netMinor":-294950,
++                   **{key:1 for key in ("stageNanos","commitNanos","projectionAndFilterNanos","totalNanos","heapBeforeBytes","heapAfterBytes")}}
++        self.metric.write_text(json.dumps(self.data),encoding="utf-8")
++
++    def tearDown(self):
++        remove_fixture(self.root)
++
++    def test_complete_synthetic_report_is_accepted_by_report_parser(self):
++        self.assertEqual("PASS",report_gate.verify(self.root,self.commit)["status"])
++
++    def test_skipped_and_failed_cases_are_rejected(self):
++        for tag in ("skipped","failure"):
++            self.xml.write_text(f'<testsuite><testcase classname="example.FixtureTest" name="works"><{tag}/></testcase></testsuite>',encoding="utf-8")
++            self.assertEqual("FAIL",report_gate.verify(self.root,self.commit)["status"])
++
++    def test_wrong_commit_metrics_are_rejected(self):
++        self.data["commitSha"]="b"*40
++        self.metric.write_text(json.dumps(self.data),encoding="utf-8")
++        self.assertEqual("FAIL",report_gate.verify(self.root,self.commit)["status"])
++
++    def test_missing_metrics_and_missing_junit_are_rejected(self):
++        self.metric.unlink()
++        self.assertEqual("FAIL",report_gate.verify(self.root,self.commit)["status"])
++        self.xml.unlink()
++        self.assertEqual("FAIL",report_gate.verify(self.root,self.commit)["status"])
++
++if __name__ == "__main__":
++    result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(__import__(__name__)))
++    report=ROOT / "engineering/v16/review-fix-evidence/ci-gate-unit-tests.json"
++    report.parent.mkdir(parents=True,exist_ok=True)
++    report.write_text(json.dumps({"check":"offline-engineering-ci-gates","status":"PASS" if result.wasSuccessful() else "FAIL",
++        "cases":result.testsRun,"failures":len(result.failures),"errors":len(result.errors),
++        "fixtures":"Synthetic text Git repository and synthetic JUnit documents; not Android execution", "androidTests":"UNVERIFIED"},indent=2)+"\n",encoding="utf-8")
++    raise SystemExit(not result.wasSuccessful())
+diff --git a/engineering/v16/verify-ci-tests.py b/engineering/v16/verify-ci-tests.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f06412b481f301a877317fe1d761cf58631b7b43
+--- /dev/null
++++ b/engineering/v16/verify-ci-tests.py
+@@ -0,0 +1,53 @@
++"""Validate actual CI-produced JUnit XML and synthetic fixture results, never source-only coverage."""
++import json, os, pathlib, xml.etree.ElementTree as ET
++
++ROOT = pathlib.Path(__file__).resolve().parents[2]
++
++def verify(root, commit):
++    errors, cases = [], []
++    reports = list((root / "app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
++    for file in reports:
++        try:
++            cases.extend(ET.parse(file).getroot().iter("testcase"))
++        except (OSError, ET.ParseError) as error:
++            errors.append(f"Unreadable JUnit report {file.name}: {error}")
++    if not cases:
++        errors.append("No executed JUnit testcases were found")
++    failed = [case for case in cases if case.find("failure") is not None or case.find("error") is not None]
++    skipped = [case for case in cases if case.find("skipped") is not None]
++    if failed or skipped:
++        errors.append(f"JUnit contains {len(failed)} failed and {len(skipped)} skipped cases")
++    try:
++        inventory = json.loads((root / "engineering/v16/review-fix-evidence/test-inventory.json").read_text(encoding="utf-8"))
++        actual = {}
++        for case in cases:
++            actual[case.get("classname")] = actual.get(case.get("classname"), 0) + 1
++        for row in inventory["files"]:
++            if not row["tests"]:
++                continue
++            name = row["file"].split("/java/", 1)[1][:-3].replace("/", ".")
++            if actual.get(name, 0) < len(row["tests"]):
++                errors.append(f"Missing executed cases for {name}: expected at least {len(row['tests'])}, found {actual.get(name, 0)}")
++    except (OSError, ValueError, KeyError) as error:
++        errors.append(f"Test inventory unavailable: {error}")
++    try:
++        metric = json.loads((root / "app/build/reports/v16/testDebugUnitTest/synthetic-history-2000.json").read_text(encoding="utf-8"))
++        if not commit or metric.get("commitSha") != commit:
++            errors.append("Fixture metrics are not from this CI commit")
++        if metric.get("status") != "PASS" or metric.get("activeEntries") != 2000 or metric.get("netMinor") != -294950:
++            errors.append("Fixture results are missing, failed or inconsistent")
++        for key in ("stageNanos", "commitNanos", "projectionAndFilterNanos", "totalNanos", "heapBeforeBytes", "heapAfterBytes"):
++            if not isinstance(metric.get(key), int) or metric[key] < 0:
++                errors.append(f"Missing measured fixture resource field: {key}")
++    except (OSError, ValueError) as error:
++        errors.append(f"Actual synthetic fixture metrics unavailable: {error}")
++    return {"check": "actual-ci-junit-and-fixture", "status": "FAIL" if errors else "PASS", "commit": commit,
++            "junitFiles": len(reports), "testCases": len(cases), "failed": len(failed), "skipped": len(skipped), "errors": errors}
++
++if __name__ == "__main__":
++    result = verify(ROOT, os.environ.get("GITHUB_SHA"))
++    output = ROOT / "engineering/v16/ci-logs/executed-tests-check.json"
++    output.parent.mkdir(parents=True, exist_ok=True)
++    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
++    print(json.dumps(result, ensure_ascii=False))
++    raise SystemExit(result["status"] != "PASS")
+diff --git a/engineering/v16/verify-room-schema.py b/engineering/v16/verify-room-schema.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b3a2cbb3a30d84ef096b8f621c8028a96c3571f
+--- /dev/null
++++ b/engineering/v16/verify-room-schema.py
+@@ -0,0 +1,86 @@
++"""Strict committed official Room schema gate. A bootstrap export never makes this gate green."""
++import argparse, hashlib, json, pathlib, re, subprocess
++
++ROOT = pathlib.Path(__file__).resolve().parents[2]
++BASE = "245e1475cd1d47a4205ab49f75d5e06d22de701c"
++SCHEMA = "app/schemas/com.qq.closie.life.data.database.LifeDatabase"
++
++def git_bytes(root, *args):
++    return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.PIPE)
++
++def committed_file(root, relative):
++    """Require both index tracking and HEAD content; staged-only/untracked files do not qualify."""
++    git_bytes(root, "ls-files", "--error-unmatch", "--", relative)
++    committed = git_bytes(root, "show", f"HEAD:{relative}")
++    actual = (root / relative).read_bytes()
++    if actual != committed:
++        raise ValueError(f"Generated bytes differ from committed HEAD: {relative}")
++    git_bytes(root, "diff", "HEAD", "--exit-code", "--", relative)
++    return committed
++
++def verify(root, history_only=False):
++    errors, hashes = [], {}
++    def check(label, action):
++        try:
++            action()
++        except (OSError, ValueError, KeyError, TypeError, AssertionError, subprocess.CalledProcessError) as error:
++            errors.append(f"{label}: {error}")
++
++    for version in range(1, 5):
++        relative = f"{SCHEMA}/{version}.json"
++        def historical(relative=relative):
++            original = git_bytes(root, "show", f"{BASE}:{relative}")
++            head = git_bytes(root, "show", f"HEAD:{relative}")
++            assert head == original, "published schema was changed in Git history"
++            actual = (root / relative).read_bytes()
++            assert actual.replace(b"\r\n", b"\n") == original.replace(b"\r\n", b"\n"), "published schema changed on disk"
++            git_bytes(root, "ls-files", "--error-unmatch", "--", relative)
++            git_bytes(root, "diff", "HEAD", "--exit-code", "--", relative)
++            hashes[str(version)] = hashlib.sha256(original).hexdigest()
++        check(f"Historical Room {version}", historical)
++
++    def versions():
++        db = (root / "app/src/main/java/com/qq/closie/life/data/database/LifeDatabase.kt").read_text(encoding="utf-8-sig")
++        assert re.search(r"version\s*=\s*5\s*,", db), "Room database must be v5"
++        migration = (root / "app/src/main/java/com/qq/closie/life/data/database/FinanceV16Migration.kt").read_text(encoding="utf-8-sig")
++        assert "Migration(4, 5)" in migration
++        chain = (root / "app/src/main/java/com/qq/closie/life/data/database/LifeMigrations.kt").read_text(encoding="utf-8-sig")
++        assert "arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, FinanceV16Migration)" in chain
++        backup = (root / "app/src/main/java/com/qq/closie/data/backup/BackupManager.kt").read_text(encoding="utf-8-sig")
++        assert re.search(r"BACKUP_FORMAT_VERSION\s*=\s*5\b", backup)
++        assert re.search(r"BACKUP_SCHEMA_VERSION\s*=\s*1\b", backup)
++        importer = (root / "app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt").read_text(encoding="utf-8-sig")
++        assert 'manifest.formatVersion >= 5' in importer and 'finance.has("v16")' in importer
++        cipher = (root / "app/src/main/java/com/qq/closie/data/backup/EncryptedBackupEnvelope.kt").read_text(encoding="utf-8-sig")
++        assert re.search(r"const val VERSION\s*=\s*2\b", cipher)
++    check("Database/migration/backup version contract", versions)
++
++    if not history_only:
++        def official():
++            raw = committed_file(root, f"{SCHEMA}/5.json")
++            schema = json.loads(raw)
++            assert schema["formatVersion"] == 1 and schema["database"]["version"] == 5
++            assert re.fullmatch(r"[0-9a-f]{32}", schema["database"]["identityHash"])
++            historical = json.loads(git_bytes(root, "show", f"{BASE}:{SCHEMA}/4.json"))
++            design = json.loads((root / "engineering/v16/schema-v5.json").read_text(encoding="utf-8-sig"))
++            expected = {entity["tableName"] for entity in historical["database"]["entities"]} | {table["name"] for table in design["tables"]}
++            actual = [entity["tableName"] for entity in schema["database"]["entities"]]
++            assert len(actual) == len(set(actual)) and set(actual) == expected, "official entity set differs from migration contract"
++            hashes["5"] = hashlib.sha256(raw).hexdigest()
++            git_bytes(root, "diff", "HEAD", "--exit-code", "--", SCHEMA)
++        check("Committed KSP official Room 5 (bootstrap must fail until committed)", official)
++    return {"check": "published-history" if history_only else "strict-committed-official-room-schema",
++            "status": "FAIL" if errors else "PASS", "errors": errors, "schemaSha256": hashes,
++            "versions": {"roomDatabase": 5, "backupFormat": 5, "backupManifestSchema": 1, "aeadEnvelope": 2},
++            "androidRuntime": "UNVERIFIED"}
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--history-only", action="store_true")
++    parser.add_argument("--report", type=pathlib.Path, default=pathlib.Path("engineering/v16/ci-logs/room-schema-check.json"))
++    args = parser.parse_args()
++    result = verify(ROOT, args.history_only)
++    args.report.parent.mkdir(parents=True, exist_ok=True)
++    args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
++    print(json.dumps(result, ensure_ascii=False))
++    raise SystemExit(result["status"] != "PASS")
+
+base-commit: 9a0acf0da84544750bd37f1e15e5220c4a899a95
+-- 
+2.53.0.windows.3
+
