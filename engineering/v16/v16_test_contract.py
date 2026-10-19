@@ -4,7 +4,7 @@ import hashlib, json, pathlib, re, subprocess
 R2 = "245e1475cd1d47a4205ab49f75d5e06d22de701c"
 MINIMUM_BASE = "78950821129f522d17359a7ec3bca2232c120601"
 CONTRACT = "engineering/v16/test-minimum-contract.json"
-CONTRACT_SHA256 = "303247088a925db57f864fd154b3279aad3716290eab9ecdc567a8909ad5f9cc"
+CONTRACT_SHA256 = "e6f340a4fb3caf723cb80d7cd78fc8ca2445130c0d57ed17f3dac0d3fc01116a"
 
 def contract_digest(data):
     canonical=json.dumps(data,ensure_ascii=False,sort_keys=True,separators=(",", ":")).encode("utf-8")

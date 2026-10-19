@@ -36,7 +36,9 @@
         "thereIsOnlyOneProductRootAndNoObsoleteShell",
         "projectionsCannotOwnDomainStorageOrDependOnClosetCalendar",
         "galleryCopyBackendIsNotExposedByTheCompositionRoot",
-        "debugIdentityCannotOccupyTheReleaseUpdateChain"
+        "debugIdentityCannotOccupyTheReleaseUpdateChain",
+        "economicDraftDeleteAllowanceIsLimitedToApprovedAssociationQueries",
+        "permanentCanonicalDeletesAndReplaceRemainRejected"
       ]
     },
     {

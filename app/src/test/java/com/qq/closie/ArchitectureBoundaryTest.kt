@@ -8,6 +8,28 @@ import org.junit.Test
 class ArchitectureBoundaryTest {
     private val app = sequenceOf(File("."), File("app")).first { File(it, "src/main/java/com/qq/closie").isDirectory }
     private val source = File(app, "src/main/java/com/qq/closie")
+    private val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
+        "finance_rule_conditions", "finance_rule_actions", "finance_draft_tags",
+        "finance_evidence_proposals", "finance_grant_events", "finance_draft_expected", "finance_grant_entries", "finance_review_expected")
+    private val economicDraftChildren = setOf("finance_economic_draft_funding", "finance_economic_draft_shares")
+    private fun financeWriteViolations(text:String):List<String> {
+        val failures=mutableListOf<String>()
+        if(Regex("@Delete\\b").containsMatchIn(text)) failures+="@Delete"
+        if(text.contains("OnConflictStrategy.REPLACE")) failures+="REPLACE"
+        val queries=Regex("@Query\\(\\s*\"([^\"]+)\"\\s*\\)").findAll(text).toList()
+        Regex("DELETE\\s+FROM\\s+[`\"]?(finance_\\w+)",RegexOption.IGNORE_CASE).findAll(text).forEach { deletion ->
+            val table=deletion.groupValues[1].lowercase()
+            if(table in economicDraftChildren) {
+                // These are mutable editor associations, not canonical funding or shares.
+                // Permit only the four actual DAO queries used by draft save / atomic restore.
+                val query=queries.singleOrNull {deletion.range.first in it.range}?.groupValues?.get(1)
+                    ?.trim()?.replace(Regex("\\s+")," ")
+                val approved=listOf("DELETE FROM $table","DELETE FROM $table WHERE draftId = :id")
+                if(approved.none {it.equals(query,ignoreCase=true)}) failures+=deletion.value
+            } else if(table !in allowedDeletes) failures+=deletion.value
+        }
+        return failures
+    }
     @Test fun financeOwnsTypedFactsInsideTheExistingDatabase() {
         val owner = File(source, "life/finance")
         owner.walkTopDown().filter { it.extension == "kt" }.forEach {
@@ -21,17 +43,10 @@ class ArchitectureBoundaryTest {
             assertFalse(it.name, text.contains("financeDao("))
             assertFalse(it.name, text.contains("life.data.database"))
         }
-        val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
-            "finance_rule_conditions", "finance_rule_actions", "finance_draft_tags",
-            "finance_evidence_proposals", "finance_grant_events", "finance_draft_expected", "finance_grant_entries", "finance_review_expected")
         (File(source, "life/data/database/dao").listFiles()!!.filter { it.name.startsWith("Finance") } +
             File(source, "life/finance").walkTopDown().filter { it.extension == "kt" }.toList()).forEach { file ->
             val dao = file.readText()
-            assertFalse(file.name, dao.contains("@Delete"))
-            assertFalse(file.name, dao.contains("OnConflictStrategy.REPLACE"))
-            Regex("DELETE\\s+FROM\\s+(finance_\\w+)", RegexOption.IGNORE_CASE).findAll(dao).forEach {
-                assertTrue(file.name + ": " + it.value, it.groupValues[1].lowercase() in allowedDeletes)
-            }
+            assertEquals(file.name,emptyList<String>(),financeWriteViolations(dao))
         }
         assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 5"))
         val version = Regex("version\\s*=\\s*(\\d+)").find(
@@ -43,6 +58,23 @@ class ArchitectureBoundaryTest {
         assertEquals("life_os.db", com.qq.closie.life.data.database.LifeDatabase.DATABASE_NAME)
         assertEquals(com.qq.closie.navigation.LifeOsRoute.FINANCE,
             com.qq.closie.ui.lifeos.drawer.LifeModules.find("finance").route)
+    }
+    @Test fun economicDraftDeleteAllowanceIsLimitedToApprovedAssociationQueries() {
+        for(table in economicDraftChildren) {
+            assertTrue(financeWriteViolations("@Query(\"DELETE FROM $table\")").isEmpty())
+            assertTrue(financeWriteViolations("@Query(\"DELETE FROM $table WHERE draftId = :id\")").isEmpty())
+            assertFalse(financeWriteViolations("@Query(\"DELETE FROM $table WHERE revision < :revision\")").isEmpty())
+            assertFalse(financeWriteViolations("execSQL(\"DELETE FROM $table\")").isEmpty())
+        }
+    }
+    @Test fun permanentCanonicalDeletesAndReplaceRemainRejected() {
+        for(table in listOf("finance_accounts","finance_entries","finance_transfers","finance_events",
+            "finance_event_entries","finance_economics","finance_funding","finance_shares","finance_economic_drafts")) {
+            for(sql in listOf("DELETE FROM $table","DELETE FROM `$table` WHERE id = :id","delete from $table"))
+                assertFalse(sql,financeWriteViolations("@Query(\"$sql\")").isEmpty())
+        }
+        assertFalse(financeWriteViolations("@Delete suspend fun erase(row: FinanceEntryEntity)").isEmpty())
+        assertFalse(financeWriteViolations("@Insert(onConflict = OnConflictStrategy.REPLACE)").isEmpty())
     }
     @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
         val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
