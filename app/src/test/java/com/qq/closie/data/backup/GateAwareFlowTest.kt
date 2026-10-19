@@ -270,9 +270,9 @@ class GateAwareFlowTest {
     fun whileBlockedTheDurableSourceIsNotSubscribedAtAll() = runTest {
         life.createEntity(entityType = "seed")
 
-        var subscriptions = 0
+        val subscriptions = java.util.concurrent.atomic.AtomicInteger(0)
         val flow = gateAwareFlow {
-            subscriptions++
+            subscriptions.incrementAndGet()
             life.observeByType("note")
         }
 
@@ -282,23 +282,24 @@ class GateAwareFlowTest {
         // at all, so the whole block runs on `IO`.
         runBlocking(Dispatchers.IO) {
             val job = launch { flow.collect { } }
-            awaitTrue("block was never invoked") { subscriptions == 1 }
+            try {
+                awaitTrue("block was never invoked") { subscriptions.get() == 1 }
 
-            RestoreStartupGate.beginRestore()
-            awaitTrue("the gate never entered RESTORING") { RestoreStartupGate.isRestoring }
-            delay(TRACKER_SETTLE_MS)
-            // Still one: the gate closed without re-subscribing. The `READY -> RESTORING` emission did
-            // reach the `flatMapLatest`, and its branch chose `emptyFlow`, so `block` was not invoked
-            // again.
-            assertThat(subscriptions).isEqualTo(1)
+                awaitTrue("the restore never acquired the gate") { RestoreStartupGate.beginRestore() }
+                awaitTrue("the gate never entered RESTORING") { RestoreStartupGate.isRestoring }
+                delay(TRACKER_SETTLE_MS)
+                // Still one: the gate closed without re-subscribing. The `READY -> RESTORING` emission did
+                // reach the `flatMapLatest`, and its branch chose `emptyFlow`, so `block` was not invoked
+                // again.
+                assertThat(subscriptions.get()).isEqualTo(1)
 
-            RestoreStartupGate.endRestoreReady()
-            // Re-subscribed: this is what proves the policy is `flatMapLatest` and not `filter`. With
-            // `filter` the block would still have run exactly once, and the durable subscription would
-            // never have been dropped across the swap.
-            awaitTrue("block was not re-invoked after the gate reopened") { subscriptions == 2 }
+                RestoreStartupGate.endRestoreReady()
+                // Re-subscribed: this is what proves the policy is `flatMapLatest` and not `filter`. With
+                // `filter` the block would still have run exactly once, and the durable subscription would
+                // never have been dropped across the swap.
+                awaitTrue("block was not re-invoked after the gate reopened") { subscriptions.get() == 2 }
 
-            job.cancel()
+            } finally { job.cancelAndJoin() }
         }
     }
 
@@ -350,72 +351,68 @@ class GateAwareFlowTest {
                     if (rows.any { it.id == "after-restore" }) resumedEmission.countDown()
                 }
             }
+            try {
+                assertThat(firstEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
 
-            assertThat(firstEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
-
-            // firstEmission is counted down from inside the downstream collector.
-            // emitUnderBusinessLease still owns its emission lease until that collector
-            // returns, so wait for the delivery to be fully complete before asking a
-            // restore to take ownership.
-            awaitTrue("the first emission lease was never released") {
-                RestoreStartupGate.activeBusinessOps == 0
-            }
-
-            // ---- The gate closes underneath the running collector. ----
-            assertThat(RestoreStartupGate.beginRestore()).isTrue()
-            db.lifeEntityDao().insert(
-                com.qq.closie.life.core.LifeEntityEntity(
-                    id = "during-restore",
-                    entityType = "stable",
-                    createdAt = 1L,
-                    updatedAt = 1L,
-                    deletedAt = null,
-                    revision = 1L
+                // firstEmission is counted down from inside the downstream collector.
+                // emitUnderBusinessLease still owns its emission lease until that collector
+                // returns. Acquire ownership with beginRestore itself: observing a zero
+                // lease count does not reserve the gate against another Room emission.
+                awaitTrue("the restore never acquired the gate") { RestoreStartupGate.beginRestore() }
+                db.lifeEntityDao().insert(
+                    com.qq.closie.life.core.LifeEntityEntity(
+                        id = "during-restore",
+                        entityType = "stable",
+                        createdAt = 1L,
+                        updatedAt = 1L,
+                        deletedAt = null,
+                        revision = 1L
+                    )
                 )
-            )
-            delay(TRACKER_SETTLE_MS)
+                delay(TRACKER_SETTLE_MS)
 
-            // ---- The gate reopens; a row written while blocked is now visible. ----
-            db.lifeEntityDao().insert(
-                com.qq.closie.life.core.LifeEntityEntity(
-                    id = "after-restore",
-                    entityType = "stable",
-                    createdAt = 2L,
-                    updatedAt = 2L,
-                    deletedAt = null,
-                    revision = 1L
+                // ---- The gate reopens; a row written while blocked is now visible. ----
+                db.lifeEntityDao().insert(
+                    com.qq.closie.life.core.LifeEntityEntity(
+                        id = "after-restore",
+                        entityType = "stable",
+                        createdAt = 2L,
+                        updatedAt = 2L,
+                        deletedAt = null,
+                        revision = 1L
+                    )
                 )
-            )
-            RestoreStartupGate.endRestoreReady()
+                RestoreStartupGate.endRestoreReady()
 
-            // The collector was never restarted, and it did receive the post-restore state — so it
-            // survived the block rather than having been terminated by it.
-            assertThat(resumedEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
-            job.cancel()
+                // The collector was never restarted, and it did receive the post-restore state — so it
+                // survived the block rather than having been terminated by it.
+                assertThat(resumedEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+                job.cancelAndJoin()
 
-            // ### The core assertion: nothing arrived *while the gate was closed*
-            //
-            // Note carefully what is and is not claimed. `during-restore` **does** legitimately appear
-            // in the final post-restore snapshot: after the gate reopened, `flatMapLatest` re-invoked
-            // `block()` and issued a fresh full query, and that query correctly returns every row,
-            // including the one written while the gate was shut. A coherent read after the restore is
-            // exactly what should happen, and asserting `during-restore` never appears anywhere would be
-            // asserting a bug.
-            //
-            // What must never happen is a delivery *during* the closed window. So the assertion is on
-            // the sequence, not on its contents: the emission carrying `during-restore` must be the one
-            // that also carries `after-restore`, i.e. a single, complete, post-restore snapshot — never
-            // a partial one that saw the restore-era row but not the final state.
-            val emissionWithRestoreEraRow = received.filterIndexed { _, rows -> rows.contains("during-restore") }
-            // Exactly one such emission, and it is the last one: the fresh post-restore query.
-            assertThat(emissionWithRestoreEraRow).hasSize(1)
-            assertThat(emissionWithRestoreEraRow.single()).isEqualTo(received.last())
-            // And that snapshot is the complete post-restore world, not a half-applied one.
-            assertThat(received.last()).containsAtLeast("after-restore", "during-restore", seeded.id)
+                // ### The core assertion: nothing arrived *while the gate was closed*
+                //
+                // Note carefully what is and is not claimed. `during-restore` **does** legitimately appear
+                // in the final post-restore snapshot: after the gate reopened, `flatMapLatest` re-invoked
+                // `block()` and issued a fresh full query, and that query correctly returns every row,
+                // including the one written while the gate was shut. A coherent read after the restore is
+                // exactly what should happen, and asserting `during-restore` never appears anywhere would be
+                // asserting a bug.
+                //
+                // What must never happen is a delivery *during* the closed window. So the assertion is on
+                // the sequence, not on its contents: the emission carrying `during-restore` must be the one
+                // that also carries `after-restore`, i.e. a single, complete, post-restore snapshot — never
+                // a partial one that saw the restore-era row but not the final state.
+                val emissionWithRestoreEraRow = received.filterIndexed { _, rows -> rows.contains("during-restore") }
+                // Exactly one such emission, and it is the last one: the fresh post-restore query.
+                assertThat(emissionWithRestoreEraRow).hasSize(1)
+                assertThat(emissionWithRestoreEraRow.single()).isEqualTo(received.last())
+                // And that snapshot is the complete post-restore world, not a half-applied one.
+                assertThat(received.last()).containsAtLeast("after-restore", "during-restore", seeded.id)
 
-            // The pre-restore snapshot that preceded the block saw only the seeded row: proof the
-            // restore-era write had not been observed before the gate reopened.
-            assertThat(received.first()).containsExactly(seeded.id)
+                // The pre-restore snapshot that preceded the block saw only the seeded row: proof the
+                // restore-era write had not been observed before the gate reopened.
+                assertThat(received.first()).containsExactly(seeded.id)
+            } finally { job.cancelAndJoin() }
         }
     }
 
@@ -626,17 +623,15 @@ class GateAwareFlowTest {
             val collector = launch(Dispatchers.IO) {
                 gateAwareFlow { life.observeByType("idle") }.collect { received.countDown() }
             }
-            assertThat(received.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+            try {
+                assertThat(received.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
 
-            // The collector has processed its emission and is now simply waiting for the next one.
-            awaitTrue("the emission lease was never released") {
-                RestoreStartupGate.activeBusinessOps == 0
-            }
-            // A restore can start while a UI screen merely has the flow open.
-            assertThat(RestoreStartupGate.beginRestore()).isTrue()
-            collector.cancel()
-            collector.join()
-            RestoreStartupGate.endRestoreReady()
+                // The collector has processed its emission and is now simply waiting for the next one.
+                // A restore can start while a UI screen merely has the flow open.
+                awaitTrue("the idle collector never permitted restore") { RestoreStartupGate.beginRestore() }
+                collector.cancelAndJoin()
+                RestoreStartupGate.endRestoreReady()
+            } finally { collector.cancelAndJoin() }
         }
     }
 

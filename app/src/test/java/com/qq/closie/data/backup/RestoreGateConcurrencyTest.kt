@@ -313,30 +313,38 @@ class RestoreGateConcurrencyTest {
         val barrier = CyclicBarrier(threads)
         val violations = AtomicInteger(0)
         val restoreWon = AtomicInteger(0)
+        val restoreAttempted = CountDownLatch(1)
+        val leases = AtomicInteger(0)
+        val refused = AtomicInteger(0)
 
         val jobs = (0 until threads).mapIndexed { index, _ ->
             async(Dispatchers.IO) {
                 barrier.await(5, TimeUnit.SECONDS)
                 if (index == 0) {
                     // The would-be restorer.
-                    if (RestoreStartupGate.beginRestore()) {
-                        restoreWon.incrementAndGet()
-                        // If it won, no lease may be obtainable, and none may be counted.
-                        if (RestoreStartupGate.activeBusinessOps != 0) violations.incrementAndGet()
-                        if (runCatching { RestoreStartupGate.withBusinessAccess { 1 } }.isSuccess) {
-                            violations.incrementAndGet()
+                    try {
+                        if (RestoreStartupGate.beginRestore()) {
+                            restoreWon.incrementAndGet()
+                            // If it won, no lease may be obtainable, and none may be counted.
+                            if (RestoreStartupGate.activeBusinessOps != 0) violations.incrementAndGet()
+                            if (runCatching { RestoreStartupGate.withBusinessAccess { 1 } }.isSuccess) {
+                                violations.incrementAndGet()
+                            }
                         }
-                    }
+                    } finally { restoreAttempted.countDown() }
                 } else {
                     // A would-be business operation. It either takes the lease (and then the restore
                     // must have lost) or is refused (the restore won first) — never both.
-                    val acquired = runCatching {
+                    try {
                         RestoreStartupGate.withBusinessAccess {
+                            leases.incrementAndGet()
                             if (RestoreStartupGate.isRestoring) violations.incrementAndGet()
-                            Thread.sleep(2)
+                            // Keep this production lease until the actual restore attempt finishes.
+                            // Checking after release would falsely reject a subsequent legal restore.
+                            assertThat(restoreAttempted.await(5, TimeUnit.SECONDS)).isTrue()
+                            if (RestoreStartupGate.isRestoring) violations.incrementAndGet()
                         }
-                    }.isSuccess
-                    if (acquired && RestoreStartupGate.isRestoring) violations.incrementAndGet()
+                    } catch (_: RestoreRecoveryPendingException) { refused.incrementAndGet() }
                 }
             }
         }
@@ -345,6 +353,14 @@ class RestoreGateConcurrencyTest {
         assertThat(violations.get()).isEqualTo(0)
         assertThat(restoreWon.get()).isAtMost(1)
         assertThat(RestoreStartupGate.activeBusinessOps).isEqualTo(0)
+        assertThat(leases.get() + refused.get()).isEqualTo(threads - 1)
+        if (restoreWon.get() == 1) {
+            assertThat(leases.get()).isEqualTo(0)
+            assertThat(refused.get()).isEqualTo(threads - 1)
+        } else {
+            assertThat(leases.get()).isEqualTo(threads - 1)
+            assertThat(refused.get()).isEqualTo(0)
+        }
     }
 
     /**
@@ -561,24 +577,26 @@ class RestoreGateConcurrencyTest {
         // comparison is now a property of a single observed object rather than a hope about two
         // collectors' relative timing.
         val seen = java.util.Collections.synchronizedList(mutableListOf<WardrobeSnapshot>())
-        val started = CountDownLatch(1)
+        val firstSeen = CountDownLatch(1)
+        val restoredSeen = CountDownLatch(1)
         val collector = launch(Dispatchers.IO) {
             hooked.snapshot.collect { snap ->
-                started.countDown()
                 seen.add(snap)
+                if(snap.items.map {it.id}==listOf("gen-1-item") && snap.wearEvents.isEmpty()) firstSeen.countDown()
+                if(snap.items.map {it.id}==listOf("gen-2-item") && snap.wearEvents.map {it.id}==listOf("gen-2-wear")) restoredSeen.countDown()
             }
         }
-        assertThat(started.await(5, TimeUnit.SECONDS)).isTrue()
-        delay(TRACKER_SETTLE_MS)
-
-        // The exact call a completed restore makes while the gate is still closed.
-        RestoreStartupGate.beginRestore()
-        hooked.reloadFromDiskForRecoveryChecked()
-        RestoreStartupGate.endRestoreReady()
-
-        delay(TRACKER_SETTLE_MS)
-        collector.cancel()
-        collector.join()
+        try {
+            assertThat(firstSeen.await(5, TimeUnit.SECONDS)).isTrue()
+            // The exact call a completed restore makes while the gate is still closed.
+            assertThat(RestoreStartupGate.beginRestore()).isTrue()
+            hooked.reloadFromDiskForRecoveryChecked()
+            RestoreStartupGate.endRestoreReady()
+            assertThat(restoredSeen.await(5, TimeUnit.SECONDS)).isTrue()
+        } finally {
+            collector.cancel()
+            collector.join()
+        }
 
         assertThat(seen).isNotEmpty()
 

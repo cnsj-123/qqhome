@@ -34,17 +34,26 @@ class FinanceBackupRecoveryTest {
         return bank to entry
     }
     @Test fun snapshotAndJsonArchiveCarryEveryFinanceTableExactly() = runTest {
-        seed()
+        val (_,entry)=seed()
+        repo.workspace.setPostingDate(FinanceCommandToken("synthetic-backup-posting",0),entry.id,entry.revision,
+            100L,FinanceTimePrecision.INSTANT,"合成已知入账")
         val saved = LifeBackupApplier.snapshot(db)
         assertEquals(readFinanceSnapshot(db, includeIntake = true), saved.finance)
-        assertEquals(27, saved.toInsertOrder().size)
+        val tableNames=saved.toInsertOrder().map {it.first}
+        assertEquals("Duplicate serialized table",tableNames.size,tableNames.toSet().size)
         val decoded = BackupValidator.gson.fromJson(BackupValidator.gson.toJson(saved), LifeBackupPayload::class.java)
+        assertEquals(saved,decoded)
+        assertEquals(saved.toInsertOrder(),decoded.toInsertOrder())
         assertEquals(saved.finance, decoded.finance)
+        assertTrue(saved.finance!!.v4!!.changes.isNotEmpty())
+        assertEquals(100L,saved.finance!!.v16!!.entryTimingRows.single {it.entryId==entry.id}.postedAt)
         FinanceIntegrity.validate(requireNotNull(decoded.finance))
         val expectedTables = db.openHelper.writableDatabase.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('android_metadata','room_master_table')").use {
             val names = mutableSetOf<String>(); while (it.moveToNext()) names += it.getString(0); names
         }
-        assertEquals(expectedTables, saved.toInsertOrder().map { it.first }.toSet())
+        assertTrue("Missing tables: ${expectedTables-tableNames.toSet()}",(expectedTables-tableNames.toSet()).isEmpty())
+        assertTrue("Unexpected tables: ${tableNames.toSet()-expectedTables}",(tableNames.toSet()-expectedTables).isEmpty())
+        assertEquals(expectedTables,tableNames.toSet())
     }
     @Test fun recoveryReplaysFinanceWhileKeepingRetiredCanonicalRows() = runTest {
         val (bank, entry) = seed(); val before = LifeBackupApplier.snapshot(db)

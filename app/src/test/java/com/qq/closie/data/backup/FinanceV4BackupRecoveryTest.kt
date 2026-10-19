@@ -48,7 +48,9 @@ class FinanceV4BackupRecoveryTest : FinanceRoomTest() {
         try {
             LifeBackupApplier.restoreSnapshot(target, archived)
             val restored = readFinanceSnapshot(target, true)
-            assertEquals(saved.finance, restored)
+            val epoch=assertFinanceFactsAfterRestore(requireNotNull(saved.finance),restored,0)
+            val targetRepo=FinanceRepository(target){clock}
+            assertStaleFinanceCommandRejected(targetRepo,paid.id,0)
             assertEquals(2, restored.v4!!.links.size)
             assertEquals(1, restored.v4!!.activeLinks.size)
             assertEquals(1, restored.v4!!.links.count { it.voidedAt != null })
@@ -62,7 +64,14 @@ class FinanceV4BackupRecoveryTest : FinanceRoomTest() {
             assertEquals(1, restored.v4!!.staging.size)
             FinanceIntegrity.validate(restored)
             LifeBackupApplier.restoreSnapshot(target, archived)
-            assertEquals(restored, readFinanceSnapshot(target, true))
+            val retried=readFinanceSnapshot(target,true)
+            assertFinanceFactsAfterRestore(restored,retried,epoch)
+            assertFinanceFactsAfterRestore(requireNotNull(saved.finance),retried,epoch)
+            assertStaleFinanceCommandRejected(targetRepo,paid.id,epoch)
+            assertEquals(1,retried.entries.count { it.voidedAt == null })
+            assertEquals(restored.entries,retried.entries)
+            assertEquals(restored.v4!!.links,retried.v4!!.links)
+            FinanceIntegrity.validate(retried)
         } finally { target.close() }
     }
 

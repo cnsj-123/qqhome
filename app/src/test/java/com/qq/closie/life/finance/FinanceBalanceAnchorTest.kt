@@ -169,7 +169,8 @@ class FinanceBalanceAnchorTest {
         assertEquals(anchor, restored.accounts.single().createdAt)
         assertEquals(anchor, restored.accounts.single().balanceAnchorAt)
         assertEquals(FinanceMoney.parse("9800"), FinanceProjection.balance(restored.accounts.single(), restored.entries))
-        assertEquals(savedBusiness, restored)
+        val epoch=assertFinanceFactsAfterRestore(savedBusiness,restored,0)
+        assertStaleFinanceCommandRejected(repo,restored.entries.first().id,0)
         assertEquals(2, restored.entries.size)
         assertTrue(restored.entries.all { it.voidedAt == null })
         // Full backup state includes intake/config/history, unlike the ordinary business snapshot.
@@ -178,5 +179,14 @@ class FinanceBalanceAnchorTest {
         // Recovery retains the journal, including later changes; entity equality checks IDs,
         // objectId, operation, authority and both revisions, not just the number of rows.
         assertEquals(journalBeforeRestore.associateBy { it.id }, restoredV4.changes.associateBy { it.id })
+        LifeBackupApplier.restoreSnapshot(db,saved)
+        val retried=repo.snapshot()
+        assertFinanceFactsAfterRestore(restored,retried,epoch)
+        assertFinanceFactsAfterRestore(savedBusiness,retried,epoch)
+        assertStaleFinanceCommandRejected(repo,retried.entries.first().id,epoch)
+        assertEquals(anchor,retried.accounts.single().balanceAnchorAt)
+        assertEquals(980_000L,FinanceProjection.balance(retried.accounts.single(),retried.entries))
+        assertEquals(restored.entries,retried.entries)
+        assertEquals(restoredV4,requireNotNull(LifeBackupApplier.snapshot(db).finance?.v4))
     }
 }
