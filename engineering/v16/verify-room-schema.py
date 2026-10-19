@@ -26,6 +26,7 @@ def verify(root, history_only=False):
         except (OSError, ValueError, KeyError, TypeError, AssertionError, subprocess.CalledProcessError) as error:
             errors.append(f"{label}: {error}")
 
+    check("Pinned R2 commit history", lambda: git_bytes(root, "cat-file", "-e", f"{BASE}^{{commit}}"))
     for version in range(1, 5):
         relative = f"{SCHEMA}/{version}.json"
         def historical(relative=relative):
@@ -70,7 +71,7 @@ def verify(root, history_only=False):
             git_bytes(root, "diff", "HEAD", "--exit-code", "--", SCHEMA)
         check("Committed KSP official Room 5 (bootstrap must fail until committed)", official)
     return {"check": "published-history" if history_only else "strict-committed-official-room-schema",
-            "status": "FAIL" if errors else "PASS", "errors": errors, "schemaSha256": hashes,
+            "status": "FAIL" if errors else "PASS", "comparisonBase": BASE, "errors": errors, "schemaSha256": hashes,
             "versions": {"roomDatabase": 5, "backupFormat": 5, "backupManifestSchema": 1, "aeadEnvelope": 2},
             "androidRuntime": "UNVERIFIED"}
 

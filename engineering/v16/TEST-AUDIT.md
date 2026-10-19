@@ -1,6 +1,8 @@
 # V16 测试源码自审（2026-10-19）
 
-范围：R2以来新增或修改的32个Kotlin测试文件，含本轮3个新文件；逐文件清单、方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有Kotlin测试运行仍UNVERIFIED。
+范围：R2以来新增或修改的32个Kotlin测试文件，含第一轮3个新文件；第二轮再补4个日期精度方法，当前148个方法。逐文件清单、完整类名/方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有Kotlin测试运行仍UNVERIFIED。
+
+第二轮固定最低契约另覆盖全部既有96个测试源文件、638个方法，详见test-minimum-contract.json；最低契约由规范化SHA-256锁定，独立于动态清单，删除文件/方法、重命名或暂存删除均明确FAIL。JUnit按完整类名和方法/显式参数调用名逐项核验，不能按重复用例数量填覆盖。该固定覆盖要求不代表对其余R2文件新增产品语义审查，也不代表638个方法已执行。
 
 | 测试文件/类 | 检查内容与真实边界 | 自审说明 |
 |---|---|---|
@@ -33,7 +35,7 @@
 | FinanceCalendarStopsTest | 纯停靠状态函数 | 不能替代系统Back/IME/厂商手势 |
 | FinanceFilterStateV16Test | Bundle条件恢复、完整账扫描后筛选、posted精确区间 | 同行余额与完整算术一致，cash与posted不混 |
 | FinanceSmokeTest | 真实Compose→VM→Repository→Room，账户/流水/转账/筛选/还款 | 操作前等真实loaded，不操作真实设备；Compose未运行 |
-| FinanceReconciliationScopeV16Test | 本轮新增：范围外/未知/早于cash/后补/anchor/void/算法升级 | 无法定位时book与difference均null；真实保存结论再作废验证失效，不把模拟saved当持久命令 |
+| FinanceReconciliationScopeV16Test | 范围外/未知/早于cash/后补/anchor/void/算法升级；第二轮再补4个DATE精度方法 | 同日/anchor重叠时book与difference均null；精度变化、保存资料不足后补精度重核、全日在范围外与范围内，真实保存结论验证失效 |
 | FinanceSyntheticHistoryV16Test | 本轮新增：真实已提交2000条fixture→导入/DAO/投影/重复/过滤 | SHA对照、独立逐笔加减oracle、最终金额；指标仅在实际运行时写出，无假性能PASS |
 | FinanceHomeProjectionV16Test | 本轮新增：时钟/相关依赖/到期/撤销/门禁/恢复 | 控制时间和通知调度，财务快照来自真实Room，计数器委托真实生产成本计算；100tick不重算 |
 
@@ -60,4 +62,4 @@ D1/D2/D3/D4主要由FinanceV16Contract/Workspace/Insights/Purchase/Recovery覆�
 
 F44/F46/F48真实宿主、MLKit离线与vivo/IME/权限/Back仍DEVICE UNVERIFIED。40项功能映射沿用feature-matrix.md，不把源码测试清单写成40项验收通过。
 
-本地已实际运行的另9例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节校验、4例JUnit/指标报告解析，使用合成文本仓库和报告，不是上述144个Kotlin方法。首次Windows运行失败在只读Git对象清理；已加限定合成目录的只读标志处理，原断言不变，最终9例通过。未添加/下载任何Android工具链或YAML依赖；Actions实际解析和执行待Owner推送。
+本地已实际运行的另22例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节、10例JUnit/指标、7例最低契约及删除/历史检查，使用合成文本仓库和报告，不是上述148个Kotlin方法。第一轮Windows只读Git对象清理已修；第二轮辅助用例两行错位已归位，原断言保留，全套22例通过。未添加/下载任何Android工具链或YAML依赖；Actions实际解析和执行待Owner推送。

@@ -1,6 +1,7 @@
 {
   "check": "published-history",
   "status": "PASS",
+  "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
   "errors": [],
   "schemaSha256": {
     "1": "af8a75debb4670529fbe2ec2e40b37acbdda7e00d3851f86dd42e19937666db1",

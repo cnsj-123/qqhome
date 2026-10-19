@@ -1,0 +1,1218 @@
+{
+  "version": 1,
+  "basedOnCommit": "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319",
+  "reportNameRule": "Exact full classname + method; parameterized mappings enumerate every required JUnit invocation; no suffix stripping",
+  "files": [
+    {
+      "file": "app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt",
+      "className": "com.qq.closie.AppearanceRepositoryTest",
+      "tests": [
+        "preset and custom survive a new repository and original preserves custom",
+        "reset order and deleting a new theme preserve legacy preference fields",
+        "legacy stays derived when unrelated palettes are saved deleted and explicitly duplicated",
+        "invalid save leaves the previously persisted palette untouched"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt",
+      "className": "com.qq.closie.AppearanceViewModelTest",
+      "tests": [
+        "restore previews original but cancel keeps the entire saved appearance",
+        "restore is persisted only after save and retains custom values",
+        "custom survives a preset save and is available in a new editor",
+        "applying and reselecting legacy palette does not append a named copy",
+        "invalid hex retains last valid preview and cannot persist"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt",
+      "className": "com.qq.closie.ArchitectureBoundaryTest",
+      "tests": [
+        "financeOwnsTypedFactsInsideTheExistingDatabase",
+        "financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay",
+        "captureHasNoUserLevelPhysicalDeleteApi",
+        "appearanceLoadingRendersBeforeBusinessStorageIsObtained",
+        "migrationSchemaFixturesAreDebugOnly",
+        "thereIsOnlyOneProductRootAndNoObsoleteShell",
+        "projectionsCannotOwnDomainStorageOrDependOnClosetCalendar",
+        "galleryCopyBackendIsNotExposedByTheCompositionRoot",
+        "debugIdentityCannotOccupyTheReleaseUpdateChain"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/CalendarMathTest.kt",
+      "className": "com.qq.closie.CalendarMathTest",
+      "tests": [
+        "every month grid is a multiple of 7 cells",
+        "grid contains exactly the days of the month",
+        "leap year february has 29 days",
+        "month starting on sunday has no leading blanks",
+        "month starting on monday has one leading blank",
+        "first non-null cell is always the first of the month"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/CalendarStateTest.kt",
+      "className": "com.qq.closie.CalendarStateTest",
+      "tests": [
+        "empty days and content outside the displayed month keep the month empty",
+        "each projection content kind independently suppresses empty state"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/DraftStoreTest.kt",
+      "className": "com.qq.closie.DraftStoreTest",
+      "tests": [
+        "ootd draft save load delete",
+        "outfit draft save load delete",
+        "deleting an unknown draft returns null",
+        "saving a draft with an existing id updates it instead of duplicating",
+        "drafts survive a store re-instantiation",
+        "a restored backup without draft files yields empty draft lists",
+        "orphans only deletes images referenced nowhere",
+        "orphans keeps everything when other drafts still reference it"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/FunctionEffectsTest.kt",
+      "className": "com.qq.closie.FunctionEffectsTest",
+      "tests": [
+        "old or malformed preferences retain recommended effects",
+        "effects decode independently and are bounded without changing semantic colors"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/HomeStateTest.kt",
+      "className": "com.qq.closie.HomeStateTest",
+      "tests": [
+        "production provider has no demo media facts history or future",
+        "missing source keeps presentation identity and motion contract"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/LifeDrawerStructureTest.kt",
+      "className": "com.qq.closie.LifeDrawerStructureTest",
+      "tests": [
+        "financeOpensItsOwnedLedgerInsteadOfGenericPlaceholder",
+        "quickActionsKeepRealIntakeAndCalendarRoutes",
+        "restoredNamesKeepStableIdsAndGalleryAppearsOnce",
+        "swipeWaitsForHorizontalIntentAndLetsVerticalScrollWin"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/LifeOsNavigationTest.kt",
+      "className": "com.qq.closie.LifeOsNavigationTest",
+      "tests": [
+        "fastSwitchingIsLimitedToModuleRoots",
+        "rootAndRealModulesHaveOneCatalog",
+        "sharedContentKeepsItsIntakeSemantics",
+        "editAndAddStillBelongToCloset",
+        "ordinaryLaunchHasNoCommand"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/LifeTopLevelNavigationTest.kt",
+      "className": "com.qq.closie.LifeTopLevelNavigationTest",
+      "tests": [
+        "repeatedModuleVisitsAlwaysReturnToHome",
+        "replacingOrRepeatingTopLevelDoesNotAccumulateModules",
+        "appearanceKeepsItsSettingsParent",
+        "repeatedCloseCallbacksCannotPopTheHomeBase",
+        "missingHomeIsRepairedBeforeOpeningOrReturning"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/MeasurementParserTest.kt",
+      "className": "com.qq.closie.MeasurementParserTest",
+      "tests": [
+        "parses chinese single values",
+        "parses english fields",
+        "detects inch and mm units",
+        "parses decimals",
+        "ignores lines without a known label",
+        "letter size table picks the preferred column",
+        "numeric size table picks the preferred column",
+        "missing preferred size leaves the table unmatched",
+        "rows with a wrong column count are not guessed",
+        "partially broken tables keep only the reliable rows",
+        "blank preferred size falls back to single values"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/MonthGridTest.kt",
+      "className": "com.qq.closie.MonthGridTest",
+      "tests": [
+        "Sunday starts in the first cell without leading blanks",
+        "Monday and Saturday starts have correct leading offsets",
+        "leap year and century boundaries retain the correct month length",
+        "previous and next cross year boundaries and are inverse"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/PhotoStackInteractionTest.kt",
+      "className": "com.qq.closie.PhotoStackInteractionTest",
+      "tests": [
+        "short drags cancel while threshold crossings cycle in either direction"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ProductLinkExtractorTest.kt",
+      "className": "com.qq.closie.ProductLinkExtractorTest",
+      "tests": [
+        "extracts a plain url",
+        "extracts url from a taobao share message",
+        "extracts multiple urls",
+        "strips trailing chinese punctuation",
+        "keeps query params intact",
+        "returns nothing when there is no url",
+        "short taobao links detect as taobao",
+        "marketplace hosts detect their platforms",
+        "share text title strips boilerplate and platform markers",
+        "share text keeps the platform and url even without a title",
+        "share text without a url yields empty preview",
+        "anti-bot titles are rejected",
+        "real product titles are accepted"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ThemeCollectionTest.kt",
+      "className": "com.qq.closie.ThemeCollectionTest",
+      "tests": [
+        "legacy custom derives one compatibility entry from fields even after an old accidental serialization",
+        "collection decoding preserves valid siblings and rejects invalid colors",
+        "black white transparent and noisy images produce usable deterministic palettes"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ThemeValidationTest.kt",
+      "className": "com.qq.closie.ThemeValidationTest",
+      "tests": [
+        "invalid HEX is rejected and edit retains last valid preview",
+        "V11 preset sources are retained as five semantic inputs",
+        "custom light dark and mid-tone palettes keep text and buttons readable"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/BackupManagerTest.kt",
+      "className": "com.qq.closie.data.backup.BackupManagerTest",
+      "tests": [
+        "backupV2_containsLifeData",
+        "backupV2_containsManagedMedia",
+        "backupV2_restoresCaptureReferenceAndPlan",
+        "backupV2_restoresTagsAndRelations",
+        "backupV2_restoresManagedMediaToCurrentFilesDir",
+        "backupV2_rewritesManagedPathForCurrentDevice",
+        "backupV2_afterRestoreDatabaseRemainsUsable",
+        "backupV1_stillRestoresClosie",
+        "backupV1_doesNotEraseExistingLifeData",
+        "wardrobeOnlyArchive_isBuiltOnlyByTheTestFixture_andRestoresWithoutTouchingLifeOs",
+        "completeExport_alwaysCarriesTheLifeOsSection",
+        "completeExport_carriesEveryLifeOsTable",
+        "export_isASingleConsistentSnapshot",
+        "export_failsWhenAManagedMediaFileIsMissing",
+        "backupV2_failureDoesNotHalfRestore"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/DelegatingRestoreFs.kt",
+      "className": "com.qq.closie.data.backup.DelegatingRestoreFs",
+      "tests": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/EncryptedBackupEnvelopeTest.kt",
+      "className": "com.qq.closie.data.backup.EncryptedBackupEnvelopeTest",
+      "tests": [
+        "T11_portableRoundTripUsesFreshSaltAndAuthenticatesAllBytes",
+        "malformedHeaderIsRejectedBeforeAnUnboundedKdfCanRun",
+        "authenticatedSegmentsRejectTruncationDuplicationOrderAndTrailingBytes"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/EncryptedBackupManagerV16Test.kt",
+      "className": "com.qq.closie.data.backup.EncryptedBackupManagerV16Test",
+      "tests": [
+        "wrongPasswordAndLateCorruptionCannotReachCanonicalRestoreAndScratchIsRemoved",
+        "verifiedManagerArchiveRestoresTypedUnknownToAnotherDatabaseAndRevokesGrant",
+        "inaccessibleOutputReportsFailureWithoutChangingFactsAndErasesPassword"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/FailingRestoreFs.kt",
+      "className": "com.qq.closie.data.backup.FailingRestoreFs",
+      "tests": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt",
+      "className": "com.qq.closie.data.backup.FinanceBackupRecoveryTest",
+      "tests": [
+        "snapshotAndJsonArchiveCarryEveryFinanceTableExactly",
+        "recoveryReplaysFinanceWhileKeepingRetiredCanonicalRows",
+        "legacyPayloadWithoutFinanceCannotEraseExistingMoneyRecords",
+        "restoringAnIndependentArchiveKeepsBothIdentitiesForSameDescriptiveNames",
+        "corruptTransferArchiveFailsWithoutChangingExistingFinance"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt",
+      "className": "com.qq.closie.data.backup.FinanceV4BackupRecoveryTest",
+      "tests": [
+        "jsonArchiveRestoresActiveAndHistoricalLinksExpectedRulesProposalsAndStagingExactly",
+        "restoringOlderSnapshotRetiresNewRelationsAndRetainsBothHistoricalIdentities",
+        "preV4FinanceRestoreRetiresRelationsWithoutErasingTheirHistoryOrPendingIntake"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt",
+      "className": "com.qq.closie.data.backup.GateAwareFlowTest",
+      "tests": [
+        "lifeRepositoryFlow_suspendsWhileBlockedAndResumesWithFreshData",
+        "referenceAndPlanFlows_areEquallyGated",
+        "whileBlockedTheDurableSourceIsNotSubscribedAtAll",
+        "longLivedCollector_survivesTheBlockAndSeesOnlyCoherentSnapshots",
+        "blockedMutation_leavesDiskStateFlowAndImagesUntouched",
+        "afterTheGateReopens_theHeldInstanceWritesAgain",
+        "aSlowCollectorHoldsTheEmissionLease_andBeginRestoreIsRefusedNotBlocked",
+        "anIdleCollectorHoldsNoLease"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/LocalWardrobeRepositoryRecoveryTest.kt",
+      "className": "com.qq.closie.data.backup.LocalWardrobeRepositoryRecoveryTest",
+      "tests": [
+        "retryRequired_blocksTheRepositoryInsteadOfReadingHalfRestoredData",
+        "healthyRecovery_opensTheRepositoryOnTheUsersData",
+        "ordinaryLaunch_opensTheRepository",
+        "corruptMarker_blocksTheRepositoryAndPreservesEvidence",
+        "aLaterSuccessfulStart_clearsTheBlock"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/RestoreCoordinatorTest.kt",
+      "className": "com.qq.closie.data.backup.RestoreCoordinatorTest",
+      "tests": [
+        "dbCommitThenFilesystemFailure_leavesAllThreeSurfacesOnTheOldVersion",
+        "healthCheckFailureAfterSwap_revertsClosetAndDatabaseTogether",
+        "staleParkingSlot_refusesAsFailureWithoutStickyBlockingOrTouchingAnything",
+        "committedClosetCleanupFailure_neverRollsBackAndKeepsTheCommit",
+        "committedMediaCleanupFailure_neverRollsBackAndKeepsTheCommit",
+        "committedCleanupFailure_markerStaysAtOrPastTheCommitPoint_soTheNextStartOnlyCleansUp",
+        "missingMediaFile_failsBeforeAnyDurableMutation",
+        "maliciousArchiveFileName_isRefusedDuringStaging",
+        "preCommitFailure_leavesRepositoryMemoryOnTheOldVersion",
+        "committedRestore_publishesTheNewWardrobeIntoTheRepository",
+        "startupRecovery_afterFilesSwapped_revertsClosetAndLeavesDatabaseAlone",
+        "startupRecovery_whenMarkerLagsBehindTheSwap_stillReverts",
+        "startupRecovery_fromDbCommitting_revertsBothHalvesAndIsIdempotent",
+        "startupRecovery_fromDbCommitting_withoutDatabase_repairsClosetAndKeepsMarker",
+        "markerPathSquatter_doesNotDefeatTheMarkerWrite",
+        "markerWriteFailure_abortsBeforeAnyUndecidableStateIsReached",
+        "requiresDatabaseRecovery_isExactlyTheThreeStatesThatFollowTheTransaction",
+        "requiresDatabaseRecovery_isFormatDependentInExactlyOneState",
+        "requiresDatabaseRecovery_healthCheckingIsFormatDependent",
+        "requiresLifeMediaRecovery_isExactlyTheStatesWhereTheSwapCanHaveHappened",
+        "requiresLifeMediaRecovery_neverContradictsTheDatabasePredicate",
+        "missingRecoveryEvidence_firesForEveryMissingPieceWhateverTheFlagSays",
+        "missingRecoveryEvidence_neverDemandsRollbackMetadataFromATerminalMarker",
+        "missingRecoveryEvidence_asksOnlyForWhatRecoveryWouldActuallyUse",
+        "closetRevert_coversTheSwapOnwardsButNeverCommitsOrPreparing",
+        "recoveryWithoutDatabase_revertsClosetButKeepsTheMarkerForALaterStart",
+        "secondStartWithDatabase_finishesTheRestoreAndClearsTheMarker",
+        "thirdCallAfterCompletedRecovery_isAGenuineNoOp",
+        "filesystemPassThenDatabasePassInOneRecovery_neverLosesTheCloset",
+        "corruptMarker_isNeverTreatedAsNoMarker_andKeepsEveryArtefact",
+        "corruptMarker_doesNotReplayTheDatabaseEither",
+        "markerAndSnapshot_roundTripThroughAtomicJson",
+        "corruptSnapshot_isReportedAsCorruptNotAbsent",
+        "rollbackWhenClosetDidNotExistBefore_removesThePublishedCloset",
+        "rollbackWhenMediaDidNotExistBefore_removesThePublishedMedia",
+        "preparingState_neverDeletesTheLiveCloset",
+        "closetRenameMidway_whenLiveAndStageAreGone_restoresTheParkedTree",
+        "closetSwapDoneButMarkerLagging_stillRevertsToTheParkedTree",
+        "mediaRenameMidway_whenLiveMediaIsGone_restoresBothSurfaces",
+        "mediaSwapDoneButMarkerLagging_stillRevertsToTheParkedTree",
+        "v1MarkerInHealthChecking_neverTouchesDatabaseOrMedia",
+        "v2MarkerInHealthChecking_replaysThePreRestoreSnapshot",
+        "requiresDatabaseRecovery_dependsOnBothStateAndIncludesLifeOs",
+        "closetRollbackRenameFailure_keepsEvidenceAndRetriesCleanly",
+        "mediaRollbackRenameFailure_keepsEvidenceAndRetriesCleanly",
+        "failedDelete_doesNotCountAsARollback",
+        "dbReplayFailure_keepsSnapshotAndParkedTreesThenSucceedsOnRetry",
+        "committedCleanupFailure_keepsTheNewDataAndRetriesCleanup",
+        "committedCleanup_removesArtefactsBeforeTheMarker",
+        "park_whenTheOriginalWasExpectedButIsGone_refusesInsteadOfFabricatingAnEmptyOldDir",
+        "park_movesTheLiveTreeAsideWhenItIsActuallyThere",
+        "park_whenTheParkingSlotIsAlreadyOccupied_refusesToMergeTwoGenerations",
+        "park_whenNoOriginalButParkingSlotAlreadyExists_refusesAndPreservesIt",
+        "park_whenNoOriginalWasDeclaredButALiveTreeIsPresent_refuses",
+        "park_whenThereWasGenuinelyNoOriginal_isANoOp",
+        "recoverFilesystemOnly_concludesAMarkerWithNothingOutstanding_andRemovesIt",
+        "recoverFilesystemOnly_keepsTheMarkerAndSnapshotWhenTheDatabaseHalfIsOutstanding",
+        "recoverFilesystemOnly_treatsACorruptMarkerAsRetryNotAsCleanSlate",
+        "recoverFilesystemOnly_withNoMarker_reportsNoWork",
+        "dbCommittingMarkerWithoutLifeOsFlag_isStillTreatedAsNeedingDatabaseRecovery",
+        "contradictoryDbCommittingMarker_withCompleteV2Evidence_recoversDbClosetAndMediaTogether",
+        "contradictoryDbCommittingMarker_missingMediaEvidence_failsClosedBeforeMutation",
+        "completeLookingFlagWithMissingMediaEvidence_alsoFailsClosedBeforeMutation",
+        "recover_withAnUnusableSnapshot_abortsBeforeTouchingTheCloset",
+        "recover_withACorruptSnapshot_abortsAndKeepsTheEvidence",
+        "recover_withAUsableSnapshot_rollsBackBothSurfacesAndConcludes",
+        "committedCleanupFailure_leavesTheMarkerSoTheLeftoverCanBeFoundAgain",
+        "successfulCleanup_verifiablyRemovesTheMarker",
+        "compensationWithAnUnreplayableDatabase_keepsTheEvidenceAndDoesNotClaimSuccess",
+        "compensationFailure_throughRestore_keepsEvidenceAndFailClosesTheWholeProcess",
+        "compensationWithDbReplayFailure_throughRestore_doesNotConsumeFilesystemEvidence"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt",
+      "className": "com.qq.closie.data.backup.RestoreGateConcurrencyTest",
+      "tests": [
+        "nestedLeases_countUpAndBackToZero",
+        "leaseIsReleasedWhenTheBodyThrows",
+        "beginRestore_isRefusedWhileABusinessLeaseIsHeld",
+        "leasesCannotBeAcquiredWhileRestoring",
+        "stickyBlock_refusesBothLeasesAndOwnership",
+        "concurrentBeginRestore_hasExactlyOneWinner",
+        "beginRestore_neverSucceedsWhileAnyLeaseIsHeld",
+        "businessOpCount_returnsToZeroUnderConcurrentContention",
+        "wardrobeWrite_inFlight_blocksBeginRestore",
+        "recoveryReload_neverShowsACrossGenerationWardrobeToALongLivedObserver",
+        "lifeOsWrite_isRefusedWhileRestoring_andSucceedsAfter",
+        "captureAndMediaWrites_areRefusedWhileRestoring",
+        "refusedCaptureWrite_leavesNoPartialRow",
+        "repositoryTransaction_blocksBeginRestoreForItsWholeDuration",
+        "inFlightEmission_racingBeginRestore_isNotDelivered"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/RestoreRecoveryManagerTest.kt",
+      "className": "com.qq.closie.data.backup.RestoreRecoveryManagerTest",
+      "tests": [
+        "filesystemPass_completesBeforeReturn",
+        "noMarker_neverOpensTheDatabase",
+        "pendingMarker_reachesTheDatabaseBeforeReturning",
+        "aThrowingDatabaseProvider_doesNotEscape",
+        "retryRequired_leavesTheGateBlocked_soNoRepositoryCanRead",
+        "corruptMarker_blocksTheGateAndKeepsTheEvidence",
+        "completedRecovery_marksTheGateReady",
+        "dbCommittedMarker_isFullyRecoveredBeforeTheGateOpens",
+        "aThrowingProvider_stillRepairsTheFilesystemHalf",
+        "corruptSnapshot_leavesTheParkedTreesUntouched",
+        "failedDatabaseReplay_leavesTheParkedTreesUntouched",
+        "fullRollbackWithCleanupFailure_leavesADurableRolledBackMarker",
+        "rolledBackMarkerWithCleanupFailure_stillOpensTheGate",
+        "committedMarkerWithCleanupFailure_stillOpensTheGate",
+        "nonTerminalMarkerWithUnfinishedRecovery_staysBlocked"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/RestoreStartupGateLifecycleTest.kt",
+      "className": "com.qq.closie.data.backup.RestoreStartupGateLifecycleTest",
+      "tests": [
+        "restoring_isEnteredBeforeTheFirstDurableMutation",
+        "whileRestoring_heldInstancesRefuseBusinessWork",
+        "committedRestore_handsTheGateBackReadyWithMemoryAlreadyCoherent",
+        "compensationSuccess_handsTheGateBackReady",
+        "compensationFailure_sticksAtBlockedAndNothingCanReopenIt",
+        "twoConcurrentRestores_onlyOneAcquiresAndTheLoserWritesNoMarker",
+        "terminalMarkerPending_businessIsReadyButANewRestoreIsRefused",
+        "beginRestore_refusesWhenNotReadyAndIsIdempotentlyReleasable",
+        "anUnbalancedLeaseReleaseCannotSilentlyMoveTheGate",
+        "aThrowingBusinessOperationStillReleasesItsLeaseExactlyOnce",
+        "imageStore_refusesToWriteIntoClosieWhileRestoring",
+        "draftStore_refusesItsWholeReadModifyWriteWhileRestoring",
+        "backupExport_holdsTheGateSoRestoreCannotStartInsideIt",
+        "backupExport_reportsGateRefusalAsResultFailureNeverAsAThrow",
+        "exportCsv_isLeasedAsOneOperation"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/capture/ExternalIntentRouterTest.kt",
+      "className": "com.qq.closie.life.capture.ExternalIntentRouterTest",
+      "tests": [
+        "taobaoShare_routesToProductImport",
+        "jdLink_routesToProductImport",
+        "ordinaryWebPage_routesToReference",
+        "zhihuAnswer_routesToReference",
+        "blogPostWithSurroundingText_extractsUrlAndRoutesToReference",
+        "xiaohongshuTutorial_routesToReference_notProduct",
+        "xiaohongshuShortLink_routesToReference",
+        "douyinTutorial_routesToReference_notProduct",
+        "douyinShortLink_routesToReference",
+        "textWithoutUrl_routesToCapture",
+        "blankText_routesToCaptureRatherThanCrashing",
+        "productLookalikeDomain_routesToReference"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/capture/ShareRouterTest.kt",
+      "className": "com.qq.closie.life.capture.ShareRouterTest",
+      "tests": [
+        "no url at all routes to plain text",
+        "an ordinary article link routes to the web library",
+        "a product link routes to the product importer",
+        "a real taobao share message still routes to the product importer",
+        "a real article share message routes to the web library",
+        "product host suffixes match subdomains but not lookalikes",
+        "host extraction normalises case and www",
+        "urlIn returns the embedded url or null",
+        "xiaohongshu and douyin are not product hosts",
+        "a xiaohongshu note routes to the reference library",
+        "a douyin tutorial routes to the reference library",
+        "shopping platforms still route to the wardrobe"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/data/LifeContainerStartupGateTest.kt",
+      "className": "com.qq.closie.life.data.LifeContainerStartupGateTest",
+      "tests": [
+        "lifeDatabase_isReachableWhileTheGateIsBlocked",
+        "everyBusinessAccessor_refusesWhileTheGateIsBlocked",
+        "alreadyHeldRepository_refusesOnceTheGateClosesAfterItWasConstructed",
+        "webMetadataReader_isNotGated_becauseItTouchesNoUserData",
+        "everyBusinessAccessor_opensOnceTheGateIsReady"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/data/LifeDatabaseNameTest.kt",
+      "className": "com.qq.closie.life.data.LifeDatabaseNameTest",
+      "tests": [
+        "databaseName_isLifeOsDb_theNameV02AlreadyUsed",
+        "lifeContainer_usesTheSameNameAsTheDatabaseClass",
+        "databaseName_isNotTheStaleLifeDbValue"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/data/database/LifeDatabaseMigrationTest.kt",
+      "className": "com.qq.closie.life.data.database.LifeDatabaseMigrationTest",
+      "tests": [
+        "migrate1To2_keepsExistingCaptureRows",
+        "migrate1To2_keepsLifeEntitiesAndTheirRevisions",
+        "migrate1To2_newTablesAcceptRows",
+        "migrate1To2_lifeEntityIdIndexesAreUnique",
+        "migrate1To2_duplicateLifeEntityIdIsRejected",
+        "migrate1To2_originalCaptureIdIndexIsUnique",
+        "migrate1To2_duplicateOriginalCaptureIdIsRejected_butNullsAreFine",
+        "migratedSchema_matchesFreshlyCreatedSchema"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAssistantProviderTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceAssistantProviderTest",
+      "tests": [
+        "T09_defaultOffAndSeparatePurposeScopeStopProviderBeforeData",
+        "T10_inFlightRevocationAndHostileResultCannotWriteOrExpandScope"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceAutomationTest",
+      "tests": [
+        "allowlistPaymentEvidenceAndAmountAmbiguityProduceOnlyTypedProposals",
+        "sourceKeyDiscoveryIsIdempotentRejectAndSnoozeNeverCreateTruth",
+        "visibleConflictIsStagedAndCannotCreateSecondTruth",
+        "visibleRefundCannotBeConfirmedAsOrdinaryIncomeOrWithoutOriginalEvent",
+        "confirmationCreatesExactlyOneCanonicalResultAndOneRelationWithProposalAuthority",
+        "snoozedProposalCanConfirmOnceAndFailedConfirmationKeepsProposalUnchanged",
+        "rulesSortByPriorityThenIdFirstScalarWinsAndTagsMergeInStableOrder"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceBalanceAnchorTest",
+      "tests": [
+        "backfilledExpenseRemainsCanonicalSearchableAndInHistoricalStatistics",
+        "inflowBeforeAnchorIsHistoryWhileAtAndAfterAnchorAffectBalance",
+        "transferUsesEachAccountAnchorWithoutChangingItsAtomicFactOrF1Totals",
+        "correctingOccurredAtAcrossAnchorChangesOnlyTheBalanceProjection",
+        "editingOrArchivingAccountDoesNotMoveItsOpeningBalanceAnchor",
+        "backupRecoveryPreservesAnchorAndBackfilledCanonicalRows"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCalculatorTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceCalculatorTest",
+      "tests": [
+        "exactArithmeticAndPrecedence",
+        "rejectsRoundingOverflowBadInputAndExecutableText"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCategoryTreeTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceCategoryTreeTest",
+      "tests": [
+        "rulePathsNormalizeAndResolveEveryLevelWithinItsParent",
+        "missingAmbiguousBrokenOrCyclicPathsNeverGuessANode",
+        "deepPathsAndDescendantsRemainSafeForCyclesAndMissingParents"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceDiscoveryHistoryTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceDiscoveryHistoryTest",
+      "tests": [
+        "later ordinary notifications do not erase payment results completing asynchronously",
+        "each source is bounded and clear rejects late callbacks"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceEconomicDraftV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceEconomicDraftV16Test",
+      "tests": [
+        "incompleteDraftSurvivesRecreationAndBackupWithoutCreatingFinancialFacts",
+        "explicitCommitConsumesExactDraftVersionAndReplayCreatesOnlyOneNonCashEvent",
+        "legacyEventChangingAfterDraftStartsRejectsConversionAndKeepsDraft",
+        "explicitReimbursementTemplateKeeps500Cash50CostAnd450ReceivableThroughTwoReceipts",
+        "reimbursementSplitsAcrossFundingAndRejectsTooManySharesBeforeReplacingDraft"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceExpectedTasksV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceExpectedTasksV16Test",
+      "tests": [
+        "unknownPlanPartialReceiptExplicitEndingAndRestoreDoNotInventMoneyOrReopenTask",
+        "duplicateTargetAndStalePlanEditAreRejectedAtomically",
+        "closedCumulativeTargetsWithEqualClockArePresentedSeparatelyAndNeverAdded"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceImportRepositoryTest",
+      "tests": [
+        "confirmedXlsxBatchCreatesOnlyRealFlowsFeeAndHierarchyThenUndoRetiresAllSemantics",
+        "csvSameFileIdempotencyWithinFileAndExistingCanonicalDuplicatesNeedExplicitOverride",
+        "currentBalanceAnchorKeepsBackfilledEntriesInHistoryWithoutChangingCurrentBalance",
+        "lateCanonicalFailureRollsBackEntriesRelationsJournalAndStagingAsOneBatch",
+        "importedBlankNotesStayBlankAndRepeatedSourceStillRequiresDuplicateReview",
+        "importUndoRetainsLaterMediaRelationsAndDoesNotArchiveAnActivelyBoundAccount",
+        "undoPreservesAccountBindingEvenWhenAllImportedCashCanBeRetired",
+        "undoKeepsLaterEditedOrLinkedImportedEntriesAndTheirLiveRelations"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceImportReviewTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceImportReviewTest",
+      "tests": [
+        "ordinaryRowsDefaultSelectAndHundredsOfKnownIssueRowsNeedOnlyBatchPolicy",
+        "duplicatesNeedIndividualOverrideInvalidRowsCannotBeSelected",
+        "settledUnknownAccountCannotBeForcedIntoPendingAndNatureIsNotCategory"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceInsightsV16Test",
+      "tests": [
+        "budgetsUseIndependentPolicyForBothLegacyAndEconomicFacts",
+        "legacyPrincipalSettlementDoesNotCreateSecondCostOrDuplicateDebtOnConversion",
+        "purchasePartialRefundTimelinePreservesOriginalMonthAndRejectsOverAllocatedLine",
+        "creditShortMonthUsesKnownPostingAndRepaymentIsOnlyCashMovement",
+        "explicitQueryNeverBroadensUnknownIdsAndLocalLanguageIsFullyConsumed",
+        "ordinaryRelinkCannotBypassTypedRefundAndEditingKeepsConfirmedAllocationIdentity",
+        "assigningAlreadyReceivedRefundChangesCostWithoutAddingOrRewritingCash"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceLocalOcrParserTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceLocalOcrParserTest",
+      "tests": [
+        "balanceAndIdentifierAreNotTransactionAmounts",
+        "ambiguousFactsAndDateWithoutTimeRemainUnknown"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceMediaV16Test",
+      "tests": [
+        "oneSharedOriginalCanServeTwoFinancialTargetsAndUnlinkDoesNotDeleteIt",
+        "olderRestoreCanRemoveSharedAssetWhileRetiringNewReferenceWithoutErasingCash",
+        "reconnectionRejectsDifferentFileAndPreservesStableMediaIdentity",
+        "ocrCandidateIsDurableAndIncompleteWithoutKeepingImageOrWritingMoney",
+        "explicitlyRetainedOcrReceiptUsesSameMediaAndRefundCannotBecomeExpense"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceMigrationTest",
+      "tests": [
+        "populatedV2IsAdditivelyMigratedAndFinanceWorksThroughRoom"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMoneyTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceMoneyTest",
+      "tests": [
+        "decimalMoneyNeverUsesFloatingPointRounding",
+        "excessPrecisionInvalidAmountsAndOverflowAreRejected",
+        "malformedCalendarDatesCannotBeSilentlyAdjusted",
+        "untouchedMinuteDisplayPreservesExactOccurrenceWhileEditsUseExplicitTime"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceNotificationParserTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceNotificationParserTest",
+      "tests": [
+        "genericWechatTitleRequiresStructuredPaymentEvidence",
+        "thousandsAndCurrencyMarkersAreParsedExactly",
+        "multipleAmountsStayUnfilledInsteadOfChoosingBalanceOrDiscount",
+        "refundsHaveIncomeDirectionButAreNotOrdinaryIncome",
+        "rejectionReasonsDistinguishUnsafeEvidence",
+        "explicitAlipayExpenseCreatesOnlyAnUnconfirmedProposal",
+        "expenseWithMultipleAmountsRequiresManualAmount",
+        "transferCountNeverBecomesOneYuanOrAssumesOwnedAccounts"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt",
+      "className": "com.qq.closie.life.finance.FinancePersonalProjectionTest",
+      "tests": [
+        "personalPaymentAndEachLinkedAdjustmentReconcileWithPaymentDimensions",
+        "incompatiblePaymentCategoriesUseExplicitAdjustmentBucketWithoutChangingTotal",
+        "excessAdjustmentIsWhollyUnassignedAndNeverCreatesNegativeConsumption",
+        "cumulativeRefundRebateAndCashbackAreCheckedAgainstFullEventEvenInFilteredPeriod",
+        "feeCategoryAndTagDoNotMakePaymentAttributionAmbiguous",
+        "feeAloneCannotSupplyPaymentCostForAnAdjustment",
+        "excludedCashbackCannotMakeIncludedRefundUnassigned",
+        "excludedExcessRefundRemainsRealInflowWithoutPersonalStatisticsOrWarning",
+        "excludedPaymentCannotProduceNegativeIncludedPersonalCost",
+        "splitAndReimbursementCountOnlyConfirmedShareProxyNeverBecomesPersonalConsumption",
+        "actualSettlementAndReimbursementDoNotAddIncomeToConfirmedPersonalShare",
+        "historicalLinkAndExcludedFlowCannotDoubleCountCurrentPersonalStatistics"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePortableExportTest.kt",
+      "className": "com.qq.closie.life.finance.FinancePortableExportTest",
+      "tests": [
+        "csvProtectsTextFormulasAndKeepsNumericNegativeAdjustmentsNumeric",
+        "emptyPortableArchiveContainsTypedFactsAndSeparateReadableTables"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceProposalPrivacyTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceProposalPrivacyTest",
+      "tests": [
+        "notificationScrubbingIsIdempotentAndKeepsIdentityAndConfirmedReferences"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceProvenanceV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceProvenanceV16Test",
+      "tests": [
+        "sameOrderDoesNotCollapseDistinctPaymentsAndDiscoveryNeverCreatesCash",
+        "explicitDistinctIdentitiesResolvePotentialReferenceCollisionAndBindingIsDated",
+        "restoredIdentitiesCannotDisambiguateUntilExplicitlyApproved",
+        "olderRestoreRetiresEvidenceWithNewerIdentityAndBindingProofVersions",
+        "finalEditedDateMustBelongToCapturedBindingAndExplicitAdoptionUpdatesSession"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePurchaseAllocationV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinancePurchaseAllocationV16Test",
+      "tests": [
+        "removingPurchaseAttributionRequiresExplicitReleaseOfRefundsAndNeverChangesCashOrEventCost",
+        "anotherEventOnSameLineCannotCoverThisEventsRefundAfterCorrection"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinancePurposeReadV16Test",
+      "tests": [
+        "excludedStatisticsAreStillFactsAndPurposesExpireIndependently",
+        "preparedFactsDropOnlyExpiredFieldsWithoutReenteringCostProjection",
+        "eventGrantDoesNotDiscloseWholeSharedCashEntry",
+        "unknownLegacyShareNeverBecomesConfirmedZeroOnHome"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceReconciliationScopeV16Test",
+      "tests": [
+        "unknownPostingCannotBeExcludedUsingFutureOrPreAnchorCashDate",
+        "explicitOutsidePostingAndOtherAccountUnknownDoNotInvalidateButBackfillIntoRangeDoes",
+        "missingDateIntroducedAfterConfirmationIsIncompleteUntilExplicitOutsideEvidenceArrives",
+        "legacyScopeKeepsInclusiveAnchorAndOnlyRelevantEditsInvalidate",
+        "postingPrecisionAloneCanMakeSameTimestampIncompleteAndInvalidateReconfirmation",
+        "dateObservationCannotOrderSameDayPostingButADisjointPriorDayIsCertain",
+        "datePostingOverlappingAnchorIsUnknownAndOnlyWholeOutsideDaysCanBeExcluded",
+        "dateObservationOverlappingAnchorRemainsIncompleteEvenWithoutEntries"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRecoveryV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceRecoveryV16Test",
+      "tests": [
+        "transferVoidAndRecoveryRestoreBothLegsWithMonotonicRevisions",
+        "batchPreviewBindsPayloadAndConflictHasNoPartialCommit",
+        "successfulBatchCanRecoverBeforeAnUnrelatedNewEntry"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRelationLifecycleTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceRelationLifecycleTest",
+      "tests": [
+        "reassociationPreservesIdentityHistoryRetiresOrphanAndCancelsAllExpectations",
+        "singleFlowCanPartitionAcrossEventsAndRemovingOneRetainsHistory",
+        "multipleOptionalExpectedFlowsEditAndCancelWithoutAffectingTruthOrBalances",
+        "voidEntryRetiresItsLinksEventAndExpectedRelations",
+        "attachEditAlsoRetainsPriorLinkAndInvalidAllocationRollsBackEverything",
+        "voidingPaymentLeavesRealRefundAndExposesItWithoutNegativeConsumption",
+        "voidTransferAlsoRetiresRealFeeAndCancelsFeeExpectations",
+        "integrityRejectsActiveOrphansAndExpectationsButAllowsHistoricalRelations"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRelationsProjectionTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceRelationsProjectionTest",
+      "tests": [
+        "partialReturnsAndProxyProfitAreDerivedWithoutChangingGrossEntries"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRepositoryTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceRepositoryTest",
+      "tests": [
+        "realFlowsBalancesAndF1TotalsHaveSeparateMeanings",
+        "openingBalanceIsDerivedAndMayBeNegative",
+        "ordinaryCorrectionKeepsRecordedAtIdentityAndTagsAreNormalized",
+        "transferCorrectionUpdatesBothStableLegsAndRelation",
+        "voidKeepsCanonicalRowsAndRemovesDerivedEffects",
+        "oneTransferLegCannotBeEditedOrVoidedIndependently",
+        "descriptionCategoryTagAndAccountSearchAreReal",
+        "dateWindowIncludesLastDayAndUsesLocalCalendarBoundaries",
+        "archivingKeepsHistorySearchAndBalanceButBlocksNewFlows",
+        "invalidTransferValidationWritesNothing",
+        "createTransferRollsBackIfSecondInsertFails",
+        "editAndVoidTransferRollBackIfSecondUpdateFails",
+        "failedDescriptiveAssociationRollsBackAllOrdinaryChanges",
+        "overflowIsRejectedBeforeCommit",
+        "persistedAccountsEntriesAndTransferSurviveClosingAndReopeningRoom",
+        "restoreBarrierAlsoProtectsFinanceAfterRepositoryConstruction",
+        "observableSnapshotReturnsTheCoherentTypedState",
+        "observationInvalidatesOnAnEditWithoutAnyRowCountChange"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReviewDeliveryTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceReviewDeliveryTest",
+      "tests": [
+        "enhancementNeverSuppressesTheModeReminderAndForegroundIsNotDuplicated"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceReviewSessionV16Test",
+      "tests": [
+        "durablePartialEditsResumeLaterWithoutMoneyAndSecondProposalDoesNotReplaceThem",
+        "explicitConfirmationIsAtomicAndReplayDoesNotProduceSecondEntry",
+        "staleEditorAndRestoreCannotConfirmOldCandidateOrReceipt",
+        "competingSurfaceConfirmationCannotPretendSavedEditsWerePosted",
+        "typedRefundRequiresExplicitReductionAndCreatesCashAndCostTogether",
+        "linkingAnAlreadyRecordedEntryOnlyAddsProvenanceAndNeverChangesCanonicalCash",
+        "visibleRefundCannotBeLinkedAsTransferOrAsUnrelatedOrdinaryIncome",
+        "cnyCandidateCannotBeLinkedToAnotherCurrency"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceRoomTest",
+      "tests": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceShareV16Test",
+      "tests": [
+        "shareGrantDoesNotInheritFieldsOrScopeFromHomeOrOtherShareGrants",
+        "changedFactRevocationExpiryAndRestoreAllRejectStaleSharePreview"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceSyntheticHistoryV16Test",
+      "tests": [
+        "committedTwoThousandRowsImportBalancesCostsNetFiltersAndRepeatAreConsistent"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceV16ContractTest",
+      "tests": [
+        "T01_giftHasValueButNoOwnCashCostOrDebt",
+        "T02_repayableCreatesDebtAndRepaymentDoesNotConsumeTwice",
+        "T03_mixedGiftDebtAndPartialSettlementConserveAmounts",
+        "T04_unknownRelationshipIsNotZeroAndDoesNotInventDebt",
+        "T05_incompleteUnequalAllocationRetainsUnassignedPortion",
+        "T06_historicalResolutionClosesWorkWithoutManufacturingBankEvidence",
+        "T07_refundAndRebateBelongToActualMonthAndAllowNegativeBudgetUse",
+        "T08_duplicateConfirmationAndRestoreEpochCannotCreateSecondCash",
+        "T12_currencyNetAndLegacyAnchorDoNotChangeByAccountKind",
+        "positiveLegacyDebtNormalizesOpeningOnlyAndInternalRepaymentPreservesNet",
+        "negativeOpeningCannotBeConvertedTwiceAndNetExclusionIsExplicit",
+        "accountCreationAnchorsAndStaleMetadataKeepCanonicalHistoryIntact",
+        "settlementCannotExceedItsEventAllocationAfterRelinking",
+        "restorationRetiresPolicyAndSelfCanBeUsedAgain",
+        "T11_encryptedTypedPayloadRestoresOnAnotherDatabaseWithGrantsRevoked"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceV4MigrationTest",
+      "tests": [
+        "populatedV3PreservesDomainFinanceAnchorsAndBalanceAndAcceptsV4Semantics",
+        "v2ThroughV3ToV4KeepsOldPlanIdentityCaptureAndRevision"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceV5MigrationTest",
+      "tests": [
+        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceWorkspaceV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceWorkspaceV16Test",
+      "tests": [
+        "partialDraftDoesNotAffectCashAndConfirmIsAtomicIdempotent",
+        "invalidConfirmRollsBackAllCanonicalAndKeepsRecoverableDraft",
+        "continuousIncomeResetsRelationshipButPreservesLockedFieldsAndRejectsStaleEditor",
+        "transferDraftFailureCannotLeaveOneLegAndOldEpochCannotReplayReceipt",
+        "anchorPreviewBindsProposedContentAndDoesNotRewriteHistory",
+        "postedBasisNeverFallsBackToCashAndHistoricalInsertInvalidatesConclusion",
+        "reconfirmationUsesMonotonicOrderEvenWithIdenticalWallClock",
+        "cancellationAfterCommitCannotStrandAutosaveAtOldExpectedRevision"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/HostDetailAdaptersTest.kt",
+      "className": "com.qq.closie.life.finance.HostDetailAdaptersTest",
+      "tests": [
+        "sevenHostAdaptersRouteOnlyAfterExplicitOptIn",
+        "hostBusinessChannelAndCanonicalAccountAreFourDifferentThings",
+        "finalHeaderIgnoresDiscountsAndOriginalOrderAmount",
+        "unsignedFamilyCardPaymentIsExpenseNotIncome",
+        "taobaoFinalOrderTotalWinsOverItemPriceAndDiscount",
+        "jdBillingBaitiaoIsExplicitChannelAndRepaymentIsNotIncome",
+        "jdBaitiaoAcceptsSeparateStatusAndChannelChildren",
+        "jdBaitiaoAcceptsOnlyAllowlistedMergedValuesWithWhitespaceNormalization",
+        "jdBaitiaoTerminologyInUnrelatedTextDoesNotBecomeChannel",
+        "jdChannelSubtreeWithMultipleChannelsOrPrivateLabelsFailsClosed",
+        "embeddedServicesDoNotBecomeNewHosts",
+        "unsignedYieldNeedsExplicitYieldSemanticsAndStrongReference",
+        "meituanWrappedReferenceAndMonthlyChannelRemainMinimized",
+        "pinduoduoOnlyUsesOrderTimeAndExcludesLogistics",
+        "refundGetsRefundRoleAndSeparateIdentityFromOriginalPayment",
+        "missingReferenceMissingTimeAndSummaryRefundFailClosed",
+        "ambiguousRowsHeadersAndFlatWholePagesFailClosed",
+        "invisibleEditableAndOverflowTreesAreNeverEvidence",
+        "wechatFamiliesUseStatusTimeReferenceAndSignedFinalAmount"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/LegacyLedgerReaderTest.kt",
+      "className": "com.qq.closie.life.finance.LegacyLedgerReaderTest",
+      "tests": [
+        "csvPreservesExactMoneyHierarchyQuotesFlagsAndRelationshipEvidence",
+        "incorrectSingleRowXlsxDimensionDoesNotTruncateActualWorksheetRows",
+        "regularXlsxTransferFeeAndUnsupportedDebtorAreTypedForReview"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/SyntheticLegacyLedger.kt",
+      "className": "com.qq.closie.life.finance.SyntheticLegacyLedger",
+      "tests": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/VisibleEvidenceTest.kt",
+      "className": "com.qq.closie.life.finance.VisibleEvidenceTest",
+      "tests": [
+        "repeatedReferenceHasStableKeyAndNoRawPageText",
+        "incompleteOrAmbiguousPagesFailClosed",
+        "extractorVersionIsNotIdentityAndDisabledProviderCannotDispatch",
+        "strongConflictsRemainBlockedEvenWhenAmountAndTimeAreFarApart",
+        "weakMatchesStaySeparateAndRevisionInvalidatesAcknowledgement"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/media/MediaStoreImporterTest.kt",
+      "className": "com.qq.closie.life.media.MediaStoreImporterTest",
+      "tests": [
+        "corruptedExistingFinal_isReplacedNotTrusted",
+        "correctExistingFinal_isReused",
+        "successfulImport_leavesNoTemporaryFile",
+        "unreadableSource_recordsNothingAndWritesNothing",
+        "recordedRowIsConsistentWithThePublishedFile",
+        "secondImportOfTheSameImage_leavesTheOriginalFileAndRowUntouched"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/repository/CaptureRepositoryTest.kt",
+      "className": "com.qq.closie.life.repository.CaptureRepositoryTest",
+      "tests": [
+        "create_startsNewWithNullableMedia",
+        "create_rejectsDuplicateId",
+        "statusTransitions_walkThePipeline",
+        "markFailed_recordsErrorMessage",
+        "retryAfterFailure_clearsErrorMessage",
+        "dismiss_isTerminalAndKeepsHistory",
+        "transitionsOnMissingId_returnFalse",
+        "userAnnotationNeverOverwritesCapturedEvidenceOrConfirmsTruth",
+        "attachMedia_setsPrimaryAsset",
+        "attachMedia_rejectsMissingMediaAsset",
+        "create_rejectsMissingPrimaryMediaAsset",
+        "create_acceptsExistingPrimaryMediaAsset"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/repository/LifeRepositoryTest.kt",
+      "className": "com.qq.closie.life.repository.LifeRepositoryTest",
+      "tests": [
+        "createEntity_startsAtRevisionOneAndIsQueryable",
+        "updateEntity_incrementsRevision",
+        "softDelete_marksDeletedAndBumpsRevision",
+        "restore_clearsDeletedAtAndBumpsRevision",
+        "observeByType_excludesSoftDeleted",
+        "addRelation_isQueryableBothDirections",
+        "addRelation_duplicateIsRejected",
+        "removeRelation_byEndpointsDeletesOnlyThatEdge",
+        "createTag_normalizesNameAndIsUnique",
+        "attachAndDetachTag_updatesEntityTags",
+        "attachTagByName_createsTagWhenMissing"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/repository/MediaRepositoryTest.kt",
+      "className": "com.qq.closie.life.repository.MediaRepositoryTest",
+      "tests": [
+        "oneAssetSupportsManyResources",
+        "findResourceBySha256_returnsStoredResource",
+        "linkMedia_createsLinkVisibleFromBothSides",
+        "linkMedia_rejectsMissingOwnerEntity",
+        "linkMedia_rejectsMissingMediaAsset",
+        "unlinkMedia_removesOnlyTargetedLink"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/repository/PlanRepositoryTest.kt",
+      "className": "com.qq.closie.life.repository.PlanRepositoryTest",
+      "tests": [
+        "create_writesBackingLifeEntityOfTypePlan",
+        "create_normalizesTitleAndBlankNote",
+        "create_withoutDueDate_isAllowed",
+        "complete_stampsTimeAndIsIdempotent",
+        "uncomplete_clearsCompletedAtButKeepsDueAt",
+        "uncomplete_onAnOpenPlanIsANoOp",
+        "complete_bumpsLifeEntityRevision",
+        "update_appliesOnlyProvidedFields",
+        "update_canClearNoteByPassingEmptyString",
+        "clearDueAt_movesThePlanToSomeday",
+        "update_unknownIdReturnsNull",
+        "dayWindow_isHalfOpenAndZoneAware",
+        "observeToday_includesBoundaryTimesAndExcludesTheNextDay",
+        "observeToday_excludesCompletedPlans",
+        "observeTodayIncludingDone_keepsFinishedItemsUnderTheirHeader",
+        "observeUpcoming_includesLaterAndUndatedButNotToday",
+        "observeUpcomingLimited_returnsAtMostTheLimit",
+        "observeUpcomingLimited_prefersUndatedOverNothing",
+        "counts_separateOpenFromCompleted",
+        "delete_softDeletesTheLifeEntity",
+        "delete_unknownIdIsANoOp",
+        "dueLabel_rendersRelativeDaysThenDates",
+        "observeOverdue_returnsOpenPlansWhoseDateHasPassed",
+        "observeOverdue_excludesCompletedAndTodayAndFuture",
+        "observeOverdueLimited_returnsAtMostTheLimit",
+        "clearDueAt_bumpsLifeEntityRevision",
+        "clearDueAt_onAnUndatedPlan_doesNotBumpRevision",
+        "exists_reportsWhetherAPlanIsPresent",
+        "home_containsPastOpenPlan",
+        "home_containsTodayOpenPlan",
+        "home_containsFutureOpenPlan",
+        "home_placesUndatedLast",
+        "home_excludesCompletedPlans",
+        "home_respectsLimit"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/repository/ReferenceRepositoryTest.kt",
+      "className": "com.qq.closie.life.repository.ReferenceRepositoryTest",
+      "tests": [
+        "create_writesBackingLifeEntityOfTypeReference",
+        "create_normalizesAndNullsEmptyOptionalFields",
+        "create_withUnknownCaptureId_storesNullRatherThanDanglingId",
+        "create_withRealCaptureId_keepsProvenance",
+        "create_directlyAsOrganized_stampsOrganizedAt",
+        "markOrganized_stampsTimeOnceAndKeepsItOnArchive",
+        "unarchive_returnsToInboxAndClearsOrganizedAt",
+        "statusChange_isVisibleThroughObserveById",
+        "statusChange_bumpsLifeEntityRevision",
+        "update_appliesOnlyProvidedFields",
+        "update_canClearAnOptionalFieldByPassingEmptyString",
+        "update_unknownIdReturnsNull",
+        "search_matchesTitleSummaryOcrSourceNameAndUrl",
+        "search_treatsPercentAndUnderscoreAsLiteralCharacters",
+        "search_blankQueryReturnsEverything",
+        "escapeLike_escapesBackslashBeforeWildcards",
+        "addTag_isVisibleThroughBothTheReferenceAndTheLifeEntity",
+        "removeTag_detachesOnlyThatTag",
+        "linkMedia_attachesAssetToTheLifeEntity",
+        "linkMedia_rejectsMissingAssetOrReference",
+        "oneMediaAssetCanBackSeveralReferences",
+        "deleteReference_leavesMediaAndOtherReferencesUntouched",
+        "delete_unknownIdIsANoOp",
+        "observeReading_returnsOnlyActiveReadingAndArticles",
+        "countsTrackTheInbox",
+        "distinctTypes_reportsOnlyTypesActuallyPresent",
+        "updateOcrText_bumpsLifeEntityRevision",
+        "updateOcrText_makesTheTextSearchable",
+        "updateOcrText_unknownIdIsANoOp",
+        "findByOriginalCaptureId_returnsTheExistingReferenceOrNull"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/ui/capture/CaptureGroupingTest.kt",
+      "className": "com.qq.closie.life.ui.capture.CaptureGroupingTest",
+      "tests": [
+        "emptyInputProducesNoGroups",
+        "recordsOnTheSameDayShareOneBucket",
+        "newestRecordFirstInsideADay",
+        "newestDayFirstAcrossBuckets"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/ui/theme/JournalCoverageTest.kt",
+      "className": "com.qq.closie.life.ui.theme.JournalCoverageTest",
+      "tests": [
+        "supportsAsciiAndPreservesNewlinePolicy",
+        "supportsRepresentativeCjkAndSupplementaryCodepoints",
+        "preservesRangeEndpointsAndGaps",
+        "oneUnsupportedCodepointRejectsTheWholeRun"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/ui/theme/LifeDimensionsTest.kt",
+      "className": "com.qq.closie.life.ui.theme.LifeDimensionsTest",
+      "tests": [
+        "below400_isCompact",
+        "at400_isRegular",
+        "compact_usesTheTighterRhythm",
+        "regular_usesTheComfortableRhythm",
+        "pageTop_staysInsideTheTargetBandOnBothRhythms",
+        "compact_neverExceedsRegular"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/ui/theme/LifeFontRulesTest.kt",
+      "className": "com.qq.closie.life.ui.theme.LifeFontRulesTest",
+      "tests": [
+        "brandDateAndMoneyHaveDistinctRoles",
+        "unsupportedHandwritingKeepsMetricsAndUsesBundledFallback",
+        "applicationHierarchySharesTheHomeFamilies"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/navigation/ExternalCommandStateTest.kt",
+      "className": "com.qq.closie.navigation.ExternalCommandStateTest",
+      "tests": [
+        "recreationDoesNotReplayConsumedActivityIntent",
+        "consumedOldCommandCannotClearANewerShare",
+        "pendingRequestSurvivesStateRestoration"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/navigation/ExternalIntakeTest.kt",
+      "className": "com.qq.closie.navigation.ExternalIntakeTest",
+      "tests": [
+        "ordinaryLinkPreservesEvidenceAndSeparatesExtractionFromUserNotes",
+        "metadataFailureLeavesAnOpenableRawCapture",
+        "plainTextDoesNotBecomeAReferenceOrBusinessTruth",
+        "cancellingOrSavingBlankManualEditorCreatesNoEvidence",
+        "manualSaveKeepsRawEvidenceSeparateAndRestoresCreatedIdentity"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/navigation/TopLevelEntriesTest.kt",
+      "className": "com.qq.closie.navigation.TopLevelEntriesTest",
+      "tests": [
+        "entries_areComplete_evenWhenClosetIsTheFirstTouch",
+        "entries_areComplete_evenWhenHomeIsTheFirstTouch",
+        "productRootIsHomeAndClosetIsAModule"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt",
+      "className": "com.qq.closie.ui.lifeos.ClosetSmokeTest",
+      "tests": [
+        "drawerHasHeaderSearchModulesAndDirectReorderAffordances",
+        "verticalHomeScrollDoesNotOpenDrawer",
+        "freshInstall_emptyWardrobe_homeToLifeToCloset_rendersEmptyState",
+        "freshInstall_closetIsEmpty_notBlankNotCrash",
+        "homeContentRightSwipeOpensFunctionPageAndBackClosesIt",
+        "functionPageContentLeftSwipeClosesIt",
+        "tappingExposedHomeClosesDrawer",
+        "drawerFinanceOpensRealLedgerAndReturnsToStableHome",
+        "financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/LifeSwipeOwnershipTest.kt",
+      "className": "com.qq.closie.ui.lifeos.LifeSwipeOwnershipTest",
+      "tests": [
+        "photoChildKeepsItsDragAndHomeContainerOwnsOtherContent",
+        "systemBackEdgesAreNotOwnedByHome"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceCalendarStopsTest.kt",
+      "className": "com.qq.closie.ui.lifeos.finance.FinanceCalendarStopsTest",
+      "tests": [
+        "releaseDocksAtOneStopAndVelocityMovesOnlyToNextAvailableStop"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceFilterStateV16Test.kt",
+      "className": "com.qq.closie.ui.lifeos.finance.FinanceFilterStateV16Test",
+      "tests": [
+        "processStatePreservesIndependentRangeAndNegativeAmountBoundsWithoutFinancialTotals",
+        "intervalDrilldownUsesExactOpenClosedBoundsAndKeepsPostingSeparateFromCash",
+        "actualAccountFilterKeepsEveryVisibleRunningBalanceIdenticalToCompleteRegister"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinancePresentationContractsTest.kt",
+      "className": "com.qq.closie.ui.lifeos.finance.FinancePresentationContractsTest",
+      "tests": [
+        "previous months respect leap years and differing month lengths",
+        "custom period comparison uses local days across daylight saving",
+        "zero and negative comparison bases never invent a percentage",
+        "import diagnostics do not expose exception payloads containing cells"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt",
+      "className": "com.qq.closie.ui.lifeos.finance.FinanceSmokeTest",
+      "tests": [
+        "insightsStartsWithItsOwnRangeAfterLedgerSelectedAllDates",
+        "establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets",
+        "transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid",
+        "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
+        "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/MonthLedgerTest.kt",
+      "className": "com.qq.closie.ui.lifeos.finance.MonthLedgerTest",
+      "tests": [
+        "days keep currencies separate and transfers only contribute a presence marker",
+        "day summary does not overflow when several valid entries are combined",
+        "currency choices only offer precision supported by finance core"
+      ]
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt",
+      "className": "com.qq.closie.ui.lifeos.home.FinanceHomeProjectionV16Test",
+      "tests": [
+        "ticksAndJournalNotificationsDoNotRecomputeWhileFinancialEditsAndRevocationDo",
+        "restoreGateClearsHomeAndNewCollectorReadsRevokedRestoredGrants"
+      ]
+    }
+  ],
+  "additionalCoverage": "Four date-precision reconciliation methods added in review fix round 2"
+}

@@ -1,4 +1,6 @@
-# V16 Review 修复与 CI 门禁交接（2026-10-19）
+# V16 Review 第一轮修复与 CI 门禁交接（2026-10-19）
+
+第二轮当前增量、精度算法3和最低测试契约见REVIEW-FIX-ROUND2.md；以下保留第一轮交付记录。
 
 本轮增量基线：`9a0acf0da84544750bd37f1e15e5220c4a899a95`。保留所有已有 V16 代码；原 R2 基线仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。交接只包含该 V16 HEAD 之后的 format-patch，本地未 push、PR、merge、发布或触发 CI。
 

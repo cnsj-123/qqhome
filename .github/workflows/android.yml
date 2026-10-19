@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Structural checks compare published schemas with the pinned R2 base.
+          fetch-depth: 0 # Both source audit and official schema validation require pinned R2 history.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,6 +32,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p engineering/v16/ci-logs
+          git cat-file -e 245e1475cd1d47a4205ab49f75d5e06d22de701c^{commit} 2>&1 | tee engineering/v16/ci-logs/git-history.log
+          git show --no-patch --format='%H' 245e1475cd1d47a4205ab49f75d5e06d22de701c 2>&1 | tee -a engineering/v16/ci-logs/git-history.log
+          git rev-parse --is-shallow-repository | tee -a engineering/v16/ci-logs/git-history.log
           python3 engineering/v16/test-ci-gates.py 2>&1 | tee engineering/v16/ci-logs/schema-gate-tests.log
           python3 engineering/v16/audit-v16-tests.py 2>&1 | tee engineering/v16/ci-logs/test-inventory.log
           python3 engineering/v16/check-source.py 2>&1 | tee engineering/v16/ci-logs/source.log
@@ -103,6 +106,8 @@ jobs:
             engineering/v16/static-result.json
             engineering/v16/migration-sqlite-result.json
             engineering/v16/review-fix-evidence/test-inventory.json
+            engineering/v16/review-fix-evidence/ci-gate-unit-tests.json
+            engineering/v16/test-minimum-contract.json
           if-no-files-found: warn
 
       # These secret-bearing steps are skipped on PR/feature/manual feature runs.

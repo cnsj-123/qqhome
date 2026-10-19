@@ -65,3 +65,5 @@ Home未知/排除政策、整笔现金独立授权、复核并发确认、自动
 本轮新增3个Kotlin测试文件，V16新增/修改测试自审共32文件/144方法，运行全部UNVERIFIED。工程门禁9例本地通过，严格官方Schema门禁因缺少已提交5.json明确FAIL；历史1–4保留，首次CI Bootstrap仍红，原样归档KSP产物后再次运行完整门禁。矩阵见REVIEW-FIX.md，逐测试自审见TEST-AUDIT.md，CI/Artifacts方法见GITHUB-VALIDATION.md。
 
 本轮只做本地逻辑提交及9a0acf0之后的format-patch，等待Owner授权推送；没有push/PR/merge/发布或触发CI。完整CI通过后再最终独立Review，无阻断后才统一一轮设备验收。
+
+2026-10-19 Review Fix第二轮：在7d9fe46之后定点补R2历史可读、JUnit逐方法/参数调用验证、固定最低契约与删除拦截、对账DATE精度不确定性。Python门禁22/22 PASS，最低契约96文件/638方法，当前V16审计32文件/148方法；Kotlin全部UNVERIFIED。官方5仍按严格红灯Bootstrap处理。交接矩阵与CI顺序复审见REVIEW-FIX-ROUND2.md；仅导出7d9fe46之后本地format-patch，无远端动作。

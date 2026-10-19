@@ -1,7 +1,7 @@
 {
   "check": "offline-engineering-ci-gates",
   "status": "PASS",
-  "cases": 9,
+  "cases": 22,
   "failures": 0,
   "errors": 0,
   "fixtures": "Synthetic text Git repository and synthetic JUnit documents; not Android execution",

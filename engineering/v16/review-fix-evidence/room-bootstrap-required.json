@@ -1,6 +1,7 @@
 {
   "check": "strict-committed-official-room-schema",
   "status": "FAIL",
+  "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
   "errors": [
     "Committed KSP official Room 5 (bootstrap must fail until committed): Command '['git', 'ls-files', '--error-unmatch', '--', 'app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json']' returned non-zero exit status 1."
   ],
