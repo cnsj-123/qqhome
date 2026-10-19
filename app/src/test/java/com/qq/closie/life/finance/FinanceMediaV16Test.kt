@@ -21,7 +21,7 @@ class FinanceMediaV16Test:FinanceRoomTest() {
         finance.media.attach(token(),FinanceMediaTarget(eventId=eventId(two.id)),document(),"同一原件")
         val before=LifeBackupApplier.snapshot(db)
         assertEquals(1,before.mediaAssets.size);assertEquals(1,before.mediaResources.size)
-        assertNull(before.mediaResources.single().managedPath)
+        assertNull(before.mediaResources.single().row.managedPath)
         assertEquals(1,finance.snapshot().v16!!.mediaLinkRows.map {it.mediaAssetId}.distinct().size)
         finance.media.unlink(token(),first,1)
         assertEquals(before.mediaAssets,LifeBackupApplier.snapshot(db).mediaAssets)
