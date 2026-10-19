@@ -3,6 +3,8 @@ package com.qq.closie.ui.lifeos.finance
 import android.content.Context
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.qq.closie.data.backup.RestoreStartupGate
@@ -27,6 +29,7 @@ class FinanceSmokeTest {
     @get:Rule val compose = createComposeRule()
     private lateinit var db: LifeDatabase
     private lateinit var repository: FinanceRepository
+    private var models: ViewModelStore? = null
 
     @Before fun setup() {
         RestoreStartupGate.resetForTesting(); RestoreStartupGate.markReady()
@@ -34,9 +37,16 @@ class FinanceSmokeTest {
         db = Room.inMemoryDatabaseBuilder(context, LifeDatabase::class.java).allowMainThreadQueries().build()
         repository = FinanceRepository(db)
     }
-    @After fun cleanup() { db.close(); RestoreStartupGate.resetForTesting() }
+    @After fun cleanup() {
+        // @After runs before the Compose rule disposes its Activity. Stop Room collectors first.
+        try { compose.runOnIdle { models?.clear() } }
+        finally { try { db.close() } finally { RestoreStartupGate.resetForTesting() } }
+    }
     private fun launch() {
-        compose.setContent { LifeOsTheme { FinanceRoute(repository, {}) } }
+        compose.setContent {
+            models = requireNotNull(LocalViewModelStoreOwner.current).viewModelStore
+            LifeOsTheme { FinanceRoute(repository, {}) }
+        }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("账簿").fetchSemanticsNodes().isNotEmpty() }
     }
@@ -44,9 +54,16 @@ class FinanceSmokeTest {
         compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
     }
     private fun click(text: String) {
-        val node = compose.onNodeWithText(text)
-        if (runCatching { node.assertIsDisplayed() }.isFailure) node.performScrollTo()
-        node.performClick()
+        // Receipt content is eagerly composed in a verticalScroll. Lazy pages use their
+        // container below; an absent node is an assertion failure, never a scroll fallback.
+        val node = compose.onNodeWithText(text).assertExists()
+        if (!node.isDisplayed()) node.performScrollTo()
+        node.assertIsDisplayed().performClick()
+    }
+    private fun ledgerRow(matcher: SemanticsMatcher): SemanticsNodeInteraction {
+        compose.onNodeWithTag("finance-ledger").performScrollToNode(matcher)
+        compose.onAllNodes(matcher).assertCountEquals(1)
+        return compose.onNode(matcher).assertIsDisplayed()
     }
     private fun saved() {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("保存记录").fetchSemanticsNodes().isEmpty() &&
@@ -116,12 +133,17 @@ class FinanceSmokeTest {
 
     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {
         launch()
-        click("建立第一个账户")
+        compose.onNodeWithTag("finance-add").assertIsNotEnabled()
+        click("账户")
+        compose.onNodeWithText("账户").assertIsSelected()
+        ledgerRow(hasText("＋ 建立账户")).performClick()
         input("账户名称", "工资卡")
         input("期初余额", "1000.00")
         click("保存账户"); saved()
         assertEquals(100_000L, snapshot().accounts.single().openingBalanceMinor)
         assertEquals("工资卡", snapshot().accounts.single().name)
+        click("账簿")
+        selectPeriod("全部")
         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
         input("金额 · CNY", "12.34")
         input("备注（可留空）", "早餐豆浆")
@@ -136,7 +158,8 @@ class FinanceSmokeTest {
         assertEquals(setOf("早餐", "出门"), originalRow.tags.toSet())
         assertTrue(original.occurredAt >= snapshot().accounts.single().createdAt)
         assertEquals(98_766L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
-        click("早餐豆浆")
+        val cashRow = hasText("早餐豆浆") and hasText("餐饮 · 工资卡") and hasClickAction()
+        ledgerRow(cashRow).performClick()
         input("金额 · CNY", "10.00")
         click("保存记录"); saved()
         assertEquals(1_000L, snapshot().entries.single().amountMinor)
@@ -150,39 +173,80 @@ class FinanceSmokeTest {
         compose.waitForIdle()
         compose.onNodeWithTag("finance-search").performTextReplacement("出门")
         compose.waitForIdle()
-        compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("早餐豆浆"))
-        compose.onNodeWithText("早餐豆浆").assertIsDisplayed()
-        click("早餐豆浆")
+        ledgerRow(cashRow).performClick()
         click("作废这笔记录")
         compose.onNodeWithText("确认作废").performClick(); saved()
         assertNotNull(snapshot().entries.single().voidedAt)
         assertTrue(FinanceProjection.ledger(snapshot()).isEmpty())
+        assertEquals(100_000L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
+        FinanceIntegrity.validate(snapshot())
         compose.waitUntil(10_000) { compose.onAllNodesWithText("早餐豆浆").fetchSemanticsNodes().isEmpty() }
     }
 
     @Test fun transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid() {
+        lateinit var bank: FinanceAccountEntity
+        lateinit var wallet: FinanceAccountEntity
         runBlocking {
-            repository.saveAccount(name = "银行卡", kind = FinanceAccountKind.BANK_CARD)
-            repository.saveAccount(name = "微信", kind = FinanceAccountKind.WECHAT)
+            val anchor = java.time.LocalDate.now().minusDays(2).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            bank = repository.saveAccount(name = "银行卡", kind = FinanceAccountKind.BANK_CARD,
+                openingBalanceMinor = 100_000, balanceAnchorAt = anchor)
+            wallet = repository.saveAccount(name = "微信", kind = FinanceAccountKind.WECHAT,
+                openingBalanceMinor = 50_000, balanceAnchorAt = anchor)
         }
         launch()
+        selectPeriod("全部")
         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
         click("转账")
+        compose.onNode(hasText("转出账户 ·", substring = true)).performScrollTo().performClick()
+        click("银行卡 · CNY")
+        compose.onNode(hasText("转入账户 ·", substring = true)).performScrollTo().performClick()
+        click("微信 · CNY")
         input("金额 · CNY", "200.00")
         click("保存记录"); saved()
         assertEquals(2, snapshot().entries.size)
         assertEquals(1, snapshot().transfers.size)
-        click("银行卡 → 微信")
+        val original = snapshot()
+        val transfer = original.transfers.single()
+        val out = original.entries.single { it.id == transfer.outflowEntryId }
+        val incoming = original.entries.single { it.id == transfer.inflowEntryId }
+        assertEquals(bank.id, out.accountId); assertEquals(wallet.id, incoming.accountId)
+        assertEquals(FinanceDirection.OUTFLOW, out.direction); assertEquals(FinanceDirection.INFLOW, incoming.direction)
+        assertEquals(20_000L, out.amountMinor); assertEquals(out.amountMinor, incoming.amountMinor)
+        assertEquals(80_000L, FinanceProjection.balance(bank, original.entries))
+        assertEquals(70_000L, FinanceProjection.balance(wallet, original.entries))
+        assertTrue(FinanceCostProjection.rows(original).isEmpty())
+        assertEquals(transfer.id, FinanceProjection.ledger(original).single().id)
+        val transferRow = hasText("银行卡 → 微信") and hasClickAction()
+        ledgerRow(transferRow).performClick()
         input("金额 · CNY", "250.00")
         click("保存记录"); saved()
         assertTrue(snapshot().entries.all { it.amountMinor == 25_000L })
+        assertEquals(original.entries.map { it.id }.toSet(), snapshot().entries.map { it.id }.toSet())
+        assertEquals(original.entries.associate { it.id to it.recordedAt }, snapshot().entries.associate { it.id to it.recordedAt })
+        assertEquals(original.entries.associate { it.id to it.occurredAt }, snapshot().entries.associate { it.id to it.occurredAt })
+        assertEquals(transfer.id, snapshot().transfers.single().id)
+        assertEquals(transfer.outflowEntryId, snapshot().transfers.single().outflowEntryId)
+        assertEquals(transfer.inflowEntryId, snapshot().transfers.single().inflowEntryId)
+        assertEquals(75_000L, FinanceProjection.balance(bank, snapshot().entries))
+        assertEquals(75_000L, FinanceProjection.balance(wallet, snapshot().entries))
+        assertTrue(FinanceCostProjection.rows(snapshot()).isEmpty())
+        FinanceIntegrity.validate(snapshot())
         assertEquals(1, FinanceProjection.ledger(snapshot()).size)
-        click("银行卡 → 微信")
+        ledgerRow(transferRow).performClick()
         click("作废这笔记录")
         compose.onNodeWithText("作废整笔转账？").assertIsDisplayed()
         compose.onNodeWithText("确认作废").performClick(); saved()
         assertTrue(snapshot().entries.all { it.voidedAt != null })
         assertNotNull(snapshot().transfers.single().voidedAt)
+        assertEquals(1, snapshot().entries.map { it.voidedAt }.distinct().size)
+        assertEquals(snapshot().entries.first().voidedAt, snapshot().transfers.single().voidedAt)
+        assertEquals(2, snapshot().entries.size); assertEquals(1, snapshot().transfers.size)
+        assertEquals(100_000L, FinanceProjection.balance(bank, snapshot().entries))
+        assertEquals(50_000L, FinanceProjection.balance(wallet, snapshot().entries))
+        assertTrue(FinanceProjection.ledger(snapshot()).isEmpty())
+        assertTrue(FinanceCostProjection.rows(snapshot()).isEmpty())
+        FinanceIntegrity.validate(snapshot())
+        compose.waitUntil(10_000) { compose.onAllNodes(transferRow).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test fun creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption() {

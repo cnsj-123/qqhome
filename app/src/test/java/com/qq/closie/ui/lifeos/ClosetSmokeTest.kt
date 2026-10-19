@@ -2,6 +2,8 @@ package com.qq.closie.ui.lifeos
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -45,6 +47,22 @@ class ClosetSmokeTest {
         compose.onRoot().performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
+    }
+
+    private fun assertFinanceLedger() {
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("finance-ledger")).fetchSemanticsNodes().size == 1 &&
+                compose.onAllNodes(hasText("账簿")).fetchSemanticsNodes().size == 1
+        }
+        compose.onAllNodes(hasTestTag("finance-ledger")).assertCountEquals(1)
+        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+        listOf("账簿", "账户", "分析").forEach {
+            compose.onAllNodes(hasText(it)).assertCountEquals(1)
+            compose.onNodeWithText(it).assertIsDisplayed()
+        }
+        compose.onNodeWithText("账簿").assertIsSelected()
+        compose.onNodeWithText("总览").assertDoesNotExist()
+        compose.onNodeWithText("流水").assertDoesNotExist()
     }
 
     private fun openCloset(physicalClick: Boolean = true) {
@@ -142,13 +160,16 @@ class ClosetSmokeTest {
         openDrawer()
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
         compose.onNodeWithTag("drawer-finance").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
-        compose.onNodeWithText("钱的位置").assertIsDisplayed()
-        listOf("总览", "流水", "账户", "分析").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+        assertFinanceLedger()
+        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
         compose.onNodeWithContentDescription("返回").assertIsDisplayed().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasTestTag("finance-ledger")).fetchSemanticsNodes().isEmpty()
+        }
         compose.onNodeWithText("Life OS").assertIsDisplayed()
+        compose.onNodeWithTag("finance-ledger").assertDoesNotExist()
+        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
     }
 
     @Test
@@ -156,11 +177,10 @@ class ClosetSmokeTest {
         openDrawer()
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
         compose.onNodeWithTag("drawer-finance").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
+        assertFinanceLedger()
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
-        compose.onNodeWithText("钱的位置").assertIsDisplayed()
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
 
         // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
@@ -176,8 +196,7 @@ class ClosetSmokeTest {
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
-        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
-        compose.onNodeWithText("钱的位置").assertIsDisplayed()
+        assertFinanceLedger()
     }
 
 }

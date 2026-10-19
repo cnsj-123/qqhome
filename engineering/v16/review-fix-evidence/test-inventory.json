@@ -4,11 +4,11 @@
   "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
   "minimumBase": "78950821129f522d17359a7ec3bca2232c120601",
   "minimumContract": "engineering/v16/test-minimum-contract.json",
-  "minimumContractSha256": "303247088a925db57f864fd154b3279aad3716290eab9ecdc567a8909ad5f9cc",
+  "minimumContractSha256": "e6f340a4fb3caf723cb80d7cd78fc8ca2445130c0d57ed17f3dac0d3fc01116a",
   "minimumTestFiles": 97,
-  "minimumTestMethods": 660,
-  "testFiles": 33,
-  "testMethods": 170,
+  "minimumTestMethods": 662,
+  "testFiles": 40,
+  "testMethods": 218,
   "deletedFiles": [],
   "errors": [],
   "bypassFindings": [],
@@ -18,6 +18,8 @@
       "className": "com.qq.closie.ArchitectureBoundaryTest",
       "tests": [
         "financeOwnsTypedFactsInsideTheExistingDatabase",
+        "economicDraftDeleteAllowanceIsLimitedToApprovedAssociationQueries",
+        "permanentCanonicalDeletesAndReplaceRemainRejected",
         "financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay",
         "captureHasNoUserLevelPhysicalDeleteApi",
         "appearanceLoadingRendersBeforeBusinessStorageIsObtained",
@@ -27,8 +29,8 @@
         "galleryCopyBackendIsNotExposedByTheCompositionRoot",
         "debugIdentityCannotOccupyTheReleaseUpdateChain"
       ],
-      "sha256": "c94594b8d7c7be991517e5fe4125ce1de85d3b84e02481093d4cab2fbeb7496b",
-      "assertionCalls": 48,
+      "sha256": "3dbaad1d021df432443b0c641dc70a6c5905c3b173658604b113f0cee48afe21",
+      "assertionCalls": 53,
       "realRoom": false,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -88,6 +90,81 @@
       "bypass": []
     },
     {
+      "file": "app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt",
+      "className": "com.qq.closie.data.backup.FinanceBackupRecoveryTest",
+      "tests": [
+        "snapshotAndJsonArchiveCarryEveryFinanceTableExactly",
+        "recoveryReplaysFinanceWhileKeepingRetiredCanonicalRows",
+        "legacyPayloadWithoutFinanceCannotEraseExistingMoneyRecords",
+        "restoringAnIndependentArchiveKeepsBothIdentitiesForSameDescriptiveNames",
+        "corruptTransferArchiveFailsWithoutChangingExistingFinance"
+      ],
+      "sha256": "4c4947ee16896baf0ef794549c51035386cb9aa2bd0860ec545de0eba9065b25",
+      "assertionCalls": 20,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt",
+      "className": "com.qq.closie.data.backup.FinanceV4BackupRecoveryTest",
+      "tests": [
+        "jsonArchiveRestoresActiveAndHistoricalLinksExpectedRulesProposalsAndStagingExactly",
+        "restoringOlderSnapshotRetiresNewRelationsAndRetainsBothHistoricalIdentities",
+        "preV4FinanceRestoreRetiresRelationsWithoutErasingTheirHistoryOrPendingIntake"
+      ],
+      "sha256": "bb34e228d8b5681ee7806c6f4b649e922e6404459c9d2a750fe096936674c9fe",
+      "assertionCalls": 27,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt",
+      "className": "com.qq.closie.data.backup.GateAwareFlowTest",
+      "tests": [
+        "lifeRepositoryFlow_suspendsWhileBlockedAndResumesWithFreshData",
+        "referenceAndPlanFlows_areEquallyGated",
+        "whileBlockedTheDurableSourceIsNotSubscribedAtAll",
+        "longLivedCollector_survivesTheBlockAndSeesOnlyCoherentSnapshots",
+        "blockedMutation_leavesDiskStateFlowAndImagesUntouched",
+        "afterTheGateReopens_theHeldInstanceWritesAgain",
+        "aSlowCollectorHoldsTheEmissionLease_andBeginRestoreIsRefusedNotBlocked",
+        "anIdleCollectorHoldsNoLease"
+      ],
+      "sha256": "45e4b26b8e4a7d0e88602c52b9b66a8082e26fb75ef32b38e74539224ffabab3",
+      "assertionCalls": 40,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt",
+      "className": "com.qq.closie.data.backup.RestoreGateConcurrencyTest",
+      "tests": [
+        "nestedLeases_countUpAndBackToZero",
+        "leaseIsReleasedWhenTheBodyThrows",
+        "beginRestore_isRefusedWhileABusinessLeaseIsHeld",
+        "leasesCannotBeAcquiredWhileRestoring",
+        "stickyBlock_refusesBothLeasesAndOwnership",
+        "concurrentBeginRestore_hasExactlyOneWinner",
+        "beginRestore_neverSucceedsWhileAnyLeaseIsHeld",
+        "businessOpCount_returnsToZeroUnderConcurrentContention",
+        "wardrobeWrite_inFlight_blocksBeginRestore",
+        "recoveryReload_neverShowsACrossGenerationWardrobeToALongLivedObserver",
+        "lifeOsWrite_isRefusedWhileRestoring_andSucceedsAfter",
+        "captureAndMediaWrites_areRefusedWhileRestoring",
+        "refusedCaptureWrite_leavesNoPartialRow",
+        "repositoryTransaction_blocksBeginRestoreForItsWholeDuration",
+        "inFlightEmission_racingBeginRestore_isNotDelivered"
+      ],
+      "sha256": "4fa3ce4d30021e87e19c3fc65b58b29f9eaaa752d3565d76c72f6f2f4d12b69b",
+      "assertionCalls": 78,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAssistantProviderTest.kt",
       "className": "com.qq.closie.life.finance.FinanceAssistantProviderTest",
       "tests": [
@@ -114,6 +191,23 @@
       ],
       "sha256": "6b4e3b2e045cfa73519e9af7b330c6a969d578091c0d3163061b9e8ae1e090cb",
       "assertionCalls": 53,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceBalanceAnchorTest",
+      "tests": [
+        "backfilledExpenseRemainsCanonicalSearchableAndInHistoricalStatistics",
+        "inflowBeforeAnchorIsHistoryWhileAtAndAfterAnchorAffectBalance",
+        "transferUsesEachAccountAnchorWithoutChangingItsAtomicFactOrF1Totals",
+        "correctingOccurredAtAcrossAnchorChangesOnlyTheBalanceProjection",
+        "editingOrArchivingAccountDoesNotMoveItsOpeningBalanceAnchor",
+        "backupRecoveryPreservesAnchorAndBackfilledCanonicalRows"
+      ],
+      "sha256": "b3f042ad477a74bd4084028c653609806bb13a357c7edb270dc04d71e5d10152",
+      "assertionCalls": 61,
       "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -223,8 +317,8 @@
         "ordinaryRelinkCannotBypassTypedRefundAndEditingKeepsConfirmedAllocationIdentity",
         "assigningAlreadyReceivedRefundChangesCostWithoutAddingOrRewritingCash"
       ],
-      "sha256": "30cf4d24006c45f66f04fd680f552bef254dbeb55a64bc057ef5ab2577225224",
-      "assertionCalls": 38,
+      "sha256": "d48b38f54ba456db0c268a734d4369320a723bbb0daea824c9d65d5c077bae54",
+      "assertionCalls": 47,
       "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -395,6 +489,16 @@
       "bypass": []
     },
     {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt",
+      "className": "com.qq.closie.life.finance.FinanceRoomTest",
+      "tests": [],
+      "sha256": "e5e3cc5247aa1d89ed676cdc411a255166fbb490edd7a2f09605f69ebc14bd4c",
+      "assertionCalls": 10,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt",
       "className": "com.qq.closie.life.finance.FinanceShareV16Test",
       "tests": [
@@ -491,6 +595,26 @@
       "bypass": []
     },
     {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt",
+      "className": "com.qq.closie.ui.lifeos.ClosetSmokeTest",
+      "tests": [
+        "drawerHasHeaderSearchModulesAndDirectReorderAffordances",
+        "verticalHomeScrollDoesNotOpenDrawer",
+        "freshInstall_emptyWardrobe_homeToLifeToCloset_rendersEmptyState",
+        "freshInstall_closetIsEmpty_notBlankNotCrash",
+        "homeContentRightSwipeOpensFunctionPageAndBackClosesIt",
+        "functionPageContentLeftSwipeClosesIt",
+        "tappingExposedHomeClosesDrawer",
+        "drawerFinanceOpensRealLedgerAndReturnsToStableHome",
+        "financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance"
+      ],
+      "sha256": "f6079f94d65519af7b89c43ad997b2ed7777e4c05dede48a3195d539d4720287",
+      "assertionCalls": 45,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
       "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceCalendarStopsTest.kt",
       "className": "com.qq.closie.ui.lifeos.finance.FinanceCalendarStopsTest",
       "tests": [
@@ -527,8 +651,8 @@
         "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
         "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
       ],
-      "sha256": "88197702a891e7e7430c2ebf8b98798b4d969ae408128c8cc61d56daae69b780",
-      "assertionCalls": 58,
+      "sha256": "05a0ca86d12d8605a277a0c22adcc5c86f68bbce8560a3a1ff9cc9c34a3f48d3",
+      "assertionCalls": 90,
       "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []

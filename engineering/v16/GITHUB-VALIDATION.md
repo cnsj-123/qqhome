@@ -1,5 +1,7 @@
 # V16 严格 CI 与官方 Schema Bootstrap（2026-10-19）
 
+CI53 当前状态：唯一基线 e84897a946cd258c3df22e55855205618401b930；9 项失败已作源码修复，原 660 方法全保留，最低 97/662。完整 XML 旧远端为 651 PASS / 9 FAIL / 0 SKIP。当前本地缺 JDK/SDK/Gradle，完整 Android 预检环境 BLOCKED，Kotlin/JUnit/2000 实测/APK 均 UNVERIFIED；不是已验收交付，也不据此请求 Owner 推送。范围、逐项矩阵与 97 文件审计见 [CI53-FIX.md](CI53-FIX.md)、[CI53-TEST-AUDIT.md](CI53-TEST-AUDIT.md)。以下为历史快照。
+
 最终固定规则更正：最低97文件/660方法、V16增量33文件/170方法，既有658全部保留；命名固定时区30分钟矛盾区间及实际加密恢复反例新增，当前Android/JUnit均UNVERIFIED。生产Schema/迁移/现金/anchor与CI工作流保持；辅助官方DDL结构检查仍仅本地使用，未接入强制CI。最终补丁/来源及复验证据见CI52-FIX.md与交付manifest；以下为此前快照。
 
 CI52最终Review状态：最低97文件/658方法、增量33文件/168方法，原648及此前新方法均保留；新增标签/真实Compose回归及修正双持久观察点测试，执行仍UNVERIFIED。check-official-schema-migration.py仅为本地辅助结构比对，android.yml未调用；强制CI步骤仍为既有工程/历史/KSP/verify-room-schema.py/完整JUnit及逐方法与2000条指标/APK链，未弱化也未声称该辅助脚本在CI强制执行。最新内容见CI52-FIX.md；下文为首版及更早状态快照。

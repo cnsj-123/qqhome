@@ -1,5 +1,7 @@
 # V16 测试源码自审（2026-10-19）
 
+CI53 当前状态：唯一基线 e84897a946cd258c3df22e55855205618401b930；9 项失败已作源码修复，原 660 方法全保留，最低 97/662。完整 XML 旧远端为 651 PASS / 9 FAIL / 0 SKIP。当前本地缺 JDK/SDK/Gradle，完整 Android 预检环境 BLOCKED，Kotlin/JUnit/2000 实测/APK 均 UNVERIFIED；不是已验收交付，也不据此请求 Owner 推送。范围、逐项矩阵与 97 文件审计见 [CI53-FIX.md](CI53-FIX.md)、[CI53-TEST-AUDIT.md](CI53-TEST-AUDIT.md)。以下为历史快照。
+
 最终固定规则Review：保留已有658方法，新增shiftedFixedNamedZoneEvidenceIsInvalidEvenWithUnchangedEpochInsideTheRange及forgedFixedNamedZoneEncryptedBackupsCannotChangeAnExistingLedger。固定命名别名与字面offset均校验，东京/洛杉矶作非固定规则对照；仅移动区间两端、原epoch不动，分别检验两类Entity的FinanceIntegrity拒绝及实际加密恢复的非空目标全Snapshot不变。最低97/660、增量33/170，pin与inventory同步；两项Android/JUnit执行均UNVERIFIED。既有标签/真实双ID区间/Compose方法保留，未旁路或降低断言。以下为此前快照。
 
 CI52最终Review：新增CivilDate四类精确标签/已保存信心、无已保存核对说明两方法及FinanceSmokeTest真实净额展开标签方法；原unverifiedObservation…方法保留并改用当前快照内两个不同Observation ID，增加现金/账户/anchor/入账行不变断言。最低97/658、增量33/168；原648及首版新增7方法全部保留，pin与inventory同步。实际源码/工程验证与未执行Android边界见CI52-FIX.md；本次Kotlin/Compose/JUnit仍UNVERIFIED。以下审计数值为此前快照。

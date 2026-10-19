@@ -1,5 +1,7 @@
 # V16 连续施工 checkpoint（2026-10-19）
 
+CI53 当前状态：唯一基线 e84897a946cd258c3df22e55855205618401b930；9 项失败已作源码修复，原 660 方法全保留，最低 97/662。完整 XML 旧远端为 651 PASS / 9 FAIL / 0 SKIP。当前本地缺 JDK/SDK/Gradle，完整 Android 预检环境 BLOCKED，Kotlin/JUnit/2000 实测/APK 均 UNVERIFIED；不是已验收交付，也不据此请求 Owner 推送。范围、逐项矩阵与 97 文件审计见 [CI53-FIX.md](CI53-FIX.md)、[CI53-TEST-AUDIT.md](CI53-TEST-AUDIT.md)。以下为历史快照。
+
 最终P1固定规则修复：FinanceCivilDate.assess按ZoneRules.isFixedOffset识别包括UTC/Etc/UTC/UTC+09:00的命名固定时区，矛盾区间拒绝为INVALID；非固定规则仍保留历史待核验。新增2个真实路径方法：原epoch位于整体偏移30分钟区间内的完整性反例、三种命名时区的加密恢复原子拒绝；最低97/660、增量33/170，既有658方法和此前展示/双Observation回归保留。Entity/DAO/Migration/官方5、现金/anchor、compare与CI门禁不变。日期及测试更正收进原第2逻辑提交，工程记录在第3提交。当前Kotlin/JUnit/设备均UNVERIFIED，无下载或远端操作；以下为此前快照。
 
 CI52最终Review更正：日期入账/观察/区间/净额展开统一可信度标签；修正净额页直接格式化epoch的旁路，未保存核对只表示现金推算、不认证入账证据。观察区间回归现用两个不同且同时持久存在的ID，不改compare契约。新增2个Room方法及1个真实Compose显示方法；最低97/658、增量33/168，原648及此前全部方法保留。辅助官方DDL结构比对仅本地执行，不是android.yml强制步骤；既有CI门禁未改。Entity/DAO/Migration/官方5与现金/anchor未改，Kotlin/JUnit/设备仍UNVERIFIED；以下首版CI52状态为历史快照。
