@@ -558,7 +558,18 @@
         "integerControlIdentityStillRejectsDuplicatesAndWrongSingletonKey",
         "postedFiltersAndStatementsAlsoRequirePersistedWholeDateIntervals",
         "encryptedTypedBackupPreservesDateZoneBoundsAcrossDevices",
-        "olderTypedArchiveDoesNotInventDateOrZoneOnRestore"
+        "olderTypedArchiveDoesNotInventDateOrZoneOnRestore",
+        "contradictoryCalendarDateEvenWithEpochInsideAndMalformedGroupsAreRejectedAtomically",
+        "anotherZonesBoundsArePreservedButCannotDetermineMembershipOrBypassNewWriteValidation",
+        "plausibleHistoricalRuleChangeCannotExcludeAnOutsideRowAndInvalidatesSavedSuccess",
+        "unverifiedObservationCannotProduceBookDifferenceOrIntervalAndInvalidatesSavedSuccess",
+        "offsetEnvelopeExtremesAndMidnightGapsAreNotFixedTwentyFourHourGuesses",
+        "plausibleOldRuleBackupPreservesRawEvidenceAndInvalidatesInsteadOfRepairing",
+        "contradictoryTypedEncryptedBackupIsRejectedBeforeAnyTargetSnapshotChange",
+        "persistedDateLabelsDistinguishAllEvidenceClassesAndSavedAccountConfidence",
+        "unsavedAccountConfidenceDoesNotCertifyUnverifiedPostingOrObservationEvidence",
+        "shiftedFixedNamedZoneEvidenceIsInvalidEvenWithUnchangedEpochInsideTheRange",
+        "forgedFixedNamedZoneEncryptedBackupsCannotChangeAnExistingLedger"
       ]
     },
     {
@@ -1209,7 +1220,8 @@
         "establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets",
         "transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid",
         "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
-        "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
+        "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange",
+        "balanceSummaryShowsHistoricalObservationConfidenceInsteadOfAnEpochDate"
       ]
     },
     {

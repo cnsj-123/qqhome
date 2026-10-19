@@ -69,6 +69,41 @@ class FinanceSmokeTest {
         compose.onNode(dateControl).assertIsDisplayed()
     }
 
+    @Test fun balanceSummaryShowsHistoricalObservationConfidenceInsteadOfAnEpochDate() {
+        val s=runBlocking {
+            val zone=ZoneId.of("Asia/Tokyo");val day=java.time.LocalDate.of(2026,10,10)
+            val finance=FinanceRepository(db){day.plusDays(5).atStartOfDay(zone).toInstant().toEpochMilli()}
+            fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
+            val account=finance.saveAccount(name="合成日期显示账户",kind=FinanceAccountKind.BANK_CARD,openingBalanceMinor=10_000,
+                balanceAnchorAt=day.minusDays(2).atStartOfDay(zone).toInstant().toEpochMilli())
+            finance.workspace.setAccountPolicy(token(),account.id,true,FinanceLiabilityConvention.SIGNED,FinanceBalanceBasis.KNOWN_POSTED,null)
+            val entry=finance.saveEntry(accountId=account.id,direction=FinanceDirection.OUTFLOW,amountMinor=100,
+                description="合成原流水",occurredAt=day.atTime(12,0).atZone(zone).toInstant().toEpochMilli())
+            val posting=FinanceCivilDate.capture(day,zone)
+            finance.workspace.setPostingDate(token(),entry.id,entry.revision,posting.startInclusive,FinanceTimePrecision.DATE,"合成依据",posting)
+            val civil=FinanceCivilDate.capture(day.plusDays(1),zone)
+            val id=finance.workspace.saveObservation(token(),account.id,9_900,civil.startInclusive,
+                FinanceBalanceBasis.KNOWN_POSTED,FinanceTimePrecision.DATE,"合成观察",civil)
+            val original=finance.snapshot();val observation=original.v16!!.observationRows.single()
+            finance.workspace.confirmReconciliation(token(),id,FinanceAccountProjection.fingerprint(original,observation),"")
+            db.financeV16Dao().putObservation(listOf(observation.copy(observedAt=observation.observedAt+1_800_000L,
+                observedDayStartAt=civil.startInclusive+1_800_000L,observedDayEndExclusive=civil.endExclusive+1_800_000L)))
+            val current=finance.snapshot();FinanceIntegrity.validate(current)
+            assertEquals(original.accounts,current.accounts);assertEquals(original.entries,current.entries)
+            assertEquals(9_900L,FinanceProjection.balance(current.accounts.single(),current.entries))
+            val confidence=FinanceAccountStatusProjection.status(current,account.id)
+            assertEquals(FinanceTrust.INCOMPLETE,confidence.trust)
+            assertNull(confidence.conclusion!!.bookMinor);assertNull(confidence.conclusion!!.differenceMinor)
+            current
+        }
+        compose.setContent {LifeOsTheme {FinanceBalanceSummary(FinanceUiState(snapshot=s))}}
+        compose.onNodeWithText("展开范围与核对状态").performClick()
+        compose.onNodeWithText("核对观察时间 · 2026-10-11 · Asia/Tokyo（历史日期参考；确认区间无法核验，资料不足）").assertIsDisplayed()
+        compose.onNodeWithText("合成日期显示账户 · "+FinanceMoney.display(9_900,"CNY")+" · 资料不足").assertIsDisplayed()
+        compose.onNodeWithText("已核对").assertDoesNotExist()
+        assertEquals(s.accounts,snapshot().accounts);assertEquals(s.entries,snapshot().entries)
+    }
+
     @Test fun insightsStartsWithItsOwnRangeAfterLedgerSelectedAllDates() {
         launch()
         selectPeriod("全部")

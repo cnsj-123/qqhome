@@ -8,7 +8,7 @@ data class FinanceReconciliationResult(val observation: FinanceObservationEntity
 
 /** Complete-account scans always precede filtering; the original inclusive anchor is unchanged. */
 object FinanceAccountProjection {
-    const val RECONCILIATION_ALGORITHM=4
+    const val RECONCILIATION_ALGORITHM=5
     fun liabilitySignPending(s:FinanceSnapshot,account:FinanceAccountEntity):Boolean =
         account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0 &&
             s.v16?.accountPolicyRows.orEmpty().none {it.accountId==account.id && it.voidedAt==null}
@@ -88,12 +88,14 @@ object FinanceAccountProjection {
     private fun fingerprint(scope:ReconciliationScope,observation:FinanceObservationEntity):String {
         val account=scope.account
         val facts=scope.facts.map {
-            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt,it.precision,it.civilDate,it.bounds,it.certainlyInside)
+            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt,it.precision,it.civilDate,
+                it.civilDate?.assessment()?.trust,it.bounds,it.certainlyInside)
             }
         val encoded = com.google.gson.Gson().toJson(listOf(RECONCILIATION_ALGORITHM, account.id, account.currencyCode,
             account.balanceAnchorAt, account.openingBalanceMinor,
             scope.anchorBasis.takeIf {observation.basis==FinanceBalanceBasis.KNOWN_POSTED},observation.basis,
-            observation.observedAt,observation.amountMinor,observation.precision,scope.observationCivilDate,scope.observationBounds,facts))
+            observation.observedAt,observation.amountMinor,observation.precision,scope.observationCivilDate,
+            scope.observationCivilDate?.assessment()?.trust,scope.observationBounds,facts))
         return MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray()).joinToString("") { "%02x".format(it) }
     }
     fun fingerprint(s:FinanceSnapshot,observation:FinanceObservationEntity):String=fingerprint(scope(s,observation),observation)

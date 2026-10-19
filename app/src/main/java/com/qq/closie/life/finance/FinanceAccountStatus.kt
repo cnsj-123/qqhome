@@ -19,7 +19,7 @@ object FinanceAccountStatusProjection {
         val observations=v?.observationRows.orEmpty().filter { it.accountId==accountId && it.voidedAt==null }.associateBy { it.id }
         val last=v?.reconciliationRows.orEmpty().filter { it.voidedAt==null && it.observationId in observations }
             .maxByOrNull { it.confirmationOrder }
-        if(last==null) return FinanceAccountStatus(FinanceTrust.DERIVED,"余额由起点及真实流水推算，尚无已保存的核对结论。")
+        if(last==null) return FinanceAccountStatus(FinanceTrust.DERIVED,"余额由起点及真实收付流水推算，尚无已保存的核对结论，不代表入账日期证据已核验。")
         val result=FinanceAccountProjection.reconcile(s,observations.getValue(last.observationId),last)
         return when {
             result.bookMinor==null -> FinanceAccountStatus(FinanceTrust.INCOMPLETE,

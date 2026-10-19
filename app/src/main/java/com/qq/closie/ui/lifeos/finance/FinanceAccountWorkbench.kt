@@ -139,7 +139,7 @@ internal fun FinancePostingEditor(state:FinanceUiState,row:FinanceLedgerRow,vm:F
     var dateOnly by rememberSaveable(row.id) {mutableStateOf(timing?.postedPrecision==FinanceTimePrecision.DATE)}
     var zone by rememberSaveable(row.id) {mutableStateOf(timing?.postedZoneId ?: if(dateOnly) "" else ZoneId.systemDefault().id)}
     var text by rememberSaveable(row.id) {mutableStateOf(if(dateOnly) timing?.postedLocalDate.orEmpty() else timing?.postedAt?.let(FinanceTime::input).orEmpty())}
-    TextButton({open=!open}) {Text("确知入账日 · "+(timing?.postedTimeLabel() ?: "未知"))}
+    TextButton({open=!open}) {Text("入账日期 · "+(timing?.postedTimeLabel() ?: "未知"))}
     if(open) {
         Row {Checkbox(dateOnly,{dateOnly=it});Text("仅知道日历日期")}
         OutlinedTextField(text,{text=it},label={Text(if(dateOnly) "原始日期 · 年-月-日；留空恢复未知" else "确知入账时间；留空恢复未知")},modifier=Modifier.fillMaxWidth())

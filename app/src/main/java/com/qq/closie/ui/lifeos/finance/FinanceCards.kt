@@ -77,7 +77,7 @@ internal fun FinanceBalanceSummary(state: FinanceUiState) {
                 val status=FinanceAccountStatusProjection.status(state.snapshot,account.id)
                 val includedHere=policies[account.id]?.includedInNet!=false
                 Text(account.name+" · "+(if(includedHere) FinanceMoney.display(FinanceAccountProjection.netContribution(state.snapshot,account),account.currencyCode) else "未纳入")+" · "+status.trust.label,style=LifeText.body)
-                status.conclusion?.observation?.let {Text("核对观察时间 · "+FinanceTime.input(it.observedAt),style=LifeText.caption)}
+                status.conclusion?.observation?.let {Text("核对观察时间 · "+it.timeLabel(),style=LifeText.caption)}
                 Text(status.explanation,style=LifeText.caption)
                 if(FinanceAccountProjection.liabilitySignPending(state.snapshot,account)) Text("期初符号待确认，当前仅沿用旧账簿口径。",style=LifeText.caption)
             }
