@@ -1,0 +1,1404 @@
+From c15d28ada35be38bd0c6433148e56c83aec0135b Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Mon, 19 Oct 2026 14:44:53 +0800
+Subject: [PATCH] fix(v16): stabilize civil dates and resolve CI51 compilation
+ errors
+
+Fix digest overload inference, integer control-key validation and nullable saved version state. Persist original civil dates, zones, confirmed day bounds and basis versions through Room and typed backup; leave legacy date evidence unknown. Revise candidate v5 migration before final KSP bootstrap, retain historical schemas and strict CI gates, and add ten production-path date/migration regressions. Local-only increment from 7895082; current Android compilation and runtime verification remain pending CI.
+---
+ .../qq/closie/data/backup/BackupImporter.kt   |   2 +
+ .../data/backup/EncryptedBackupManager.kt     |   4 +-
+ .../life/data/database/FinanceV16Migration.kt |   4 +-
+ .../life/finance/FinanceAccountProjection.kt  |  38 +---
+ .../life/finance/FinanceAccountStatus.kt      |  12 +-
+ .../closie/life/finance/FinanceCivilDate.kt   |  69 ++++++
+ .../closie/life/finance/FinanceV16Entities.kt |  14 +-
+ .../life/finance/FinanceV16Integrity.kt       |   4 +
+ .../life/finance/FinanceV16References.kt      |   2 +-
+ .../finance/FinanceWorkspaceRepository.kt     |  19 +-
+ .../ui/lifeos/finance/FinanceAccountSheet.kt  |   2 +-
+ .../lifeos/finance/FinanceAccountWorkbench.kt |  28 ++-
+ .../lifeos/finance/FinanceRegisterFilters.kt  |   4 +-
+ .../finance/FinanceShoppingWorkbench.kt       |   2 +-
+ .../life/finance/FinanceCivilDateV16Test.kt   | 215 ++++++++++++++++++
+ .../FinanceReconciliationScopeV16Test.kt      |   8 +-
+ .../life/finance/FinanceV5MigrationTest.kt    |  33 +++
+ engineering/v16/CI51-FIX.md                   |  39 ++++
+ engineering/v16/GITHUB-VALIDATION.md          |  12 +-
+ engineering/v16/PROGRESS.md                   |   4 +-
+ engineering/v16/REVIEW-FIX-ROUND2.md          |   2 +
+ engineering/v16/TEST-AUDIT.md                 |   9 +-
+ engineering/v16/check-migration.py            |   5 +
+ engineering/v16/feature-matrix.md             |   2 +-
+ engineering/v16/generate-schema.cjs           |  11 +-
+ engineering/v16/package-review-fix.py         |  23 +-
+ .../review-fix-evidence/ci51-observed.json    |  31 +++
+ .../review-fix-evidence/test-inventory.json   |  43 +++-
+ engineering/v16/schema-v5.json                |  54 ++++-
+ engineering/v16/static-result.json            |   2 +-
+ engineering/v16/test-minimum-contract.json    |  22 +-
+ engineering/v16/v16_test_contract.py          |   4 +-
+ engineering/v16/verify-room-schema.py         |   5 +
+ 33 files changed, 628 insertions(+), 100 deletions(-)
+ create mode 100644 app/src/main/java/com/qq/closie/life/finance/FinanceCivilDate.kt
+ create mode 100644 app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt
+ create mode 100644 engineering/v16/CI51-FIX.md
+ create mode 100644 engineering/v16/review-fix-evidence/ci51-observed.json
+
+diff --git a/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt b/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt
+index 50eefc86170101dcca2af39dc5ab35c427589f75..dd32174b558429d088bf6d1f853e1bd599c86b9a 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/BackupImporter.kt
+@@ -146,6 +146,8 @@ internal object BackupImporter {
+                     require(section.has("recoveryTagRows") && section.get("recoveryTagRows").isJsonArray)
+                     require(section.has("recoveryMemberRows") && section.get("recoveryMemberRows").isJsonArray)
+                 }
++                // Civil-date groups are typed nullable columns. Old archives leave all five null;
++                // FinanceIntegrity rejects partial groups, without fabricating a date/zone from an epoch.
+                 gson.fromJson(tree, LifeBackupPayload::class.java)
+             }
+                 .getOrNull() ?: throw IllegalStateException("Life OS 数据无法解析")
+diff --git a/app/src/main/java/com/qq/closie/data/backup/EncryptedBackupManager.kt b/app/src/main/java/com/qq/closie/data/backup/EncryptedBackupManager.kt
+index 1f0b12b2c453d6abb7a474a3aa9759c99d69d108..d34e9a858300aaf67d773437bd3fb84976b54aa9 100644
+--- a/app/src/main/java/com/qq/closie/data/backup/EncryptedBackupManager.kt
++++ b/app/src/main/java/com/qq/closie/data/backup/EncryptedBackupManager.kt
+@@ -45,7 +45,7 @@ object EncryptedBackupManager {
+                 requireNotNull(resolver.openOutputStream(uri, "wt")) { "无法写入备份文件" }.use { out ->
+                     encrypted.inputStream().use { it.copyTo(out) }
+                 }
+-                val stored = requireNotNull(resolver.openInputStream(uri)) { "无法重新读取并验证已写入的备份" }.use(::digest)
++                val stored:ByteArray = requireNotNull(resolver.openInputStream(uri)) { "无法重新读取并验证已写入的备份" }.use { input -> digest(input) }
+                 check(stored.contentEquals(digest(encrypted))) { "备份文件写入不完整" }
+             }
+         } finally { password.fill('\u0000'); scratch.deleteRecursively() }
+@@ -65,7 +65,7 @@ object EncryptedBackupManager {
+         } } finally { password.fill('\u0000'); scratch.deleteRecursively() }
+     }
+ 
+-    private fun digest(file: File) = file.inputStream().use(::digest)
++    private fun digest(file: File): ByteArray = file.inputStream().use { input -> digest(input) }
+     private fun digest(input: java.io.InputStream): ByteArray {
+         val hash = MessageDigest.getInstance("SHA-256")
+         val buffer = ByteArray(64 * 1024)
+diff --git a/app/src/main/java/com/qq/closie/life/data/database/FinanceV16Migration.kt b/app/src/main/java/com/qq/closie/life/data/database/FinanceV16Migration.kt
+index e645066f9ea97adc9f026e19e7acf3e8264d1425..aa309f5572517007ecb2f4c760a92aa476576cb3 100644
+--- a/app/src/main/java/com/qq/closie/life/data/database/FinanceV16Migration.kt
++++ b/app/src/main/java/com/qq/closie/life/data/database/FinanceV16Migration.kt
+@@ -39,11 +39,11 @@ object FinanceV16Migration : Migration(4, 5) {
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_eventId` ON `finance_cost_adjustments` (`eventId`)""")
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_entryLinkId` ON `finance_cost_adjustments` (`entryLinkId`)""")
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_lineId` ON `finance_cost_adjustments` (`lineId`)""")
+-        db.execSQL("""CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
++        db.execSQL("""CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, `postedLocalDate` TEXT, `postedZoneId` TEXT, `postedDayStartAt` INTEGER, `postedDayEndExclusive` INTEGER, `postedDateBasisVersion` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_entry_timing_entryId` ON `finance_entry_timing` (`entryId`)""")
+         db.execSQL("""CREATE TABLE IF NOT EXISTS `finance_account_policies` (`accountId` TEXT NOT NULL, `includedInNet` INTEGER NOT NULL, `liabilityConvention` TEXT NOT NULL, `anchorBasis` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`accountId`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_account_policies_accountId` ON `finance_account_policies` (`accountId`)""")
+-        db.execSQL("""CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
++        db.execSQL("""CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, `observedLocalDate` TEXT, `observedZoneId` TEXT, `observedDayStartAt` INTEGER, `observedDayEndExclusive` INTEGER, `observedDateBasisVersion` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_observations_accountId` ON `finance_observations` (`accountId`)""")
+         db.execSQL("""CREATE TABLE IF NOT EXISTS `finance_reconciliations` (`id` TEXT NOT NULL, `observationId` TEXT NOT NULL, `bookMinor` INTEGER, `fingerprint` TEXT NOT NULL, `algorithmVersion` INTEGER NOT NULL, `note` TEXT NOT NULL, `confirmationOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`observationId`) REFERENCES `finance_observations`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)""")
+         db.execSQL("""CREATE INDEX IF NOT EXISTS `index_finance_reconciliations_observationId` ON `finance_reconciliations` (`observationId`)""")
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt
+index 6eef8f8cbf75520cd7d67945917ad0c3c5bfd915..617824e903270680575500363cce27b0ebfea8bc 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountProjection.kt
+@@ -1,8 +1,6 @@
+ package com.qq.closie.life.finance
+ 
+ import java.security.MessageDigest
+-import java.time.Instant
+-import java.time.ZoneId
+ 
+ data class FinanceRegisterRow(val entry: FinanceEntryEntity, val balanceMinor: Long?)
+ data class FinanceReconciliationResult(val observation: FinanceObservationEntity, val bookMinor: Long?,
+@@ -10,7 +8,7 @@ data class FinanceReconciliationResult(val observation: FinanceObservationEntity
+ 
+ /** Complete-account scans always precede filtering; the original inclusive anchor is unchanged. */
+ object FinanceAccountProjection {
+-    const val RECONCILIATION_ALGORITHM=3
++    const val RECONCILIATION_ALGORITHM=4
+     fun liabilitySignPending(s:FinanceSnapshot,account:FinanceAccountEntity):Boolean =
+         account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0 &&
+             s.v16?.accountPolicyRows.orEmpty().none {it.accountId==account.id && it.voidedAt==null}
+@@ -58,58 +56,44 @@ object FinanceAccountProjection {
+         return included.values.groupBy {it.currencyCode}.mapValues {(_,accounts)->exactSum(accounts.map {values.getValue(it.id).longValueExact()})}
+     }
+ 
+-    private data class TimeBounds(val earliest:Long,val latest:Long)
+     private data class ScopedFact(val entry:FinanceEntryEntity,val effectiveAt:Long?,val precision:FinanceTimePrecision,
+-        val bounds:TimeBounds?,val certainlyInside:Boolean)
++        val civilDate:FinanceCivilDate?,val bounds:FinanceTimeBounds?,val certainlyInside:Boolean)
+     private data class ReconciliationScope(val account:FinanceAccountEntity,val anchorBasis:FinanceBalanceBasis?,
+-        val observationBounds:TimeBounds?,val facts:List<ScopedFact>)
+-
+-    /** DATE is an unknown instant within that local calendar day, never midnight or end-of-day. */
+-    private fun bounds(at:Long?,precision:FinanceTimePrecision,zone:ZoneId):TimeBounds? {
+-        if(at==null) return null
+-        return when(precision) {
+-            FinanceTimePrecision.INSTANT -> TimeBounds(at,at)
+-            FinanceTimePrecision.DATE -> runCatching {
+-                val date=Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+-                TimeBounds(date.atStartOfDay(zone).toInstant().toEpochMilli(),
+-                    Math.subtractExact(date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),1L))
+-            }.getOrNull()
+-            FinanceTimePrecision.UNKNOWN,FinanceTimePrecision.LEGACY -> null
+-        }
+-    }
++        val observationCivilDate:FinanceCivilDate?,val observationBounds:FinanceTimeBounds?,val facts:List<ScopedFact>)
+ 
+     private fun scope(s:FinanceSnapshot,observation:FinanceObservationEntity):ReconciliationScope {
+         val account = s.accounts.single { it.id == observation.accountId }
+         val timings = s.v16?.entryTimingRows.orEmpty().filter { it.voidedAt == null }.associateBy { it.entryId }
+         val anchorBasis = s.v16?.accountPolicyRows.orEmpty().singleOrNull { it.accountId == account.id && it.voidedAt == null }?.anchorBasis
+-        val zone=ZoneId.systemDefault()
+-        val observationBounds=bounds(observation.observedAt,observation.precision,zone)
++        val observationCivilDate=observation.observedCivilDate()
++        val observationBounds=financeTimeBounds(observation.observedAt,observation.precision,observationCivilDate)
+         val facts=s.entries.filter {it.accountId==account.id && it.voidedAt==null}.mapNotNull {entry->
+             val legacy=observation.basis==FinanceBalanceBasis.LEGACY_CASH
+             val time=if(legacy) entry.occurredAt else timings[entry.id]?.postedAt
+             val precision=if(legacy) FinanceTimePrecision.LEGACY else timings[entry.id]?.postedPrecision ?: FinanceTimePrecision.UNKNOWN
+             // Keep the original cash/anchor convention. LEGACY posting precision is not an instant.
+-            val interval=if(legacy) TimeBounds(entry.occurredAt,entry.occurredAt) else bounds(time,precision,zone)
++            val civilDate=if(legacy) null else timings[entry.id]?.postedCivilDate()
++            val interval=if(legacy) FinanceTimeBounds(entry.occurredAt,entry.occurredAt) else financeTimeBounds(time,precision,civilDate)
+             // No reliable posting bounds exist for unknown dates in this model. Cash/recorded time
+             // and free-text source descriptions cannot prove exclusion, including before the anchor.
+             val outside=interval!=null && (interval.latest<account.balanceAnchorAt ||
+                 (observationBounds!=null && interval.earliest>observationBounds.latest))
+             val inside=interval!=null && observationBounds!=null && interval.earliest>=account.balanceAnchorAt &&
+                 interval.latest<=observationBounds.earliest
+-            if(outside) null else ScopedFact(entry,time,precision,interval,inside)
++            if(outside) null else ScopedFact(entry,time,precision,civilDate,interval,inside)
+         }.sortedBy {it.entry.id}
+-        return ReconciliationScope(account,anchorBasis,observationBounds,facts)
++        return ReconciliationScope(account,anchorBasis,observationCivilDate,observationBounds,facts)
+     }
+ 
+     private fun fingerprint(scope:ReconciliationScope,observation:FinanceObservationEntity):String {
+         val account=scope.account
+         val facts=scope.facts.map {
+-            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt,it.precision,it.bounds,it.certainlyInside)
++            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt,it.precision,it.civilDate,it.bounds,it.certainlyInside)
+             }
+         val encoded = com.google.gson.Gson().toJson(listOf(RECONCILIATION_ALGORITHM, account.id, account.currencyCode,
+             account.balanceAnchorAt, account.openingBalanceMinor,
+             scope.anchorBasis.takeIf {observation.basis==FinanceBalanceBasis.KNOWN_POSTED},observation.basis,
+-            observation.observedAt,observation.amountMinor,observation.precision,scope.observationBounds,facts))
++            observation.observedAt,observation.amountMinor,observation.precision,scope.observationCivilDate,scope.observationBounds,facts))
+         return MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray()).joinToString("") { "%02x".format(it) }
+     }
+     fun fingerprint(s:FinanceSnapshot,observation:FinanceObservationEntity):String=fingerprint(scope(s,observation),observation)
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt
+index 6f917a9c00ea28cb55cfee8b0c106877826a22cd..96cb147dfe8190aa4c389b917e6f9b307273f022 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceAccountStatus.kt
+@@ -34,8 +34,11 @@ object FinanceAccountStatusProjection {
+         require(first.voidedAt==null && last.voidedAt==null)
+         val a=FinanceAccountProjection.reconcile(s,first).bookMinor
+         val b=FinanceAccountProjection.reconcile(s,last).bookMinor
++        val firstBounds=financeTimeBounds(first.observedAt,first.precision,first.observedCivilDate())
++        val lastBounds=financeTimeBounds(last.observedAt,last.precision,last.observedCivilDate())
++        val ordered=firstBounds!=null && lastBounds!=null && firstBounds.latest<lastBounds.earliest
+         val observed=Math.subtractExact(last.amountMinor,first.amountMinor)
+-        val movement=if(a==null || b==null) null else Math.subtractExact(b,a)
++        val movement=if(!ordered || a==null || b==null) null else Math.subtractExact(b,a)
+         return FinanceObservationInterval(first,last,observed,movement,movement?.let { Math.subtractExact(observed,it) })
+     }
+     fun statement(s:FinanceSnapshot,accountId:String,closingMonth:YearMonth):FinanceCreditStatement {
+@@ -50,10 +53,13 @@ object FinanceAccountStatusProjection {
+         val due=dueMonth.atDay(minOf(cycle.dueDay,dueMonth.lengthOfMonth())).atStartOfDay(zone).toInstant().toEpochMilli()
+         val timing=v.entryTimingRows.filter { it.voidedAt==null }.associateBy { it.entryId }
+         val all=s.entries.filter { it.accountId==accountId && it.voidedAt==null }
+-        val known=all.filter { row -> timing[row.id]?.postedAt?.let { it>=start && it<end }==true }
++        val bounds=all.associate {it.id to timing[it.id]?.postedTimeBounds()}
++        val known=all.filter {row->bounds[row.id]?.let {it.earliest>=start && it.latest<end}==true}
++        val knownIds=known.map {it.id}.toSet()
+         return FinanceCreditStatement(FinanceDateRange(start,end),due,
+             exactSum(known.filter { it.direction==FinanceDirection.OUTFLOW }.map { it.amountMinor }),
+             exactSum(known.filter { it.direction==FinanceDirection.INFLOW }.map { it.amountMinor }),known,
+-            all.count { timing[it.id]?.postedAt==null })
++            all.count {row->val span=bounds[row.id]
++                span==null || (span.latest>=start && span.earliest<end && row.id !in knownIds)})
+     }
+ }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceCivilDate.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceCivilDate.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..c2aae85ac40c96466332ccc0128d783333f6fb65
+--- /dev/null
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceCivilDate.kt
+@@ -0,0 +1,69 @@
++package com.qq.closie.life.finance
++
++import java.time.LocalDate
++import java.time.ZoneId
++
++/** Original civil date and the zone/range actually confirmed, independent of future device zones. */
++data class FinanceCivilDate private constructor(val localDate:String,val zoneId:String,
++    val startInclusive:Long,val endExclusive:Long,val basisVersion:Int) {
++    companion object {
++        const val LOCAL_DAY_AT_CONFIRMATION=1
++        fun capture(date:LocalDate,zone:ZoneId):FinanceCivilDate {
++            val start=date.atStartOfDay(zone).toInstant().toEpochMilli()
++            val end=date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
++            require(end>start) {"所选时区不存在这个日历日"}
++            return FinanceCivilDate(date.toString(),zone.id,start,end,LOCAL_DAY_AT_CONFIRMATION)
++        }
++        fun stored(date:String?,zone:String?,start:Long?,end:Long?,version:Int?):FinanceCivilDate? {
++            if(date==null || zone==null || start==null || end==null || version!=LOCAL_DAY_AT_CONFIRMATION || end<=start) return null
++            return runCatching {
++                require(LocalDate.parse(date).toString()==date)
++                ZoneId.of(zone) // Validate the identifier, never consult the current device zone.
++                // The recorded interval is authoritative. Do not reinterpret it using newer tzdb rules.
++                FinanceCivilDate(date,zone,start,end,LOCAL_DAY_AT_CONFIRMATION)
++            }.getOrNull()
++        }
++        fun validate(precision:FinanceTimePrecision,at:Long?,date:String?,zone:String?,start:Long?,end:Long?,version:Int?) {
++            val any=listOf(date,zone,start,end,version).any {it!=null}
++            if(!any) return // Old DATE archives have no recoverable civil-date evidence; remain unknown.
++            val evidence=requireNotNull(stored(date,zone,start,end,version)) {"日历日期证据不完整或版本未知"}
++            require(precision==FinanceTimePrecision.DATE && at!=null && at>=evidence.startInclusive && at<evidence.endExclusive) {
++                "日历日期证据与精度或原时间不一致"
++            }
++        }
++        fun validateNew(precision:FinanceTimePrecision,at:Long?,evidence:FinanceCivilDate?) {
++            require((precision==FinanceTimePrecision.DATE)==(evidence!=null)) {"仅日期记录须明确原始日历日期和时区"}
++            if(evidence!=null) {
++                require(evidence==capture(LocalDate.parse(evidence.localDate),ZoneId.of(evidence.zoneId))) {"日期依据与所选时区不一致"}
++                validate(precision,at,evidence.localDate,evidence.zoneId,evidence.startInclusive,evidence.endExclusive,evidence.basisVersion)
++            }
++        }
++    }
++}
++
++fun FinanceEntryTimingEntity.postedCivilDate():FinanceCivilDate? = FinanceCivilDate.stored(
++    postedLocalDate,postedZoneId,postedDayStartAt,postedDayEndExclusive,postedDateBasisVersion)
++fun FinanceObservationEntity.observedCivilDate():FinanceCivilDate? = FinanceCivilDate.stored(
++    observedLocalDate,observedZoneId,observedDayStartAt,observedDayEndExclusive,observedDateBasisVersion)
++
++internal data class FinanceTimeBounds(val earliest:Long,val latest:Long)
++internal fun financeTimeBounds(at:Long?,precision:FinanceTimePrecision,civilDate:FinanceCivilDate?):FinanceTimeBounds? {
++    if(at==null) return null
++    return when(precision) {
++        FinanceTimePrecision.INSTANT -> FinanceTimeBounds(at,at)
++        FinanceTimePrecision.DATE -> civilDate?.takeIf {at>=it.startInclusive && at<it.endExclusive}
++            ?.let {FinanceTimeBounds(it.startInclusive,Math.subtractExact(it.endExclusive,1L))}
++        FinanceTimePrecision.UNKNOWN,FinanceTimePrecision.LEGACY -> null
++    }
++}
++internal fun FinanceEntryTimingEntity.postedTimeBounds()=financeTimeBounds(postedAt,postedPrecision,postedCivilDate())
++
++fun FinanceObservationEntity.timeLabel():String = if(precision==FinanceTimePrecision.DATE)
++    observedCivilDate()?.let {it.localDate+" · "+it.zoneId+"（仅日期）"} ?: "日期资料不足（旧记录缺少日期/时区依据）"
++    else FinanceTime.input(observedAt)
++fun FinanceEntryTimingEntity.postedTimeLabel():String = when {
++    postedPrecision==FinanceTimePrecision.DATE -> postedCivilDate()?.let {it.localDate+" · "+it.zoneId+"（仅日期）"}
++        ?: "日期资料不足（旧记录缺少日期/时区依据）"
++    postedAt==null -> "未知"
++    else -> FinanceTime.input(postedAt)
++}
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceV16Entities.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceV16Entities.kt
+index 37dd95aee628c7da2e551013e3d9e67b772a80f8..cf6c3250df29ef832eaccf42daeece57c24610a9 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceV16Entities.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceV16Entities.kt
+@@ -146,7 +146,12 @@ data class FinanceEntryTimingEntity(
+     val createdAt: Long,
+     val updatedAt: Long,
+     val revision: Long = 1,
+-    val voidedAt: Long? = null
++    val voidedAt: Long? = null,
++    val postedLocalDate: String? = null,
++    val postedZoneId: String? = null,
++    val postedDayStartAt: Long? = null,
++    val postedDayEndExclusive: Long? = null,
++    val postedDateBasisVersion: Int? = null
+ )
+ 
+ @Entity(tableName = "finance_account_policies", primaryKeys = ["accountId"], indices = [Index("accountId")], foreignKeys = [ForeignKey(entity = FinanceAccountEntity::class, parentColumns = ["id"], childColumns = ["accountId"])])
+@@ -173,7 +178,12 @@ data class FinanceObservationEntity(
+     val createdAt: Long,
+     val updatedAt: Long,
+     val revision: Long = 1,
+-    val voidedAt: Long? = null
++    val voidedAt: Long? = null,
++    val observedLocalDate: String? = null,
++    val observedZoneId: String? = null,
++    val observedDayStartAt: Long? = null,
++    val observedDayEndExclusive: Long? = null,
++    val observedDateBasisVersion: Int? = null
+ )
+ 
+ @Entity(tableName = "finance_reconciliations", primaryKeys = ["id"], indices = [Index("observationId")], foreignKeys = [ForeignKey(entity = FinanceObservationEntity::class, parentColumns = ["id"], childColumns = ["observationId"])])
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceV16Integrity.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceV16Integrity.kt
+index 893fa2b6b69249b6e5685dbf8c8d4ed115e8986a..99efecea849134360ebba9f07a7ec7b228a9c14b 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceV16Integrity.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceV16Integrity.kt
+@@ -163,7 +163,11 @@ object FinanceV16Integrity {
+         v.entryTimingRows.forEach {
+             require((it.postedAt == null) == (it.postedPrecision == FinanceTimePrecision.UNKNOWN))
+             require(it.postedAt == null || it.postedSource.isNotBlank())
++            FinanceCivilDate.validate(it.postedPrecision,it.postedAt,it.postedLocalDate,it.postedZoneId,
++                it.postedDayStartAt,it.postedDayEndExclusive,it.postedDateBasisVersion)
+         }
++        v.observationRows.forEach {FinanceCivilDate.validate(it.precision,it.observedAt,it.observedLocalDate,it.observedZoneId,
++            it.observedDayStartAt,it.observedDayEndExclusive,it.observedDateBasisVersion)}
+         v.accountPolicyRows.filter { it.voidedAt == null }.forEach {
+             require(it.liabilityConvention != FinanceLiabilityConvention.POSITIVE_DEBT || accounts.getValue(it.accountId).openingBalanceMinor >= 0) {
+                 "期初已经是负数时请按账面符号计入，不能再次转换负债起点"
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceV16References.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceV16References.kt
+index 8a0355fb29762ad48229585e59ab17d505c64c54..c5bd6c7ec24b34e4b987e98cdc9b2efa0101dc97 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceV16References.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceV16References.kt
+@@ -367,7 +367,7 @@ internal object FinanceV16References {
+     }
+ 
+     private fun checkFinanceControlEntity(s: FinanceSnapshot, v: FinanceV16Snapshot) {
+-        require(v.controlRows.map { listOf(it.id) }.let { keys -> keys.distinct().size == keys.size && keys.none { key -> key.any { it == null || (it is String && it.isBlank()) } } }) { "finance_control: 身份重复或缺失" }
++        require(v.controlRows.map { listOf(it.id) }.let { keys -> keys.distinct().size == keys.size }) { "finance_control: 身份重复或缺失" }
+ 
+ 
+     }
+diff --git a/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt b/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt
+index e1c9a14767be60aefc91c2531acee2f966548948..48b1adce6de495020eb0e9a823a1294f06763a62 100644
+--- a/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt
++++ b/app/src/main/java/com/qq/closie/life/finance/FinanceWorkspaceRepository.kt
+@@ -98,12 +98,16 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
+         }
+ 
+     suspend fun saveObservation(token:FinanceCommandToken,accountId:String,amount:Long,at:Long,
+-        basis:FinanceBalanceBasis,precision:FinanceTimePrecision,note:String):String =
+-        commands.run(token,"OBSERVATION_SAVE",listOf(accountId,amount,at,basis,precision,note)) {
++        basis:FinanceBalanceBasis,precision:FinanceTimePrecision,note:String,civilDate:FinanceCivilDate?=null):String =
++        commands.run(token,"OBSERVATION_SAVE",listOf(accountId,amount,at,basis,precision,note)+listOfNotNull(civilDate)) {
+             require(db.financeDao().account(accountId)!=null)
+             require(precision in setOf(FinanceTimePrecision.DATE,FinanceTimePrecision.INSTANT))
++            FinanceCivilDate.validateNew(precision,at,civilDate)
+             val result=id(); val now=clock()
+-            dao.putObservation(listOf(FinanceObservationEntity(result,accountId,amount,at,basis,precision,note,now,now)))
++            dao.putObservation(listOf(FinanceObservationEntity(result,accountId,amount,at,basis,precision,note,now,now,
++                observedLocalDate=civilDate?.localDate,observedZoneId=civilDate?.zoneId,
++                observedDayStartAt=civilDate?.startInclusive,observedDayEndExclusive=civilDate?.endExclusive,
++                observedDateBasisVersion=civilDate?.basisVersion)))
+             result
+         }
+     suspend fun confirmReconciliation(token:FinanceCommandToken,observationId:String,expectedFingerprint:String,note:String):String =
+@@ -119,15 +123,18 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
+             result
+         }
+     suspend fun setPostingDate(token:FinanceCommandToken,entryId:String,expectedRevision:Long,postedAt:Long?,
+-        precision:FinanceTimePrecision,source:String):String =
+-        commands.run(token,"POSTING_CONFIRM",listOf(entryId,expectedRevision,postedAt,precision,source)) {
++        precision:FinanceTimePrecision,source:String,civilDate:FinanceCivilDate?=null):String =
++        commands.run(token,"POSTING_CONFIRM",listOf(entryId,expectedRevision,postedAt,precision,source)+listOfNotNull(civilDate)) {
+             val entry=requireNotNull(db.financeDao().entry(entryId))
+             require(entry.voidedAt==null && entry.revision==expectedRevision)
++            FinanceCivilDate.validateNew(precision,postedAt,civilDate)
+             val old=dao.entryTimingRows().singleOrNull { it.entryId==entryId }
+             val now=clock()
+             dao.putEntryTiming(listOf(FinanceEntryTimingEntity(entryId,postedAt,
+                 old?.cashPrecision ?: FinanceTimePrecision.LEGACY,precision,source,old?.createdAt ?: now,now,
+-                Math.addExact(old?.revision ?: 0L,1L))))
++                Math.addExact(old?.revision ?: 0L,1L),postedLocalDate=civilDate?.localDate,postedZoneId=civilDate?.zoneId,
++                postedDayStartAt=civilDate?.startInclusive,postedDayEndExclusive=civilDate?.endExclusive,
++                postedDateBasisVersion=civilDate?.basisVersion)))
+             db.financeDao().updateEntry(entry.copy(revision=Math.addExact(entry.revision,1L),updatedAt=now))
+             entryId
+         }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt
+index 93c7effb2423586e1335c35f4ce66e5a61165d33..1429e520ff5299908db28c7bf7cfa40657b94cd4 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt
+@@ -17,7 +17,7 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
+     if(!state.loaded) {FinanceReceipt("正在打开账户",error=state.error,onClose=onClose){Text("读取账本快照后继续。")} ;return}
+     val colors = LocalLifeOsColors.current
+     val epoch=rememberSaveable(account?.id) {state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
+-    val expectedVersion=rememberSaveable(account?.id) {account?.updatedAt}
++    val expectedVersion by rememberSaveable(account?.id) {mutableStateOf<Long?>(account?.updatedAt)}
+     var openingChoice by rememberSaveable(account?.id) {mutableStateOf(FinanceOpeningChoice.SAVE_TIME.name)}
+     var anchorText by rememberSaveable(account?.id) {mutableStateOf(FinanceTime.input(System.currentTimeMillis()))}
+     var name by rememberSaveable(account?.id) { mutableStateOf(account?.name.orEmpty()) }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountWorkbench.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountWorkbench.kt
+index 1017b55a052b8875bed1ebd38ae7c4ef9f6421d2..28cd05adeda3ff0771f897eb140fcc963c112cca 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountWorkbench.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountWorkbench.kt
+@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
+ import com.qq.closie.life.finance.*
+ import com.qq.closie.ui.lifeos.theme.LifeText
+ import java.time.YearMonth
++import java.time.ZoneId
+ 
+ @Composable
+ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccountEntity,vm:FinanceViewModel,
+@@ -84,7 +85,7 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
+         FinancePagedItems(observations,"observations-${account.id}",{it.id}) { observation ->
+             val saved=s.v16?.reconciliationRows.orEmpty().filter {it.observationId==observation.id && it.voidedAt==null}.maxByOrNull {it.confirmationOrder}
+             val result=FinanceAccountProjection.reconcile(s,observation,saved)
+-            Text(FinanceTime.input(observation.observedAt)+" · 观察 "+FinanceMoney.display(observation.amountMinor,account.currencyCode),style=LifeText.body)
++            Text(observation.timeLabel()+" · 观察 "+FinanceMoney.display(observation.amountMinor,account.currencyCode),style=LifeText.body)
+             Text((if(observation.basis==FinanceBalanceBasis.LEGACY_CASH) "实际收付" else "确知入账")+" · "+
+                 (result.differenceMinor?.let {"差额 "+FinanceMoney.display(it,account.currencyCode)} ?: "口径资料不足，无法比较")+
+                 (if(result.invalidated) " · 原结论失效" else if(saved!=null) " · 已保存结论" else ""),style=LifeText.caption)
+@@ -93,7 +94,7 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
+         FinancePagedItems(observations.groupBy {it.basis}.values.flatMap {it.zipWithNext()}.filter {it.first.observedAt>it.second.observedAt},
+             "observation-intervals-${account.id}",{it.first.id+":"+it.second.id}) { (last,first) ->
+             val interval=FinanceAccountStatusProjection.compare(s,first,last)
+-            Text("区间 "+FinanceTime.input(first.observedAt)+" → "+FinanceTime.input(last.observedAt)+
++            Text("区间 "+first.timeLabel()+" → "+last.timeLabel()+
+                 " · 观察变化 "+FinanceMoney.display(interval.observedMovementMinor,account.currencyCode)+" · "+
+                 (interval.unexplainedMinor?.let {"未解释差额 "+FinanceMoney.display(it,account.currencyCode)} ?: "账面变化未知"),style=LifeText.caption)
+             if(showInterval!=null) TextButton({showInterval(first,last)},enabled=interval.bookMovementMinor!=null) {Text("筛选此区间的账面流水")}
+@@ -135,11 +136,24 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
+ internal fun FinancePostingEditor(state:FinanceUiState,row:FinanceLedgerRow,vm:FinanceViewModel,epoch:Long) {
+     var open by rememberSaveable(row.id) {mutableStateOf(false)}
+     val timing=state.snapshot.v16?.entryTimingRows.orEmpty().singleOrNull {it.entryId==row.entry.id && it.voidedAt==null}
+-    var text by rememberSaveable(row.id) {mutableStateOf(timing?.postedAt?.let(FinanceTime::input).orEmpty())}
+-    TextButton({open=!open}) {Text("确知入账日 · "+(timing?.postedAt?.let(FinanceTime::input) ?: "未知"))}
++    var dateOnly by rememberSaveable(row.id) {mutableStateOf(timing?.postedPrecision==FinanceTimePrecision.DATE)}
++    var zone by rememberSaveable(row.id) {mutableStateOf(timing?.postedZoneId ?: if(dateOnly) "" else ZoneId.systemDefault().id)}
++    var text by rememberSaveable(row.id) {mutableStateOf(if(dateOnly) timing?.postedLocalDate.orEmpty() else timing?.postedAt?.let(FinanceTime::input).orEmpty())}
++    TextButton({open=!open}) {Text("确知入账日 · "+(timing?.postedTimeLabel() ?: "未知"))}
+     if(open) {
+-        OutlinedTextField(text,{text=it},label={Text("确知入账时间；留空恢复未知")},modifier=Modifier.fillMaxWidth())
+-        TextButton({vm.workspaceAction(epoch,{open=false}) {repo,token ->repo.setPostingDate(token,row.entry.id,row.entry.revision,
+-            text.takeIf(String::isNotBlank)?.let(FinanceTime::parse),if(text.isBlank()) FinanceTimePrecision.UNKNOWN else FinanceTimePrecision.INSTANT,"用户明确确认")}},enabled=!state.busy) {Text("保存入账事实")}
++        Row {Checkbox(dateOnly,{dateOnly=it});Text("仅知道日历日期")}
++        OutlinedTextField(text,{text=it},label={Text(if(dateOnly) "原始日期 · 年-月-日；留空恢复未知" else "确知入账时间；留空恢复未知")},modifier=Modifier.fillMaxWidth())
++        if(dateOnly) {
++            OutlinedTextField(zone,{zone=it},label={Text("日期所属时区")})
++            Text("只确认这一天，不代表已知当天的入账先后。旧记录缺少依据时须明确补充，不从旧时间猜日期。",style=LifeText.caption)
++        }
++        TextButton({vm.workspaceAction(epoch,{open=false}) {repo,token ->
++            val civil=if(dateOnly && text.isNotBlank()) FinanceCivilDate.capture(java.time.LocalDate.parse(text.trim()),ZoneId.of(zone.trim())) else null
++            val at=if(civil!=null) timing?.postedAt?.takeIf {timing?.postedCivilDate()==civil} ?: civil.startInclusive
++                else text.takeIf(String::isNotBlank)?.let(FinanceTime::parse)
++            repo.setPostingDate(token,row.entry.id,row.entry.revision,at,
++                if(text.isBlank()) FinanceTimePrecision.UNKNOWN else if(dateOnly) FinanceTimePrecision.DATE else FinanceTimePrecision.INSTANT,
++                "用户明确确认",civil)
++        }},enabled=!state.busy) {Text("保存入账事实")}
+     }
+ }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRegisterFilters.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRegisterFilters.kt
+index 6c42b2542e5e099fad98b55515a2dcc1ed83af02..23b5a8c85c07abdceeaf1167798845d507ce3851 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRegisterFilters.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceRegisterFilters.kt
+@@ -22,9 +22,9 @@ internal data class FinanceRegisterFilter(val query:String="",val direction:Stri
+         val range=range()
+         val timings=snapshot?.v16?.entryTimingRows.orEmpty().filter {it.voidedAt==null}.associateBy {it.entryId}
+         return if(range.isFailure) emptyList() else all.filter {row->
+-        val comparisonTime=if(posted) timings[row.entry.id]?.postedAt else row.entry.occurredAt
++        val comparison=if(posted) timings[row.entry.id]?.postedTimeBounds() else FinanceTimeBounds(row.entry.occurredAt,row.entry.occurredAt)
+         range.getOrThrow().contains(row.entry.occurredAt) &&
+-        ((after==null && through==null) || (comparisonTime!=null && (after==null || comparisonTime>after) && (through==null || comparisonTime<=through))) &&
++        ((after==null && through==null) || (comparison!=null && (after==null || comparison.earliest>after) && (through==null || comparison.latest<=through))) &&
+         (direction.isBlank() || row.entry.direction.name==direction) && (query.isBlank() || row.entry.description.contains(query,true))}
+     }
+     companion object {
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt
+index 2cd89f53fb40a4987dcb125a609effb91cbc2612..9bc394120e0c0f5514edb38eb9f26c0a61594b34 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt
+@@ -59,7 +59,7 @@ internal fun FinanceShoppingWorkbench(state:FinanceUiState,vm:FinanceViewModel)
+     if(open) {
+         val purchase=remember {v?.purchaseRows.orEmpty().singleOrNull {it.id==editing}}
+         val epoch=rememberSaveable {v?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
+-        val purchaseRevision=rememberSaveable(editing) {purchase?.revision}
++        val purchaseRevision by rememberSaveable(editing) {mutableStateOf<Long?>(purchase?.revision)}
+         var title by rememberSaveable {mutableStateOf(purchase?.title.orEmpty())}
+         var currency by rememberSaveable {mutableStateOf(purchase?.currencyCode ?: "CNY")}
+         var date by rememberSaveable {mutableStateOf(FinanceTime.input(purchase?.occurredAt ?: System.currentTimeMillis()))}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..378a6c506d4ae1e6464007df32cc0362a2c79a11
+--- /dev/null
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt
+@@ -0,0 +1,215 @@
++package com.qq.closie.life.finance
++
++import android.content.Context
++import android.net.Uri
++import androidx.room.Room
++import androidx.test.core.app.ApplicationProvider
++import com.google.gson.JsonParser
++import com.qq.closie.data.backup.*
++import com.qq.closie.data.repository.LocalWardrobeRepository
++import com.qq.closie.life.data.database.LifeDatabase
++import java.io.File
++import java.time.LocalDate
++import java.time.ZoneId
++import java.util.TimeZone
++import java.util.zip.ZipEntry
++import java.util.zip.ZipInputStream
++import java.util.zip.ZipOutputStream
++import kotlinx.coroutines.test.runTest
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++/** All date facts are confirmed through the actual repository and persisted by Room. */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk=[34])
++class FinanceCivilDateV16Test:FinanceRoomTest() {
++    @get:Rule val files=TemporaryFolder()
++    private val day=LocalDate.of(2026,10,10)
++    private fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
++    private suspend fun seed(zone:ZoneId,date:LocalDate=day,kind:FinanceAccountKind=FinanceAccountKind.BANK_CARD):Pair<FinanceAccountEntity,FinanceEntryEntity> {
++        clock=date.plusDays(5).atStartOfDay(zone).toInstant().toEpochMilli()
++        val a=finance.saveAccount(name="合成日期账户",kind=kind,openingBalanceMinor=10_000,
++            balanceAnchorAt=date.minusDays(2).atStartOfDay(zone).toInstant().toEpochMilli())
++        finance.workspace.setAccountPolicy(token(),a.id,true,FinanceLiabilityConvention.SIGNED,FinanceBalanceBasis.KNOWN_POSTED,null)
++        val entry=finance.saveEntry(accountId=a.id,direction=FinanceDirection.OUTFLOW,amountMinor=100,description="合成日期付款",
++            occurredAt=date.plusDays(3).atTime(12,0).atZone(zone).toInstant().toEpochMilli())
++        val civil=FinanceCivilDate.capture(date,zone)
++        finance.workspace.setPostingDate(token(),entry.id,entry.revision,civil.startInclusive,FinanceTimePrecision.DATE,"合成日期凭据",civil)
++        return a to entry
++    }
++    private suspend fun observe(a:String,civil:FinanceCivilDate,precision:FinanceTimePrecision=FinanceTimePrecision.DATE,at:Long=civil.startInclusive):FinanceObservationEntity {
++        val id=finance.workspace.saveObservation(token(),a,9_900,at,FinanceBalanceBasis.KNOWN_POSTED,precision,"合成观察",
++            civil.takeIf {precision==FinanceTimePrecision.DATE})
++        return finance.snapshot().v16!!.observationRows.single {it.id==id}
++    }
++    private suspend fun switches(from:String,to:String) {
++        val original=TimeZone.getDefault()
++        try {
++            TimeZone.setDefault(TimeZone.getTimeZone(from))
++            val zone=ZoneId.systemDefault();val (a,entry)=seed(zone)
++            val late=from=="America/Los_Angeles"
++            val civil=FinanceCivilDate.capture(day,zone)
++            if(late) finance.workspace.setPostingDate(token(),entry.id,finance.snapshot().entries.single().revision,
++                day.atTime(23,30).atZone(zone).toInstant().toEpochMilli(),FinanceTimePrecision.DATE,"合成原始日历日",civil)
++            val observationDay=FinanceCivilDate.capture(day.plusDays(1),zone)
++            val o=observe(a.id,observationDay,at=if(late) day.plusDays(1).atTime(23,30).atZone(zone).toInstant().toEpochMilli() else observationDay.startInclusive)
++            var s=finance.snapshot();val first=FinanceAccountProjection.reconcile(s,o)
++            assertEquals(9_900L,first.bookMinor)
++            finance.workspace.confirmReconciliation(token(),o.id,first.fingerprint,"")
++            s=finance.snapshot();val saved=s.v16!!.reconciliationRows.single()
++            val before=s.v16!!.entryTimingRows.single()
++            val wronglyReinterpreted=java.time.Instant.ofEpochMilli(before.postedAt!!).atZone(ZoneId.of(to)).toLocalDate()
++            assertEquals(if(late) day.plusDays(1) else day.minusDays(1),wronglyReinterpreted)
++            TimeZone.setDefault(TimeZone.getTimeZone(to))
++            val after=FinanceRepository(db){clock}.snapshot()
++            val posted=after.v16!!.entryTimingRows.single();val observation=after.v16!!.observationRows.single()
++            assertEquals(before,posted);assertEquals("2026-10-10",posted.postedLocalDate)
++            assertEquals(from,posted.postedZoneId);assertEquals("2026-10-11",observation.observedLocalDate)
++            assertTrue(posted.postedTimeLabel().contains("2026-10-10"));assertTrue(observation.timeLabel().contains("2026-10-11"))
++            assertEquals(entry.occurredAt,after.entries.single().occurredAt)
++            assertEquals(entry.recordedAt,after.entries.single().recordedAt)
++            assertEquals(a.balanceAnchorAt,after.accounts.single().balanceAnchorAt)
++            assertEquals(9_900L,FinanceProjection.balance(after.accounts.single(),after.entries))
++            val result=FinanceAccountProjection.reconcile(after,observation,saved)
++            assertEquals(first.fingerprint,result.fingerprint);assertEquals(9_900L,result.bookMinor);assertFalse(result.invalidated)
++        } finally {TimeZone.setDefault(original)}
++    }
++    @Test fun tokyoDateSurvivesLosAngelesDeviceZoneAndRepositoryRecreation()=runTest {switches("Asia/Tokyo","America/Los_Angeles")}
++    @Test fun losAngelesDateSurvivesTokyoDeviceZoneAndRepositoryRecreation()=runTest {switches("America/Los_Angeles","Asia/Tokyo")}
++
++    @Test fun daylightSavingDaysPersistTwentyThreeAndTwentyFiveHoursAndCannotProveNoonPosting()=runTest {
++        val zone=ZoneId.of("America/Los_Angeles")
++        for((date,hours) in listOf(LocalDate.of(2026,3,8) to 23L,LocalDate.of(2026,11,1) to 25L)) {
++            val (a,entry)=seed(zone,date);val civil=FinanceCivilDate.capture(date,zone)
++            val actual=finance.snapshot().v16!!.entryTimingRows.single {it.entryId==entry.id}.postedCivilDate()!!
++            assertEquals(hours*3_600_000L,actual.endExclusive-actual.startInclusive)
++            val noon=date.atTime(12,0).atZone(zone).toInstant().toEpochMilli()
++            val o=observe(a.id,civil,FinanceTimePrecision.INSTANT,noon)
++            val uncertain=FinanceAccountProjection.reconcile(finance.snapshot(),o)
++            assertNull(uncertain.bookMinor);assertNull(uncertain.differenceMinor)
++            val next=observe(a.id,FinanceCivilDate.capture(date.plusDays(1),zone),FinanceTimePrecision.INSTANT,civil.endExclusive)
++            assertEquals(9_900L,FinanceAccountProjection.reconcile(finance.snapshot(),next).bookMinor)
++        }
++    }
++
++    @Test fun legacyDateHasNoGuessedZoneAndOnlyExplicitOutsideEvidenceCanExcludeIt()=runTest {
++        val zone=ZoneId.of("Asia/Tokyo");val (a,entry)=seed(zone)
++        val o=observe(a.id,FinanceCivilDate.capture(day.plusDays(1),zone),FinanceTimePrecision.INSTANT)
++        val prior=finance.snapshot().v16!!.entryTimingRows.single()
++        // Exact old row shape: epoch exists, original civil date and zone were never recorded.
++        val legacy=prior.copy(postedAt=a.balanceAnchorAt-1,postedLocalDate=null,postedZoneId=null,
++            postedDayStartAt=null,postedDayEndExclusive=null,postedDateBasisVersion=null)
++        db.financeV16Dao().putEntryTiming(listOf(legacy))
++        assertNull(FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++        assertNull(finance.snapshot().v16!!.entryTimingRows.single().postedCivilDate())
++        val explicit=FinanceCivilDate.capture(day.minusDays(3),zone)
++        finance.workspace.setPostingDate(token(),entry.id,finance.snapshot().entries.single().revision,
++            explicit.startInclusive,FinanceTimePrecision.DATE,"明确范围外",explicit)
++        assertEquals(10_000L,FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++        finance.saveEntry(accountId=a.id,direction=FinanceDirection.OUTFLOW,amountMinor=50,description="未知入账",occurredAt=clock+1)
++        assertNull(FinanceAccountProjection.reconcile(finance.snapshot(),o).bookMinor)
++    }
++
++    @Test fun explicitZoneBasisChangeInvalidatesEvenWithIdenticalBoundsAndInvalidEvidenceRollsBack()=runTest {
++        val (a,entry)=seed(ZoneId.of("UTC"))
++        val o=observe(a.id,FinanceCivilDate.capture(day.plusDays(1),ZoneId.of("UTC")),FinanceTimePrecision.INSTANT)
++        val before=finance.snapshot();val initial=FinanceAccountProjection.reconcile(before,o)
++        finance.workspace.confirmReconciliation(token(),o.id,initial.fingerprint,"")
++        val saved=finance.snapshot().v16!!.reconciliationRows.single()
++        val alternate=FinanceCivilDate.capture(day,ZoneId.of("Etc/UTC"))
++        assertEquals(before.v16!!.entryTimingRows.single().postedDayStartAt,alternate.startInclusive)
++        finance.workspace.setPostingDate(token(),entry.id,finance.snapshot().entries.single().revision,
++            alternate.startInclusive,FinanceTimePrecision.DATE,"明确更正时区依据",alternate)
++        val after=finance.snapshot();val result=FinanceAccountProjection.reconcile(after,o,saved)
++        assertEquals(9_900L,result.bookMinor);assertTrue(result.invalidated)
++        assertNotEquals(initial.fingerprint,result.fingerprint)
++        assertTrue(runCatching {finance.workspace.setPostingDate(token(),entry.id,after.entries.single().revision,
++            alternate.startInclusive,FinanceTimePrecision.DATE,"错误版本",alternate.copy(basisVersion=99))}.isFailure)
++        assertEquals(after,finance.snapshot())
++        assertTrue(runCatching {finance.workspace.setPostingDate(token(),entry.id,after.entries.single().revision,
++            alternate.startInclusive,FinanceTimePrecision.DATE,"没有日期依据")}.isFailure)
++        assertEquals(after,finance.snapshot())
++        val observationDay=FinanceCivilDate.capture(day.plusDays(1),ZoneId.of("UTC"))
++        val first=observe(a.id,observationDay)
++        val last=observe(a.id,observationDay,at=observationDay.startInclusive+3_600_000L)
++        assertNull(FinanceAccountStatusProjection.compare(finance.snapshot(),first,last).bookMovementMinor)
++    }
++
++    @Test fun integerControlIdentityStillRejectsDuplicatesAndWrongSingletonKey()=runTest {
++        account();val s=finance.snapshot();val v=s.v16!!
++        assertTrue(runCatching {FinanceIntegrity.validate(s.copy(v16=v.copy(controlRows=listOf(FinanceControlEntity(0,0)))))}.isFailure)
++        assertTrue(runCatching {FinanceIntegrity.validate(s.copy(v16=v.copy(controlRows=listOf(FinanceControlEntity(1,0),FinanceControlEntity(1,0)))))}.isFailure)
++        FinanceIntegrity.validate(s)
++    }
++
++    @Test fun postedFiltersAndStatementsAlsoRequirePersistedWholeDateIntervals()=runTest {
++        val (a,entry)=seed(ZoneId.of("Asia/Tokyo"),kind=FinanceAccountKind.CREDIT)
++        finance.workspace.saveCreditCycle(token(),a.id,31,10,"Asia/Tokyo")
++        var s=finance.snapshot();val civil=s.v16!!.entryTimingRows.single().postedCivilDate()!!
++        val all=FinanceAccountProjection.register(s,a.id)
++        val whole=com.qq.closie.ui.lifeos.finance.FinanceRegisterFilter(after=civil.startInclusive-1,through=civil.endExclusive-1,posted=true)
++        assertEquals(listOf(entry.id),whole.apply(all,s).map {it.entry.id})
++        assertTrue(whole.copy(through=civil.startInclusive+3_600_000).apply(all,s).isEmpty())
++        assertEquals(100L,FinanceAccountStatusProjection.statement(s,a.id,java.time.YearMonth.of(2026,10)).outflowMinor)
++        val timing=s.v16!!.entryTimingRows.single()
++        db.financeV16Dao().putEntryTiming(listOf(timing.copy(postedLocalDate=null,postedZoneId=null,postedDayStartAt=null,
++            postedDayEndExclusive=null,postedDateBasisVersion=null)))
++        s=finance.snapshot();assertTrue(whole.apply(all,s).isEmpty())
++        val statement=FinanceAccountStatusProjection.statement(s,a.id,java.time.YearMonth.of(2026,10))
++        assertEquals(0L,statement.outflowMinor);assertEquals(1,statement.unknownPostingCount)
++    }
++
++    private suspend fun backupRoundTrip(legacy:Boolean) {
++        val context=ApplicationProvider.getApplicationContext<Context>();val wardrobe=LocalWardrobeRepository(context)
++        val zone=ZoneId.of("Asia/Tokyo");val (a,_)=seed(zone)
++        val o=observe(a.id,FinanceCivilDate.capture(day.plusDays(1),zone))
++        val original=finance.portableSnapshot()
++        val encrypted=files.newFile("date-$legacy.lifeos")
++        val password="synthetic-civil-date-only".toCharArray()
++        if(!legacy) assertTrue(EncryptedBackupManager.export(context,wardrobe,Uri.fromFile(encrypted),db,password.copyOf()).isSuccess)
++        else {
++            val plain=files.newFile("date-legacy.zip")
++            assertTrue(BackupManager.export(context,wardrobe,Uri.fromFile(plain),db).isSuccess)
++            val entries=linkedMapOf<String,ByteArray>()
++            ZipInputStream(plain.inputStream()).use {zip->while(true) {val part=zip.nextEntry ?: break;entries[part.name]=zip.readBytes()}}
++            val payload=JsonParser.parseString(entries.getValue("life/data.json").toString(Charsets.UTF_8)).asJsonObject
++            val v=payload.getAsJsonObject("finance").getAsJsonObject("v16")
++            for((table,prefix) in listOf("entryTimingRows" to "posted","observationRows" to "observed"))
++                v.getAsJsonArray(table).forEach {row->listOf("LocalDate","ZoneId","DayStartAt","DayEndExclusive","DateBasisVersion").forEach {row.asJsonObject.remove(prefix+it)}}
++            entries["life/data.json"]=payload.toString().toByteArray(Charsets.UTF_8)
++            val old=files.newFile("old-candidate-v5.zip")
++            ZipOutputStream(old.outputStream()).use {zip->entries.forEach {(name,bytes)->zip.putNextEntry(ZipEntry(name));zip.write(bytes);zip.closeEntry()}}
++            old.inputStream().use {input->encrypted.outputStream().use {output->EncryptedBackupEnvelope.encrypt(input,output,password.copyOf())}}
++        }
++        val target=Room.inMemoryDatabaseBuilder(context,LifeDatabase::class.java).allowMainThreadQueries().build()
++        val defaultZone=TimeZone.getDefault()
++        try {
++            TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
++            assertTrue(EncryptedBackupManager.restore(context,wardrobe,Uri.fromFile(encrypted),target,password.copyOf()).isSuccess)
++            val restored=FinanceRepository(target).portableSnapshot()
++            assertEquals(original.accounts,restored.accounts);assertEquals(original.entries,restored.entries)
++            val posted=restored.v16!!.entryTimingRows.single();val observed=restored.v16!!.observationRows.single()
++            assertEquals(o.id,observed.id);assertEquals(original.v16!!.entryTimingRows.single().postedAt,posted.postedAt)
++            if(legacy) {
++                assertNull(posted.postedCivilDate());assertNull(observed.observedCivilDate())
++                assertNull(posted.postedZoneId);assertNull(observed.observedZoneId)
++                assertNull(FinanceAccountProjection.reconcile(restored,observed).bookMinor)
++                assertTrue(observed.timeLabel().contains("资料不足"))
++            } else {
++                assertEquals(original.v16!!.entryTimingRows,restored.v16!!.entryTimingRows)
++                assertEquals(original.v16!!.observationRows,restored.v16!!.observationRows)
++                assertEquals("2026-10-10",posted.postedLocalDate);assertEquals("Asia/Tokyo",posted.postedZoneId)
++                assertEquals(FinanceAccountProjection.fingerprint(original,o),FinanceAccountProjection.fingerprint(restored,observed))
++                assertEquals(9_900L,FinanceAccountProjection.reconcile(restored,observed).bookMinor)
++            }
++            FinanceIntegrity.validate(restored)
++        } finally {TimeZone.setDefault(defaultZone);target.close();password.fill('\u0000')}
++    }
++    @Test fun encryptedTypedBackupPreservesDateZoneBoundsAcrossDevices()=runTest {backupRoundTrip(false)}
++    @Test fun olderTypedArchiveDoesNotInventDateOrZoneOnRestore()=runTest {backupRoundTrip(true)}
++}
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt
+index 950028bb2e5130873599e25da8b2067ee6ebd3b6..58267e17cac9e70d4cb3921825154a0ea55b0627 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt
+@@ -1,6 +1,7 @@
+ package com.qq.closie.life.finance
+ 
+ import java.time.LocalDate
++import java.time.Instant
+ import java.time.ZoneId
+ import kotlinx.coroutines.test.runTest
+ import org.junit.Assert.*
+@@ -23,7 +24,8 @@ class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
+         return finance.snapshot().v16!!.observationRows.single {it.id==id}
+     }
+     private suspend fun post(entry:FinanceEntryEntity,at:Long,precision:FinanceTimePrecision=FinanceTimePrecision.INSTANT)=
+-        finance.workspace.setPostingDate(token(),entry.id,entry.revision,at,precision,"合成明确入账凭据")
++        finance.workspace.setPostingDate(token(),entry.id,entry.revision,at,precision,"合成明确入账凭据",
++            if(precision==FinanceTimePrecision.DATE) FinanceCivilDate.capture(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate(),ZoneId.systemDefault()) else null)
+     private fun moment(day:Int,hour:Int=0)=LocalDate.of(2026,10,day).atTime(hour,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+     private suspend fun precisionAccount(anchor:Long):FinanceAccountEntity {
+         clock=moment(20)
+@@ -32,7 +34,8 @@ class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
+         return a
+     }
+     private suspend fun precisionObservation(account:String,at:Long,precision:FinanceTimePrecision):FinanceObservationEntity {
+-        val id=finance.workspace.saveObservation(token(),account,10_000,at,FinanceBalanceBasis.KNOWN_POSTED,precision,"")
++        val id=finance.workspace.saveObservation(token(),account,10_000,at,FinanceBalanceBasis.KNOWN_POSTED,precision,"",
++            if(precision==FinanceTimePrecision.DATE) FinanceCivilDate.capture(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate(),ZoneId.systemDefault()) else null)
+         return finance.snapshot().v16!!.observationRows.single {it.id==id}
+     }
+ 
+@@ -103,6 +106,7 @@ class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
+         assertFalse(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved).invalidated)
+         assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=1)).invalidated)
+         assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=2)).invalidated)
++        assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=3)).invalidated)
+         assertNotEquals(initial.fingerprint,FinanceAccountProjection.fingerprint(finance.snapshot(),o.copy(amountMinor=9_899)))
+         val preview=finance.workspace.previewAnchor(a.id,10_000,999,false)
+         finance.workspace.confirmAnchor(token(),preview)
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt
+index d0de6a2d9fa91d80f9bdbd875184f0ecaa30ab1e..78776700cc8ff7ced904dcb09f70dfe46bae6db4 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt
+@@ -55,4 +55,37 @@ class FinanceV5MigrationTest {
+             } finally { db.close() }
+         }
+     }
++    @Test fun populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds()=runTest {
++        val name="v16-date-populated-v4.db"
++        helper.createDatabase(name,4).apply {
++            execSQL("INSERT INTO finance_accounts(id,name,kind,currencyCode,openingBalanceMinor,createdAt,updatedAt,balanceAnchorAt) VALUES('account','合成旧账户','CASH','CNY',1000,100,100,100)")
++            execSQL("INSERT INTO finance_entries(id,accountId,direction,amountMinor,description,occurredAt,recordedAt,updatedAt) VALUES('entry','account','OUTFLOW',100,'合成旧现金',100,200,201)")
++            close()
++        }
++        helper.runMigrationsAndValidate(name,5,true,*LifeMigrations.ALL).close()
++        val db=Room.databaseBuilder(ApplicationProvider.getApplicationContext<Context>(),LifeDatabase::class.java,name)
++            .addMigrations(*LifeMigrations.ALL).allowMainThreadQueries().build()
++        try {
++            val finance=FinanceRepository(db){2_000_000_000_000L}
++            val before=finance.snapshot();val account=before.accounts.single();val entry=before.entries.single()
++            assertEquals("account",account.id);assertEquals("entry",entry.id)
++            assertEquals(100L,account.balanceAnchorAt);assertEquals(900L,FinanceProjection.balance(account,before.entries))
++            assertTrue(before.v16!!.entryTimingRows.isEmpty());assertTrue(before.v16!!.observationRows.isEmpty())
++            fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
++            val civil=FinanceCivilDate.capture(java.time.LocalDate.of(2026,10,10),java.time.ZoneId.of("Asia/Tokyo"))
++            finance.workspace.setPostingDate(token(),entry.id,entry.revision,civil.startInclusive,FinanceTimePrecision.DATE,"新确认的日期证据",civil)
++            val next=FinanceCivilDate.capture(java.time.LocalDate.of(2026,10,11),java.time.ZoneId.of("Asia/Tokyo"))
++            finance.workspace.setAccountPolicy(token(),account.id,true,FinanceLiabilityConvention.SIGNED,FinanceBalanceBasis.KNOWN_POSTED,null)
++            finance.workspace.saveObservation(token(),account.id,900,next.startInclusive,FinanceBalanceBasis.KNOWN_POSTED,FinanceTimePrecision.DATE,"",next)
++            val after=finance.snapshot();val changed=after.entries.single()
++            assertEquals(before.accounts,after.accounts)
++            assertEquals(entry.id,changed.id);assertEquals(entry.occurredAt,changed.occurredAt)
++            assertEquals(entry.recordedAt,changed.recordedAt);assertEquals(entry.amountMinor,changed.amountMinor)
++            assertEquals(900L,FinanceProjection.balance(after.accounts.single(),after.entries))
++            assertEquals(civil,after.v16!!.entryTimingRows.single().postedCivilDate())
++            assertEquals(next,after.v16!!.observationRows.single().observedCivilDate())
++            assertEquals(900L,FinanceAccountProjection.reconcile(after,after.v16!!.observationRows.single()).bookMinor)
++            FinanceIntegrity.validate(after)
++        } finally {db.close()}
++    }
+ }
+diff --git a/engineering/v16/CI51-FIX.md b/engineering/v16/CI51-FIX.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5431517ab81ffa88e2db39d4c364bb0d9e157f3a
+--- /dev/null
++++ b/engineering/v16/CI51-FIX.md
+@@ -0,0 +1,39 @@
++# CI #51 综合修复交接（2026-10-19）
++
++增量基线：`78950821129f522d17359a7ec3bca2232c120601`；分支 `feature/life-os-v16-ci-review`。已只读核实 [CI #51](https://github.com/cnsj-123/qqhome/actions/runs/39208535139) 的SHA、步骤、编译日志及artifact元数据，摘录见review-fix-evidence/ci51-observed.json。KSP在旧候选代码上成功；随后compileDebugKotlin失败，运行测试未开始，assemble跳过。本轮未下载工具链，未push/merge/PR/发布或触发CI。
++
++| CI #51 问题 | 源码修复与保留的约束 | 关闭状态 |
++|---|---|---|
++| EncryptedBackupManager.kt:68 类型推断递归 | digest(File): ByteArray显式返回类型，File/InputStream两处use均明确lambda；SHA-256及重新读取已写入密文的校验保持 | 源码已修复，重新编译UNVERIFIED |
++| FinanceV16References.kt:370 Int/String混用 | 按Int主键保留去重检查；FinanceV16Integrity继续要求单例id=1/非负epoch；生成器按主键类型生成检查，重新生成不会带回错误 | 源码已修复；新增实际完整性校验回归，执行UNVERIFIED |
++| FinanceAccountSheet.kt:20 nullable Long | rememberSaveable保存非空MutableState<Long?>，expectedVersion本身保留null，且冻结所见版本/恢复epoch | 源码已修复；旧并发/版本用例保留，编译/UI执行UNVERIFIED |
++| FinanceShoppingWorkbench.kt:62 nullable revision | 同样用MutableState<Long?>保存purchaseRevision；继续传给ShoppingPurchaseInput的expectedRevision，不填0/最新值绕过校验 | 源码已修复，重新编译UNVERIFIED |
++| DATE随设备时区改变 | FinanceCivilDate、两类Entity、Workspace、Projection、完整性及显示/编辑：保存原始日历日、时区、确认时区间与解释版本，读取不再推断设备时区；账期/区间筛选复用同一证据边界 | 源码及回归已补；Kotlin/Room/Compose执行UNVERIFIED |
++| 官方5与最终模型不一致风险 | 采用情况B：修订未发布候选v5，两个新表各增5个nullable字段；同步设计DDL、4→5迁移和官方schema校验。DAO的SELECT */@Upsert及typed snapshot全字段读写自动包含新列 | 不提交#51旧5；最终官方5待下一轮KSP生成，严格门禁仍FAIL |
++
++持久化契约：finance_entry_timing增加postedLocalDate、postedZoneId、postedDayStartAt、postedDayEndExclusive、postedDateBasisVersion；finance_observations增加observed前缀对应5列。解释版本1表示“用户明确确认的本地日历日及当时日区间”。创建时必须传明确的LocalDate+ZoneId，用下一自然日边界计算区间，不固定加24小时；持久化区间避免之后设备时区或tzdb规则变化重新解释旧事实。DATE仍为整日不确定性，不能冒充midnight/end-of-day的精确入账。新增写入校验证据与所选日期/时区，重放旧无新增字段的命令不改旧事实。
++
++旧DATE的五字段全部缺失时允许保留/恢复，时间范围未知，book和difference保持null；不能从postedAt epoch用UTC/设备时区补造日历日。部分字段、不支持的解释版本或与原时间矛盾的证据拒绝写入/恢复。INSTANT原epoch、旧Entry.occurredAt/recordedAt、opening anchor及现金算法均保留。UI显示已保存的原始日期/时区；旧DATE缺证据显示资料不足，不能自动填入一个精确时刻。用户主动补日期/时区属于明确更正，不是迁移推断。
++
++核对算法版本4：共享范围只排除有完整时间证据且全部位于范围外的记录；日期区间与anchor/观察范围重叠时保持INCOMPLETE。指纹包含精度、原始日期、时区、区间及解释版本，已保存算法1/2/3均提示重新核对。改变设备时区不会改变事实或指纹；明确更正日期依据即使区间数值相同也会使结论失效。
++
++| 日期要求 | 生产路径回归（均UNVERIFIED） |
++|---|---|
++| A 东京→洛杉矶 | CivilDate.tokyoDateSurvivesLosAngelesDeviceZoneAndRepositoryRecreation：真实Room重读、日期/时区/epoch/余额/指纹不变 |
++| B 洛杉矶→东京 | CivilDate.losAngelesDateSurvivesTokyoDeviceZoneAndRepositoryRecreation，同等断言 |
++| C DST | CivilDate.daylightSavingDays…：LA 2026-03-08为23小时、2026-11-01为25小时，Repository持久化后读取 |
++| D DATE与INSTANT | 同DST用例及原Scope四例：同日中午book/difference为null；次日界限确定后才计算 |
++| E 明确范围外 | CivilDate.legacyDateHasNoGuessedZone…及原Scope：明确完整日期区间在anchor之前或观察之后才排除 |
++| F 范围未知 | 同上：旧DATE仅epoch仍未知；新未知postedAt即使cash在未来也不排除 |
++| G 依据/精度变更 | CivilDate.explicitZoneBasisChange…：UTC→Etc/UTC区间相同仍失效，错误版本事务回滚；原Scope精度更正/实际重核保留 |
++| H populated迁移 | V5Migration.populatedV4UpgradeStoresCivilDates…；原v1/v2/v3/v4四个入口测试保留，旧ID/时间/anchor/金额断言不弱化 |
++| I typed加密恢复 | CivilDate.encryptedTypedBackup…和olderTypedArchive…：真正Manager/URI/AEAD/跨库恢复；旧ZIP去掉新增字段后重新加密，实际restore保持字段null且INCOMPLETE |
++| 相关读路径/主键 | CivilDate.postedFiltersAndStatements…、integerControlIdentity…：复用完整日期区间，不将无证据DATE计为确知入账；Int主键非法/重复仍拒绝 |
++
++Backup格式仍为未发布的typed格式5（manifest schema1、AEAD envelope2），新信息直接进入typed Entity/snapshot。现有Gson全字段导出和FinanceV16BackupRecovery完整实体Upsert保留新字段，不创建旁路JSON真相；旧备份缺列保持null，完整性在提交恢复前验证。候选Room仍为5，4→5只创建新表/列，没有destructive migration，也没有旧v1–4 schema改动。SQLite辅助检查验证新增列nullable且没有猜测默认值；它不能代替Room MigrationTestHelper。
++
++已执行本地：Python工程门禁22/22 PASS；固定最低契约/动态审计PASS（最低97文件/648方法，原638全部保留，V16审计33文件/158方法）；结构408 Kotlin/75 Entity PASS；真实SQLite旧27表、新48表、FK与3故障回滚PASS；历史schema1–4/R2可读检查PASS；git diff --check PASS。先前清单因新测试尚未跟踪而按契约红灯，加入Git后通过，没有放宽删除防护。
++
++当前官方5.json：本地没有生成或提交。#51的artifact 12166810831属于旧模型，不取其5作为最终文件。Owner手动推送本补丁后，既定CI依次执行完整checkout/R2/Python/最低契约/结构/SQLite→KSP最终模型→严格schema→全量testDebugUnitTest/JUnit逐方法/2000条实测→assembleDebug。首次最终模型5未提交仍红，KSP成功后继续收集单测；从该次artifact原样归档最终5后提交并由Owner再推送，全部一致才有APK。历史、固定契约、精确JUnit、失败上传与独立debug/release门禁均保留。
++
++仍须CI执行：当前SHA的Kotlin编译/KSP、最终官方5生成与已提交字节一致性、全套648方法（含本轮新增10方法）、所有Room populated迁移/加密恢复/并发/Compose、2000条真实运行及资源指标、assembleDebug及APK SHA。当前均UNVERIFIED；真机厂商特性继续DEVICE UNVERIFIED。交付仅一份7895082之后的format-patch，完整代码SHA、补丁哈希和独立index逐树验证见包内manifest。
+diff --git a/engineering/v16/GITHUB-VALIDATION.md b/engineering/v16/GITHUB-VALIDATION.md
+index cd91fcc0c146fc60f2839e8e9810e9442932ad03..697aee90a0c7406f2864316cc1c328d76a0f4cef 100644
+--- a/engineering/v16/GITHUB-VALIDATION.md
++++ b/engineering/v16/GITHUB-VALIDATION.md
+@@ -1,8 +1,10 @@
+ # V16 严格 CI 与官方 Schema Bootstrap（2026-10-19）
+ 
+-第二轮增量基线为 `7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319`（先应用第一轮9a0acf0后的补丁），R2 仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。以交接包 manifest 中最终 HEAD 和补丁 SHA-256 为准。本机按 Owner 要求未下载工具链，未 push、PR、merge、发布或触发 CI。
++CI51综合修复增量基线为 `78950821129f522d17359a7ec3bca2232c120601`，分支feature/life-os-v16-ci-review，R2仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。以交接包manifest中最终HEAD和补丁SHA-256为准。本机未下载工具链，只读获取CI51日志/元数据，未push、PR、merge、发布或触发CI。
+ 
+-官方 Room `1.json`–`4.json` 已跟踪且 Git 内容与 R2 相同；官方 `5.json` 尚未生成或提交。`engineering/v16/schema-v5.json` 只是设计契约，不能替代官方导出。当前严格门禁真实状态是 FAIL（缺少已提交的官方5），不是 Android 编译失败或通过的证据。
++官方Room1–4已跟踪且Git内容与R2相同；当前最终模型的官方5尚未生成或提交。engineering/v16/schema-v5.json只是设计契约，不能替代官方导出。严格门禁状态是FAIL（缺少最终已提交官方5），不代表当前Android编译已通过。
++
++CI51曾成功KSP并上传旧候选5，但日期持久化现采用Schema情况B：entry_timing/observations各增5列。不要提交CI51旧5；下一次必须由本轮最终Entity重新KSP生成。四处Kotlin错误已源码修复，当前重新编译UNVERIFIED，详见CI51-FIX.md。
+ 
+ Owner 授权后，在干净的上述 V16 HEAD 上用 `git am` 应用本轮 format-patch，再推送匹配 `feature/life-os-v16-*` 的功能分支，例如现有 `feature/life-os-v16-g0-g7-local`，自动触发 Android CI。main push、pull_request 和 Actions 页 Android CI 的 Run workflow 入口保留；手动运行时选择同一功能分支。每次先核对 Actions 的完整 commit SHA，禁止混用旧运行的报告或 APK。
+ 
+@@ -11,20 +13,20 @@ Owner 授权后，在干净的上述 V16 HEAD 上用 `git am` 应用本轮 forma
+ 1. CI以fetch-depth: 0完整checkout，使用JDK17、工程Gradle wrapper和compileSdk35。先显式读取R2对象并记录浅克隆状态，两个依赖脚本也各自检查R2；再执行22例工程门禁、固定最低契约及动态清单审计、源码结构、真实SQLite辅助检查、历史1–4校验。这些结果不替代Kotlin/Room。
+ 2. 执行 `./gradlew :app:kspDebugKotlin --stacktrace`，日志在 `ksp.log`。若此处失败，先按实际编译/KSP根因修复；不能手写官方5来绕开。
+ 3. 严格脚本要求5同时被跟踪、存在于 HEAD、KSP生成字节与HEAD一致，且整个schema目录无diff；1–4同时检查R2。第一次缺少已提交5时必须红灯。
+-4. KSP成功后，即使Bootstrap门禁失败也继续 `./gradlew :app:testDebugUnitTest --stacktrace` 收集完整测试结果，job仍为失败。真实JUnit不得失败或跳过；`verify-ci-tests.py` 按完整类名+方法名核验固定契约638个方法及动态清单，不用数量替代身份，重复记录不能补缺方法；参数调用须在契约中显式逐名列出且全部执行。缺报告/方法、失败、跳过、缺指标或2000条指标错SHA均FAIL。CSV目录声明为测试输入，CI禁用该Test任务的旧结果缓存和up-to-date跳过。
++4. KSP成功后，即使Bootstrap门禁失败也继续 `./gradlew :app:testDebugUnitTest --stacktrace` 收集完整测试结果，job仍为失败。真实JUnit不得失败或跳过；`verify-ci-tests.py` 按完整类名+方法名核验固定契约648个方法及动态清单，不用数量替代身份，重复记录不能补缺方法；参数调用须在契约中显式逐名列出且全部执行。缺报告/方法、失败、跳过、缺指标或2000条指标错SHA均FAIL。CSV目录声明为测试输入，CI禁用该Test任务的旧结果缓存和up-to-date跳过。
+ 5. 下载本次 `room-schema-run<run>-<SHA>` 中KSP导出的官方5，核对运行SHA、KSP日志及 `database.version=5`、实体集合、identityHash；原样放入 `app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json` 并本地提交。由Owner决定下一次推送；不能用设计JSON重写文件。此动作产生新的代码SHA。
+ 6. 下一轮KSP再次生成并严格逐字节比较，任何变化仍FAIL。只有所有必要门禁与完整测试通过才运行 `./gradlew :app:assembleDebug --stacktrace`。Sol负责定位实际首个失败根因并提供新的本地增量修复，Owner决定推送。
+ 
+ | Artifact 名称（`<run>`为run number，`<SHA>`为完整提交SHA） | 内容与检查方法 |
+ |---|---|
+ | `room-schema-run<run>-<SHA>` | 官方1–5 JSON；首次KSP成功才会有5，先核对本次运行再原样归档。没有5时查ksp.log |
+-| `unit-test-results-run<run>-<SHA>` | JUnit XML、HTML和 `reports/v16/testDebugUnitTest/synthetic-history-2000.json`；检查failures/errors/skipped、638个最低方法及148个V16方法逐名覆盖和真实指标 |
++| `unit-test-results-run<run>-<SHA>` | JUnit XML、HTML和 `reports/v16/testDebugUnitTest/synthetic-history-2000.json`；检查failures/errors/skipped、648个最低方法及158个V16方法逐名覆盖和真实指标 |
+ | `v16-ci-evidence-run<run>-<SHA>` | Git历史/KSP/全套测试/assemble等日志、严格schema报告、逐调用执行报告校验、结构/SQLite/动态清单、固定最低契约和22例工程门禁报告；失败时也上传可取得的材料 |
+ | `lifeos-ci-debug-run<run>-<SHA>` | 仅assemble成功后上传；debug APK（applicationId `com.qqhome.lifeos.debug`）、`commit-sha.txt` 和 `SHA256SUMS.txt`。校验SHA文件与本次运行/下载APK哈希 |
+ | `lifeos-update-release-run<run>-<SHA>` | 保留的main正式签名流程产物；feature不读取release signing secrets，不将此产物作为功能分支CI必要项 |
+ 
+ 报告/schema/logs使用 `always()` 上传。没有APK表示本次尚未完成构建，不能取旧APK补齐。2000条报告包含实际分阶段/总耗时和JVM堆采样，属于CI算法与数据回归，不能冒充真机帧率或峰值内存验收。
+ 
+-新增/修改测试逐文件自审见 `TEST-AUDIT.md`，本轮问题/文件矩阵见 `REVIEW-FIX-ROUND2.md`。Room数据库5、备份格式5、manifest schema1、AEAD envelope2和核对指纹算法3是不同版本空间。本轮没有更改实体DDL或typed备份结构。最低契约单独提交并用规范化SHA-256锁定，CI不会生成或缩减；它不依赖未推送的本地7d9fe46对象。
++新增/修改测试逐文件自审见TEST-AUDIT.md，本轮问题/文件矩阵见CI51-FIX.md。Room候选数据库5、备份格式5、manifest schema1、AEAD envelope2和核对指纹算法4是不同版本空间。候选v5未发布，本轮Entity/4→5 DDL与typed备份各增加可空日期证据组；旧字段不改、旧备份缺组保留未知。最低契约增至97文件/648方法，单独提交并用规范化SHA-256锁定，CI不会生成或缩减，也不依赖未推送的本地修复SHA对象。
+ 
+ 所有Android/KSP/Room/Compose、2000条真实运行、Actions实际执行和APK均UNVERIFIED；本地只有工程门禁22例、历史schema、结构与SQLite辅助证据。完整CI通过后才对唯一SHA进行最终独立Reviewer审查；无阻断后按 `OWNER-ONE-ROUND.md` 集中一次设备验收。七宿主、vivo/IME/Back/锁屏/撤权和真机性能保持DEVICE UNVERIFIED，不安排逐阶段Owner手验。
+diff --git a/engineering/v16/PROGRESS.md b/engineering/v16/PROGRESS.md
+index 96df01086bfad5a834e26df991794e83f731f919..d8e031197f2f99880117767c32606ccd5ab5e4ca 100644
+--- a/engineering/v16/PROGRESS.md
++++ b/engineering/v16/PROGRESS.md
+@@ -38,7 +38,7 @@ Owner 后续明确：本机没有 Android 工具链，不要下载；继续代
+     node engineering/v16/integrate-schema.cjs
+     python engineering/v16/check-source.py
+ 
+-当前源码结构检查：406 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
++当前源码结构检查：408 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
+ SQL 检查：旧27表逐行保留、新48表、FK检查、3个事务故障点回滚 PASS。
+ 全部 Kotlin/Room/Compose 测试、KSP、assemble 和设备场景仍 UNVERIFIED。
+ 
+@@ -67,3 +67,5 @@ Home未知/排除政策、整笔现金独立授权、复核并发确认、自动
+ 本轮只做本地逻辑提交及9a0acf0之后的format-patch，等待Owner授权推送；没有push/PR/merge/发布或触发CI。完整CI通过后再最终独立Review，无阻断后才统一一轮设备验收。
+ 
+ 2026-10-19 Review Fix第二轮：在7d9fe46之后定点补R2历史可读、JUnit逐方法/参数调用验证、固定最低契约与删除拦截、对账DATE精度不确定性。Python门禁22/22 PASS，最低契约96文件/638方法，当前V16审计32文件/148方法；Kotlin全部UNVERIFIED。官方5仍按严格红灯Bootstrap处理。交接矩阵与CI顺序复审见REVIEW-FIX-ROUND2.md；仅导出7d9fe46之后本地format-patch，无远端动作。
++
++2026-10-19 CI51综合修复：已取回远端feature/life-os-v16-ci-review的7895082并核实#51日志（KSP通过、4处Kotlin错误、运行测试未开始）。在该唯一基线上修复digest推断/Int主键/两处nullable版本状态；DATE新增持久化日历日/时区/区间/依据，核对算法4，不猜旧DATE。采用未发布候选v5的Schema情况B，两表各增5列、同步4→5迁移/typed备份，旧1–4保持。新增10方法，最低97文件/648方法，当前审计33文件/158方法。Python22/22与SQLite/结构/历史辅助通过；当前Kotlin/KSP/Room/Compose全UNVERIFIED，最终官方5待下一CI重新生成，不能使用#51旧5。详见CI51-FIX.md；仅本地单份7895082后增量patch，无push/merge/PR/CI触发。
+diff --git a/engineering/v16/REVIEW-FIX-ROUND2.md b/engineering/v16/REVIEW-FIX-ROUND2.md
+index 609268de7a106e1d286ce6f1a7b5e906e24c7491..dae73ddf2d36d906f7a33d4b207998e026848156 100644
+--- a/engineering/v16/REVIEW-FIX-ROUND2.md
++++ b/engineering/v16/REVIEW-FIX-ROUND2.md
+@@ -1,5 +1,7 @@
+ # V16 Review Fix 第二轮定点修复（2026-10-19）
+ 
++这是第二轮历史交付记录；CI51发现的问题及当前持久化DATE/算法4/候选v5变更见CI51-FIX.md。
++
+ 本地增量基线：`7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319`，即上一轮34文件补丁的交付HEAD。本轮不重做V16、不重新讨论D1–D5、不下载Android工具链，不push/merge/PR/发布/触发CI。
+ 
+ | 问题 | 文件与修复 | 验证状态 |
+diff --git a/engineering/v16/TEST-AUDIT.md b/engineering/v16/TEST-AUDIT.md
+index e662e46174b611b0e116f61db53cec971e8b26f5..47e76b93b08784d01e2ef8ee93463d3b7e02afc4 100644
+--- a/engineering/v16/TEST-AUDIT.md
++++ b/engineering/v16/TEST-AUDIT.md
+@@ -1,8 +1,8 @@
+ # V16 测试源码自审（2026-10-19）
+ 
+-范围：R2以来新增或修改的32个Kotlin测试文件，含第一轮3个新文件；第二轮再补4个日期精度方法，当前148个方法。逐文件清单、完整类名/方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有Kotlin测试运行仍UNVERIFIED。
++当前CI51修复范围：R2以来新增或修改33个Kotlin测试文件/158个方法；含第二轮4个精度方法和本轮10个方法。逐文件清单、完整类名/方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有当前SHA的Kotlin测试运行仍UNVERIFIED。
+ 
+-第二轮固定最低契约另覆盖全部既有96个测试源文件、638个方法，详见test-minimum-contract.json；最低契约由规范化SHA-256锁定，独立于动态清单，删除文件/方法、重命名或暂存删除均明确FAIL。JUnit按完整类名和方法/显式参数调用名逐项核验，不能按重复用例数量填覆盖。该固定覆盖要求不代表对其余R2文件新增产品语义审查，也不代表638个方法已执行。
++固定最低契约增至97个测试源文件、648个方法，原638全部保留，详见test-minimum-contract.json；最低契约由规范化SHA-256锁定，独立于动态清单，删除文件/方法、重命名或暂存删除均明确FAIL。JUnit按完整类名和方法/显式参数调用名逐项核验，不能按重复用例数量填覆盖。该固定覆盖要求不代表对其余R2文件新增产品语义审查，也不代表648个方法已执行。
+ 
+ | 测试文件/类 | 检查内容与真实边界 | 自审说明 |
+ |---|---|---|
+@@ -22,7 +22,7 @@
+ | FinanceMediaV16Test | 真实跨域引用、恢复缺源、重连、OCR候选 | 本轮修复DAO无ORDER BY下的插入顺序假设：比较两条完整实体的ID映射并另断言数量2，内容断言未降低 |
+ | FinanceMigrationTest | populated v2、旧记录/ID/精度 | 真实MigrationTestHelper及Room打开到v5 |
+ | FinanceV4MigrationTest | populated v2/v3→4与继续打开v5、anchor/旧语义 | 不只建空库；官方已发布schema保留 |
+-| FinanceV5MigrationTest | populated v1/v2/v3/v4→5 | 4个入口版本，旧capture/账户/Entry/anchor，typed不伪造；依赖KSP官方5.json |
++| FinanceV5MigrationTest | populated v1/v2/v3/v4→5；新增populated v4日期列写入 | 保留4个入口原断言，新增真实迁移后Repository/DAO写日期并验证旧ID/时间/anchor/现金；依赖最终KSP官方5.json |
+ | FinancePortableExportTest | 真实ZIP条目与CSV公式防护 | 是导出单元边界；Manager实际恢复由其他文件覆盖 |
+ | FinanceProvenanceV16Test | 编号/身份/工具/时效绑定/旧证据版本/恢复 | 真实Repository/DAO；无真实账号，恢复先禁用匹配 |
+ | FinancePurchaseAllocationV16Test | 更正/解绑、释放调整、跨事项错误覆盖 | 真实事务；失败前后完整快照相等，现金及成本值不减弱 |
+@@ -36,6 +36,7 @@
+ | FinanceFilterStateV16Test | Bundle条件恢复、完整账扫描后筛选、posted精确区间 | 同行余额与完整算术一致，cash与posted不混 |
+ | FinanceSmokeTest | 真实Compose→VM→Repository→Room，账户/流水/转账/筛选/还款 | 操作前等真实loaded，不操作真实设备；Compose未运行 |
+ | FinanceReconciliationScopeV16Test | 范围外/未知/早于cash/后补/anchor/void/算法升级；第二轮再补4个DATE精度方法 | 同日/anchor重叠时book与difference均null；精度变化、保存资料不足后补精度重核、全日在范围外与范围内，真实保存结论验证失效 |
++| FinanceCivilDateV16Test | 本轮9个方法：东京/LA双向、23/25h DST、中午/范围、旧日期、时区依据、Int主键、筛选/账期、实际加密备份新旧恢复 | 时间域构造显式提供创建日历日/时区，经真实Repository及Room持久化；TimeZone.setDefault均finally恢复；备份使用Manager/AEAD/跨库完整恢复，旧ZIP仅移除新增字段以模拟旧候选格式，未将JSON往返冒充恢复 |
+ | FinanceSyntheticHistoryV16Test | 本轮新增：真实已提交2000条fixture→导入/DAO/投影/重复/过滤 | SHA对照、独立逐笔加减oracle、最终金额；指标仅在实际运行时写出，无假性能PASS |
+ | FinanceHomeProjectionV16Test | 本轮新增：时钟/相关依赖/到期/撤销/门禁/恢复 | 控制时间和通知调度，财务快照来自真实Room，计数器委托真实生产成本计算；100tick不重算 |
+ 
+@@ -62,4 +63,4 @@ D1/D2/D3/D4主要由FinanceV16Contract/Workspace/Insights/Purchase/Recovery覆
+ 
+ F44/F46/F48真实宿主、MLKit离线与vivo/IME/权限/Back仍DEVICE UNVERIFIED。40项功能映射沿用feature-matrix.md，不把源码测试清单写成40项验收通过。
+ 
+-本地已实际运行的另22例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节、10例JUnit/指标、7例最低契约及删除/历史检查，使用合成文本仓库和报告，不是上述148个Kotlin方法。第一轮Windows只读Git对象清理已修；第二轮辅助用例两行错位已归位，原断言保留，全套22例通过。未添加/下载任何Android工具链或YAML依赖；Actions实际解析和执行待Owner推送。
++本地已实际运行的另22例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节、10例JUnit/指标、7例最低契约及删除/历史检查，使用合成文本仓库和报告，不是上述158个Kotlin方法。第一轮Windows只读Git对象清理已修；第二轮辅助用例两行错位已归位，原断言保留，全套22例通过。CI51旧SHA也已实际通过工程步骤，但在主Kotlin编译失败，因此不能算本轮648方法通过。未添加/下载任何Android工具链或YAML依赖；当前Actions执行待Owner推送。
+diff --git a/engineering/v16/check-migration.py b/engineering/v16/check-migration.py
+index f9d194672d335752cb66b0d360094f501af3a6cf..4c09dd86f2979ad8ce1ff61f80e7246434fd0490 100644
+--- a/engineering/v16/check-migration.py
++++ b/engineering/v16/check-migration.py
+@@ -61,6 +61,11 @@ assert all(t["name"] in tables for t in expected)
+ for table in expected:
+     columns = {r[1] for r in db.execute('PRAGMA table_info("'+table["name"]+'")')}
+     assert columns == {f["name"] for f in table["fields"]}, table["name"]
++for table, prefix in [("finance_entry_timing", "posted"), ("finance_observations", "observed")]:
++    info = {r[1]: r for r in db.execute('PRAGMA table_info("'+table+'")')}
++    for suffix in ("LocalDate", "ZoneId", "DayStartAt", "DayEndExclusive", "DateBasisVersion"):
++        column=info[prefix+suffix]
++        assert column[3] == 0 and column[4] is None, (table, column) # nullable, no guessed migration default
+ db.close()
+ 
+ for stop in [1, len(statements)//2, len(statements)-1]:
+diff --git a/engineering/v16/feature-matrix.md b/engineering/v16/feature-matrix.md
+index a8278413d79a84137bbe805b6773c00937202821..ff0c11c60fcd29369d6611a79bc9811bd18601f5 100644
+--- a/engineering/v16/feature-matrix.md
++++ b/engineering/v16/feature-matrix.md
+@@ -67,7 +67,7 @@ V16 已完整验收：0/40。PARTIAL 不是完成，不计算为已交付。随
+ | F14 | BatchEditor选择真实流水、预览、原子修改与恢复 | Room/Compose未运行 |
+ | F16 | MonthPicker跨年年月选择、账簿独立月份 | 进程恢复/手势待验 |
+ | F17 | 完整register先扫描，账户页备注/方向/日期筛选，同行余额不重算 | 过滤一致性测试已写未运行 |
+-| F18 | AccountWorkbench观察点/核对保存；算法3计算和指纹共用证据范围与日期精度，未知postedAt或边界重叠保持INCOMPLETE | 真实Room范围/后补/精度/失效用例，UNVERIFIED |
++| F18 | AccountWorkbench观察点/核对保存；算法4共用持久化日历日/时区/区间/依据，不用读取时设备时区猜旧DATE；未知或边界重叠保持INCOMPLETE | 真实Room范围/精度/跨时区/迁移/加密恢复用例，UNVERIFIED |
+ | F19 | AccountSheet三种新起点、原anchor保留、旧起点影响预览/从零约束及版本保护 | 边界/旧版本测试已写未运行 |
+ | F20 | Trust读模型与净额范围展开；显式正债务只转换旧期初，原口径另列，币种分列 | 内部还款/超额/排除/符号测试未运行；独立复查待补 |
+ | F22 | 信用账期、确知入账编辑、短月/时区推导、原双腿转账还款入口 | 新还款Compose及未知入账设备未验 |
+diff --git a/engineering/v16/generate-schema.cjs b/engineering/v16/generate-schema.cjs
+index b15892997b29f59c45806db2a95f2536954cde04..b9c4832c656cdf3a432e73d199572505af6ea7c8 100644
+--- a/engineering/v16/generate-schema.cjs
++++ b/engineering/v16/generate-schema.cjs
+@@ -7,6 +7,9 @@ const tables = [];
+ const field = (name, type = 'String', value) => ({ name, type, value });
+ const id = () => field('id');
+ const time = () => [field('createdAt', 'Long'), field('updatedAt', 'Long'), field('revision', 'Long', '1'), field('voidedAt', 'Long?', 'null')];
++// Nullable for older candidate-v5 archives: never infer missing civil dates/zones from old epochs.
++const civilDate = prefix => [field(prefix+'LocalDate','String?','null'),field(prefix+'ZoneId','String?','null'),
++  field(prefix+'DayStartAt','Long?','null'),field(prefix+'DayEndExclusive','Long?','null'),field(prefix+'DateBasisVersion','Int?','null')];
+ const table = (name, cls, fields, refs = {}, primary = ['id'], indices = []) => {
+   const t = { name, cls: (name.startsWith('shopping_') ? 'Shopping' : 'Finance') + cls + 'Entity', fields, refs, primary, indices };
+   tables.push(t); return t;
+@@ -45,14 +48,14 @@ table('finance_cost_adjustments', 'CostAdjustment', [id(), field('eventId'), fie
+ table('finance_entry_timing', 'EntryTiming', [field('entryId'), field('postedAt', 'Long?', 'null'),
+   field('cashPrecision', 'FinanceTimePrecision', 'FinanceTimePrecision.LEGACY'),
+   field('postedPrecision', 'FinanceTimePrecision', 'FinanceTimePrecision.UNKNOWN'),
+-  field('postedSource'), ...time()], {entryId:entry}, ['entryId']);
++  field('postedSource'), ...time(), ...civilDate('posted')], {entryId:entry}, ['entryId']);
+ table('finance_account_policies', 'AccountPolicy', [field('accountId'), field('includedInNet', 'Boolean', 'true'),
+   field('liabilityConvention', 'FinanceLiabilityConvention', 'FinanceLiabilityConvention.SIGNED'),
+   field('anchorBasis','FinanceBalanceBasis','FinanceBalanceBasis.LEGACY_CASH'), ...time()],
+   {accountId:account}, ['accountId']);
+ table('finance_observations', 'Observation', [id(), field('accountId'), field('amountMinor', 'Long'),
+   field('observedAt', 'Long'), field('basis', 'FinanceBalanceBasis'), field('precision', 'FinanceTimePrecision'),
+-  field('note'), ...time()], {accountId:account});
++  field('note'), ...time(), ...civilDate('observed')], {accountId:account});
+ table('finance_reconciliations', 'Reconciliation', [id(), field('observationId'), field('bookMinor', 'Long?', 'null'),
+   field('fingerprint'), field('algorithmVersion', 'Int', '1'), field('note'), field('confirmationOrder','Long','1'), ...time()],
+   {observationId:fk('FinanceObservationEntity')});
+@@ -255,7 +258,9 @@ const existing = {'FinanceEventEntity':'s.v4?.events.orEmpty()', 'FinanceEntryEn
+   'FinanceEventEntryLinkEntity':'s.v4?.links.orEmpty()','FinanceProposalEntity':'s.v4?.proposals.orEmpty()'};
+ const referenceChecks = tables.map(t=>
+  '    private fun check'+t.cls+'(s: FinanceSnapshot, v: FinanceV16Snapshot) {\n'+
+- '        require(v.'+t.property+'.map { listOf('+t.primary.map(k=>'it.'+k).join(', ')+') }.let { keys -> keys.distinct().size == keys.size && keys.none { key -> key.any { it == null || (it is String && it.isBlank()) } } }) { "'+t.name+': 身份重复或缺失" }\n'+
++ '        require(v.'+t.property+'.map { listOf('+t.primary.map(k=>'it.'+k).join(', ')+') }.let { keys -> keys.distinct().size == keys.size'+
++ (t.primary.every(k=>['Int','Long'].includes(t.fields.find(f=>f.name===k).type))?'':' && keys.none { key -> key.any { it == null || (it is String && it.isBlank()) } }')+
++ ' }) { "'+t.name+': 身份重复或缺失" }\n'+
+  Object.entries(t.refs).map(([c,r])=>{
+    const target=tables.find(x=>x.cls===r.entity);
+    const key=t.property+'_'+c;
+diff --git a/engineering/v16/package-review-fix.py b/engineering/v16/package-review-fix.py
+index 64f87a4cc95e3398cb9dacefaa2de2e681b5788c..0463b6521f596ebe8ccf8a35ca73c4ff5f923901 100644
+--- a/engineering/v16/package-review-fix.py
++++ b/engineering/v16/package-review-fix.py
+@@ -3,7 +3,7 @@ import argparse, hashlib, json, os, pathlib, subprocess
+ from v16_test_contract import CONTRACT_SHA256
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[2]
+-BASE = "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319"
++BASE = "78950821129f522d17359a7ec3bca2232c120601"
+ 
+ def git(*args, env=None):
+     return subprocess.check_output(["git", *args], cwd=ROOT, env=env, encoding="utf-8", stderr=subprocess.PIPE).strip()
+@@ -55,45 +55,46 @@ def main():
+     gate_result=json.loads((ROOT / "engineering/v16/review-fix-evidence/ci-gate-unit-tests.json").read_text(encoding="utf-8"))
+     inventory=json.loads((ROOT / "engineering/v16/review-fix-evidence/test-inventory.json").read_text(encoding="utf-8"))
+     manifest={
+-        "kind":"LOCAL_V16_REVIEW_FIX_INCREMENT", "repository":"cnsj-123/qqhome", "branch":branch,
++        "kind":"LOCAL_V16_CI51_FIX_INCREMENT", "repository":"cnsj-123/qqhome", "branch":branch,
+         "base":BASE,"baseTree":base_tree,"head":head,"tree":expected,"commits":commits,"files":files,
+         "changedFiles":git("diff","--name-status",BASE,head).splitlines(),
+         "patchApplyAtBaseAndFullTreeComparison":"PASS",
+-        "reviewRound":2,"engineeringGateTests":gate_result,"testMinimumContractSha256":CONTRACT_SHA256,
++        "reviewRound":"CI51","engineeringGateTests":gate_result,"testMinimumContractSha256":CONTRACT_SHA256,
+         "historicalRoomSchemas":json.loads((ROOT / "engineering/v16/review-fix-evidence/room-history.json").read_text(encoding="utf-8")),
+         "officialRoom5":"NOT_GENERATED_NOT_COMMITTED_BOOTSTRAP_REQUIRED_STRICT_GATE_FAIL",
++        "roomSchemaChanged":True,"ci51OldSchemaMustNotBeCommitted":True,
+         "testSourceInventory": {k:v for k,v in inventory.items() if k!="files"},
+         "androidKspBuild":"UNVERIFIED","allKotlinRoomComposeTests":"UNVERIFIED",
+         "synthetic2000ExecutionAndPerformance":"UNVERIFIED","actionsExecution":"UNVERIFIED",
+         "deviceAcceptance":"DEVICE UNVERIFIED","finalIndependentReview":"AFTER_COMPLETE_CI_GREEN",
+         "candidateApk":None,"remoteActionsExecuted":False,
+-        "handoff": {"issueFileMatrix":"engineering/v16/REVIEW-FIX-ROUND2.md","testAudit":"engineering/v16/TEST-AUDIT.md",
++        "readOnlyRemoteAccess":["git fetch origin feature/life-os-v16-ci-review","GitHub CI51 steps, job logs and artifact metadata"],
++        "handoff": {"issueFileMatrix":"engineering/v16/CI51-FIX.md","testAudit":"engineering/v16/TEST-AUDIT.md",
+                     "workflow":".github/workflows/android.yml","ciBootstrapArtifacts":"engineering/v16/GITHUB-VALIDATION.md"}
+     }
+     (out / "manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+     checksums="".join(f"{row['sha256']}  {row['file']}\n" for row in files)
+     (out / "SHA256SUMS.txt").write_text(checksums,encoding="utf-8")
+     (out / "README.md").write_text(
+-        f"# V16 Review Fix 第二轮增量交接\n\n本地代码SHA：`{head}`\n\n增量基线：`{BASE}`\n\n"
++        f"# V16 CI #51 综合修复增量交接\n\n本地代码SHA：`{head}`\n\n增量基线：`{BASE}`\n\n"
+         f"完整代码树：`{expected}`\n\n"
+         f"补丁应用前代码树：`{base_tree}`\n\n"
+         "本包只含基线之后的本地修复format-patch，没有重复导出旧V16全量补丁。"
+         "每个补丁SHA-256见SHA256SUMS.txt和manifest.json；已在独立Git index从指定基线应用全部补丁并逐树核对当前HEAD，通过。\n\n"
+-        "在干净独立checkout，先确认HEAD等于基线，或第一轮git am后仅元数据不同且HEAD代码树等于上述应用前代码树；核对补丁哈希，然后按文件序号执行 `git am <补丁文件>`。"
++        "在干净独立checkout确认HEAD等于7895082基线，或仅元数据不同而HEAD代码树等于上述应用前代码树；核对补丁哈希，然后执行 `git am <补丁文件>`。"
+         "git am可能因提交者元数据产生新commit SHA；代码树应与上述tree一致，CI以实际推送SHA为准。"
+         "本轮未push/PR/merge/发布/触发CI，交付后等待Owner授权推送。\n\n"
+-        f"问题与文件矩阵：engineering/v16/REVIEW-FIX-ROUND2.md；新增/修改测试逐项自审及{inventory['testFiles']}文件/{inventory['testMethods']}方法清单："
++        f"四处编译错误/日期A–I/迁移备份及官方5状态矩阵：engineering/v16/CI51-FIX.md；测试自审及{inventory['testFiles']}文件/{inventory['testMethods']}方法清单："
+         "engineering/v16/TEST-AUDIT.md 和 review-fix-evidence/test-inventory.json；更新工作流：.github/workflows/android.yml；"
+         "CI运行、Schema Bootstrap、预期artifact名称和检查方法：engineering/v16/GITHUB-VALIDATION.md。\n\n"
+         f"本地工程门禁{gate_result['cases']}例通过，历史schema/结构/SQLite辅助检查通过。Android/KSP、全部Kotlin/Room/Compose测试、"
+         "实际2000条指标、Actions执行和APK均UNVERIFIED；没有候选APK。官方5.json未生成/提交，严格门禁当前FAIL。"
+         "首次Owner授权的功能分支CI先KSP并上传官方schema，缺提交版时保持红；原样归档5.json后再运行完整门禁。\n\n"
+-        "对账遵循Owner确认的保守证据边界：DATE按整日不确定区间判断，与边界重叠保持INCOMPLETE；精度进入算法3指纹。未知postedAt且无法证明范围外的同账户交易保持INCOMPLETE，"
++        "本轮DATE持久化原始日历日、时区、确认时日区间和解释版本；读取不使用当前时区重新推断，旧DATE无证据保持INCOMPLETE。精度和解释依据进入算法4指纹。未知postedAt且无法证明范围外的同账户交易保持INCOMPLETE，"
+         "不使用occurredAt或recordedAt排除。之后由Sol定位实际CI失败并交新的本地修复；完整CI通过后再最终独立Review，"
+         "无阻断才集中一轮设备验收。厂商特性保持DEVICE UNVERIFIED。\n\n"
+-        "CI保留fetch-depth: 0并显式验证R2对象；最低测试契约为96文件/638方法，固定规范化SHA-256，不能靠重新生成动态清单降低。"
+-        "JUnit按完整类名及方法/显式参数调用名逐项匹配，重复、缺失、失败、跳过均FAIL。契约不依赖未推送的本地7d9fe46对象，"
+-        "git am更改提交者元数据不会破坏CI的历史依赖。\n",encoding="utf-8")
++        f"CI保留fetch-depth: 0并显式验证R2对象；最低测试契约为{inventory['minimumTestFiles']}文件/{inventory['minimumTestMethods']}方法，固定规范化SHA-256，不能靠重新生成动态清单降低。"
++        "JUnit逐类逐方法匹配，重复、缺失、失败、跳过均FAIL。日期修复属于Schema情况B，两张候选v5表各增5列。不要提交#51旧5.json；下一次CI必须从本轮最终Entity重新KSP生成并走严格Bootstrap。\n",encoding="utf-8")
+     print(json.dumps({"output":str(out),"head":head,"base":BASE,"patches":files,"fullTreeComparison":"PASS","remoteActionsExecuted":False},ensure_ascii=False))
+ 
+ if __name__ == "__main__":
+diff --git a/engineering/v16/review-fix-evidence/ci51-observed.json b/engineering/v16/review-fix-evidence/ci51-observed.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..70cd7d725df7c721b0dfb7646e35132995150937
+--- /dev/null
++++ b/engineering/v16/review-fix-evidence/ci51-observed.json
+@@ -0,0 +1,31 @@
++{
++  "runNumber": 51,
++  "runId": 39208535139,
++  "jobId": 117916558369,
++  "branch": "feature/life-os-v16-ci-review",
++  "head": "78950821129f522d17359a7ec3bca2232c120601",
++  "url": "https://github.com/cnsj-123/qqhome/actions/runs/39208535139",
++  "observed": {
++    "sourceAndPython": "PASS",
++    "ksp": "PASS",
++    "strictSchema": "FAIL_OFFICIAL_5_NOT_COMMITTED",
++    "compileDebugKotlin": "FAIL",
++    "runtimeTests": "NOT_RUN_COMPILE_FAILED",
++    "assembleDebug": "SKIPPED"
++  },
++  "compilerErrors": [
++    "2026-10-19T06:13:54.1062232Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/data/backup/EncryptedBackupManager.kt:68:38 Type checking has run into a recursive problem. Easiest workaround: specify types of your declarations explicitly",
++    "2026-10-19T06:13:54.1076013Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/life/finance/FinanceV16References.kt:370:154 Incompatible types: String and Int",
++    "2026-10-19T06:13:54.1101307Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt:20:56 Type mismatch: inferred type is Long? but Long was expected",
++    "2026-10-19T06:13:54.1127498Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt:20:56 Type mismatch: inferred type is Long? but TypeVariable(T) was expected",
++    "2026-10-19T06:13:54.1147844Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt:62:57 Type mismatch: inferred type is Long? but Long was expected",
++    "2026-10-19T06:13:54.1152232Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt:62:57 Type mismatch: inferred type is Long? but TypeVariable(T) was expected"
++  ],
++  "schemaArtifact": {
++    "id": 12166810831,
++    "name": "room-schema-run51-78950821129f522d17359a7ec3bca2232c120601",
++    "useForFinalModel": false,
++    "reason": "Candidate v5 now gains civil-date columns; final KSP export is required."
++  },
++  "currentFixCompilation": "UNVERIFIED"
++}
+diff --git a/engineering/v16/review-fix-evidence/test-inventory.json b/engineering/v16/review-fix-evidence/test-inventory.json
+index 68162de1d7bd9ef907c819515cc2d2539c658467..37732309dd97a5d980dfff7100a9f1a2a8aacba7 100644
+--- a/engineering/v16/review-fix-evidence/test-inventory.json
++++ b/engineering/v16/review-fix-evidence/test-inventory.json
+@@ -2,13 +2,13 @@
+   "check": "V16-test-source-inventory",
+   "status": "PASS",
+   "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+-  "minimumBase": "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319",
++  "minimumBase": "78950821129f522d17359a7ec3bca2232c120601",
+   "minimumContract": "engineering/v16/test-minimum-contract.json",
+-  "minimumContractSha256": "732e114d7512f7b4bf53dc61f19002017357a25da64ac59effd3f0bb4e352ce5",
+-  "minimumTestFiles": 96,
+-  "minimumTestMethods": 638,
+-  "testFiles": 32,
+-  "testMethods": 148,
++  "minimumContractSha256": "39b20f28e84bf5ae71f2ff1b93417204d9459403f0b4f6477297a3b7d595ba36",
++  "minimumTestFiles": 97,
++  "minimumTestMethods": 648,
++  "testFiles": 33,
++  "testMethods": 158,
+   "deletedFiles": [],
+   "errors": [],
+   "bypassFindings": [],
+@@ -131,6 +131,26 @@
+       "runtime": "UNVERIFIED",
+       "bypass": []
+     },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt",
++      "className": "com.qq.closie.life.finance.FinanceCivilDateV16Test",
++      "tests": [
++        "tokyoDateSurvivesLosAngelesDeviceZoneAndRepositoryRecreation",
++        "losAngelesDateSurvivesTokyoDeviceZoneAndRepositoryRecreation",
++        "daylightSavingDaysPersistTwentyThreeAndTwentyFiveHoursAndCannotProveNoonPosting",
++        "legacyDateHasNoGuessedZoneAndOnlyExplicitOutsideEvidenceCanExcludeIt",
++        "explicitZoneBasisChangeInvalidatesEvenWithIdenticalBoundsAndInvalidEvidenceRollsBack",
++        "integerControlIdentityStillRejectsDuplicatesAndWrongSingletonKey",
++        "postedFiltersAndStatementsAlsoRequirePersistedWholeDateIntervals",
++        "encryptedTypedBackupPreservesDateZoneBoundsAcrossDevices",
++        "olderTypedArchiveDoesNotInventDateOrZoneOnRestore"
++      ],
++      "sha256": "412f258458613d137efbe688683b1455b5772115928df12be736821b3b7c8a50",
++      "assertionCalls": 59,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
+     {
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceEconomicDraftV16Test.kt",
+       "className": "com.qq.closie.life.finance.FinanceEconomicDraftV16Test",
+@@ -324,8 +344,8 @@
+         "datePostingOverlappingAnchorIsUnknownAndOnlyWholeOutsideDaysCanBeExcluded",
+         "dateObservationOverlappingAnchorRemainsIncompleteEvenWithoutEntries"
+       ],
+-      "sha256": "15efe20103e7d93bb5e9a1241232dcf0332c4d43a03d9168ff60d2ef528e3dae",
+-      "assertionCalls": 52,
++      "sha256": "30bcccec89e8d03c15156489b0b523f88efc4272e8447d9108ab2857b7fd75ce",
++      "assertionCalls": 53,
+       "realRoom": true,
+       "runtime": "UNVERIFIED",
+       "bypass": []
+@@ -431,10 +451,11 @@
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
+       "className": "com.qq.closie.life.finance.FinanceV5MigrationTest",
+       "tests": [
+-        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
++        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity",
++        "populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds"
+       ],
+-      "sha256": "d6a9e16f19a2cdfc8ea66695c9d0554218a1b1dab8e7cd3c679661d4b27d68b3",
+-      "assertionCalls": 9,
++      "sha256": "6a0c16940a8f388028c8621d5f9308bb62b75fb1dbe56f7f38fa5cf840eb2977",
++      "assertionCalls": 24,
+       "realRoom": true,
+       "runtime": "UNVERIFIED",
+       "bypass": []
+diff --git a/engineering/v16/schema-v5.json b/engineering/v16/schema-v5.json
+index 757812f233ac051972e1110175f440e9b97e88f6..7e9a8df89ac0b9c1a5f13f9c9fc26aaec40f2bbe 100644
+--- a/engineering/v16/schema-v5.json
++++ b/engineering/v16/schema-v5.json
+@@ -717,6 +717,31 @@
+           "name": "voidedAt",
+           "type": "Long?",
+           "value": "null"
++        },
++        {
++          "name": "postedLocalDate",
++          "type": "String?",
++          "value": "null"
++        },
++        {
++          "name": "postedZoneId",
++          "type": "String?",
++          "value": "null"
++        },
++        {
++          "name": "postedDayStartAt",
++          "type": "Long?",
++          "value": "null"
++        },
++        {
++          "name": "postedDayEndExclusive",
++          "type": "Long?",
++          "value": "null"
++        },
++        {
++          "name": "postedDateBasisVersion",
++          "type": "Int?",
++          "value": "null"
+         }
+       ],
+       "refs": {
+@@ -834,6 +859,31 @@
+           "name": "voidedAt",
+           "type": "Long?",
+           "value": "null"
++        },
++        {
++          "name": "observedLocalDate",
++          "type": "String?",
++          "value": "null"
++        },
++        {
++          "name": "observedZoneId",
++          "type": "String?",
++          "value": "null"
++        },
++        {
++          "name": "observedDayStartAt",
++          "type": "Long?",
++          "value": "null"
++        },
++        {
++          "name": "observedDayEndExclusive",
++          "type": "Long?",
++          "value": "null"
++        },
++        {
++          "name": "observedDateBasisVersion",
++          "type": "Int?",
++          "value": "null"
+         }
+       ],
+       "refs": {
+@@ -2791,11 +2841,11 @@
+     "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_eventId` ON `finance_cost_adjustments` (`eventId`)",
+     "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_entryLinkId` ON `finance_cost_adjustments` (`entryLinkId`)",
+     "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_lineId` ON `finance_cost_adjustments` (`lineId`)",
+-    "CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
++    "CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, `postedLocalDate` TEXT, `postedZoneId` TEXT, `postedDayStartAt` INTEGER, `postedDayEndExclusive` INTEGER, `postedDateBasisVersion` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+     "CREATE INDEX IF NOT EXISTS `index_finance_entry_timing_entryId` ON `finance_entry_timing` (`entryId`)",
+     "CREATE TABLE IF NOT EXISTS `finance_account_policies` (`accountId` TEXT NOT NULL, `includedInNet` INTEGER NOT NULL, `liabilityConvention` TEXT NOT NULL, `anchorBasis` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`accountId`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+     "CREATE INDEX IF NOT EXISTS `index_finance_account_policies_accountId` ON `finance_account_policies` (`accountId`)",
+-    "CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
++    "CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, `observedLocalDate` TEXT, `observedZoneId` TEXT, `observedDayStartAt` INTEGER, `observedDayEndExclusive` INTEGER, `observedDateBasisVersion` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+     "CREATE INDEX IF NOT EXISTS `index_finance_observations_accountId` ON `finance_observations` (`accountId`)",
+     "CREATE TABLE IF NOT EXISTS `finance_reconciliations` (`id` TEXT NOT NULL, `observationId` TEXT NOT NULL, `bookMinor` INTEGER, `fingerprint` TEXT NOT NULL, `algorithmVersion` INTEGER NOT NULL, `note` TEXT NOT NULL, `confirmationOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`observationId`) REFERENCES `finance_observations`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+     "CREATE INDEX IF NOT EXISTS `index_finance_reconciliations_observationId` ON `finance_reconciliations` (`observationId`)",
+diff --git a/engineering/v16/static-result.json b/engineering/v16/static-result.json
+index ebead1af73bad07be7fa3ef8edeacb5d3c225aec..66866998de026d572e338832e301b9465f17daf0 100644
+--- a/engineering/v16/static-result.json
++++ b/engineering/v16/static-result.json
+@@ -1,7 +1,7 @@
+ {
+   "check": "static-structure-only",
+   "status": "PASS",
+-  "kotlinFilesScanned": 406,
++  "kotlinFilesScanned": 408,
+   "registeredEntities": 75,
+   "errors": [],
+   "compilation": "UNVERIFIED"
+diff --git a/engineering/v16/test-minimum-contract.json b/engineering/v16/test-minimum-contract.json
+index 949145447bedeed8ce9b4fffa531ade65145a688..d2ac379e95e5ce3c8b61f4d33874c5d2a7cae8e8 100644
+--- a/engineering/v16/test-minimum-contract.json
++++ b/engineering/v16/test-minimum-contract.json
+@@ -1,6 +1,6 @@
+ {
+   "version": 1,
+-  "basedOnCommit": "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319",
++  "basedOnCommit": "78950821129f522d17359a7ec3bca2232c120601",
+   "reportNameRule": "Exact full classname + method; parameterized mappings enumerate every required JUnit invocation; no suffix stripping",
+   "files": [
+     {
+@@ -546,6 +546,21 @@
+         "deepPathsAndDescendantsRemainSafeForCyclesAndMissingParents"
+       ]
+     },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt",
++      "className": "com.qq.closie.life.finance.FinanceCivilDateV16Test",
++      "tests": [
++        "tokyoDateSurvivesLosAngelesDeviceZoneAndRepositoryRecreation",
++        "losAngelesDateSurvivesTokyoDeviceZoneAndRepositoryRecreation",
++        "daylightSavingDaysPersistTwentyThreeAndTwentyFiveHoursAndCannotProveNoonPosting",
++        "legacyDateHasNoGuessedZoneAndOnlyExplicitOutsideEvidenceCanExcludeIt",
++        "explicitZoneBasisChangeInvalidatesEvenWithIdenticalBoundsAndInvalidEvidenceRollsBack",
++        "integerControlIdentityStillRejectsDuplicatesAndWrongSingletonKey",
++        "postedFiltersAndStatementsAlsoRequirePersistedWholeDateIntervals",
++        "encryptedTypedBackupPreservesDateZoneBoundsAcrossDevices",
++        "olderTypedArchiveDoesNotInventDateOrZoneOnRestore"
++      ]
++    },
+     {
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceDiscoveryHistoryTest.kt",
+       "className": "com.qq.closie.life.finance.FinanceDiscoveryHistoryTest",
+@@ -864,7 +879,8 @@
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
+       "className": "com.qq.closie.life.finance.FinanceV5MigrationTest",
+       "tests": [
+-        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
++        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity",
++        "populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds"
+       ]
+     },
+     {
+@@ -1214,5 +1230,5 @@
+       ]
+     }
+   ],
+-  "additionalCoverage": "Four date-precision reconciliation methods added in review fix round 2"
++  "additionalCoverage": "CI51: nine civil date methods and one populated migration method; preserve all previous requirements"
+ }
+diff --git a/engineering/v16/v16_test_contract.py b/engineering/v16/v16_test_contract.py
+index a43fd774da346a64be5d7385ab87cb611a49229f..5a6b9604e522f9ce6c54ca7e368fcb7bfd479515 100644
+--- a/engineering/v16/v16_test_contract.py
++++ b/engineering/v16/v16_test_contract.py
+@@ -2,9 +2,9 @@
+ import hashlib, json, pathlib, re, subprocess
+ 
+ R2 = "245e1475cd1d47a4205ab49f75d5e06d22de701c"
+-MINIMUM_BASE = "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319"
++MINIMUM_BASE = "78950821129f522d17359a7ec3bca2232c120601"
+ CONTRACT = "engineering/v16/test-minimum-contract.json"
+-CONTRACT_SHA256 = "732e114d7512f7b4bf53dc61f19002017357a25da64ac59effd3f0bb4e352ce5"
++CONTRACT_SHA256 = "39b20f28e84bf5ae71f2ff1b93417204d9459403f0b4f6477297a3b7d595ba36"
+ 
+ def contract_digest(data):
+     canonical=json.dumps(data,ensure_ascii=False,sort_keys=True,separators=(",", ":")).encode("utf-8")
+diff --git a/engineering/v16/verify-room-schema.py b/engineering/v16/verify-room-schema.py
+index 8ad1a43e88102fdea54aa72f75554e91cb0077fc..fd21b3eac6602b67cf0bcf8290d5dcbbed510249 100644
+--- a/engineering/v16/verify-room-schema.py
++++ b/engineering/v16/verify-room-schema.py
+@@ -67,6 +67,11 @@ def verify(root, history_only=False):
+             expected = {entity["tableName"] for entity in historical["database"]["entities"]} | {table["name"] for table in design["tables"]}
+             actual = [entity["tableName"] for entity in schema["database"]["entities"]]
+             assert len(actual) == len(set(actual)) and set(actual) == expected, "official entity set differs from migration contract"
++            entities = {entity["tableName"]: entity for entity in schema["database"]["entities"]}
++            for table, prefix in (("finance_entry_timing", "posted"), ("finance_observations", "observed")):
++                fields={field["columnName"]:field for field in entities[table]["fields"]}
++                for suffix in ("LocalDate", "ZoneId", "DayStartAt", "DayEndExclusive", "DateBasisVersion"):
++                    assert not fields[prefix+suffix]["notNull"], "civil-date evidence must remain nullable for legacy archives"
+             hashes["5"] = hashlib.sha256(raw).hexdigest()
+             git_bytes(root, "diff", "HEAD", "--exit-code", "--", SCHEMA)
+         check("Committed KSP official Room 5 (bootstrap must fail until committed)", official)
+
+base-commit: 78950821129f522d17359a7ec3bca2232c120601
+-- 
+2.53.0.windows.3
+
