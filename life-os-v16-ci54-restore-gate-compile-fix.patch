@@ -1,0 +1,41 @@
+From 72c1ef2ee129d95e8360d2f9eb01ef2f66df1a10 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Mon, 19 Oct 2026 21:26:21 +0800
+Subject: [PATCH] fix(test): correct restore gate async Unit inference
+
+---
+ .../com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt   | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt b/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
+index 0b543aeed7580e55cb41d56a99bc3ef22da04f87..a128413b44445571dd09bc7717ac8b6bdf5ff066 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
+@@ -318,7 +318,7 @@ class RestoreGateConcurrencyTest {
+         val refused = AtomicInteger(0)
+ 
+         val jobs = (0 until threads).mapIndexed { index, _ ->
+-            async(Dispatchers.IO) {
++            async<Unit>(Dispatchers.IO) {
+                 barrier.await(5, TimeUnit.SECONDS)
+                 if (index == 0) {
+                     // The would-be restorer.
+@@ -331,6 +331,7 @@ class RestoreGateConcurrencyTest {
+                                 violations.incrementAndGet()
+                             }
+                         }
++                        Unit
+                     } finally { restoreAttempted.countDown() }
+                 } else {
+                     // A would-be business operation. It either takes the lease (and then the restore
+@@ -346,6 +347,7 @@ class RestoreGateConcurrencyTest {
+                         }
+                     } catch (_: RestoreRecoveryPendingException) { refused.incrementAndGet() }
+                 }
++                Unit
+             }
+         }
+         jobs.awaitAll()
+-- 
+2.53.0.windows.3
+
