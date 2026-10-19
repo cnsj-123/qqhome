@@ -318,7 +318,7 @@ class RestoreGateConcurrencyTest {
         val refused = AtomicInteger(0)
 
         val jobs = (0 until threads).mapIndexed { index, _ ->
-            async(Dispatchers.IO) {
+            async<Unit>(Dispatchers.IO) {
                 barrier.await(5, TimeUnit.SECONDS)
                 if (index == 0) {
                     // The would-be restorer.
@@ -331,6 +331,7 @@ class RestoreGateConcurrencyTest {
                                 violations.incrementAndGet()
                             }
                         }
+                        Unit
                     } finally { restoreAttempted.countDown() }
                 } else {
                     // A would-be business operation. It either takes the lease (and then the restore
@@ -346,6 +347,7 @@ class RestoreGateConcurrencyTest {
                         }
                     } catch (_: RestoreRecoveryPendingException) { refused.incrementAndGet() }
                 }
+                Unit
             }
         }
         jobs.awaitAll()
