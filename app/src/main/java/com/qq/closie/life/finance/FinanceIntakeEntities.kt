@@ -4,7 +4,7 @@ import androidx.room.*
 
 enum class FinanceProposalStatus { ACTIVE, SNOOZED, CONFIRMED, REJECTED, STALE }
 // TEXT-backed acquisition origin; this does not add a table/column or change Room v4.
-enum class FinanceSource { LEGACY_IMPORT, WECHAT, ALIPAY, VISIBLE_DETAIL }
+enum class FinanceSource { LEGACY_IMPORT, WECHAT, ALIPAY, VISIBLE_DETAIL, SELECTED_IMAGE }
 enum class FinanceProposalKind { EXPENSE, INCOME, TRANSFER }
 enum class FinanceImportStatus { STAGED, COMMITTED, UNDONE }
 enum class FinanceRowStatus { READY, REVIEW, INVALID, DUPLICATE, COMMITTED, UNDONE }

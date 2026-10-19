@@ -38,7 +38,7 @@ class FinanceSmokeTest {
     private fun launch() {
         compose.setContent { LifeOsTheme { FinanceRoute(repository, {}) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithText("钱的位置").fetchSemanticsNodes().isNotEmpty() }
+            compose.onAllNodesWithText("账簿").fetchSemanticsNodes().isNotEmpty() }
     }
     private fun input(label: String, text: String) {
         compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
@@ -69,13 +69,14 @@ class FinanceSmokeTest {
         compose.onNode(dateControl).assertIsDisplayed()
     }
 
-    @Test fun jumpingFromOverviewToInsightsDoesNotApplyTheIntermediateCalendarRange() {
+    @Test fun insightsStartsWithItsOwnRangeAfterLedgerSelectedAllDates() {
         launch()
         selectPeriod("全部")
         click("分析")
         compose.waitForIdle()
         openFilters()
-        compose.onNodeWithText("日期 · 全部日期").assertIsDisplayed()
+        val month=YearMonth.now()
+        compose.onNodeWithText("日期 · ${month.year} 年 ${month.monthValue} 月").assertIsDisplayed()
     }
 
     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {
@@ -88,7 +89,7 @@ class FinanceSmokeTest {
         assertEquals("工资卡", snapshot().accounts.single().name)
         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
         input("金额 · CNY", "12.34")
-        input("具体事由 · 买了什么 / 为了什么", "早餐豆浆")
+        input("备注（可留空）", "早餐豆浆")
         click("标签与新分类")
         input("新主分类（可留空）", "餐饮")
         input("标签 · 逗号分隔", "早餐，出门")
@@ -110,7 +111,7 @@ class FinanceSmokeTest {
         assertEquals(originalRow.category, correctedRow.category)
         assertEquals(originalRow.tags, correctedRow.tags)
         assertEquals(99_000L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
-        compose.onNodeWithText("流水").performClick()
+        compose.onNodeWithText("账簿").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("finance-search").performTextReplacement("出门")
         compose.waitForIdle()
@@ -149,11 +150,36 @@ class FinanceSmokeTest {
         assertNotNull(snapshot().transfers.single().voidedAt)
     }
 
+    @Test fun creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption() {
+        lateinit var bank:FinanceAccountEntity
+        lateinit var credit:FinanceAccountEntity
+        runBlocking {
+            bank=repository.saveAccount(name="合成还款银行",kind=FinanceAccountKind.BANK_CARD,openingBalanceMinor=100_000)
+            credit=repository.saveAccount(name="合成旧欠款",kind=FinanceAccountKind.CREDIT,openingBalanceMinor=10_000)
+            repository.workspace.setAccountPolicy(repository.economics.token(),credit.id,true,
+                FinanceLiabilityConvention.POSITIVE_DEBT,FinanceBalanceBasis.LEGACY_CASH,null)
+        }
+        val before=FinanceAccountProjection.netByCurrency(snapshot())
+        launch();click("账户");click("合成旧欠款")
+        click("记录新的实际还款转账")
+        input("金额 · CNY","50.00")
+        click("保存记录");saved()
+        val after=snapshot();val transfer=after.transfers.single()
+        val out=after.entries.single {it.id==transfer.outflowEntryId}
+        val incoming=after.entries.single {it.id==transfer.inflowEntryId}
+        assertEquals(bank.id,out.accountId);assertEquals(credit.id,incoming.accountId)
+        assertEquals(FinanceDirection.OUTFLOW,out.direction);assertEquals(FinanceDirection.INFLOW,incoming.direction)
+        assertEquals(5_000L,out.amountMinor);assertEquals(out.amountMinor,incoming.amountMinor)
+        assertEquals(before,FinanceAccountProjection.netByCurrency(after))
+        assertEquals(-5_000L,FinanceAccountProjection.netContribution(after,credit))
+        assertTrue(FinanceCostProjection.rows(after).isEmpty())
+    }
+
     @Test fun historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange() {
         val current = YearMonth.now()
         val month = current.minusMonths(1)
         val day = month.atDay(1)
-        val heading = "$day 流水 · 1 笔"
+        val heading = "$day 真实资金流水 · 1 笔"
         runBlocking {
             val account = repository.saveAccount(name = "测试现金", kind = FinanceAccountKind.CASH)
             (1..2).forEach { number ->
@@ -163,7 +189,7 @@ class FinanceSmokeTest {
             }
         }
         launch()
-        click("流水")
+        click("账簿")
         compose.waitForIdle()
         compose.onNodeWithTag("finance-date-control").performClick()
         if (month.year != current.year) compose.onNodeWithText("上一年").performClick()
@@ -184,11 +210,11 @@ class FinanceSmokeTest {
             compose.onNodeWithText("上月第 2 日").assertDoesNotExist()
         }
         assertSelectedRows()
-        click("流水") // Tapping the already-selected tab must retain the month and day.
+        click("账簿") // Tapping the already-selected tab must retain the month and day.
         assertSelectedRows()
         click("分析")
         selectPeriod("本月") // Insights has a different range; Transactions owns its viewed month/day.
-        click("流水")
+        click("账簿")
         assertViewedMonth(month)
         awaitHistoricalRows()
         assertSelectedRows()

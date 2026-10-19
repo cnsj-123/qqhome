@@ -51,6 +51,7 @@ enum class MediaType {
     AUDIO,
     LIVE_PHOTO,
     MOTION_PHOTO,
+    DOCUMENT,
 }
 
 class MediaTypeConverter {

@@ -1,0 +1,28 @@
+{
+  "syntheticOnly": true,
+  "devicePerformance": "UNVERIFIED",
+  "files": [
+    {
+      "file": "synthetic-review-8.csv",
+      "dataRows": 8,
+      "bytes": 1218,
+      "sha256": "afbf9bb758f9fe8b1f89fc5856ba241a527f567bd9ba2153a41953ae3f4ff941"
+    },
+    {
+      "file": "synthetic-history-2000.csv",
+      "dataRows": 2000,
+      "bytes": 260241,
+      "sha256": "34e9d5e3740fc859bde299d92578601ed1456d627de860cf2a9d72ae8c9f653c"
+    }
+  ],
+  "historyExpectedAfterFullImportWithZeroOpening": {
+    "activeEntries": 2000,
+    "currency": "CNY",
+    "netMinor": -294950,
+    "accountBalancesMinor": {
+      "合成钱包": -235936,
+      "合成银行": -59014
+    },
+    "confirmedPersonalCostMinor": 294950
+  }
+}

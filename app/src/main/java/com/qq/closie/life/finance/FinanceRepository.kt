@@ -10,6 +10,15 @@ import java.util.UUID
 
 /** The manual Finance command boundary. No Capture/AI writes; no universal LifeEntity payload. */
 class FinanceRepository(private val database: LifeDatabase, private val clock: () -> Long = System::currentTimeMillis) {
+    val workspace: FinanceWorkspaceRepository by lazy { FinanceWorkspaceRepository(database,this,clock) }
+    val economics: FinanceEconomicRepository by lazy { FinanceEconomicRepository(database,this,clock) }
+    val recovery: FinanceRecoveryRepository by lazy { FinanceRecoveryRepository(database,this,clock) }
+    val shopping: com.qq.closie.life.shopping.ShoppingRepository by lazy { com.qq.closie.life.shopping.ShoppingRepository(database,this,clock) }
+    val reviews:FinanceReviewRepository by lazy {FinanceReviewRepository(database,this,FinanceAutomationRepository(database,this),clock)}
+    val provenance:FinanceProvenanceRepository by lazy {FinanceProvenanceRepository(database,this,clock)}
+    val media:FinanceMediaRepository by lazy {FinanceMediaRepository(database,this,clock)}
+    val economicDrafts:FinanceEconomicDraftRepository by lazy {FinanceEconomicDraftRepository(database,this,clock)}
+    val expectations:FinanceExpectedTaskRepository by lazy {FinanceExpectedTaskRepository(database,this,clock)}
     private val dao get() = database.financeDao()
     private val intake get() = database.financeIntakeDao()
     private fun newId() = UUID.randomUUID().toString()
@@ -17,14 +26,23 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         RestoreStartupGate.withBusinessAccessSuspending { database.withTransaction { block() } }
 
     suspend fun snapshot(): FinanceSnapshot = transaction { readSnapshot() }
+    suspend fun portableSnapshot():FinanceSnapshot=transaction {readFinanceSnapshot(database,true)}
+    suspend fun confirmedShare(preview:FinanceSharePreview):String=transaction {
+        FinanceShareProjection.validate(readFinanceSnapshot(database,true),preview,clock())
+    }
     fun observeSnapshot(): Flow<FinanceSnapshot> = gateAwareFlow {
-        kotlinx.coroutines.flow.combine(dao.observeChanges(), intake.observeChanges()) { _, _ -> transaction { readSnapshot() } }
+        kotlinx.coroutines.flow.combine(dao.observeChanges(), intake.observeChanges(),database.financeV16Dao().observeChanges()) { _, _, _ -> transaction { readSnapshot() } }
     }
     private suspend fun readSnapshot() = readFinanceSnapshot(database)
 
     suspend fun saveAccount(id: String? = null, name: String, kind: FinanceAccountKind,
-        currencyCode: String = "CNY", openingBalanceMinor: Long = 0): FinanceAccountEntity = transaction {
-        saveAccountInTransaction(id, name, kind, currencyCode, openingBalanceMinor).also { validateBalances() }
+        currencyCode: String = "CNY", openingBalanceMinor: Long = 0,balanceAnchorAt:Long?=null,
+        expectedUpdatedAt:Long?=null,expectedRestoreEpoch:Long?=null): FinanceAccountEntity = transaction {
+        require(expectedRestoreEpoch==null || (database.financeV16Dao().controlRows().singleOrNull()?.restoreEpoch ?: 0L)==expectedRestoreEpoch) {"恢复后请重新打开账户编辑器"}
+        val old=id?.let {requireNotNull(dao.account(it))}
+        require(expectedUpdatedAt==null || old?.updatedAt==expectedUpdatedAt) {"账户已改变，请重新打开"}
+        require(balanceAnchorAt==null || (old==null && balanceAnchorAt<=clock()) || old?.balanceAnchorAt==balanceAnchorAt) {"已有账户起点须通过影响预览修改，新起点不能在未来"}
+        saveAccountInTransaction(id, name, kind, currencyCode, openingBalanceMinor,anchor=balanceAnchorAt).also { validateBalances() }
     }
     internal suspend fun saveAccountInTransaction(id: String?, name: String, kind: FinanceAccountKind,
         currencyCode: String, openingBalanceMinor: Long, anchor: Long? = null, batchId: String? = null,
@@ -46,8 +64,15 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     suspend fun archiveAccount(id: String) = transaction {
         val account = requireNotNull(dao.account(id)) { "账户已不存在" }
         if (account.archivedAt == null) {
+            val now = clock()
+            val v16 = database.financeV16Dao()
+            v16.putAccountBinding(v16.accountBindingRows().filter { it.accountId == id && it.voidedAt == null }.map {
+                it.copy(voidedAt = now, updatedAt = now, revision = Math.addExact(it.revision, 1L),
+                    validUntil = if (now > it.validFrom) now else it.validUntil)
+            })
             dao.updateAccount(account.copy(archivedAt = clock(), updatedAt = maxOf(clock(), account.updatedAt + 1)))
             journal(id, "ACCOUNT_ARCHIVE")
+            validateBalances()
         }
     }
     suspend fun unarchiveAccount(id: String) = transaction {
@@ -59,7 +84,9 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     suspend fun saveEntry(id: String? = null, accountId: String, direction: FinanceDirection,
         amountMinor: Long, description: String, occurredAt: Long,
         category: String = "", tags: List<String> = emptyList(), subcategory: String = "",
-        event: FinanceEventInput? = null, expectedRevision: Long? = null, categoryId: String? = null): FinanceEntryEntity = transaction {
+        event: FinanceEventInput? = null, expectedRevision: Long? = null, categoryId: String? = null,
+        expectedRestoreEpoch:Long?=null): FinanceEntryEntity = transaction {
+        require(expectedRestoreEpoch==null || (database.financeV16Dao().controlRows().singleOrNull()?.restoreEpoch ?: 0L)==expectedRestoreEpoch) { "恢复后旧编辑器已失效，请重新打开" }
         saveEntryInTransaction(id, accountId, direction, amountMinor, description, occurredAt,
             category, tags, subcategory, event, expectedRevision, categoryId = categoryId).also { validateBalances() }
     }
@@ -68,7 +95,14 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         subcategory: String = "", event: FinanceEventInput? = null, expectedRevision: Long? = null,
         batchId: String? = null, authority: String? = null, categoryId: String? = null): FinanceEntryEntity {
         require(amountMinor > 0) { "金额必须大于 0" }
-        require(description.isNotBlank()) { "请写下具体事由" }
+        if(event?.role in setOf(FinanceFlowRole.REFUND,FinanceFlowRole.REBATE,FinanceFlowRole.CASHBACK) &&
+            database.financeV16Dao().economicRows().any {it.eventId==event?.existingEventId && it.voidedAt==null}) {
+            val linked=id?.let {intake.linksForEntry(it)}.orEmpty().filter {it.eventId==event?.existingEventId}.map {it.id}.toSet()
+            val editingConfirmed=database.financeV16Dao().costAdjustmentRows().any {it.entryLinkId in linked && it.voidedAt==null}
+            require(editingConfirmed || authority in setOf("V16_COST_ADJUST","USER_CONFIRMED_TYPED_ADJUSTMENT")) {
+                "此经济事项的退款需明确个人成本冲减额，请从事项的实际退款入口记录"
+            }
+        }
         val old = id?.let { requireNotNull(dao.entry(it)) { "流水已不存在" } }
         require(old?.voidedAt == null) { "已作废流水不能修改" }
         require(expectedRevision == null || old?.revision == expectedRevision) { "这笔记录已改变，请重新打开后保存" }
@@ -95,7 +129,9 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     }
 
     suspend fun saveTransfer(id: String? = null, sourceAccountId: String, targetAccountId: String,
-        amountMinor: Long, description: String, occurredAt: Long, expectedUpdatedAt: Long? = null): FinanceTransferEntity = transaction {
+        amountMinor: Long, description: String, occurredAt: Long, expectedUpdatedAt: Long? = null,
+        expectedRestoreEpoch:Long?=null): FinanceTransferEntity = transaction {
+        require(expectedRestoreEpoch==null || (database.financeV16Dao().controlRows().singleOrNull()?.restoreEpoch ?: 0L)==expectedRestoreEpoch) { "恢复后旧编辑器已失效，请重新打开" }
         saveTransferInTransaction(id, sourceAccountId, targetAccountId, amountMinor, description, occurredAt,
             expectedUpdatedAt = expectedUpdatedAt).also { validateBalances() }
     }
@@ -265,7 +301,8 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     private suspend fun retireOrphans(eventIds: Set<String>, batchId: String?, authority: String?) {
         eventIds.forEach { id ->
             val event = requireNotNull(intake.event(id))
-            if (event.voidedAt == null && intake.activeLinksForEvent(id).isEmpty()) {
+            if (event.voidedAt == null && intake.activeLinksForEvent(id).isEmpty() &&
+                database.financeV16Dao().economicRows().none { it.eventId == id && it.voidedAt == null }) {
                 val now = maxOf(clock(), event.updatedAt + 1)
                 intake.updateEvent(event.copy(voidedAt = now, updatedAt = now))
                 journal(id, "EVENT_RETIRE", batchId, authority = authority)
@@ -289,9 +326,19 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
     private suspend fun replaceEntryLinks(entryId: String, allocations: List<FinanceAllocation>,
         batchId: String? = null, authority: String? = null) {
         val old = intake.linksForEntry(entryId)
-        retireLinks(old, batchId, authority)
+        val v=database.financeV16Dao()
+        val referenced=v.fundingRows().filter {it.voidedAt==null}.mapNotNull {it.entryLinkId}.toSet()+
+            v.costAdjustmentRows().filter {it.voidedAt==null}.map {it.entryLinkId}
+        val retained=old.filter {it.id in referenced && allocations.any {part->part.eventId==it.eventId && part.role==it.role}}
+        retireLinks(old.filter {it !in retained}, batchId, authority)
         val now = maxOf(clock(), old.maxOfOrNull { it.updatedAt + 1 } ?: clock())
-        val inserted = allocations.map {
+        retained.forEach {row->val part=allocations.single {it.eventId==row.eventId && it.role==row.role}
+            if(part.amountMinor!=row.allocatedMinor) {
+                intake.updateLink(row.copy(allocatedMinor=part.amountMinor,updatedAt=now,revision=Math.addExact(row.revision,1L)))
+                journal(row.id,"LINK_UPDATE",batchId,row.revision,row.revision+1,authority)
+            }
+        }
+        val inserted = allocations.filter {part->retained.none {it.eventId==part.eventId && it.role==part.role}}.map {
             FinanceEventEntryLinkEntity(it.eventId, entryId, it.role, it.amountMinor, newId(), now, now)
         }
         intake.insertLinks(inserted)
@@ -319,6 +366,23 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         dao.updateEntry(entry.copy(revision = entry.revision + 1, updatedAt = clock()))
         journal(entryId, "ENTRY_ALLOCATE", before = entry.revision, after = entry.revision + 1)
         validateBalances()
+    }
+
+    /** Explicit domain owners may reuse an existing unassigned real flow. No cash fact is recreated. */
+    internal suspend fun reassignExternalFlowInTransaction(entryId:String,expectedRevision:Long,eventId:String,role:FinanceFlowRole) {
+        require(role in setOf(FinanceFlowRole.REFUND,FinanceFlowRole.REBATE,FinanceFlowRole.CASHBACK,FinanceFlowRole.SETTLEMENT))
+        val row=requireNotNull(dao.entry(entryId));require(row.revision==expectedRevision && row.voidedAt==null && dao.transferForEntry(entryId)==null)
+        val old=intake.linksForEntry(entryId)
+        require(old.size<=1 && old.all {it.role==FinanceFlowRole.OTHER &&
+            database.financeV16Dao().economicRows().none {e->e.eventId==it.eventId && e.voidedAt==null}}) {
+            "已有确认的事项分配，请在分配编辑中保留全部构成，不能直接覆盖"
+        }
+        val event=requireNotNull(intake.event(eventId));require(event.voidedAt==null)
+        require(dao.account(row.accountId)?.currencyCode==event.currencyCode)
+        replaceEntryLinks(entryId,listOf(FinanceAllocation(eventId,role,row.amountMinor)),authority="USER_CONFIRMED_EXISTING_FLOW")
+        intake.updateEvent(event.copy(updatedAt=maxOf(clock(),event.updatedAt+1)))
+        dao.updateEntry(row.copy(revision=Math.addExact(row.revision,1L),updatedAt=clock()))
+        journal(entryId,"EXISTING_FLOW_RELATE",before=row.revision,after=row.revision+1)
     }
 
     internal suspend fun journal(id: String, operation: String, batchId: String? = null, before: Long? = null, after: Long? = null,

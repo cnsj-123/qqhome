@@ -1,0 +1,9 @@
+{
+  "check": "production-v4-to-v5-sqlite",
+  "status": "PASS",
+  "legacyTablesPreserved": 27,
+  "newTables": 48,
+  "faultPoints": 3,
+  "elapsedSeconds": 0.094,
+  "roomKspAndAndroidRuntime": "UNVERIFIED"
+}

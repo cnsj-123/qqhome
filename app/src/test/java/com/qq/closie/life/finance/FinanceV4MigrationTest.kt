@@ -47,7 +47,7 @@ class FinanceV4MigrationTest {
         try {
             val finance = FinanceRepository(db) { 1_000L }
             val state = finance.snapshot()
-            assertEquals(4, db.openHelper.writableDatabase.version)
+            assertEquals(5, db.openHelper.writableDatabase.version)
             assertEquals("合成旧记录", db.captureDao().getAllOnce().single().rawText)
             assertTrue(state.accounts.all { it.balanceAnchorAt == it.createdAt && it.createdAt == 100L })
             assertEquals(97_000L, FinanceProjection.balance(state.accounts.single { it.id == "a" }, state.entries))

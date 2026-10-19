@@ -255,6 +255,14 @@ internal object BackupExporter {
                         }
                     )
 
+                    // Validate the cross-storage capture after staging. Ordinary writers remain
+                    // concurrent; any changed version makes this export fail honestly and retryable.
+                    require(repo.snapshot.value == wardrobe &&
+                        LifeBackupApplier.snapshot(lifeDatabase) == lifeSnapshot &&
+                        draftStore.listOotdDrafts() == ootdDrafts &&
+                        draftStore.listOutfitDrafts() == outfitDrafts) {
+                        "备份期间数据发生变化，请在编辑完成后重试"
+                    }
                     val manifest = BackupManifest(
                         formatVersion = BackupManager.FORMAT_VERSION,
                         schemaVersion = BackupManager.SCHEMA_VERSION,

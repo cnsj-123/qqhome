@@ -1,6 +1,7 @@
 package com.qq.closie.life.data.database
 
 import com.qq.closie.life.finance.*
+import com.qq.closie.life.shopping.*
 import com.qq.closie.life.data.database.dao.FinanceDao
 import com.qq.closie.life.data.database.dao.FinanceIntakeDao
 import androidx.room.Database
@@ -42,7 +43,7 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
  * (`room.schemaLocation` → app/schemas/), which is committed to the repository.
  */
 @Database(
-    version = 4,
+    version = 5,
     exportSchema = true,
     entities = [
         LifeEntityEntity::class,
@@ -74,6 +75,54 @@ import com.qq.closie.life.reference.ReferenceTypeConverter
         FinanceRuleConditionEntity::class,
         FinanceRuleActionEntity::class,
         FinanceChangeEntity::class,
+        FinancePartyEntity::class,
+        FinanceEconomicEntity::class,
+        FinanceFundingEntity::class,
+        FinanceShareEntity::class,
+        FinanceObligationEntity::class,
+        FinanceSettlementEntity::class,
+        FinanceResolutionEntity::class,
+        ShoppingPurchaseEntity::class,
+        ShoppingPurchaseLineEntity::class,
+        FinancePurchaseAllocationEntity::class,
+        FinanceCostAdjustmentEntity::class,
+        FinanceEntryTimingEntity::class,
+        FinanceAccountPolicyEntity::class,
+        FinanceObservationEntity::class,
+        FinanceReconciliationEntity::class,
+        FinanceCreditCycleEntity::class,
+        FinanceDraftEntity::class,
+        FinanceDraftTagEntity::class,
+        FinanceDraftExpectedEntity::class,
+        FinanceEconomicDraftEntity::class,
+        FinanceEconomicDraftFundingEntity::class,
+        FinanceEconomicDraftShareEntity::class,
+        FinanceCategoryIconEntity::class,
+        FinanceSavedQueryEntity::class,
+        FinanceBudgetEntity::class,
+        FinanceCategoryPolicyEntity::class,
+        FinanceExternalIdentityEntity::class,
+        FinanceInstrumentEntity::class,
+        FinanceAccountBindingEntity::class,
+        FinanceEvidenceEntity::class,
+        FinanceExtractionEntity::class,
+        FinanceEvidenceProposalEntity::class,
+        FinanceMediaLinkEntity::class,
+        FinanceReviewSessionEntity::class,
+        FinanceReviewExpectedEntity::class,
+        FinancePurposeGrantEntity::class,
+        FinanceGrantEventEntity::class,
+        FinanceGrantEntryEntity::class,
+        FinanceCommandReceiptEntity::class,
+        FinanceControlEntity::class,
+        FinanceRecoveryGroupEntity::class,
+        FinanceRecoveryEntryEntity::class,
+        FinanceRecoveryLinkEntity::class,
+        FinanceRecoveryEventEntity::class,
+        FinanceRecoveryExpectedEntity::class,
+        FinanceRecoveryTransferEntity::class,
+        FinanceRecoveryTagEntity::class,
+        FinanceRecoveryMemberEntity::class,
 
     ]
 )
@@ -94,6 +143,7 @@ abstract class LifeDatabase : RoomDatabase() {
     abstract fun mediaDao(): MediaDao
     abstract fun captureDao(): CaptureDao
     abstract fun referenceDao(): ReferenceDao
+    abstract fun financeV16Dao(): com.qq.closie.life.data.database.dao.FinanceV16Dao
     abstract fun financeDao(): FinanceDao
     abstract fun financeIntakeDao(): FinanceIntakeDao
     abstract fun planDao(): PlanDao
@@ -122,6 +172,6 @@ abstract class LifeDatabase : RoomDatabase() {
         const val DATABASE_NAME = "life_os.db"
 
         /** Current schema version — kept in sync with the @Database annotation by test. */
-        const val VERSION = 4
+        const val VERSION = 5
     }
 }

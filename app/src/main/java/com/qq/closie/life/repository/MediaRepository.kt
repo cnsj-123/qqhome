@@ -60,6 +60,13 @@ class MediaRepository(
     suspend fun getMediaAsset(id: String): MediaAssetEntity? =
         RestoreStartupGate.withBusinessAccessSuspending { mediaDao.getAssetById(id) }
 
+    /** Called only after the user reselects a hash-verified original for a surviving typed link. */
+    internal suspend fun ensureReferencedAsset(id:String,type:MediaType,timestamp:Long):MediaAssetEntity =
+        RestoreStartupGate.withBusinessAccessSuspending {
+            require(id.isNotBlank())
+            mediaDao.getAssetById(id) ?: MediaAssetEntity(id,type,createdAt=timestamp,updatedAt=timestamp).also {mediaDao.insertAsset(it)}
+        }
+
     fun observeRecentAssets(limit: Int = 20): Flow<List<MediaAssetEntity>> =
         gateAwareFlow { mediaDao.observeRecentAssets(limit) }
 
@@ -134,6 +141,9 @@ class MediaRepository(
 
     suspend fun findResourceBySha256(sha256: String): MediaResourceEntity? =
         RestoreStartupGate.withBusinessAccessSuspending { mediaDao.findResourceBySha256(sha256) }
+
+    suspend fun findResourceByUri(uri: String): MediaResourceEntity? =
+        RestoreStartupGate.withBusinessAccessSuspending { mediaDao.getAllResources().firstOrNull {it.contentUri==uri} }
 
     // ------------------------------------------------------------------
     //  MediaLink

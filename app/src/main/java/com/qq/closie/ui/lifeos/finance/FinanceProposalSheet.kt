@@ -42,48 +42,65 @@ internal fun FinanceGlobalReviewHost(container: LifeContainer) {
 @Composable
 private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: AutomationUiState,
     vm: FinanceAutomationViewModel, close: () -> Unit) {
+    val saved=remember(proposal.id) {state.finance.v16?.reviewSessionRows.orEmpty().singleOrNull {it.proposalId==proposal.id && it.voidedAt==null && it.state!=FinanceReviewState.COMPLETED}}
+    val resumed=remember(proposal.id) {saved?.toEntryDraft(state.finance)}
+    val editor=rememberSaveable {java.util.UUID.randomUUID().toString()}
+    val epoch=rememberSaveable {state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
+    if(epoch!=(state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L)) {
+        FinanceReceipt("复核代际已改变",onClose=close) {Text("请收起后重新打开当前候选，旧编辑不会覆盖恢复后的数据。")};return
+    }
     var editing by rememberSaveable { mutableStateOf(false) }
-    var kind by rememberSaveable { mutableStateOf(proposal.kind.name) }
-    var amount by rememberSaveable { mutableStateOf(proposal.amountMinor?.let { FinanceMoney.input(it) }.orEmpty()) }
-    var account by rememberSaveable { mutableStateOf(proposal.accountId.orEmpty()) }
-    var target by rememberSaveable { mutableStateOf(proposal.targetAccountId.orEmpty()) }
-    var description by rememberSaveable { mutableStateOf(proposal.description) }
-    var date by rememberSaveable { mutableStateOf(FinanceTime.input(proposal.occurredAt)) }
-    var category by rememberSaveable { mutableStateOf(proposal.category) }
-    var subcategory by rememberSaveable { mutableStateOf(proposal.subcategory) }
-    var selectedCategoryId by rememberSaveable { mutableStateOf(FinanceCategoryTree(state.finance.categories).find(proposal.category, proposal.subcategory)?.id) }
+    var kind by rememberSaveable { mutableStateOf(resumed?.kind?.name ?: proposal.kind.name) }
+    var amount by rememberSaveable { mutableStateOf(resumed?.amount ?: proposal.amountMinor?.let { FinanceMoney.input(it) }.orEmpty()) }
+    var account by rememberSaveable { mutableStateOf(resumed?.accountId ?: proposal.accountId.orEmpty()) }
+    var target by rememberSaveable { mutableStateOf(resumed?.targetAccountId ?: proposal.targetAccountId.orEmpty()) }
+    var description by rememberSaveable { mutableStateOf(resumed?.description ?: proposal.description) }
+    var date by rememberSaveable { mutableStateOf(resumed?.occurredAt ?: FinanceTime.input(proposal.occurredAt)) }
+    var category by rememberSaveable { mutableStateOf(resumed?.category ?: proposal.category) }
+    var subcategory by rememberSaveable { mutableStateOf(resumed?.subcategory ?: proposal.subcategory) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf(resumed?.categoryId ?: FinanceCategoryTree(state.finance.categories).find(proposal.category, proposal.subcategory)?.id) }
     var pickingCategory by remember { mutableStateOf(false) }
-    var tags by rememberSaveable { mutableStateOf(state.data.tags.filter { it.proposalId == proposal.id }.joinToString("，") { it.name }) }
-    var relation by rememberSaveable(stateSaver = FinanceRelationshipDraft.Saver) { mutableStateOf(FinanceRelationshipDraft.fromProposal(proposal)) }
+    var tags by rememberSaveable { mutableStateOf(resumed?.tags ?: state.data.tags.filter { it.proposalId == proposal.id }.joinToString("，") { it.name }) }
+    var relation by rememberSaveable(stateSaver = FinanceRelationshipDraft.Saver) { mutableStateOf(resumed?.relationship ?: FinanceRelationshipDraft.fromProposal(proposal)) }
+    var costReduction by rememberSaveable {mutableStateOf(resumed?.costReductionText.orEmpty())}
     val accounts = state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }
     val draft = FinanceEntryDraft(FinanceEditorKind.valueOf(kind), amount, account, target, date,
-        description, category, tags, proposal.occurredAt, subcategory, relation, selectedCategoryId)
-    val parsedAmount = runCatching { FinanceMoney.parse(amount) }.getOrNull()
+        description, category, tags, resumed?.preservedOccurredAt ?: proposal.occurredAt, subcategory, relation, selectedCategoryId,costReduction)
+    LaunchedEffect(draft) {kotlinx.coroutines.delay(250);vm.persistReview(editor,saved?.revision,proposal,draft,epoch)}
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        vm.flushReviewOnStop(editor,saved?.revision,proposal,draft,epoch)
+    }
+    val parsedAmount = runCatching { FinanceCalculator.evaluate(amount) }.getOrNull()
     val parsedTime = runCatching { FinanceTime.resolve(date, proposal.occurredAt) }.getOrDefault(proposal.occurredAt)
-    val strongPeers = FinanceEvidenceOrigin.blockingPeers(proposal, state.data.proposals)
+    val strongPeers = FinanceEvidenceCorrelation.blocking(proposal, state.data.proposals,state.finance.v16)
     val duplicates = parsedAmount?.let { FinanceDuplicateReview.candidates(proposal.id, FinanceProposalKind.valueOf(kind),
         it, parsedTime, state.data.proposals, state.finance) }.orEmpty()
     var distinctConfirmed by remember(proposal.id, duplicates, kind, parsedAmount, parsedTime) { mutableStateOf(false) }
+    var existingLink by remember {mutableStateOf<FinanceLedgerRow?>(null)}
     val reviewed = if (distinctConfirmed) duplicates else emptySet()
     val receipt = FinanceReviewReceiptModel.from(proposal,
         state.finance.copy(v4 = (state.finance.v4 ?: FinanceV4Snapshot()).copy(proposals = state.data.proposals)),
         state.data.tags.filter { it.proposalId == proposal.id }.map { it.name },
         FinanceProposalPrivacy.userDescriptions(state.data.rules.flatMap { it.actions }), draft, reviewed)
-    fun later() = vm.dismiss(proposal, FinanceProposalStatus.SNOOZED, close)
+    fun later() = vm.laterReview(editor,saved?.revision,proposal,draft,epoch,close)
     FinanceReceipt("消费小票",
         state.busy, state.error, ::later, actions = {
         Row {
             TextButton(onClick = { editing = !editing }, enabled = !state.busy) { Text(if (editing) "收起修改" else "修改") }
             Button(onClick = {
                 if (!editing) {
-                    if (receipt.directlyConfirmable) vm.confirmReceipt(receipt, close) else editing = true
+                    if (receipt.directlyConfirmable) vm.confirmSession(editor,saved?.revision,proposal,draft,epoch,reviewed,close) else editing = true
                 } else if (account.isBlank() || amount.isBlank() || (kind != FinanceProposalKind.TRANSFER.name && selectedCategoryId == null && category.isBlank())) editing = true
-                else vm.confirm(proposal, draft, reviewed, close)
+                else vm.confirmSession(editor,saved?.revision,proposal,draft,epoch,reviewed,close)
             }, enabled = !state.busy && strongPeers.isEmpty()) { Text(if (strongPeers.isNotEmpty()) "编号冲突" else if (!editing && !receipt.directlyConfirmable) "需要完善" else "确认") }
             TextButton(onClick = ::later, enabled = !state.busy) { Text("稍后") }
             TextButton(onClick = { vm.dismiss(proposal, FinanceProposalStatus.REJECTED, close) }, enabled = !state.busy) { Text("忽略") }
         }
     }) {
+        FinanceAttachments(state.finance,FinanceMediaTarget(proposalId=proposal.id),state.busy,state.error) {block->vm.mediaAction(epoch,block)}
+        FinanceEvidenceClassification(proposal,state.finance,state.busy) {evidence,identity,instrument->
+            vm.classifyReceipt(editor,saved?.revision,proposal,draft,epoch,evidence,identity,instrument)
+        }
         if (strongPeers.isNotEmpty()) {
             Text("同一交易编号出现不同金额或时间，请先核对。不能勾选“另一笔交易”来重复入账。")
             strongPeers.forEach { peer ->
@@ -107,6 +124,13 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
                 Text("已核对，这是另一笔真实交易")
             }
             Text("若是同一笔，点“忽略”当前小票；可从账目查看已有记录。", style = MaterialTheme.typography.bodySmall)
+        }
+        val existing=FinanceProjection.ledger(state.finance).filter {it.entry.amountMinor==parsedAmount && it.account.id==account &&
+            if(kind==FinanceEditorKind.TRANSFER.name) it.transfer!=null && it.targetAccount?.id==target
+            else it.transfer==null && (kind==FinanceEditorKind.INCOME.name)==(it.entry.direction==FinanceDirection.INFLOW)}
+        if(existing.isNotEmpty()) {
+            Text("若已手工记过，可只补来源关联，不新增或改写流水。",style=MaterialTheme.typography.bodySmall)
+            existing.take(20).forEach {row->TextButton({existingLink=row},enabled=!state.busy) {Text("关联已有："+FinanceTime.input(row.entry.occurredAt)+" · "+row.entry.description.ifBlank {row.account.name})}}
         }
         Text(if (amount.isBlank()) "金额待确认（通知中有多个金额）" else "¥$amount", style = com.qq.closie.life.ui.theme.LifeType.Money)
         Text("${receipt.source} · ${when (receipt.direction) { FinanceProposalKind.INCOME -> "收入"; FinanceProposalKind.TRANSFER -> "转账"; else -> "支出" }}")
@@ -137,7 +161,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             OutlinedTextField(amount, { amount = it }, label = { Text("金额") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.Money)
             AccountChoice("账户", accounts, account, !state.busy) { account = it }
             if (kind == FinanceProposalKind.TRANSFER.name) AccountChoice("转入账户", accounts.filter { it.id != account }, target, !state.busy) { target = it }
-            OutlinedTextField(description, { description = it }, label = { Text("事由") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
+            OutlinedTextField(description, { description = it }, label = { Text("备注（可留空）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
             OutlinedTextField(date, { date = it }, label = { Text("发生时间 · 年-月-日 时:分") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.MonoNumber)
             if (kind != FinanceProposalKind.TRANSFER.name) {
                 TextButton({ pickingCategory = !pickingCategory }, enabled = !state.busy) { Text("选择分类") }
@@ -149,6 +173,8 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
                 } else TextButton({ selectedCategoryId = null; category = ""; subcategory = "" }, enabled = !state.busy) { Text("改为自定义分类") }
                 OutlinedTextField(tags, { tags = it }, label = { Text("标签 · 逗号分隔") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(tags))
                 FinanceRelationshipFields(state.finance, relation, !state.busy) { relation = it }
+                if(relation.role in setOf(FinanceFlowRole.REFUND,FinanceFlowRole.REBATE,FinanceFlowRole.CASHBACK))
+                    OutlinedTextField(costReduction,{costReduction=it},label={Text("本次冲减个人成本（新经济事项必填，可为0）")},enabled=!state.busy)
             }
             Text("识别依据", style = MaterialTheme.typography.labelMedium)
             Text("来源：${receipt.source}", style = MaterialTheme.typography.bodySmall)
@@ -157,5 +183,10 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
         }
 
     }
+    existingLink?.let {row->AlertDialog(onDismissRequest={existingLink=null},title={Text("只关联已有记录？")},text={Text(
+        FinanceTime.input(row.entry.occurredAt)+" · "+row.account.name+" · "+FinanceMoney.display(row.entry.amountMinor,row.currencyCode)+
+        "。当前小票会标记为已关联，已有记录的备注、时间、金额及余额均保留。")},confirmButton={TextButton({
+            vm.linkExisting(editor,saved?.revision,proposal,draft,epoch,row){existingLink=null;close()}
+        },enabled=!state.busy){Text("确认是同一笔，仅补来源")}},dismissButton={TextButton({existingLink=null}){Text("取消")}})}
 
 }

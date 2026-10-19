@@ -1,0 +1,32 @@
+{
+  "verifiedAtClientDate": "2026-10-18",
+  "repository": "cnsj-123/qqhome",
+  "androidBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+  "remoteAndroidRef": {
+    "ref": "refs/heads/feature/life-os-v15-ui-convergence-p1-r2-final",
+    "node_id": "REF_kwDOUlD8adoAOXJlZnMvaGVhZHMvZmVhdHVyZS9saWZlLW9zLXYxNS11aS1jb252ZXJnZW5jZS1wMS1yMi1maW5hbA",
+    "url": "https://api.github.com/repos/cnsj-123/qqhome/git/refs/heads/feature/life-os-v15-ui-convergence-p1-r2-final",
+    "object": {
+      "sha": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+      "type": "commit",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/commits/245e1475cd1d47a4205ab49f75d5e06d22de701c"
+    }
+  },
+  "docsHead": "60bdce7361649c47699c2a328a0cc1ecd746b1b5",
+  "baselineCI": {
+    "id": 38850752059,
+    "run": 50,
+    "status": "completed",
+    "conclusion": "success",
+    "sha": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+    "url": "https://github.com/cnsj-123/qqhome/actions/runs/38850752059"
+  },
+  "originalCheckout": {
+    "path": "D:/codex/lifeos/工作区/qqhome",
+    "head": "dd4b75e",
+    "status": "Many pre-existing staged deletions; untouched"
+  },
+  "worktree": "D:/codex/lifeos/工作区/qqhome-v16",
+  "branch": "feature/life-os-v16-g0-g7-local",
+  "remoteWritesAuthorized": false
+}

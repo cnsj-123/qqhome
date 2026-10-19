@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeText
 
-/** Presentation defaults only; custom icon persistence belongs to the future category schema. */
+/** User icon keys are typed configuration; names supply a presentation default. */
 internal object FinanceCategoryGlyph {
     private val defaults = listOf(
         setOf("三餐", "早餐", "午餐", "晚餐", "餐饮", "零食", "买菜") to Icons.Outlined.Restaurant,
@@ -29,6 +29,11 @@ internal object FinanceCategoryGlyph {
         setOf("宠物") to Icons.Outlined.Pets,
         setOf("人情", "礼物") to Icons.Outlined.CardGiftcard)
     fun forName(name: String): ImageVector = defaults.firstOrNull { name.trim() in it.first }?.second ?: Icons.Outlined.Category
+    fun forCategory(s:FinanceSnapshot,id:String,name:String):ImageVector = when(s.v16?.categoryIconRows.orEmpty().singleOrNull {it.categoryId==id && it.voidedAt==null}?.iconKey) {
+        "food"->Icons.Outlined.Restaurant;"transport"->Icons.Outlined.DirectionsBus;"home"->Icons.Outlined.Home
+        "health"->Icons.Outlined.LocalHospital;"shopping"->Icons.Outlined.ShoppingBag;"gift"->Icons.Outlined.CardGiftcard
+        "other"->Icons.Outlined.Category;else->forName(name)
+    }
 }
 
 @Composable
@@ -60,7 +65,7 @@ internal fun FinanceCategoryFields(snapshot: FinanceSnapshot, selected: String?,
                 FilterChip(selected == category.id, {
                     if (query.isBlank() && tree.children(category.id).isNotEmpty()) parentId = category.id else onSelect(category.id)
                 }, modifier = Modifier.weight(1f), enabled = !busy,
-                    leadingIcon = { Icon(FinanceCategoryGlyph.forName(category.name), null, Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(FinanceCategoryGlyph.forCategory(snapshot,category.id,category.name), null, Modifier.size(18.dp)) },
                     label = { Text(if (query.isBlank()) category.name else tree.fullPath(category.id).orEmpty(), maxLines = 2) })
             }
             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }

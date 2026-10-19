@@ -54,14 +54,17 @@ class FinanceAutomationTest : FinanceRoomTest() {
             time, time + 1000, "a".repeat(64), "extractor-v1")
         val first = automation.discoverVisible(evidence) { true }.proposal!!
         assertNull(first.accountId)
-        assertEquals(DiscoveryResult.DUPLICATE, automation.discoverVisible(evidence.copy(extractionVersion = "extractor-v2")) { true }.result)
+        // Without an explicit source identity a second capture is reviewable, not silently merged.
+        val repeated=automation.discoverVisible(evidence.copy(extractionVersion = "extractor-v2")) { true }.proposal!!
         val conflict = automation.discoverVisible(evidence.copy(amountMinor = 9999)) { true }.proposal!!
-        assertEquals(2, db.financeIntakeDao().proposals().size)
+        assertEquals(3, db.financeIntakeDao().proposals().size)
+        assertEquals(3,finance.snapshot().v16!!.evidenceRows.size)
         assertTrue(finance.snapshot().entries.isEmpty())
         val input = FinanceProposalConfirmation(FinanceProposalKind.INCOME, a.id, null, 9999,
             "合成编号冲突审核", time, "", "", emptyList(), FinanceEventInput(role = FinanceFlowRole.OTHER))
         assertTrue(runCatching { automation.confirm(conflict.id, conflict.revision, input) }.isFailure)
         automation.dismiss(first.id, first.revision, FinanceProposalStatus.REJECTED)
+        automation.dismiss(repeated.id,repeated.revision,FinanceProposalStatus.REJECTED)
         val canonical = automation.confirm(conflict.id, conflict.revision, input)
         assertEquals(canonical, automation.confirm(conflict.id, conflict.revision, input))
         assertEquals(1, finance.snapshot().entries.size)

@@ -94,7 +94,7 @@ data class LifeBackupPayload(
         "finance_rule_conditions" to finance?.v4?.conditions.orEmpty(),
         "finance_rule_actions" to finance?.v4?.actions.orEmpty(),
         "finance_changes" to finance?.v4?.changes.orEmpty()
-    )
+    ) + finance?.v16?.tables().orEmpty()
 
     /** Total row count, for the manifest and for logging a restore. */
     val rowCount: Int

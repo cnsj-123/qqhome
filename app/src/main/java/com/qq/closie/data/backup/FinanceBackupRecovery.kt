@@ -46,6 +46,16 @@ internal object FinanceBackupRecovery {
             intake.events().filter { it.voidedAt == null }.forEach { intake.updateEvent(it.copy(voidedAt = now, updatedAt = now)) }
             intake.expected().filter { it.cancelledAt == null }.forEach { intake.updateExpected(it.copy(cancelledAt = now)) }
         }
+        if (saved.v16 != null) FinanceV16BackupRecovery.restore(database, saved.v16)
+        else {
+            // Absence is not an empty V16 section. Keep compatible new facts; reject the transaction
+            // if the restored older cash/link state makes those facts invalid.
+            val v16 = database.financeV16Dao()
+            val control = v16.controlRows().singleOrNull()
+            v16.putControl(listOf(FinanceControlEntity(1, Math.addExact(control?.restoreEpoch ?: 0L, 1L))))
+            v16.putPurposeGrant(v16.purposeGrantRows().map { it.copy(voidedAt = now, revision = Math.addExact(it.revision, 1L)) })
+            v16.putExternalIdentity(v16.externalIdentityRows().map { it.copy(matchUsable = false) })
+        }
         FinanceIntegrity.validate(readFinanceSnapshot(database, true))
     }
 }

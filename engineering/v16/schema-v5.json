@@ -1,0 +1,2872 @@
+{
+  "tables": [
+    {
+      "name": "finance_parties",
+      "cls": "FinancePartyEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "name",
+          "type": "String"
+        },
+        {
+          "name": "isSelf",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "partyRows"
+    },
+    {
+      "name": "finance_economics",
+      "cls": "FinanceEconomicEntity",
+      "fields": [
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "valueMinor",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "valueBasis",
+          "type": "String"
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "allocationsComplete",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "statPolicy",
+          "type": "FinanceStatPolicy",
+          "value": "FinanceStatPolicy.INCLUDE"
+        },
+        {
+          "name": "budgetPolicy",
+          "type": "FinanceBudgetPolicy",
+          "value": "FinanceBudgetPolicy.INCLUDE"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "categoryId": {
+          "entity": "FinanceCategoryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "eventId"
+      ],
+      "indices": [],
+      "property": "economicRows"
+    },
+    {
+      "name": "finance_funding",
+      "cls": "FinanceFundingEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "partyId",
+          "type": "String"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long"
+        },
+        {
+          "name": "entryLinkId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "basis",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "partyId": {
+          "entity": "FinancePartyEntity",
+          "column": "id"
+        },
+        "entryLinkId": {
+          "entity": "FinanceEventEntryLinkEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "fundingRows"
+    },
+    {
+      "name": "finance_shares",
+      "cls": "FinanceShareEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "beneficiaryId",
+          "type": "String"
+        },
+        {
+          "name": "bearerId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "fundingId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "relation",
+          "type": "FinanceShareRelation"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "beneficiaryId": {
+          "entity": "FinancePartyEntity",
+          "column": "id"
+        },
+        "bearerId": {
+          "entity": "FinancePartyEntity",
+          "column": "id"
+        },
+        "fundingId": {
+          "entity": "FinanceFundingEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "shareRows"
+    },
+    {
+      "name": "finance_obligations",
+      "cls": "FinanceObligationEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "shareId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "creditorId",
+          "type": "String"
+        },
+        {
+          "name": "debtorId",
+          "type": "String"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long"
+        },
+        {
+          "name": "currencyCode",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "shareId": {
+          "entity": "FinanceShareEntity",
+          "column": "id"
+        },
+        "creditorId": {
+          "entity": "FinancePartyEntity",
+          "column": "id"
+        },
+        "debtorId": {
+          "entity": "FinancePartyEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "obligationRows"
+    },
+    {
+      "name": "finance_settlements",
+      "cls": "FinanceSettlementEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "obligationId",
+          "type": "String"
+        },
+        {
+          "name": "entryId",
+          "type": "String"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "obligationId": {
+          "entity": "FinanceObligationEntity",
+          "column": "id"
+        },
+        "entryId": {
+          "entity": "FinanceEntryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "settlementRows"
+    },
+    {
+      "name": "finance_resolutions",
+      "cls": "FinanceResolutionEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "obligationId",
+          "type": "String"
+        },
+        {
+          "name": "kind",
+          "type": "FinanceResolutionKind"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long"
+        },
+        {
+          "name": "note",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "obligationId": {
+          "entity": "FinanceObligationEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "resolutionRows"
+    },
+    {
+      "name": "shopping_purchases",
+      "cls": "ShoppingPurchaseEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "title",
+          "type": "String"
+        },
+        {
+          "name": "currencyCode",
+          "type": "String"
+        },
+        {
+          "name": "occurredAt",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "purchaseRows"
+    },
+    {
+      "name": "shopping_purchase_lines",
+      "cls": "ShoppingPurchaseLineEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "purchaseId",
+          "type": "String"
+        },
+        {
+          "name": "title",
+          "type": "String"
+        },
+        {
+          "name": "quantity",
+          "type": "Int"
+        },
+        {
+          "name": "valueMinor",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "purchaseId": {
+          "entity": "ShoppingPurchaseEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "purchaseLineRows"
+    },
+    {
+      "name": "finance_purchase_allocations",
+      "cls": "FinancePurchaseAllocationEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "lineId",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "valueMinor",
+          "type": "Long"
+        },
+        {
+          "name": "personalMinor",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "lineId": {
+          "entity": "ShoppingPurchaseLineEntity",
+          "column": "id"
+        },
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "purchaseAllocationRows"
+    },
+    {
+      "name": "finance_cost_adjustments",
+      "cls": "FinanceCostAdjustmentEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "entryLinkId",
+          "type": "String"
+        },
+        {
+          "name": "personalReductionMinor",
+          "type": "Long"
+        },
+        {
+          "name": "lineId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "entryLinkId": {
+          "entity": "FinanceEventEntryLinkEntity",
+          "column": "id"
+        },
+        "lineId": {
+          "entity": "ShoppingPurchaseLineEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "costAdjustmentRows"
+    },
+    {
+      "name": "finance_entry_timing",
+      "cls": "FinanceEntryTimingEntity",
+      "fields": [
+        {
+          "name": "entryId",
+          "type": "String"
+        },
+        {
+          "name": "postedAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "cashPrecision",
+          "type": "FinanceTimePrecision",
+          "value": "FinanceTimePrecision.LEGACY"
+        },
+        {
+          "name": "postedPrecision",
+          "type": "FinanceTimePrecision",
+          "value": "FinanceTimePrecision.UNKNOWN"
+        },
+        {
+          "name": "postedSource",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "entryId": {
+          "entity": "FinanceEntryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "entryId"
+      ],
+      "indices": [],
+      "property": "entryTimingRows"
+    },
+    {
+      "name": "finance_account_policies",
+      "cls": "FinanceAccountPolicyEntity",
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "String"
+        },
+        {
+          "name": "includedInNet",
+          "type": "Boolean",
+          "value": "true"
+        },
+        {
+          "name": "liabilityConvention",
+          "type": "FinanceLiabilityConvention",
+          "value": "FinanceLiabilityConvention.SIGNED"
+        },
+        {
+          "name": "anchorBasis",
+          "type": "FinanceBalanceBasis",
+          "value": "FinanceBalanceBasis.LEGACY_CASH"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "accountId": {
+          "entity": "FinanceAccountEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "accountId"
+      ],
+      "indices": [],
+      "property": "accountPolicyRows"
+    },
+    {
+      "name": "finance_observations",
+      "cls": "FinanceObservationEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "accountId",
+          "type": "String"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long"
+        },
+        {
+          "name": "observedAt",
+          "type": "Long"
+        },
+        {
+          "name": "basis",
+          "type": "FinanceBalanceBasis"
+        },
+        {
+          "name": "precision",
+          "type": "FinanceTimePrecision"
+        },
+        {
+          "name": "note",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "accountId": {
+          "entity": "FinanceAccountEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "observationRows"
+    },
+    {
+      "name": "finance_reconciliations",
+      "cls": "FinanceReconciliationEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "observationId",
+          "type": "String"
+        },
+        {
+          "name": "bookMinor",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "fingerprint",
+          "type": "String"
+        },
+        {
+          "name": "algorithmVersion",
+          "type": "Int",
+          "value": "1"
+        },
+        {
+          "name": "note",
+          "type": "String"
+        },
+        {
+          "name": "confirmationOrder",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "observationId": {
+          "entity": "FinanceObservationEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "reconciliationRows"
+    },
+    {
+      "name": "finance_credit_cycles",
+      "cls": "FinanceCreditCycleEntity",
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "String"
+        },
+        {
+          "name": "closingDay",
+          "type": "Int"
+        },
+        {
+          "name": "dueDay",
+          "type": "Int"
+        },
+        {
+          "name": "zoneId",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "accountId": {
+          "entity": "FinanceAccountEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "accountId"
+      ],
+      "indices": [],
+      "property": "creditCycleRows"
+    },
+    {
+      "name": "finance_drafts",
+      "cls": "FinanceDraftEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "accountId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "kind",
+          "type": "FinanceDraftKind",
+          "value": "FinanceDraftKind.EXPENSE"
+        },
+        {
+          "name": "targetAccountId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "amountExpression",
+          "type": "String"
+        },
+        {
+          "name": "description",
+          "type": "String"
+        },
+        {
+          "name": "occurredAt",
+          "type": "Long"
+        },
+        {
+          "name": "occurredText",
+          "type": "String"
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "categoryName",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "subcategoryName",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "currencyCode",
+          "type": "String"
+        },
+        {
+          "name": "continuous",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "epoch",
+          "type": "Long"
+        },
+        {
+          "name": "editGeneration",
+          "type": "Long",
+          "value": "0"
+        },
+        {
+          "name": "nature",
+          "type": "FinanceNature",
+          "value": "FinanceNature.PERSONAL"
+        },
+        {
+          "name": "role",
+          "type": "FinanceFlowRole",
+          "value": "FinanceFlowRole.PAYMENT"
+        },
+        {
+          "name": "eventId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "shareText",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "excluded",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "excludedBudget",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "expectedEdited",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "eventUpdatedAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "draftRows"
+    },
+    {
+      "name": "finance_draft_tags",
+      "cls": "FinanceDraftTagEntity",
+      "fields": [
+        {
+          "name": "draftId",
+          "type": "String"
+        },
+        {
+          "name": "name",
+          "type": "String"
+        }
+      ],
+      "refs": {
+        "draftId": {
+          "entity": "FinanceDraftEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "draftId",
+        "name"
+      ],
+      "indices": [],
+      "property": "draftTagRows"
+    },
+    {
+      "name": "finance_draft_expected",
+      "cls": "FinanceDraftExpectedEntity",
+      "fields": [
+        {
+          "name": "draftId",
+          "type": "String"
+        },
+        {
+          "name": "position",
+          "type": "Int"
+        },
+        {
+          "name": "expectedId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "role",
+          "type": "FinanceFlowRole"
+        },
+        {
+          "name": "amountText",
+          "type": "String"
+        },
+        {
+          "name": "note",
+          "type": "String"
+        },
+        {
+          "name": "cancelled",
+          "type": "Boolean"
+        }
+      ],
+      "refs": {
+        "draftId": {
+          "entity": "FinanceDraftEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "draftId",
+        "position"
+      ],
+      "indices": [],
+      "property": "draftExpectedRows"
+    },
+    {
+      "name": "finance_economic_drafts",
+      "cls": "FinanceEconomicDraftEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "expectedRevision",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "eventVersion",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "epoch",
+          "type": "Long"
+        },
+        {
+          "name": "description",
+          "type": "String"
+        },
+        {
+          "name": "currencyCode",
+          "type": "String"
+        },
+        {
+          "name": "occurredText",
+          "type": "String"
+        },
+        {
+          "name": "preservedOccurredAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "valueText",
+          "type": "String"
+        },
+        {
+          "name": "valueBasis",
+          "type": "String"
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "allocationsComplete",
+          "type": "Boolean"
+        },
+        {
+          "name": "statExcluded",
+          "type": "Boolean"
+        },
+        {
+          "name": "budgetExcluded",
+          "type": "Boolean"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "categoryId": {
+          "entity": "FinanceCategoryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "economicDraftRows"
+    },
+    {
+      "name": "finance_economic_draft_funding",
+      "cls": "FinanceEconomicDraftFundingEntity",
+      "fields": [
+        {
+          "name": "draftId",
+          "type": "String"
+        },
+        {
+          "name": "localId",
+          "type": "String"
+        },
+        {
+          "name": "position",
+          "type": "Int"
+        },
+        {
+          "name": "partySelection",
+          "type": "String"
+        },
+        {
+          "name": "amountText",
+          "type": "String"
+        },
+        {
+          "name": "entryLinkSelection",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "basis",
+          "type": "String"
+        }
+      ],
+      "refs": {
+        "draftId": {
+          "entity": "FinanceEconomicDraftEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "draftId",
+        "localId"
+      ],
+      "indices": [],
+      "property": "economicDraftFundingRows"
+    },
+    {
+      "name": "finance_economic_draft_shares",
+      "cls": "FinanceEconomicDraftShareEntity",
+      "fields": [
+        {
+          "name": "draftId",
+          "type": "String"
+        },
+        {
+          "name": "localId",
+          "type": "String"
+        },
+        {
+          "name": "position",
+          "type": "Int"
+        },
+        {
+          "name": "amountText",
+          "type": "String"
+        },
+        {
+          "name": "beneficiarySelection",
+          "type": "String"
+        },
+        {
+          "name": "bearerSelection",
+          "type": "String"
+        },
+        {
+          "name": "fundingLocalId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "relation",
+          "type": "FinanceShareRelation"
+        }
+      ],
+      "refs": {
+        "draftId": {
+          "entity": "FinanceEconomicDraftEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "draftId",
+        "localId"
+      ],
+      "indices": [],
+      "property": "economicDraftShareRows"
+    },
+    {
+      "name": "finance_category_icons",
+      "cls": "FinanceCategoryIconEntity",
+      "fields": [
+        {
+          "name": "categoryId",
+          "type": "String"
+        },
+        {
+          "name": "iconKey",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "categoryId": {
+          "entity": "FinanceCategoryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "categoryId"
+      ],
+      "indices": [],
+      "property": "categoryIconRows"
+    },
+    {
+      "name": "finance_saved_queries",
+      "cls": "FinanceSavedQueryEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "name",
+          "type": "String"
+        },
+        {
+          "name": "specVersion",
+          "type": "Int",
+          "value": "1"
+        },
+        {
+          "name": "specJson",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "savedQueryRows"
+    },
+    {
+      "name": "finance_budgets",
+      "cls": "FinanceBudgetEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "name",
+          "type": "String"
+        },
+        {
+          "name": "currencyCode",
+          "type": "String"
+        },
+        {
+          "name": "limitMinor",
+          "type": "Long"
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "startAt",
+          "type": "Long"
+        },
+        {
+          "name": "endExclusive",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "categoryId": {
+          "entity": "FinanceCategoryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "budgetRows"
+    },
+    {
+      "name": "finance_category_policies",
+      "cls": "FinanceCategoryPolicyEntity",
+      "fields": [
+        {
+          "name": "categoryId",
+          "type": "String"
+        },
+        {
+          "name": "burden",
+          "type": "FinanceBurden"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "categoryId": {
+          "entity": "FinanceCategoryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "categoryId"
+      ],
+      "indices": [],
+      "property": "categoryPolicyRows"
+    },
+    {
+      "name": "finance_external_identities",
+      "cls": "FinanceExternalIdentityEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "sourceFamily",
+          "type": "String"
+        },
+        {
+          "name": "label",
+          "type": "String"
+        },
+        {
+          "name": "digestNamespace",
+          "type": "String"
+        },
+        {
+          "name": "localDigest",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "matchUsable",
+          "type": "Boolean",
+          "value": "true"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "externalIdentityRows"
+    },
+    {
+      "name": "finance_instruments",
+      "cls": "FinanceInstrumentEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "identityId",
+          "type": "String"
+        },
+        {
+          "name": "label",
+          "type": "String"
+        },
+        {
+          "name": "kind",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "identityId": {
+          "entity": "FinanceExternalIdentityEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "instrumentRows"
+    },
+    {
+      "name": "finance_account_bindings",
+      "cls": "FinanceAccountBindingEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "instrumentId",
+          "type": "String"
+        },
+        {
+          "name": "accountId",
+          "type": "String"
+        },
+        {
+          "name": "validFrom",
+          "type": "Long"
+        },
+        {
+          "name": "validUntil",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "instrumentId": {
+          "entity": "FinanceInstrumentEntity",
+          "column": "id"
+        },
+        "accountId": {
+          "entity": "FinanceAccountEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "accountBindingRows"
+    },
+    {
+      "name": "finance_evidence",
+      "cls": "FinanceEvidenceEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "provider",
+          "type": "String"
+        },
+        {
+          "name": "sourceFamily",
+          "type": "String"
+        },
+        {
+          "name": "identityId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "instrumentId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "referenceKind",
+          "type": "FinanceReferenceKind"
+        },
+        {
+          "name": "referenceDigest",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "digestNamespace",
+          "type": "String"
+        },
+        {
+          "name": "capturedAt",
+          "type": "Long"
+        },
+        {
+          "name": "summary",
+          "type": "String"
+        },
+        {
+          "name": "identityRevision",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "bindingId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "bindingRevision",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "relatedOrderDigest",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "identityId": {
+          "entity": "FinanceExternalIdentityEntity",
+          "column": "id"
+        },
+        "instrumentId": {
+          "entity": "FinanceInstrumentEntity",
+          "column": "id"
+        },
+        "bindingId": {
+          "entity": "FinanceAccountBindingEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "evidenceRows"
+    },
+    {
+      "name": "finance_extractions",
+      "cls": "FinanceExtractionEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "evidenceId",
+          "type": "String"
+        },
+        {
+          "name": "extractorVersion",
+          "type": "Int"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "currencyCode",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "occurredAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "direction",
+          "type": "FinanceDirection?",
+          "value": "null"
+        },
+        {
+          "name": "issue",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "evidenceId": {
+          "entity": "FinanceEvidenceEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "extractionRows"
+    },
+    {
+      "name": "finance_evidence_proposals",
+      "cls": "FinanceEvidenceProposalEntity",
+      "fields": [
+        {
+          "name": "evidenceId",
+          "type": "String"
+        },
+        {
+          "name": "proposalId",
+          "type": "String"
+        }
+      ],
+      "refs": {
+        "evidenceId": {
+          "entity": "FinanceEvidenceEntity",
+          "column": "id"
+        },
+        "proposalId": {
+          "entity": "FinanceProposalEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "evidenceId",
+        "proposalId"
+      ],
+      "indices": [],
+      "property": "evidenceProposalRows"
+    },
+    {
+      "name": "finance_media_links",
+      "cls": "FinanceMediaLinkEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "mediaAssetId",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "purchaseId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "proposalId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "sourceHash",
+          "type": "String"
+        },
+        {
+          "name": "label",
+          "type": "String"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        },
+        "purchaseId": {
+          "entity": "ShoppingPurchaseEntity",
+          "column": "id"
+        },
+        "proposalId": {
+          "entity": "FinanceProposalEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "id"
+      ],
+      "indices": [
+        "mediaAssetId"
+      ],
+      "property": "mediaLinkRows"
+    },
+    {
+      "name": "finance_review_sessions",
+      "cls": "FinanceReviewSessionEntity",
+      "fields": [
+        {
+          "name": "proposalId",
+          "type": "String"
+        },
+        {
+          "name": "baseRevision",
+          "type": "Long"
+        },
+        {
+          "name": "epoch",
+          "type": "Long"
+        },
+        {
+          "name": "amountText",
+          "type": "String"
+        },
+        {
+          "name": "accountId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "category",
+          "type": "String"
+        },
+        {
+          "name": "subcategory",
+          "type": "String"
+        },
+        {
+          "name": "description",
+          "type": "String"
+        },
+        {
+          "name": "state",
+          "type": "FinanceReviewState"
+        },
+        {
+          "name": "kind",
+          "type": "FinanceDraftKind",
+          "value": "FinanceDraftKind.EXPENSE"
+        },
+        {
+          "name": "targetAccountId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "occurredAt",
+          "type": "Long",
+          "value": "0"
+        },
+        {
+          "name": "occurredText",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "tagsText",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "nature",
+          "type": "FinanceNature",
+          "value": "FinanceNature.PERSONAL"
+        },
+        {
+          "name": "role",
+          "type": "FinanceFlowRole",
+          "value": "FinanceFlowRole.PAYMENT"
+        },
+        {
+          "name": "eventId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "eventUpdatedAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "shareText",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "excluded",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "excludedBudget",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "expectedEdited",
+          "type": "Boolean",
+          "value": "false"
+        },
+        {
+          "name": "costReductionText",
+          "type": "String",
+          "value": "\"\""
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "proposalId": {
+          "entity": "FinanceProposalEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "proposalId"
+      ],
+      "indices": [],
+      "property": "reviewSessionRows"
+    },
+    {
+      "name": "finance_review_expected",
+      "cls": "FinanceReviewExpectedEntity",
+      "fields": [
+        {
+          "name": "proposalId",
+          "type": "String"
+        },
+        {
+          "name": "position",
+          "type": "Int"
+        },
+        {
+          "name": "expectedId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "role",
+          "type": "FinanceFlowRole"
+        },
+        {
+          "name": "amountText",
+          "type": "String"
+        },
+        {
+          "name": "note",
+          "type": "String"
+        },
+        {
+          "name": "cancelled",
+          "type": "Boolean"
+        }
+      ],
+      "refs": {
+        "proposalId": {
+          "entity": "FinanceReviewSessionEntity",
+          "column": "proposalId"
+        }
+      },
+      "primary": [
+        "proposalId",
+        "position"
+      ],
+      "indices": [],
+      "property": "reviewExpectedRows"
+    },
+    {
+      "name": "finance_purpose_grants",
+      "cls": "FinancePurposeGrantEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "purpose",
+          "type": "FinanceReadPurpose"
+        },
+        {
+          "name": "providerId",
+          "type": "String"
+        },
+        {
+          "name": "allowAmount",
+          "type": "Boolean"
+        },
+        {
+          "name": "allowDate",
+          "type": "Boolean"
+        },
+        {
+          "name": "allowDescription",
+          "type": "Boolean"
+        },
+        {
+          "name": "expiresAt",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "purposeGrantRows"
+    },
+    {
+      "name": "finance_grant_events",
+      "cls": "FinanceGrantEventEntity",
+      "fields": [
+        {
+          "name": "grantId",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        }
+      ],
+      "refs": {
+        "grantId": {
+          "entity": "FinancePurposeGrantEntity",
+          "column": "id"
+        },
+        "eventId": {
+          "entity": "FinanceEventEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "grantId",
+        "eventId"
+      ],
+      "indices": [],
+      "property": "grantEventRows"
+    },
+    {
+      "name": "finance_grant_entries",
+      "cls": "FinanceGrantEntryEntity",
+      "fields": [
+        {
+          "name": "grantId",
+          "type": "String"
+        },
+        {
+          "name": "entryId",
+          "type": "String"
+        }
+      ],
+      "refs": {
+        "grantId": {
+          "entity": "FinancePurposeGrantEntity",
+          "column": "id"
+        },
+        "entryId": {
+          "entity": "FinanceEntryEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "grantId",
+        "entryId"
+      ],
+      "indices": [],
+      "property": "grantEntryRows"
+    },
+    {
+      "name": "finance_command_receipts",
+      "cls": "FinanceCommandReceiptEntity",
+      "fields": [
+        {
+          "name": "operationId",
+          "type": "String"
+        },
+        {
+          "name": "command",
+          "type": "String"
+        },
+        {
+          "name": "inputDigest",
+          "type": "String"
+        },
+        {
+          "name": "resultId",
+          "type": "String"
+        },
+        {
+          "name": "epoch",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "operationId"
+      ],
+      "indices": [],
+      "property": "commandReceiptRows"
+    },
+    {
+      "name": "finance_control",
+      "cls": "FinanceControlEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Int"
+        },
+        {
+          "name": "restoreEpoch",
+          "type": "Long"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "controlRows"
+    },
+    {
+      "name": "finance_recovery_groups",
+      "cls": "FinanceRecoveryGroupEntity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String"
+        },
+        {
+          "name": "kind",
+          "type": "String"
+        },
+        {
+          "name": "epoch",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "consumedAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "afterFingerprint",
+          "type": "String"
+        }
+      ],
+      "refs": {},
+      "primary": [
+        "id"
+      ],
+      "indices": [],
+      "property": "recoveryGroupRows"
+    },
+    {
+      "name": "finance_recovery_entries",
+      "cls": "FinanceRecoveryEntryEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "entryId",
+          "type": "String"
+        },
+        {
+          "name": "accountId",
+          "type": "String"
+        },
+        {
+          "name": "accountCurrencyCode",
+          "type": "String"
+        },
+        {
+          "name": "direction",
+          "type": "FinanceDirection"
+        },
+        {
+          "name": "amountMinor",
+          "type": "Long"
+        },
+        {
+          "name": "description",
+          "type": "String"
+        },
+        {
+          "name": "occurredAt",
+          "type": "Long"
+        },
+        {
+          "name": "recordedAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "statPolicy",
+          "type": "FinanceStatPolicy"
+        },
+        {
+          "name": "budgetPolicy",
+          "type": "FinanceBudgetPolicy"
+        },
+        {
+          "name": "revision",
+          "type": "Long"
+        },
+        {
+          "name": "importBatchId",
+          "type": "String?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "entryId"
+      ],
+      "indices": [],
+      "property": "recoveryEntryRows"
+    },
+    {
+      "name": "finance_recovery_links",
+      "cls": "FinanceRecoveryLinkEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "linkId",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "entryId",
+          "type": "String"
+        },
+        {
+          "name": "role",
+          "type": "FinanceFlowRole"
+        },
+        {
+          "name": "allocatedMinor",
+          "type": "Long"
+        },
+        {
+          "name": "createdAt",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "revision",
+          "type": "Long",
+          "value": "1"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "linkId"
+      ],
+      "indices": [],
+      "property": "recoveryLinkRows"
+    },
+    {
+      "name": "finance_recovery_events",
+      "cls": "FinanceRecoveryEventEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "eventId",
+          "type": "String"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "eventId"
+      ],
+      "indices": [],
+      "property": "recoveryEventRows"
+    },
+    {
+      "name": "finance_recovery_expected",
+      "cls": "FinanceRecoveryExpectedEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "expectedId",
+          "type": "String"
+        },
+        {
+          "name": "cancelledAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "expectedId"
+      ],
+      "indices": [],
+      "property": "recoveryExpectedRows"
+    },
+    {
+      "name": "finance_recovery_transfers",
+      "cls": "FinanceRecoveryTransferEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "transferId",
+          "type": "String"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "transferId"
+      ],
+      "indices": [],
+      "property": "recoveryTransferRows"
+    },
+    {
+      "name": "finance_recovery_tags",
+      "cls": "FinanceRecoveryTagEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "entryId",
+          "type": "String"
+        },
+        {
+          "name": "tagId",
+          "type": "String"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "entryId",
+        "tagId"
+      ],
+      "indices": [],
+      "property": "recoveryTagRows"
+    },
+    {
+      "name": "finance_recovery_members",
+      "cls": "FinanceRecoveryMemberEntity",
+      "fields": [
+        {
+          "name": "groupId",
+          "type": "String"
+        },
+        {
+          "name": "kind",
+          "type": "FinanceRecoveryMemberKind"
+        },
+        {
+          "name": "memberId",
+          "type": "String"
+        },
+        {
+          "name": "revision",
+          "type": "Long"
+        },
+        {
+          "name": "updatedAt",
+          "type": "Long"
+        },
+        {
+          "name": "voidedAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "categoryId",
+          "type": "String?",
+          "value": "null"
+        }
+      ],
+      "refs": {
+        "groupId": {
+          "entity": "FinanceRecoveryGroupEntity",
+          "column": "id"
+        }
+      },
+      "primary": [
+        "groupId",
+        "kind",
+        "memberId"
+      ],
+      "indices": [],
+      "property": "recoveryMemberRows"
+    }
+  ],
+  "sql": [
+    "CREATE TABLE IF NOT EXISTS `finance_parties` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `isSelf` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_economics` (`eventId` TEXT NOT NULL, `valueMinor` INTEGER, `valueBasis` TEXT NOT NULL, `categoryId` TEXT, `allocationsComplete` INTEGER NOT NULL, `statPolicy` TEXT NOT NULL, `budgetPolicy` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`eventId`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`categoryId`) REFERENCES `finance_categories`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_economics_eventId` ON `finance_economics` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_economics_categoryId` ON `finance_economics` (`categoryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_funding` (`id` TEXT NOT NULL, `eventId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `entryLinkId` TEXT, `basis` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`partyId`) REFERENCES `finance_parties`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`entryLinkId`) REFERENCES `finance_event_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_funding_eventId` ON `finance_funding` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_funding_partyId` ON `finance_funding` (`partyId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_funding_entryLinkId` ON `finance_funding` (`entryLinkId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_shares` (`id` TEXT NOT NULL, `eventId` TEXT NOT NULL, `amountMinor` INTEGER, `beneficiaryId` TEXT NOT NULL, `bearerId` TEXT, `fundingId` TEXT, `relation` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`beneficiaryId`) REFERENCES `finance_parties`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`bearerId`) REFERENCES `finance_parties`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`fundingId`) REFERENCES `finance_funding`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_shares_eventId` ON `finance_shares` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_shares_beneficiaryId` ON `finance_shares` (`beneficiaryId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_shares_bearerId` ON `finance_shares` (`bearerId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_shares_fundingId` ON `finance_shares` (`fundingId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_obligations` (`id` TEXT NOT NULL, `eventId` TEXT NOT NULL, `shareId` TEXT, `creditorId` TEXT NOT NULL, `debtorId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `currencyCode` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`shareId`) REFERENCES `finance_shares`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`creditorId`) REFERENCES `finance_parties`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`debtorId`) REFERENCES `finance_parties`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_obligations_eventId` ON `finance_obligations` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_obligations_shareId` ON `finance_obligations` (`shareId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_obligations_creditorId` ON `finance_obligations` (`creditorId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_obligations_debtorId` ON `finance_obligations` (`debtorId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_settlements` (`id` TEXT NOT NULL, `obligationId` TEXT NOT NULL, `entryId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`obligationId`) REFERENCES `finance_obligations`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_settlements_obligationId` ON `finance_settlements` (`obligationId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_settlements_entryId` ON `finance_settlements` (`entryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_resolutions` (`id` TEXT NOT NULL, `obligationId` TEXT NOT NULL, `kind` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`obligationId`) REFERENCES `finance_obligations`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_resolutions_obligationId` ON `finance_resolutions` (`obligationId`)",
+    "CREATE TABLE IF NOT EXISTS `shopping_purchases` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `shopping_purchase_lines` (`id` TEXT NOT NULL, `purchaseId` TEXT NOT NULL, `title` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `valueMinor` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`purchaseId`) REFERENCES `shopping_purchases`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_shopping_purchase_lines_purchaseId` ON `shopping_purchase_lines` (`purchaseId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_purchase_allocations` (`id` TEXT NOT NULL, `lineId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `valueMinor` INTEGER NOT NULL, `personalMinor` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`lineId`) REFERENCES `shopping_purchase_lines`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_purchase_allocations_lineId` ON `finance_purchase_allocations` (`lineId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_purchase_allocations_eventId` ON `finance_purchase_allocations` (`eventId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_cost_adjustments` (`id` TEXT NOT NULL, `eventId` TEXT NOT NULL, `entryLinkId` TEXT NOT NULL, `personalReductionMinor` INTEGER NOT NULL, `lineId` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`entryLinkId`) REFERENCES `finance_event_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`lineId`) REFERENCES `shopping_purchase_lines`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_eventId` ON `finance_cost_adjustments` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_entryLinkId` ON `finance_cost_adjustments` (`entryLinkId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_lineId` ON `finance_cost_adjustments` (`lineId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_entry_timing_entryId` ON `finance_entry_timing` (`entryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_account_policies` (`accountId` TEXT NOT NULL, `includedInNet` INTEGER NOT NULL, `liabilityConvention` TEXT NOT NULL, `anchorBasis` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`accountId`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_account_policies_accountId` ON `finance_account_policies` (`accountId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_observations_accountId` ON `finance_observations` (`accountId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_reconciliations` (`id` TEXT NOT NULL, `observationId` TEXT NOT NULL, `bookMinor` INTEGER, `fingerprint` TEXT NOT NULL, `algorithmVersion` INTEGER NOT NULL, `note` TEXT NOT NULL, `confirmationOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`observationId`) REFERENCES `finance_observations`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_reconciliations_observationId` ON `finance_reconciliations` (`observationId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_credit_cycles` (`accountId` TEXT NOT NULL, `closingDay` INTEGER NOT NULL, `dueDay` INTEGER NOT NULL, `zoneId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`accountId`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_credit_cycles_accountId` ON `finance_credit_cycles` (`accountId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_drafts` (`id` TEXT NOT NULL, `accountId` TEXT, `kind` TEXT NOT NULL, `targetAccountId` TEXT, `amountExpression` TEXT NOT NULL, `description` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, `occurredText` TEXT NOT NULL, `categoryId` TEXT, `categoryName` TEXT NOT NULL, `subcategoryName` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `continuous` INTEGER NOT NULL, `epoch` INTEGER NOT NULL, `editGeneration` INTEGER NOT NULL, `nature` TEXT NOT NULL, `role` TEXT NOT NULL, `eventId` TEXT, `shareText` TEXT NOT NULL, `excluded` INTEGER NOT NULL, `excludedBudget` INTEGER NOT NULL, `expectedEdited` INTEGER NOT NULL, `eventUpdatedAt` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_draft_tags` (`draftId` TEXT NOT NULL, `name` TEXT NOT NULL, PRIMARY KEY(`draftId`, `name`), FOREIGN KEY(`draftId`) REFERENCES `finance_drafts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_draft_tags_draftId` ON `finance_draft_tags` (`draftId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_draft_expected` (`draftId` TEXT NOT NULL, `position` INTEGER NOT NULL, `expectedId` TEXT, `role` TEXT NOT NULL, `amountText` TEXT NOT NULL, `note` TEXT NOT NULL, `cancelled` INTEGER NOT NULL, PRIMARY KEY(`draftId`, `position`), FOREIGN KEY(`draftId`) REFERENCES `finance_drafts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_draft_expected_draftId` ON `finance_draft_expected` (`draftId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_economic_drafts` (`id` TEXT NOT NULL, `eventId` TEXT, `expectedRevision` INTEGER, `eventVersion` INTEGER, `epoch` INTEGER NOT NULL, `description` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `occurredText` TEXT NOT NULL, `preservedOccurredAt` INTEGER, `valueText` TEXT NOT NULL, `valueBasis` TEXT NOT NULL, `categoryId` TEXT, `allocationsComplete` INTEGER NOT NULL, `statExcluded` INTEGER NOT NULL, `budgetExcluded` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`categoryId`) REFERENCES `finance_categories`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_economic_drafts_eventId` ON `finance_economic_drafts` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_economic_drafts_categoryId` ON `finance_economic_drafts` (`categoryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_economic_draft_funding` (`draftId` TEXT NOT NULL, `localId` TEXT NOT NULL, `position` INTEGER NOT NULL, `partySelection` TEXT NOT NULL, `amountText` TEXT NOT NULL, `entryLinkSelection` TEXT, `basis` TEXT NOT NULL, PRIMARY KEY(`draftId`, `localId`), FOREIGN KEY(`draftId`) REFERENCES `finance_economic_drafts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_economic_draft_funding_draftId` ON `finance_economic_draft_funding` (`draftId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_economic_draft_shares` (`draftId` TEXT NOT NULL, `localId` TEXT NOT NULL, `position` INTEGER NOT NULL, `amountText` TEXT NOT NULL, `beneficiarySelection` TEXT NOT NULL, `bearerSelection` TEXT NOT NULL, `fundingLocalId` TEXT, `relation` TEXT NOT NULL, PRIMARY KEY(`draftId`, `localId`), FOREIGN KEY(`draftId`) REFERENCES `finance_economic_drafts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_economic_draft_shares_draftId` ON `finance_economic_draft_shares` (`draftId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_category_icons` (`categoryId` TEXT NOT NULL, `iconKey` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`categoryId`), FOREIGN KEY(`categoryId`) REFERENCES `finance_categories`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_category_icons_categoryId` ON `finance_category_icons` (`categoryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_saved_queries` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `specVersion` INTEGER NOT NULL, `specJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_budgets` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `limitMinor` INTEGER NOT NULL, `categoryId` TEXT, `startAt` INTEGER NOT NULL, `endExclusive` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`categoryId`) REFERENCES `finance_categories`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_budgets_categoryId` ON `finance_budgets` (`categoryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_category_policies` (`categoryId` TEXT NOT NULL, `burden` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`categoryId`), FOREIGN KEY(`categoryId`) REFERENCES `finance_categories`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_category_policies_categoryId` ON `finance_category_policies` (`categoryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_external_identities` (`id` TEXT NOT NULL, `sourceFamily` TEXT NOT NULL, `label` TEXT NOT NULL, `digestNamespace` TEXT NOT NULL, `localDigest` TEXT, `matchUsable` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_instruments` (`id` TEXT NOT NULL, `identityId` TEXT NOT NULL, `label` TEXT NOT NULL, `kind` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`identityId`) REFERENCES `finance_external_identities`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_instruments_identityId` ON `finance_instruments` (`identityId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_account_bindings` (`id` TEXT NOT NULL, `instrumentId` TEXT NOT NULL, `accountId` TEXT NOT NULL, `validFrom` INTEGER NOT NULL, `validUntil` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`instrumentId`) REFERENCES `finance_instruments`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_account_bindings_instrumentId` ON `finance_account_bindings` (`instrumentId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_account_bindings_accountId` ON `finance_account_bindings` (`accountId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_evidence` (`id` TEXT NOT NULL, `provider` TEXT NOT NULL, `sourceFamily` TEXT NOT NULL, `identityId` TEXT, `instrumentId` TEXT, `referenceKind` TEXT NOT NULL, `referenceDigest` TEXT, `digestNamespace` TEXT NOT NULL, `capturedAt` INTEGER NOT NULL, `summary` TEXT NOT NULL, `identityRevision` INTEGER, `bindingId` TEXT, `bindingRevision` INTEGER, `relatedOrderDigest` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`identityId`) REFERENCES `finance_external_identities`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`instrumentId`) REFERENCES `finance_instruments`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`bindingId`) REFERENCES `finance_account_bindings`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_evidence_identityId` ON `finance_evidence` (`identityId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_evidence_instrumentId` ON `finance_evidence` (`instrumentId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_evidence_bindingId` ON `finance_evidence` (`bindingId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_extractions` (`id` TEXT NOT NULL, `evidenceId` TEXT NOT NULL, `extractorVersion` INTEGER NOT NULL, `amountMinor` INTEGER, `currencyCode` TEXT, `occurredAt` INTEGER, `direction` TEXT, `issue` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`evidenceId`) REFERENCES `finance_evidence`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_extractions_evidenceId` ON `finance_extractions` (`evidenceId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_evidence_proposals` (`evidenceId` TEXT NOT NULL, `proposalId` TEXT NOT NULL, PRIMARY KEY(`evidenceId`, `proposalId`), FOREIGN KEY(`evidenceId`) REFERENCES `finance_evidence`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`proposalId`) REFERENCES `finance_proposals`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_evidence_proposals_evidenceId` ON `finance_evidence_proposals` (`evidenceId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_evidence_proposals_proposalId` ON `finance_evidence_proposals` (`proposalId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_media_links` (`id` TEXT NOT NULL, `mediaAssetId` TEXT NOT NULL, `eventId` TEXT, `purchaseId` TEXT, `proposalId` TEXT, `sourceHash` TEXT NOT NULL, `label` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`purchaseId`) REFERENCES `shopping_purchases`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`proposalId`) REFERENCES `finance_proposals`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_media_links_eventId` ON `finance_media_links` (`eventId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_media_links_purchaseId` ON `finance_media_links` (`purchaseId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_media_links_proposalId` ON `finance_media_links` (`proposalId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_media_links_mediaAssetId` ON `finance_media_links` (`mediaAssetId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_review_sessions` (`proposalId` TEXT NOT NULL, `baseRevision` INTEGER NOT NULL, `epoch` INTEGER NOT NULL, `amountText` TEXT NOT NULL, `accountId` TEXT, `category` TEXT NOT NULL, `subcategory` TEXT NOT NULL, `description` TEXT NOT NULL, `state` TEXT NOT NULL, `kind` TEXT NOT NULL, `targetAccountId` TEXT, `occurredAt` INTEGER NOT NULL, `occurredText` TEXT NOT NULL, `categoryId` TEXT, `tagsText` TEXT NOT NULL, `nature` TEXT NOT NULL, `role` TEXT NOT NULL, `eventId` TEXT, `eventUpdatedAt` INTEGER, `shareText` TEXT NOT NULL, `excluded` INTEGER NOT NULL, `excludedBudget` INTEGER NOT NULL, `expectedEdited` INTEGER NOT NULL, `costReductionText` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`proposalId`), FOREIGN KEY(`proposalId`) REFERENCES `finance_proposals`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_review_sessions_proposalId` ON `finance_review_sessions` (`proposalId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_review_expected` (`proposalId` TEXT NOT NULL, `position` INTEGER NOT NULL, `expectedId` TEXT, `role` TEXT NOT NULL, `amountText` TEXT NOT NULL, `note` TEXT NOT NULL, `cancelled` INTEGER NOT NULL, PRIMARY KEY(`proposalId`, `position`), FOREIGN KEY(`proposalId`) REFERENCES `finance_review_sessions`(`proposalId`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_review_expected_proposalId` ON `finance_review_expected` (`proposalId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_purpose_grants` (`id` TEXT NOT NULL, `purpose` TEXT NOT NULL, `providerId` TEXT NOT NULL, `allowAmount` INTEGER NOT NULL, `allowDate` INTEGER NOT NULL, `allowDescription` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_grant_events` (`grantId` TEXT NOT NULL, `eventId` TEXT NOT NULL, PRIMARY KEY(`grantId`, `eventId`), FOREIGN KEY(`grantId`) REFERENCES `finance_purpose_grants`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`eventId`) REFERENCES `finance_events`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_grant_events_grantId` ON `finance_grant_events` (`grantId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_grant_events_eventId` ON `finance_grant_events` (`eventId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_grant_entries` (`grantId` TEXT NOT NULL, `entryId` TEXT NOT NULL, PRIMARY KEY(`grantId`, `entryId`), FOREIGN KEY(`grantId`) REFERENCES `finance_purpose_grants`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION, FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_grant_entries_grantId` ON `finance_grant_entries` (`grantId`)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_grant_entries_entryId` ON `finance_grant_entries` (`entryId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_command_receipts` (`operationId` TEXT NOT NULL, `command` TEXT NOT NULL, `inputDigest` TEXT NOT NULL, `resultId` TEXT NOT NULL, `epoch` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`operationId`))",
+    "CREATE TABLE IF NOT EXISTS `finance_control` (`id` INTEGER NOT NULL, `restoreEpoch` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_groups` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `epoch` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `consumedAt` INTEGER, `afterFingerprint` TEXT NOT NULL, PRIMARY KEY(`id`))",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_entries` (`groupId` TEXT NOT NULL, `entryId` TEXT NOT NULL, `accountId` TEXT NOT NULL, `accountCurrencyCode` TEXT NOT NULL, `direction` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `description` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, `recordedAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `categoryId` TEXT, `voidedAt` INTEGER, `statPolicy` TEXT NOT NULL, `budgetPolicy` TEXT NOT NULL, `revision` INTEGER NOT NULL, `importBatchId` TEXT, PRIMARY KEY(`groupId`, `entryId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_entries_groupId` ON `finance_recovery_entries` (`groupId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_links` (`groupId` TEXT NOT NULL, `linkId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `entryId` TEXT NOT NULL, `role` TEXT NOT NULL, `allocatedMinor` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`groupId`, `linkId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_links_groupId` ON `finance_recovery_links` (`groupId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_events` (`groupId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`groupId`, `eventId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_events_groupId` ON `finance_recovery_events` (`groupId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_expected` (`groupId` TEXT NOT NULL, `expectedId` TEXT NOT NULL, `cancelledAt` INTEGER, PRIMARY KEY(`groupId`, `expectedId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_expected_groupId` ON `finance_recovery_expected` (`groupId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_transfers` (`groupId` TEXT NOT NULL, `transferId` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`groupId`, `transferId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_transfers_groupId` ON `finance_recovery_transfers` (`groupId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_tags` (`groupId` TEXT NOT NULL, `entryId` TEXT NOT NULL, `tagId` TEXT NOT NULL, PRIMARY KEY(`groupId`, `entryId`, `tagId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_tags_groupId` ON `finance_recovery_tags` (`groupId`)",
+    "CREATE TABLE IF NOT EXISTS `finance_recovery_members` (`groupId` TEXT NOT NULL, `kind` TEXT NOT NULL, `memberId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `voidedAt` INTEGER, `categoryId` TEXT, PRIMARY KEY(`groupId`, `kind`, `memberId`), FOREIGN KEY(`groupId`) REFERENCES `finance_recovery_groups`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE INDEX IF NOT EXISTS `index_finance_recovery_members_groupId` ON `finance_recovery_members` (`groupId`)"
+  ]
+}

@@ -15,29 +15,52 @@ import com.qq.closie.ui.lifeos.theme.*
 
 @Composable
 internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm: FinanceViewModel,
-    initialRelationship: FinanceRelationshipDraft? = null, initialKind: FinanceEditorKind = FinanceEditorKind.EXPENSE, onSaved: (() -> Unit)? = null, onClose: () -> Unit) {
+    initialRelationship: FinanceRelationshipDraft? = null, initialKind: FinanceEditorKind = FinanceEditorKind.EXPENSE, onSaved: (() -> Unit)? = null,
+    onTerminalClose:(()->Unit)?=null,initialAccountId:String?=null,initialTargetAccountId:String?=null,onClose: () -> Unit) {
+    if(!state.loaded) {FinanceReceipt("正在打开账本",error=state.error,onClose=onClose) {Text("账本快照读取完成后可继续编辑。")};return}
     val colors = LocalLifeOsColors.current
     val active = state.snapshot.accounts.filter { it.archivedAt == null }
+    val candidateDraft=remember(row?.id) { if(row==null && initialRelationship==null && initialKind==FinanceEditorKind.EXPENSE)
+        state.snapshot.v16?.draftRows.orEmpty().filter { it.voidedAt==null }.maxByOrNull { it.updatedAt } else null }
+    val editorId=rememberSaveable(row?.id) { java.util.UUID.randomUUID().toString() }
+    val persistentDraftId=rememberSaveable(editorId) { candidateDraft?.id ?: java.util.UUID.randomUUID().toString() }
+    val savedDraft=remember(persistentDraftId) {state.snapshot.v16?.draftRows.orEmpty().singleOrNull {it.id==persistentDraftId && it.voidedAt==null}}
+    val initialDraftRevision=remember(editorId) { savedDraft?.revision }
+    val editorEpoch=rememberSaveable(editorId) { state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L }
+    var editGeneration by rememberSaveable(editorId) {mutableLongStateOf(savedDraft?.editGeneration ?: 0L)}
+    val restoredGenerationMismatch=remember(editorId) {savedDraft!=null && editGeneration!=savedDraft.editGeneration}
+    if((row==null && state.snapshot.v16?.draftRows.orEmpty().any {it.id==persistentDraftId && it.voidedAt!=null}) ||
+        editorEpoch!=(state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L) ||
+        (row==null && restoredGenerationMismatch)) {
+        FinanceReceipt("此编辑器已结束",onClose=onTerminalClose ?: onClose) {Text("上一笔已提交、草稿已完成或恢复代际已改变。收起后可重新打开，不会以旧内容再次记账。")};return
+    }
+    var continuous by rememberSaveable(editorId) { mutableStateOf(savedDraft?.continuous ?: false) }
     var kindName by rememberSaveable(row?.id) { mutableStateOf(when {
         row?.transfer != null -> FinanceEditorKind.TRANSFER.name
         row?.entry?.direction == FinanceDirection.INFLOW -> FinanceEditorKind.INCOME.name
-        else -> initialKind.name
+        else -> savedDraft?.kind?.name ?: initialKind.name
     }) }
     val kind = FinanceEditorKind.valueOf(kindName)
-    var amount by rememberSaveable(row?.id) { mutableStateOf(row?.let { FinanceMoney.input(it.entry.amountMinor, it.currencyCode) }.orEmpty()) }
-    var accountId by rememberSaveable(row?.id) { mutableStateOf(row?.account?.id ?: active.firstOrNull()?.id.orEmpty()) }
-    var targetId by rememberSaveable(row?.id) { mutableStateOf(row?.targetAccount?.id ?: active.firstOrNull { it.id != accountId }?.id.orEmpty()) }
-    val preservedOccurredAt = rememberSaveable(row?.id) { row?.entry?.occurredAt ?: System.currentTimeMillis() }
-    var occurredAt by rememberSaveable(row?.id) { mutableStateOf(FinanceTime.input(preservedOccurredAt)) }
-    var description by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.description.orEmpty()) }
-    val leaf = state.snapshot.categories.find { it.id == row?.entry?.categoryId }
+    var amount by rememberSaveable(row?.id) { mutableStateOf(row?.let { FinanceMoney.input(it.entry.amountMinor, it.currencyCode) } ?: savedDraft?.amountExpression.orEmpty()) }
+    val latestAccount=state.snapshot.entries.filter { it.voidedAt==null && active.any { a -> a.id==it.accountId } }.maxByOrNull { it.updatedAt }?.accountId
+    var accountId by rememberSaveable(row?.id) { mutableStateOf(row?.account?.id ?: savedDraft?.accountId ?: initialAccountId ?: latestAccount ?: active.firstOrNull()?.id.orEmpty()) }
+    var targetId by rememberSaveable(row?.id) { mutableStateOf(row?.targetAccount?.id ?: savedDraft?.targetAccountId ?: initialTargetAccountId ?: active.firstOrNull { it.id != accountId }?.id.orEmpty()) }
+    val preservedOccurredAt = rememberSaveable(row?.id) { row?.entry?.occurredAt ?: savedDraft?.occurredAt ?: System.currentTimeMillis() }
+    var occurredAt by rememberSaveable(row?.id) { mutableStateOf(savedDraft?.occurredText ?: FinanceTime.input(preservedOccurredAt)) }
+    var description by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.description ?: savedDraft?.description.orEmpty()) }
+    val leaf = state.snapshot.categories.find { it.id == (row?.entry?.categoryId ?: savedDraft?.categoryId) }
     val parent = state.snapshot.categories.find { it.id == leaf?.parentId }
-    var selectedCategoryId by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.categoryId) }
-    var category by rememberSaveable(row?.id) { mutableStateOf(parent?.name ?: leaf?.name.orEmpty()) }
-    var subcategory by rememberSaveable(row?.id) { mutableStateOf(if (parent == null) "" else leaf?.name.orEmpty()) }
-    var relationship by rememberSaveable(row?.id, stateSaver = FinanceRelationshipDraft.Saver) { mutableStateOf(initialRelationship ?: FinanceRelationshipDraft.from(state.snapshot, row)) }
-    var tags by rememberSaveable(row?.id) { mutableStateOf(row?.tags.orEmpty().joinToString("，")) }
-    var confirmVoid by remember { mutableStateOf(false) }
+    var selectedCategoryId by rememberSaveable(row?.id) { mutableStateOf(row?.entry?.categoryId ?: savedDraft?.categoryId) }
+    var category by rememberSaveable(row?.id) { mutableStateOf(savedDraft?.categoryName ?: parent?.name ?: leaf?.name.orEmpty()) }
+    var subcategory by rememberSaveable(row?.id) { mutableStateOf(savedDraft?.subcategoryName ?: if (parent == null) "" else leaf?.name.orEmpty()) }
+    var relationship by rememberSaveable(row?.id, stateSaver = FinanceRelationshipDraft.Saver) { mutableStateOf(initialRelationship ?:
+        savedDraft?.let { draft -> FinanceRelationshipDraft(draft.nature,draft.role,draft.eventId,draft.shareText,draft.excluded,
+            draft.excludedBudget,state.snapshot.v16?.draftExpectedRows.orEmpty().filter { it.draftId==draft.id }.sortedBy { it.position }.map {
+                FinanceExpectedFlowDraft(it.expectedId,it.role,it.amountText,it.note,it.cancelled)
+            },draft.expectedEdited,draft.eventUpdatedAt) } ?: FinanceRelationshipDraft.from(state.snapshot, row)) }
+    var tags by rememberSaveable(row?.id) { mutableStateOf(if(savedDraft!=null) state.snapshot.v16?.draftTagRows.orEmpty()
+        .filter { it.draftId==savedDraft.id }.joinToString("，") { it.name } else row?.tags.orEmpty().joinToString("，")) }
+    var voidPreview by remember { mutableStateOf<FinanceChangePreview?>(null) }
     var allocationOpen by remember { mutableStateOf(false) }
     var pickingCategory by remember { mutableStateOf(false) }
     var moreFields by rememberSaveable { mutableStateOf(false) }
@@ -45,10 +68,31 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val recentAccounts = remember(state.snapshot.entries) { state.snapshot.entries.filter { it.voidedAt == null }.sortedByDescending { it.updatedAt }.map { it.accountId }.distinct().take(4) }
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
-    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, onClose, actions = {
-        Button(onClick = { vm.saveRecord(row, FinanceEntryDraft(kind, amount, accountId, targetId, occurredAt, description, category, tags, preservedOccurredAt, subcategory, relationship, selectedCategoryId), onSaved ?: onClose) },
+    fun currentDraft()=FinanceEntryDraft(kind,amount,accountId,targetId,occurredAt,description,category,tags,preservedOccurredAt,subcategory,relationship,selectedCategoryId,editGeneration=editGeneration)
+    LaunchedEffect(editorId,editGeneration,kindName,amount,accountId,targetId,occurredAt,description,selectedCategoryId,category,subcategory,tags,relationship,continuous) {
+        if(row==null) { kotlinx.coroutines.delay(250); vm.persistDraft(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) }
+    }
+    fun leave() {
+        if(row==null) vm.leaveDraft(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch,onClose) else onClose()
+    }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        if(row==null) vm.flushDraftOnStop(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch)
+    }
+    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, ::leave, actions = {
+        Button(onClick = {
+            if(row==null) vm.saveDraftRecord(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) {
+                if(continuous) { editGeneration=Math.addExact(editGeneration,1L);amount="";description="";selectedCategoryId=null;category="";subcategory="";tags=""
+                    relationship=FinanceRelationshipDraft(role=if(kind==FinanceEditorKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
+                } else (onSaved ?: onClose)()
+            } else vm.saveRecord(row,currentDraft(),onSaved ?: onClose,editorEpoch)
+        },
             enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
     }) {
+        if(row==null) {
+            Text(if(savedDraft!=null) "已恢复未完成草稿；保存前核对账户与关系。" else "未完成内容自动保存为草稿，不计余额。",style=LifeText.caption)
+            Row { Checkbox(continuous,{continuous=it},enabled=!state.busy);Text("连续记账 · 锁定账户与日期") }
+            if(continuous) Text("本轮锁定：${accounts.firstOrNull { it.id==accountId }?.name ?: "待选择账户"} · $occurredAt",style=LifeText.caption)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FinanceEditorKind.entries.forEach { tab ->
                 val editable = row == null || if (row.transfer != null) tab == FinanceEditorKind.TRANSFER else tab != FinanceEditorKind.TRANSFER
@@ -57,18 +101,17 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             }
         }
         val currency = accounts.find { it.id == accountId }?.currencyCode ?: "CNY"
-        OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), textStyle = LifeText.number, label = { Text("金额 · $currency") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, enabled = !state.busy)
-        AccountChoice(if (kind == FinanceEditorKind.TRANSFER) "转出账户" else "账户", accounts, accountId, !state.busy, recentAccounts) { accountId = it; if (targetId == it) targetId = accounts.firstOrNull { a -> a.id != it && a.archivedAt == null }?.id.orEmpty() }
+        FinanceAmountInput(amount,currency,!state.busy) { amount=it }
+        AccountChoice(if (kind == FinanceEditorKind.TRANSFER) "转出账户" else "账户", accounts, accountId, !state.busy && !continuous, recentAccounts) { accountId = it; if (targetId == it) targetId = accounts.firstOrNull { a -> a.id != it && a.archivedAt == null }?.id.orEmpty() }
         if (kind == FinanceEditorKind.TRANSFER) {
-            AccountChoice("转入账户", accounts.filter { it.id != accountId }, targetId, !state.busy, recentAccounts) { targetId = it }
+            AccountChoice("转入账户", accounts.filter { it.id != accountId }, targetId, !state.busy && !continuous, recentAccounts) { targetId = it }
             if (accounts.count { it.archivedAt == null } < 2 && row == null) Text("转账需要两个不同的真实账户。", style = LifeText.caption, color = colors.muted)
         }
-        TextButton({ pickingDate = !pickingDate }, enabled = !state.busy) { Text("时间 · $occurredAt") }
+        TextButton({ pickingDate = !pickingDate }, enabled = !state.busy && !continuous) { Text("时间 · $occurredAt") }
         if (pickingDate) OutlinedTextField(occurredAt, { occurredAt = it }, Modifier.fillMaxWidth(),
-            label = { Text("年-月-日 时:分") }, singleLine = true, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.MonoNumber)
+            label = { Text("年-月-日 时:分") }, singleLine = true, enabled = !state.busy && !continuous, textStyle = com.qq.closie.life.ui.theme.LifeType.MonoNumber)
         OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(),
-            label = { Text(if (kind == FinanceEditorKind.TRANSFER) "备注（可留空）" else "具体事由 · 买了什么 / 为了什么") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
+            label = { Text("备注（可留空）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
         if (kind != FinanceEditorKind.TRANSFER) {
             TextButton({ pickingCategory = !pickingCategory }, enabled = !state.busy) {
                 Text("分类 · " + (FinanceProjection.categoryPath(state.snapshot.categories, selectedCategoryId) ?: category.ifBlank { "选择分类" }))
@@ -95,13 +138,20 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         }
         if (allocationOpen && row != null) FinanceAllocationFields(state, row, vm) { allocationOpen = false }
         if (row != null) {
+            state.snapshot.v4?.proposals.orEmpty().filter {it.canonicalId==row.id || it.canonicalId==row.entry.id}.forEach {proposal->
+                key(proposal.id) {
+                    Text("来源小票 · "+proposal.discoverySourceLabel(),style=LifeText.caption)
+                    FinanceAttachments(state.snapshot,FinanceMediaTarget(proposalId=proposal.id),state.busy,state.error) {block->vm.mediaAction(editorEpoch,block)}
+                }
+            }
             Text("记录时间 ${FinanceTime.input(row.entry.recordedAt)}", style = LifeText.caption, color = colors.muted)
-            TextButton({ confirmVoid = true }, enabled = !state.busy) { Text("作废这笔记录") }
+            FinancePostingEditor(state,row,vm,editorEpoch)
+            TextButton({ vm.previewVoid(entryId=row.entry.id) {voidPreview=it} }, enabled = !state.busy) { Text("作废这笔记录") }
         }
     }
-    if (confirmVoid && row != null) AlertDialog(onDismissRequest = { if (!state.busy) confirmVoid = false },
+    if (voidPreview != null && row != null) AlertDialog(onDismissRequest = { if (!state.busy) voidPreview = null },
         title = { Text(if (row.transfer != null) "作废整笔转账？" else "作废这笔记录？") },
-        text = { Text("记录仍会保留，余额和统计将不再计入它。${if (row.transfer != null) "转出、转入流水会同时作废。" else ""}") },
-        confirmButton = { TextButton(onClick = { vm.voidRecord(row) { confirmVoid = false; (onSaved ?: onClose)() } }, enabled = !state.busy) { Text("确认作废") } },
-        dismissButton = { TextButton(onClick = { confirmVoid = false }, enabled = !state.busy) { Text("取消") } })
+        text = { FinanceChangeImpact(requireNotNull(voidPreview)) },
+        confirmButton = { TextButton(onClick = { vm.confirmVoid(requireNotNull(voidPreview)) { voidPreview = null; (onSaved ?: onClose)() } }, enabled = !state.busy) { Text("确认作废") } },
+        dismissButton = { TextButton(onClick = { voidPreview = null }, enabled = !state.busy) { Text("取消") } })
 }

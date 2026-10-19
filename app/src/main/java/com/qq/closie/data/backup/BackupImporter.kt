@@ -43,7 +43,7 @@ internal object BackupImporter {
      * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 3):
      * v1 archives from before v0.3.0 remain restorable forever.
      */
-    val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3, 4)
+    val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3, 4, 5)
 
     /**
      * Unpacks [inputUri] and builds the complete, validated staging directories.
@@ -94,6 +94,58 @@ internal object BackupImporter {
                     }
                 }
                 if (manifest.formatVersion >= 4 && finance != null) require(finance.has("v4") && !finance.get("v4").isJsonNull)
+                if (manifest.formatVersion >= 5 && finance != null) {
+                    require(finance.has("v16") && finance.get("v16").isJsonObject)
+                    val section = finance.getAsJsonObject("v16")
+                    require(section.has("partyRows") && section.get("partyRows").isJsonArray)
+                    require(section.has("economicRows") && section.get("economicRows").isJsonArray)
+                    require(section.has("fundingRows") && section.get("fundingRows").isJsonArray)
+                    require(section.has("shareRows") && section.get("shareRows").isJsonArray)
+                    require(section.has("obligationRows") && section.get("obligationRows").isJsonArray)
+                    require(section.has("settlementRows") && section.get("settlementRows").isJsonArray)
+                    require(section.has("resolutionRows") && section.get("resolutionRows").isJsonArray)
+                    require(section.has("purchaseRows") && section.get("purchaseRows").isJsonArray)
+                    require(section.has("purchaseLineRows") && section.get("purchaseLineRows").isJsonArray)
+                    require(section.has("purchaseAllocationRows") && section.get("purchaseAllocationRows").isJsonArray)
+                    require(section.has("costAdjustmentRows") && section.get("costAdjustmentRows").isJsonArray)
+                    require(section.has("entryTimingRows") && section.get("entryTimingRows").isJsonArray)
+                    require(section.has("accountPolicyRows") && section.get("accountPolicyRows").isJsonArray)
+                    require(section.has("observationRows") && section.get("observationRows").isJsonArray)
+                    require(section.has("reconciliationRows") && section.get("reconciliationRows").isJsonArray)
+                    require(section.has("creditCycleRows") && section.get("creditCycleRows").isJsonArray)
+                    require(section.has("draftRows") && section.get("draftRows").isJsonArray)
+                    require(section.has("draftTagRows") && section.get("draftTagRows").isJsonArray)
+                    require(section.has("draftExpectedRows") && section.get("draftExpectedRows").isJsonArray)
+                    require(section.has("economicDraftRows") && section.get("economicDraftRows").isJsonArray)
+                    require(section.has("economicDraftFundingRows") && section.get("economicDraftFundingRows").isJsonArray)
+                    require(section.has("economicDraftShareRows") && section.get("economicDraftShareRows").isJsonArray)
+                    require(section.has("categoryIconRows") && section.get("categoryIconRows").isJsonArray)
+                    require(section.has("savedQueryRows") && section.get("savedQueryRows").isJsonArray)
+                    require(section.has("budgetRows") && section.get("budgetRows").isJsonArray)
+                    require(section.has("categoryPolicyRows") && section.get("categoryPolicyRows").isJsonArray)
+                    require(section.has("externalIdentityRows") && section.get("externalIdentityRows").isJsonArray)
+                    require(section.has("instrumentRows") && section.get("instrumentRows").isJsonArray)
+                    require(section.has("accountBindingRows") && section.get("accountBindingRows").isJsonArray)
+                    require(section.has("evidenceRows") && section.get("evidenceRows").isJsonArray)
+                    require(section.has("extractionRows") && section.get("extractionRows").isJsonArray)
+                    require(section.has("evidenceProposalRows") && section.get("evidenceProposalRows").isJsonArray)
+                    require(section.has("mediaLinkRows") && section.get("mediaLinkRows").isJsonArray)
+                    require(section.has("reviewSessionRows") && section.get("reviewSessionRows").isJsonArray)
+                    require(section.has("reviewExpectedRows") && section.get("reviewExpectedRows").isJsonArray)
+                    require(section.has("purposeGrantRows") && section.get("purposeGrantRows").isJsonArray)
+                    require(section.has("grantEventRows") && section.get("grantEventRows").isJsonArray)
+                    require(section.has("grantEntryRows") && section.get("grantEntryRows").isJsonArray)
+                    require(section.has("commandReceiptRows") && section.get("commandReceiptRows").isJsonArray)
+                    require(section.has("controlRows") && section.get("controlRows").isJsonArray)
+                    require(section.has("recoveryGroupRows") && section.get("recoveryGroupRows").isJsonArray)
+                    require(section.has("recoveryEntryRows") && section.get("recoveryEntryRows").isJsonArray)
+                    require(section.has("recoveryLinkRows") && section.get("recoveryLinkRows").isJsonArray)
+                    require(section.has("recoveryEventRows") && section.get("recoveryEventRows").isJsonArray)
+                    require(section.has("recoveryExpectedRows") && section.get("recoveryExpectedRows").isJsonArray)
+                    require(section.has("recoveryTransferRows") && section.get("recoveryTransferRows").isJsonArray)
+                    require(section.has("recoveryTagRows") && section.get("recoveryTagRows").isJsonArray)
+                    require(section.has("recoveryMemberRows") && section.get("recoveryMemberRows").isJsonArray)
+                }
                 gson.fromJson(tree, LifeBackupPayload::class.java)
             }
                 .getOrNull() ?: throw IllegalStateException("Life OS 数据无法解析")

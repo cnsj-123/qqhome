@@ -57,15 +57,31 @@ internal fun FinanceMonthCard(state: FinanceUiState, rangeLabel: String, onMonth
 @Composable
 internal fun FinanceBalanceSummary(state: FinanceUiState) {
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null }
-    val sums = remember(accounts, state.balances) { accounts.groupBy { it.currencyCode }.mapValues { (_, group) ->
-        group.fold(BigInteger.ZERO) { sum, a -> sum + BigInteger.valueOf(state.balances[a.id] ?: 0) }
-    } }
-    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("当前账户余额合计", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
+    val sums = remember(state.snapshot) { FinanceAccountProjection.netByCurrency(state.snapshot) }
+    val policies = state.snapshot.v16?.accountPolicyRows.orEmpty().filter {it.voidedAt==null}.associateBy {it.accountId}
+    val included = accounts.filter {policies[it.id]?.includedInNet!=false}
+    val pendingSigns=included.count {FinanceAccountProjection.liabilitySignPending(state.snapshot,it)}
+    var scopeOpen by androidx.compose.runtime.saveable.rememberSaveable {mutableStateOf(false)}
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("纳入账户净额", style = LifeText.caption, color = LocalLifeOsColors.current.muted)
         sums.forEach { (currency, total) ->
-            Text((if (currency == "CNY") "¥" else "$currency ") + BigDecimal(total, FinanceMoney.fractionDigits(currency)).toPlainString(), style = LifeText.number)
+            Text(FinanceMoney.display(total,currency), style = LifeText.number)
         }
-        Text(if (accounts.isEmpty()) "建立账户，把钱的位置记清楚。" else "${accounts.size} 个在用账户 · 按币种分别汇总", style = LifeText.caption)
+        Text(if (accounts.isEmpty()) "建立账户，把钱的位置记清楚。" else "纳入 ${included.size} 个在用账户 · 排除 ${accounts.size-included.size} 个 · 按币种分别汇总", style = LifeText.caption)
+        if(accounts.isNotEmpty() && included.isEmpty()) Text("当前没有纳入账户，无法显示范围内净额。",style=LifeText.caption)
+        if(pendingSigns>0) Text("其中 $pendingSigns 个信用账户的正数期初含义待确认；总数暂沿旧账簿正号，请在账户中确认口径。",style=LifeText.caption)
+        TextButton({scopeOpen=!scopeOpen}) {Text(if(scopeOpen) "收起范围与核对状态" else "展开范围与核对状态")}
+        if(scopeOpen) {
+            Text("仅汇总所纳入账户；已归档账户、未记录账户及未落到账户的往来不在本数内。核对状态使用旧账簿口径和所选观察点，不保证之后余额完整。",style=LifeText.caption)
+            FinancePagedItems(accounts,"net-scope",{it.id}) { account ->
+                val status=FinanceAccountStatusProjection.status(state.snapshot,account.id)
+                val includedHere=policies[account.id]?.includedInNet!=false
+                Text(account.name+" · "+(if(includedHere) FinanceMoney.display(FinanceAccountProjection.netContribution(state.snapshot,account),account.currencyCode) else "未纳入")+" · "+status.trust.label,style=LifeText.body)
+                status.conclusion?.observation?.let {Text("核对观察时间 · "+FinanceTime.input(it.observedAt),style=LifeText.caption)}
+                Text(status.explanation,style=LifeText.caption)
+                if(FinanceAccountProjection.liabilitySignPending(state.snapshot,account)) Text("期初符号待确认，当前仅沿用旧账簿口径。",style=LifeText.caption)
+            }
+        }
     }
 }
 
@@ -74,14 +90,17 @@ internal fun FinanceAccountStrip(state: FinanceUiState, open: (String) -> Unit) 
     val active = remember(state.snapshot.accounts) { state.snapshot.accounts.filter { it.archivedAt == null } }
     Column {
         active.take(4).forEachIndexed { index, account ->
-            FinanceAccountCard(account, state.balances[account.id] ?: 0, index, Modifier.fillMaxWidth(), flat = true) { open(account.id) }
+            val converted=state.snapshot.v16?.accountPolicyRows.orEmpty().any {it.accountId==account.id && it.voidedAt==null && it.liabilityConvention==FinanceLiabilityConvention.POSITIVE_DEBT}
+            FinanceAccountCard(account, state.balances[account.id] ?: 0, index, Modifier.fillMaxWidth(), flat = true,
+                netMinor=if(converted) FinanceAccountProjection.netContribution(state.snapshot,account) else null,
+                signPending=FinanceAccountProjection.liabilitySignPending(state.snapshot,account)) { open(account.id) }
         }
     }
 }
 
 @Composable
 internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, index: Int,
-    modifier: Modifier = Modifier, flat: Boolean = false, onClick: () -> Unit) {
+    modifier: Modifier = Modifier, flat: Boolean = false, netMinor:Long?=null, signPending:Boolean=false,onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
     Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
@@ -91,9 +110,16 @@ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, in
             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(account.name, style = LifeText.body)
                 Text(account.kind.label + if (account.archivedAt != null) " · 已归档" else "", style = LifeText.caption, color = colors.muted)
+                if(signPending) Text("期初符号待确认",style=LifeText.caption,color=colors.muted)
             }
-            Text(FinanceMoney.display(balance, account.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact,
-                modifier = Modifier.widthIn(max = 160.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            Column(horizontalAlignment=Alignment.End) {
+                Text(FinanceMoney.display(netMinor ?: balance, account.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact,
+                    modifier = Modifier.widthIn(max = 160.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                if(netMinor!=null) {
+                    Text("净额贡献",style=LifeText.caption)
+                    Text("旧口径 "+FinanceMoney.display(balance,account.currencyCode),style=LifeText.caption)
+                }
+            }
         }
     }
 }

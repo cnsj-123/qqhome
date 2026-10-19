@@ -22,7 +22,8 @@ class ArchitectureBoundaryTest {
             assertFalse(it.name, text.contains("life.data.database"))
         }
         val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
-            "finance_rule_conditions", "finance_rule_actions")
+            "finance_rule_conditions", "finance_rule_actions", "finance_draft_tags",
+            "finance_evidence_proposals", "finance_grant_events", "finance_draft_expected", "finance_grant_entries", "finance_review_expected")
         (File(source, "life/data/database/dao").listFiles()!!.filter { it.name.startsWith("Finance") } +
             File(source, "life/finance").walkTopDown().filter { it.extension == "kt" }.toList()).forEach { file ->
             val dao = file.readText()
@@ -32,7 +33,7 @@ class ArchitectureBoundaryTest {
                 assertTrue(file.name + ": " + it.value, it.groupValues[1].lowercase() in allowedDeletes)
             }
         }
-        assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 4"))
+        assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 5"))
         val version = Regex("version\\s*=\\s*(\\d+)").find(
             File(source, "life/data/database/LifeDatabase.kt").readText())!!.groupValues[1]
         val schema = File(app, "schemas/com.qq.closie.life.data.database.LifeDatabase/$version.json")

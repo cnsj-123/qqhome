@@ -6,6 +6,8 @@ import com.qq.closie.navigation.LifeOsRoute
 /** Shell-owned arbitration; nested editors temporarily lease gesture ownership. */
 @Stable
 class FunctionPagePolicy {
+    /** A navigation intent only. Local Finance regions recognize their own gestures. */
+    var requestDrawer: (() -> Unit)? = null
     var cancelReorder: (() -> Unit)? = null
     var blockers by mutableIntStateOf(0)
         private set

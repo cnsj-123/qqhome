@@ -23,25 +23,24 @@ internal data class FinanceReviewReceiptModel(
                 FinanceRelationshipDraft.fromProposal(proposal), tree.find(proposal.category, proposal.subcategory)?.id)
             val account = snapshot.accounts.find { it.id == content.accountId && it.archivedAt == null && it.currencyCode == "CNY" }
             val category = tree.node(content.categoryId) ?: tree.find(content.category, content.subcategory)
-            val amount = runCatching { FinanceMoney.parse(content.amount) }.getOrNull()
+            val amount = runCatching { FinanceCalculator.evaluate(content.amount) }.getOrNull()
             val occurred = runCatching { FinanceTime.resolve(content.occurredAt, content.preservedOccurredAt) }.getOrNull()
             val event = content.relationship.eventId?.let { id -> snapshot.v4?.events?.find { it.id == id && it.voidedAt == null } }
             val duplicates = amount?.let { FinanceDuplicateReview.candidates(proposal.id, FinanceProposalKind.valueOf(content.kind.name),
                 it, occurred ?: proposal.occurredAt, snapshot.v4?.proposals.orEmpty(), snapshot) }.orEmpty()
             val reason = when {
-                FinanceEvidenceOrigin.blockingPeers(proposal, snapshot.v4?.proposals.orEmpty()).isNotEmpty() -> "同一交易编号存在冲突或已入账记录，请先核对并忽略重复小票"
+                FinanceEvidenceCorrelation.blocking(proposal, snapshot.v4?.proposals.orEmpty(),snapshot.v16).isNotEmpty() -> "付款编号可能重复或冲突，请核对来源身份；同一笔请忽略重复小票"
                 !reviewedDuplicateIds.containsAll(duplicates) -> "存在相近记录，请打开完整小票核对；同一笔请忽略，其他交易须明确确认"
                 proposal.status !in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) -> "这笔已处理，请重新打开"
-                FinanceEvidenceOrigin.isVisible(proposal) && proposal.role == FinanceFlowRole.REFUND &&
+                FinanceEvidenceOrigin.requiresManualAccount(proposal) && proposal.role == FinanceFlowRole.REFUND &&
                     (content.kind != FinanceEditorKind.INCOME || content.relationship.role != FinanceFlowRole.REFUND) -> "退款须保留退款性质并关联原资金事项"
-                FinanceEvidenceOrigin.isVisible(proposal) && proposal.kind == FinanceProposalKind.TRANSFER &&
+                FinanceEvidenceOrigin.requiresManualAccount(proposal) && proposal.kind == FinanceProposalKind.TRANSFER &&
                     content.kind != FinanceEditorKind.TRANSFER -> "还款候选须核对两端账户"
                 amount == null || amount <= 0 -> "金额需要核对"
                 occurred == null -> "时间需要核对"
                 account == null -> "需要选择账户"
                 content.kind == FinanceEditorKind.TRANSFER -> "转账需要核对两端账户"
                 category == null -> "需要选择分类"
-                content.description.isBlank() -> "请补充事由"
                 content.relationship.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT, FinanceFlowRole.SETTLEMENT,
                     FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK) && event == null -> "请选择对应的资金事项"
                 else -> null
@@ -60,6 +59,6 @@ internal data class FinanceReviewReceiptModel(
 /** Shared command translation for editable receipts and the default overlay; repository validates truth. */
 internal fun FinanceEntryDraft.toProposalConfirmation() = FinanceProposalConfirmation(
     FinanceProposalKind.valueOf(kind.name), accountId, targetAccountId.ifBlank { null },
-    FinanceMoney.parse(amount), description, FinanceTime.resolve(occurredAt, preservedOccurredAt),
+    FinanceCalculator.evaluate(amount), description, FinanceTime.resolve(occurredAt, preservedOccurredAt),
     category, subcategory, tags.split('，', ',').map(String::trim).filter(String::isNotBlank),
-    relationship.resolve("CNY"), categoryId)
+    relationship.resolve("CNY"), categoryId,personalReductionMinor=costReductionText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,"CNY",true)})

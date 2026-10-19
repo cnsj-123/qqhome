@@ -88,7 +88,7 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
             }
             for (row in rows) {
                 val accountId = mapped.getValue(row.sourceAccount)
-                val description = row.description.ifBlank { "旧账记录（原备注为空）" }
+                val description = row.description
                 val tags = if (splitTagsOnSpaces) row.tagsText.split(Regex("\\s+")).filter(String::isNotBlank)
                     else listOf(row.tagsText).filter(String::isNotBlank)
                 val canonical = if (row.kind == FinanceProposalKind.TRANSFER) {
@@ -127,10 +127,18 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
         val v4 = snapshot.v4!!
         val batchEntries = snapshot.entries.filter { it.importBatchId == id && it.voidedAt == null }
         val safe = batchEntries.filter { it.revision == 1L }.map { it.id }.toMutableSet()
+        val typed=snapshot.v16
+        val liveGrants=typed?.purposeGrantRows.orEmpty().filter {it.voidedAt==null}.map {it.id}.toSet()
+        val protectedEvents=typed?.mediaLinkRows.orEmpty().filter {it.voidedAt==null}.mapNotNull {it.eventId}.toSet()+
+            typed?.economicDraftRows.orEmpty().filter {it.voidedAt==null}.mapNotNull {it.eventId}+
+            typed?.grantEventRows.orEmpty().filter {it.grantId in liveGrants}.map {it.eventId}
+        val protectedCanonical=v4.proposals.filter {it.status==FinanceProposalStatus.CONFIRMED}.mapNotNull {it.canonicalId}.toSet()
+        safe.removeAll(typed?.grantEntryRows.orEmpty().filter {it.grantId in liveGrants}.map {it.entryId}.toSet()+protectedCanonical)
+        snapshot.transfers.filter {it.id in protectedCanonical}.forEach {safe.removeAll(setOf(it.outflowEntryId,it.inflowEntryId))}
         val byEvent = v4.activeLinks.groupBy { it.eventId }
         for (event in v4.events) {
             val linked = byEvent[event.id].orEmpty().map { it.entryId }
-            if (event.updatedAt != event.createdAt || linked.any { entryId -> snapshot.entries.any {
+            if (event.id in protectedEvents || event.updatedAt != event.createdAt || linked.any { entryId -> snapshot.entries.any {
                 it.id == entryId && it.voidedAt == null && (it.importBatchId != id || it.revision != 1L)
             } }) safe.removeAll(linked.toSet())
         }
@@ -151,7 +159,12 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
             storage.updateTransfer(it.copy(voidedAt = now, updatedAt = now))
         }
         finance.retireEntryRelations(safe, id)
-        snapshot.accounts.filter { it.importBatchId == id && it.createdAt == it.updatedAt &&
+        val configuredAccounts=typed?.accountBindingRows.orEmpty().filter {it.voidedAt==null}.map {it.accountId}.toSet()+
+            typed?.accountPolicyRows.orEmpty().filter {it.voidedAt==null}.map {it.accountId}+
+            typed?.creditCycleRows.orEmpty().filter {it.voidedAt==null}.map {it.accountId}+
+            typed?.observationRows.orEmpty().filter {it.voidedAt==null}.map {it.accountId}+
+            typed?.draftRows.orEmpty().filter {it.voidedAt==null}.flatMap {listOfNotNull(it.accountId,it.targetAccountId)}
+        snapshot.accounts.filter { it.importBatchId == id && it.createdAt == it.updatedAt && it.id !in configuredAccounts &&
             snapshot.entries.none { entry -> entry.accountId == it.id && entry.voidedAt == null && entry.id !in safe } }.forEach {
             storage.updateAccount(it.copy(archivedAt = now, updatedAt = now))
         }
@@ -176,11 +189,13 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
             listOf(account, target.orEmpty(), kind?.name.orEmpty(), amount.toString(), time.toString(), text.trim())
         val known = FinanceProjection.ledger(snapshot).map { row -> key(row.account.id, row.targetAccount?.id,
             if (row.transfer != null) FinanceProposalKind.TRANSFER else if (row.entry.direction == FinanceDirection.INFLOW) FinanceProposalKind.INCOME else FinanceProposalKind.EXPENSE,
-            row.entry.amountMinor, row.entry.occurredAt, row.entry.description) }.toHashSet()
+            row.entry.amountMinor, row.entry.occurredAt,
+            // R2 imported blank notes used this display placeholder. Match without rewriting history.
+            if(row.entry.importBatchId!=null && row.entry.description=="旧账记录（原备注为空）") "" else row.entry.description) }.toHashSet()
         val result = mutableSetOf<String>()
         rows.filter { it.canonicalId == null }.forEach {
             val fingerprint = key(map[it.sourceAccount].orEmpty(), if (it.kind == FinanceProposalKind.TRANSFER) map[it.targetAccount] else null,
-                it.kind, it.amountMinor, it.occurredAt, it.description.ifBlank { "旧账记录（原备注为空）" })
+                it.kind, it.amountMinor, it.occurredAt, it.description)
             if (!known.add(fingerprint)) result += it.id
         }
         return result

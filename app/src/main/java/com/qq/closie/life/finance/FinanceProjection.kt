@@ -12,7 +12,8 @@ data class FinanceSnapshot(
     val categories: List<FinanceCategoryEntity> = emptyList(),
     val tags: List<FinanceTagEntity> = emptyList(),
     val entryTags: List<FinanceEntryTagCrossRef> = emptyList(),
-    val v4: FinanceV4Snapshot? = null
+    val v4: FinanceV4Snapshot? = null,
+    val v16: FinanceV16Snapshot? = null
 )
 data class FinanceDateRange(val startInclusive: Long? = null, val endExclusive: Long? = null) {
     init { require(startInclusive == null || endExclusive == null || startInclusive < endExclusive) { "起止日期顺序有误" } }
@@ -28,7 +29,8 @@ data class FinanceDateRange(val startInclusive: Long? = null, val endExclusive: 
 }
 data class FinanceLedgerRow(val entry: FinanceEntryEntity, val account: FinanceAccountEntity,
     val category: String?, val tags: List<String>, val transfer: FinanceTransferEntity? = null,
-    val targetAccount: FinanceAccountEntity? = null, val categoryOverride: String? = null) {
+    val targetAccount: FinanceAccountEntity? = null, val categoryOverride: String? = null,
+    val costEventId: String? = null, val tagIds: Set<String> = emptySet()) {
     val id get() = transfer?.id ?: entry.id
     val currencyCode get() = account.currencyCode
 }
@@ -53,7 +55,8 @@ object FinanceProjection {
         val legs = snapshot.transfers.flatMap { listOf(it.outflowEntryId, it.inflowEntryId) }.toSet()
         val rows = snapshot.entries.filter { it.voidedAt == null && it.id !in legs }.map { entry ->
             FinanceLedgerRow(entry, accounts.getValue(entry.accountId), categories[entry.categoryId],
-                entryTags[entry.id].orEmpty().mapNotNull { tags[it.tagId] }.distinct().sorted())
+                entryTags[entry.id].orEmpty().mapNotNull { tags[it.tagId] }.distinct().sorted(),
+                tagIds=entryTags[entry.id].orEmpty().map { it.tagId }.toSet())
         } + snapshot.transfers.filter { it.voidedAt == null }.mapNotNull { transfer ->
             val out = entries[transfer.outflowEntryId] ?: return@mapNotNull null
             val inflow = entries[transfer.inflowEntryId] ?: return@mapNotNull null

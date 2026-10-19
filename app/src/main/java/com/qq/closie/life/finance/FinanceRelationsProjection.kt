@@ -21,6 +21,8 @@ object FinanceRelationsProjection {
         val ledger = FinanceProjection.ledger(snapshot).filter { it.transfer == null }.associateBy { it.entry.id }
         val byEvent = v4.activeLinks.groupBy { it.eventId }
         val expected = v4.expected.filter { it.cancelledAt == null }.groupBy { it.eventId }
+        val expectedEver=v4.expected.map {it.eventId}.toSet()
+        val obligations=FinanceObligationProjection.rows(snapshot).groupBy {it.obligation.eventId}
         return v4.events.filter { it.voidedAt == null && it.nature in natures }.map { event ->
             val links = byEvent[event.id].orEmpty().filter { link ->
                 ledger[link.entryId]?.let { it.entry.voidedAt == null && it.currencyCode == event.currencyCode } == true
@@ -37,18 +39,21 @@ object FinanceRelationsProjection {
             val inflow = links.filter { ledger.getValue(it.entryId).entry.direction == FinanceDirection.INFLOW }
                 .fold(BigInteger.ZERO) { total, link -> total + link.allocatedMinor.toBigInteger() }
             val plans = expected[event.id].orEmpty()
-            val remaining = if (plans.any { it.amountMinor == null }) null else if (plans.isNotEmpty()) {
+            val remaining = if(!obligations[event.id].isNullOrEmpty()) exactSum(obligations.getValue(event.id).map {it.openMinor}).toBigInteger()
+            else if (plans.any { it.amountMinor == null }) null else if (plans.isNotEmpty()) {
                 // Expected money is a target, never an entry. Only the matching role fulfils it.
                 plans.groupBy { it.role }.entries.fold(BigInteger.ZERO) { total, (role, flows) ->
                     val target = flows.fold(BigInteger.ZERO) { value, flow -> value + flow.amountMinor!!.toBigInteger() }
                     val direction = if (role in returnRoles) FinanceDirection.INFLOW else FinanceDirection.OUTFLOW
                     total + (target - sum(role, direction)).max(BigInteger.ZERO)
                 }
-            } else (paid + fee - (event.personalShareMinor ?: 0L).toBigInteger() - received).max(BigInteger.ZERO)
+            } else if(event.id in expectedEver) BigInteger.ZERO
+            else (paid + fee - (event.personalShareMinor ?: 0L).toBigInteger() - received).max(BigInteger.ZERO)
             val rows = links.mapNotNull { ledger[it.entryId] }.distinctBy { it.entry.id }.sortedByDescending { it.entry.occurredAt }
             FinanceFundsMatter(event, paid.longValueExact(), fee.longValueExact(), returns.mapValues { it.value.longValueExact() },
                 remaining?.longValueExact(), (inflow - outflow).longValueExact(), rows.map { it.account.name }.distinct(), rows,
-                plans.isEmpty() && event.personalShareMinor == null && event.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE))
+                plans.isEmpty() && event.id !in expectedEver && obligations[event.id].isNullOrEmpty() &&
+                    event.personalShareMinor == null && event.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE))
         }.sortedByDescending { it.event.occurredAt }
     }
 }

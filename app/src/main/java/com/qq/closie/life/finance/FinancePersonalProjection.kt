@@ -22,16 +22,17 @@ object FinancePersonalProjection {
     }
 
     /** Evaluate the entire event, even for a filtered period. Never choose or split adjustments by order. */
-    private fun adjustmentIssues(v4: FinanceV4Snapshot, ledger: Map<String, FinanceLedgerRow>): Map<String, FinanceAdjustmentIssue> {
+    private fun included(row:FinanceLedgerRow,forBudget:Boolean,includeExcluded:Boolean=false)=includeExcluded || if(forBudget) row.entry.budgetPolicy==FinanceBudgetPolicy.INCLUDE else row.entry.statPolicy==FinanceStatPolicy.INCLUDE
+    private fun adjustmentIssues(v4: FinanceV4Snapshot, ledger: Map<String, FinanceLedgerRow>,forBudget:Boolean=false,includeExcluded:Boolean=false): Map<String, FinanceAdjustmentIssue> {
         val byEvent = v4.activeLinks.groupBy { it.eventId }
         return buildMap {
             v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.PERSONAL, FinanceNature.STORED_VALUE) }.forEach { event ->
                 val links = byEvent[event.id].orEmpty()
                 val adjustments = links.filter { link -> link.role in adjustmentRoles &&
                     ledger[link.entryId]?.let { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW &&
-                        it.entry.statPolicy == FinanceStatPolicy.INCLUDE } == true }
+                        included(it,forBudget,includeExcluded) } == true }
                 if (adjustments.isEmpty()) return@forEach
-                val cost = links.filter { activePayment(it, ledger, event.currencyCode)?.entry?.statPolicy == FinanceStatPolicy.INCLUDE }
+                val cost = links.filter { activePayment(it, ledger, event.currencyCode)?.let {row->included(row,forBudget,includeExcluded)} == true }
                     .fold(BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
                 val adjusted = adjustments.fold(BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
                 when {
@@ -54,14 +55,14 @@ object FinancePersonalProjection {
         }
     }
 
-    fun rows(snapshot: FinanceSnapshot, selected: List<FinanceLedgerRow>): List<FinanceLedgerRow> {
-        val v4 = snapshot.v4 ?: return selected.filter { it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
+    fun rows(snapshot: FinanceSnapshot, selected: List<FinanceLedgerRow>,forBudget:Boolean=false,includeExcluded:Boolean=false): List<FinanceLedgerRow> {
+        val v4 = snapshot.v4 ?: return selected.filter { it.transfer==null && included(it,forBudget,includeExcluded) }
         val events = v4.events.associateBy { it.id }
         val entries = snapshot.entries.associateBy { it.id }
         val links = v4.activeLinks.groupBy { it.entryId }
         val eventLinks = v4.activeLinks.groupBy { it.eventId }
         val ledgerById = FinanceProjection.ledger(snapshot).associateBy { it.entry.id }
-        val issues = adjustmentIssues(v4, ledgerById)
+        val issues = adjustmentIssues(v4, ledgerById,forBudget,includeExcluded)
         val shares = mutableMapOf<Pair<String, String>, Long>()
         for (event in v4.events.filter { it.voidedAt == null && it.nature in setOf(FinanceNature.SPLIT, FinanceNature.REIMBURSABLE) }) {
             val paymentLinks = eventLinks[event.id].orEmpty().filter {
@@ -78,11 +79,13 @@ object FinancePersonalProjection {
                 shares[event.id to link.entryId] = part.longValueExact()
             }
         }
-        return selected.filter { it.transfer == null && it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }.flatMap { row ->
+        return selected.filter { it.transfer == null && included(it,forBudget,includeExcluded) }.flatMap { row ->
             val allocations = links[row.entry.id].orEmpty()
             if (allocations.isEmpty()) return@flatMap listOf(row) // Existing F1 ordinary flows.
             allocations.mapNotNull { link ->
                 val event = events[link.eventId]?.takeIf { it.voidedAt == null } ?: return@mapNotNull null
+                if(link.role==FinanceFlowRole.SETTLEMENT) return@mapNotNull null
+                if (snapshot.v16?.economicRows?.any { it.eventId == event.id && it.voidedAt == null } == true) return@mapNotNull null
                 val expense: Long? = when (event.nature) {
                     FinanceNature.PROXY_PURCHASE, FinanceNature.OTHER -> null
                     FinanceNature.SPLIT, FinanceNature.REIMBURSABLE -> shares[event.id to row.entry.id]
@@ -106,8 +109,10 @@ object FinancePersonalProjection {
                         val tagSets = context.map { it.tags.toSet() }.distinct()
                         attributed = attributed.copy(tags = if (context.isNotEmpty() && tagSets.size == 1)
                             tagSets.single().sorted() else listOf("调整待归属"))
+                        val tagIdSets=context.map { it.tagIds }.distinct()
+                        attributed=attributed.copy(tagIds=if(context.isNotEmpty() && tagIdSets.size==1) tagIdSets.single() else emptySet())
                     }
-                    attributed.copy(entry = attributed.entry.copy(amountMinor = amount, direction = FinanceDirection.OUTFLOW))
+                    attributed.copy(entry = attributed.entry.copy(amountMinor = amount, direction = FinanceDirection.OUTFLOW), costEventId = event.id)
                 }
             }
         }

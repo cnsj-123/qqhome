@@ -16,21 +16,29 @@ jobs:
       CI_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Structural checks compare published schemas with the pinned R2 base.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: V16 source structure and production SQLite migration checks
+        run: |
+          python3 engineering/v16/check-source.py
+          python3 engineering/v16/check-migration.py
+
       # Generate schema assets before the unit-test invocation merges debug assets.
       - name: Generate Room schema
         run: ./gradlew :app:kspDebugKotlin --stacktrace
-      - name: Verify Room v4 schema
+      - name: Verify preserved published Room schemas and generated V16 schema
         shell: bash
         run: |
           test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json
           git diff --exit-code -- \
-            app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+            app/schemas/com.qq.closie.life.data.database.LifeDatabase/{1,2,3,4}.json
 
       # Includes Room migration, repository and restore-safety regression tests.
       - name: Unit tests
@@ -55,7 +63,7 @@ jobs:
         if: always()
         with:
           name: room-schema-build${{ github.run_number }}
-          path: app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
+          path: app/schemas/com.qq.closie.life.data.database.LifeDatabase/*.json
           if-no-files-found: error
 
       # These secret-bearing steps are skipped on PR/feature/manual feature runs.

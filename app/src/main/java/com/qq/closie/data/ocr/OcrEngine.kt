@@ -5,6 +5,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.CancellationException
 
 /**
  * On-device OCR wrapper around ML Kit Text Recognition (Chinese + Latin). No text or image is
@@ -13,10 +14,11 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  */
 object OcrEngine {
 
-    /** Recognizes all text in [bitmap] and returns the concatenated string, never throwing. */
+    /** Recognizes text locally; coroutine cancellation remains cancellation. */
     suspend fun recognizeText(bitmap: Bitmap): Result<String> =
         try {
             Result.success(recognizeInternal(bitmap))
+        } catch (e: CancellationException) {throw e
         } catch (e: Exception) {
             Result.failure(e)
         }

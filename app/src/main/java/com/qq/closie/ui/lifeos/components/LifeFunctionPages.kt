@@ -36,7 +36,6 @@ fun LifeFunctionPages(
     var dragging by remember { mutableStateOf(false) }
     val currentOpen by rememberUpdatedState(open)
     val changeOpen by rememberUpdatedState(onOpenChange)
-    val corridor = with(LocalDensity.current) { 56.dp.toPx() }
     val edge = com.qq.closie.ui.lifeos.components.systemBackEdgePx()
         LaunchedEffect(open, dragging, reducedMotion) {
         if (!dragging) {
@@ -52,13 +51,12 @@ fun LifeFunctionPages(
             .pointerInput(enabled, travel, edge, horizontalPages) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
-                    val financeOpening = !currentOpen && horizontalPages
-                    val pass = if (financeOpening)
-                        androidx.compose.ui.input.pointer.PointerEventPass.Initial else androidx.compose.ui.input.pointer.PointerEventPass.Main
+                    val pass = androidx.compose.ui.input.pointer.PointerEventPass.Main
                     val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
+                    // Finance owns its local Ledger/Calendar/Pager/Bottom-bar regions. The Shell
+                    // receives a drawer intent; it never takes a Finance pointer stream.
+                    if (!currentOpen && horizontalPages) return@awaitEachGesture
                     if (down.position.x <= edge || down.position.x >= size.width - edge) return@awaitEachGesture
-                    val inCorridor = down.position.x < corridor
-                    if (financeOpening && !inCorridor) return@awaitEachGesture
                     var owned = false
                     val tracker = VelocityTracker()
                     tracker.addPosition(down.uptimeMillis, down.position)
@@ -71,7 +69,6 @@ fun LifeFunctionPages(
                         when (LifeSwipeIntent.resolve(delta.x, delta.y, viewConfiguration.touchSlop)) {
                             LifeSwipeIntent.Direction.VERTICAL -> return@awaitEachGesture
                             LifeSwipeIntent.Direction.LEFT, LifeSwipeIntent.Direction.RIGHT -> {
-                                if (!currentOpen && horizontalPages && !inCorridor) return@awaitEachGesture
                                 if ((!currentOpen && delta.x < 0f) || (currentOpen && delta.x > 0f)) return@awaitEachGesture
                                 dragging = true
                                 progress = (progress + delta.x / travel).coerceIn(0f, 1f)
@@ -82,26 +79,10 @@ fun LifeFunctionPages(
                         }
                     }
                     try {
-                        val released = if (pass == androidx.compose.ui.input.pointer.PointerEventPass.Main) {
-                            // Ordinary content drags keep the established Main-pass continuation.
-                            horizontalDrag(down.id) { change ->
+                        val released = horizontalDrag(down.id) { change ->
                                 tracker.addPosition(change.uptimeMillis, change.position)
                                 progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
                                 change.consume()
-                            }
-                        } else {
-                            // Finance keeps Initial ownership; Main would see our consumed slop event.
-                            var released = false
-                            while (true) {
-                                val event = awaitPointerEvent(pass)
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
-                                tracker.addPosition(change.uptimeMillis, change.position)
-                                progress = (progress + (change.position.x - change.previousPosition.x) / travel).coerceIn(0f, 1f)
-                                change.consume()
-                                if (!change.pressed) { released = true; break }
-                            }
-                            released
                         }
                         val velocity = tracker.calculateVelocity().x
                         val fling = 650.dp.toPx()

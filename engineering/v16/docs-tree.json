@@ -1,0 +1,1839 @@
+{
+  "sha": "60bdce7361649c47699c2a328a0cc1ecd746b1b5",
+  "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/60bdce7361649c47699c2a328a0cc1ecd746b1b5",
+  "tree": [
+    {
+      "path": ".github",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "caff9d9a8cca754169125508063bddcf86acb90b",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/caff9d9a8cca754169125508063bddcf86acb90b"
+    },
+    {
+      "path": ".github/workflows",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "8c0c3d1e0d3a03baeb3c9fe51939b18c88446547",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/8c0c3d1e0d3a03baeb3c9fe51939b18c88446547"
+    },
+    {
+      "path": ".github/workflows/android.yml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fcc0ccc1d8682dc25d088c80c1aeea4456752f7b",
+      "size": 452,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/fcc0ccc1d8682dc25d088c80c1aeea4456752f7b"
+    },
+    {
+      "path": ".gitignore",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4b70cf23246770c8f6d2471689daac3ea536551a",
+      "size": 97,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/4b70cf23246770c8f6d2471689daac3ea536551a"
+    },
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "22852d894403da8463966834634f20c208489bcc",
+      "size": 1664,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/22852d894403da8463966834634f20c208489bcc"
+    },
+    {
+      "path": "app",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "465d2410733eadfefbcfeb058e44b48b3e118d5d",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/465d2410733eadfefbcfeb058e44b48b3e118d5d"
+    },
+    {
+      "path": "app/DESIGN.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "18dce12337f2f50268397c9d84233bd013bbc42d",
+      "size": 8501,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/18dce12337f2f50268397c9d84233bd013bbc42d"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4fed8a13a030e7334a383d77e31994ef5786e4bb",
+      "size": 1742,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/4fed8a13a030e7334a383d77e31994ef5786e4bb"
+    },
+    {
+      "path": "app/src",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "b7b5df8d0d29a4421c5347673b730ef659fbcf61",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/b7b5df8d0d29a4421c5347673b730ef659fbcf61"
+    },
+    {
+      "path": "app/src/main",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "bb8d4fb3f67c963591fbc35366d062f9ece55877",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/bb8d4fb3f67c963591fbc35366d062f9ece55877"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c6ac8acb7e7add2c3cd08a6f064fb14e221e39c1",
+      "size": 1728,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/c6ac8acb7e7add2c3cd08a6f064fb14e221e39c1"
+    },
+    {
+      "path": "app/src/main/java",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "db327168abd6360497545872a5fd7c8309aeba55",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/db327168abd6360497545872a5fd7c8309aeba55"
+    },
+    {
+      "path": "app/src/main/java/com",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "3cc6617ece5f91a86659099dd02a5cd90d5d3187",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/3cc6617ece5f91a86659099dd02a5cd90d5d3187"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "5641072900b100a762f16bf0fc47d93aee98e4b4",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/5641072900b100a762f16bf0fc47d93aee98e4b4"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "fd292b6d57acf2e500f43bd0ea92ad721df26f25",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/fd292b6d57acf2e500f43bd0ea92ad721df26f25"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ClosieApplication.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6e9a29ed9daa178c1674578227b1d5a626bb971f",
+      "size": 909,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/6e9a29ed9daa178c1674578227b1d5a626bb971f"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/MainActivity.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dda007c7c06c42a4b7278e26165ff5453d1c9c4a",
+      "size": 3846,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/dda007c7c06c42a4b7278e26165ff5453d1c9c4a"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "2720ae54f0a455e0d6731d88749b87802111b20c",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/2720ae54f0a455e0d6731d88749b87802111b20c"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/ImageStore.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b295879f4b4cc6eff0ae99faa7129135d8eeab33",
+      "size": 5213,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b295879f4b4cc6eff0ae99faa7129135d8eeab33"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/PendingImport.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "191934716f689c861f2e905f5d330885336cc8a0",
+      "size": 272,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/191934716f689c861f2e905f5d330885336cc8a0"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/PendingProduct.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8a444d1629420988e14a3fcbdcfcab315ca5a2aa",
+      "size": 589,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8a444d1629420988e14a3fcbdcfcab315ca5a2aa"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/ProductImporter.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0a235b5bbe2813c585f2d1fbfb264bd4f69c0d0e",
+      "size": 16229,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/0a235b5bbe2813c585f2d1fbfb264bd4f69c0d0e"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/ProductLinkExtractor.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "ac2f7b2bf1bc9b959d72844be254f4833d6e648d",
+      "size": 2370,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/ac2f7b2bf1bc9b959d72844be254f4833d6e648d"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/backup",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "8a0b273868aa73e7f226dc94efc74e8830899641",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/8a0b273868aa73e7f226dc94efc74e8830899641"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/backup/BackupManager.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "14d91b6cc0c4ea70d8074a3f4e9e6d02feda8850",
+      "size": 25120,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/14d91b6cc0c4ea70d8074a3f4e9e6d02feda8850"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/draft",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "f221e964d3109f8d467285b3aa709950c4f2c2b0",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/f221e964d3109f8d467285b3aa709950c4f2c2b0"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/draft/DraftStore.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9990cafb14fa7c57687a1f1d0bdcc3468f120e3f",
+      "size": 3956,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/9990cafb14fa7c57687a1f1d0bdcc3468f120e3f"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/model",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "27f0be1dbd7dfb7a0fba808c92adc5575c916016",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/27f0be1dbd7dfb7a0fba808c92adc5575c916016"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/model/ClothingItem.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "50dd47afb748934713d1b6dbbb2d124dff8c4e2a",
+      "size": 1639,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/50dd47afb748934713d1b6dbbb2d124dff8c4e2a"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/model/Events.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0afdf442bb1fc076c2150dc66d31df77c8e49fd6",
+      "size": 1186,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/0afdf442bb1fc076c2150dc66d31df77c8e49fd6"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/ocr",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "a517f758b957380e11b400711443dfb2d7dc8da3",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/a517f758b957380e11b400711443dfb2d7dc8da3"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/ocr/MeasurementParser.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d01040eece1011fac3fd22d0d01dd07ec3c7b056",
+      "size": 6344,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d01040eece1011fac3fd22d0d01dd07ec3c7b056"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/ocr/OcrEngine.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fcc654a65d6564a53f94bc9b8479097e5fcd8321",
+      "size": 1714,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/fcc654a65d6564a53f94bc9b8479097e5fcd8321"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/repository",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "4393be65e91c692bce20851cee50f5a98dd62bab",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/4393be65e91c692bce20851cee50f5a98dd62bab"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/repository/LocalWardrobeRepository.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1485208fa9334b03bd55812afbc9dd53530d75f9",
+      "size": 11937,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/1485208fa9334b03bd55812afbc9dd53530d75f9"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/data/repository/WardrobeRepository.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "41f7639971b0f6d5ace903391c772dcc341f3e72",
+      "size": 1284,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/41f7639971b0f6d5ace903391c772dcc341f3e72"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/navigation",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "afe53d7049a858b9c38990586cae441cd3bc6742",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/afe53d7049a858b9c38990586cae441cd3bc6742"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/navigation/ClosieNavigation.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "967989ec1a2bab7e33d3d79d856e9b1b6381ca77",
+      "size": 10016,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/967989ec1a2bab7e33d3d79d856e9b1b6381ca77"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "79295ccb1fd748ae0de39ea217aafb9c96800cc1",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/79295ccb1fd748ae0de39ea217aafb9c96800cc1"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/Common.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "ebceb9cbc17cff1e9e390705fb48c16802ddd863",
+      "size": 1499,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/ebceb9cbc17cff1e9e390705fb48c16802ddd863"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/closet",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "297917256b37f1efbf340fdc5e1eea0c196f1b75",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/297917256b37f1efbf340fdc5e1eea0c196f1b75"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/closet/ClosetPrefs.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "df4ba5c0d795e84c05157b492a66bf8b755b379c",
+      "size": 1533,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/df4ba5c0d795e84c05157b492a66bf8b755b379c"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/closet/ClosetScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "019e9e19b61e298a05cb0be2d45558fea58d5577",
+      "size": 21865,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/019e9e19b61e298a05cb0be2d45558fea58d5577"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "7c2abc2fa0203cb52aa9a73a55b411da24abb1ee",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/7c2abc2fa0203cb52aa9a73a55b411da24abb1ee"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components/ClosieCompactTopBar.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8b590381512259c694b95e4a34f2ba177569e8e8",
+      "size": 1872,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8b590381512259c694b95e4a34f2ba177569e8e8"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components/ClosieComponents.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "3d3b84311cf43c81e9e6f2135aab74b3380059ff",
+      "size": 14938,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/3d3b84311cf43c81e9e6f2135aab74b3380059ff"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components/LinkImportSheet.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f360be236b5fcacac317efe90c1ff495e6d0c080",
+      "size": 6279,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/f360be236b5fcacac317efe90c1ff495e6d0c080"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components/MeasurementOcrSheet.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bcd288236a4e2b2b95a96f87a62233283ae466ac",
+      "size": 6117,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/bcd288236a4e2b2b95a96f87a62233283ae466ac"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components/SearchableChoiceSheet.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a404c29ad4c7986a9df9b55e8f6c03caff3f08d2",
+      "size": 9131,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a404c29ad4c7986a9df9b55e8f6c03caff3f08d2"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/components/SmartPickerField.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4050ef67e458bb8d01ae40297b6bf2f44d4db303",
+      "size": 4877,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/4050ef67e458bb8d01ae40297b6bf2f44d4db303"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/detail",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "3101cc7fcefc135741c4f0baa3ca06c834925b91",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/3101cc7fcefc135741c4f0baa3ca06c834925b91"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/detail/DetailScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "db9c32e08db76ef16df3e02466c4195f598efd7a",
+      "size": 20904,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/db9c32e08db76ef16df3e02466c4195f598efd7a"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/editor",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "bec75b48111a8c5d101d10ccf0a75b6e0e60391d",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/bec75b48111a8c5d101d10ccf0a75b6e0e60391d"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/editor/EditorScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "607e2a7a25de8702214502410dbc225a23b2338f",
+      "size": 56025,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/607e2a7a25de8702214502410dbc225a23b2338f"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/editor/FieldCatalog.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "61ea6d55d6f5c0d763f35ef4da38baaa97143606",
+      "size": 7048,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/61ea6d55d6f5c0d763f35ef4da38baaa97143606"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/home",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "4e539b20e046556d4c6862fca5102d0f3f3972aa",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/4e539b20e046556d4c6862fca5102d0f3f3972aa"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/home/HomeScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "089a348cb986697dfe9adaea8b2676094e572ce3",
+      "size": 10319,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/089a348cb986697dfe9adaea8b2676094e572ce3"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/ootd",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "2cc2316ac8e1f34de5bce07662d16617193e2bf0",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/2cc2316ac8e1f34de5bce07662d16617193e2bf0"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/ootd/CalendarMath.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dd492cb93310d6910170d73228239a72abba10fe",
+      "size": 1145,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/dd492cb93310d6910170d73228239a72abba10fe"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/ootd/OotdScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0ee411c8447cdd1ca9a9d78973467572e2882457",
+      "size": 28481,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/0ee411c8447cdd1ca9a9d78973467572e2882457"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/outfit",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "5e7448b83900f5ffe200ebe16f91ad02924948b7",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/5e7448b83900f5ffe200ebe16f91ad02924948b7"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitListScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0efa05b97470b4171e43fb00fa0523d10553ff53",
+      "size": 10207,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/0efa05b97470b4171e43fb00fa0523d10553ff53"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/outfit/OutfitStudioScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c5b960abbabeb4f7c24d8c39d6a8f8273d1e403c",
+      "size": 19643,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/c5b960abbabeb4f7c24d8c39d6a8f8273d1e403c"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/quickcapture",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "d453c99d80e2c0c22d1d42b06e0051bc9d6bbb17",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/d453c99d80e2c0c22d1d42b06e0051bc9d6bbb17"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/quickcapture/CaptureOcrParser.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d3f0346ff128b7147a501e7416bb043d9e2c62e8",
+      "size": 1042,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d3f0346ff128b7147a501e7416bb043d9e2c62e8"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/quickcapture/CapturePreviewActivity.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2439bf6e276cbcf434116047f03026531610dd8c",
+      "size": 10250,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/2439bf6e276cbcf434116047f03026531610dd8c"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/quickcapture/QuickCaptureActivity.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "05ab2d8de351f1d599b5ebaad0dfc72c063d1eca",
+      "size": 1742,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/05ab2d8de351f1d599b5ebaad0dfc72c063d1eca"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/quickcapture/QuickCaptureService.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f1494f48282492fa40e1ded1560c8f31e58b49e1",
+      "size": 22040,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/f1494f48282492fa40e1ded1560c8f31e58b49e1"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/quickcapture/QuickCaptureTempFiles.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b47c3ea7e4b85337cb4ebc1413b1aeb563697eed",
+      "size": 665,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b47c3ea7e4b85337cb4ebc1413b1aeb563697eed"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/settings",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "678637cf6a4d88c9c4f3919c8d6da68d16c6f601",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/678637cf6a4d88c9c4f3919c8d6da68d16c6f601"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/settings/DataSettingsScreen.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b74d42177fd917ebad6ac631462a7e68a2e02949",
+      "size": 10850,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b74d42177fd917ebad6ac631462a7e68a2e02949"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/theme",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "10243a5db2b1d293e7018e89a9673868401f4722",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/10243a5db2b1d293e7018e89a9673868401f4722"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/theme/Color.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0b9359e678908ad72400e589d053d045aeda6e54",
+      "size": 1297,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/0b9359e678908ad72400e589d053d045aeda6e54"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/theme/Dimensions.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "95abbaaa0256143ad7b9c07f908df0214d06b47e",
+      "size": 1138,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/95abbaaa0256143ad7b9c07f908df0214d06b47e"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/theme/Shape.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "38f325058f4b4102b7d76210f64f91a53e2d5ff2",
+      "size": 484,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/38f325058f4b4102b7d76210f64f91a53e2d5ff2"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/theme/Theme.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c0cfd418cffa741a8c63657c1700b9c4ff16d2c3",
+      "size": 1378,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/c0cfd418cffa741a8c63657c1700b9c4ff16d2c3"
+    },
+    {
+      "path": "app/src/main/java/com/xiaoming/closie/ui/theme/Type.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "53f97402c0313a7b2560194475e3ea9304a5d3d8",
+      "size": 2996,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/53f97402c0313a7b2560194475e3ea9304a5d3d8"
+    },
+    {
+      "path": "app/src/main/res",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "8690ec9d765a27ccd3f4a188fb2cae792a225909",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/8690ec9d765a27ccd3f4a188fb2cae792a225909"
+    },
+    {
+      "path": "app/src/main/res/drawable",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "5bc262bd52090e12c986f4fe76ec2bba605bd2b2",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/5bc262bd52090e12c986f4fe76ec2bba605bd2b2"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e3dbc4d8de3da57c67acdd0e23f63ffdf9a77aa1",
+      "size": 656,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e3dbc4d8de3da57c67acdd0e23f63ffdf9a77aa1"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_monochrome.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "55dede9155937df7688da7ab9fb981717de6469c",
+      "size": 447,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/55dede9155937df7688da7ab9fb981717de6469c"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_notification.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e10353cf58d63e3ad4ef79de2484b56390b22c45",
+      "size": 356,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e10353cf58d63e3ad4ef79de2484b56390b22c45"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "b75e4aafa4eb2cc5aa1d6c4952c17d13755888c0",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/b75e4aafa4eb2cc5aa1d6c4952c17d13755888c0"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "3c493da9ddefd0a588ae2f535e21f59b52113872",
+      "size": 302,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/3c493da9ddefd0a588ae2f535e21f59b52113872"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "3c493da9ddefd0a588ae2f535e21f59b52113872",
+      "size": 302,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/3c493da9ddefd0a588ae2f535e21f59b52113872"
+    },
+    {
+      "path": "app/src/main/res/values-v27",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "554f83ec07884e70ad27a85bd1591c6b94c6ed75",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/554f83ec07884e70ad27a85bd1591c6b94c6ed75"
+    },
+    {
+      "path": "app/src/main/res/values-v27/styles.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6be4cfc235792086105a2c5809af9f00b45fa82f",
+      "size": 345,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/6be4cfc235792086105a2c5809af9f00b45fa82f"
+    },
+    {
+      "path": "app/src/main/res/values",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "7a67cc4191ffb1db2971df92bffb9723f8733d40",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/7a67cc4191ffb1db2971df92bffb9723f8733d40"
+    },
+    {
+      "path": "app/src/main/res/values/ic_launcher_colors.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4cfa3f26354a34e6c893f0ab6fcab877bb714641",
+      "size": 82,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/4cfa3f26354a34e6c893f0ab6fcab877bb714641"
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "186e3006719758a69b81e2376100df6daa051b1a",
+      "size": 289,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/186e3006719758a69b81e2376100df6daa051b1a"
+    },
+    {
+      "path": "app/src/test",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "fa041d8c0c102b22c4dc2242e867167f165b3770",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/fa041d8c0c102b22c4dc2242e867167f165b3770"
+    },
+    {
+      "path": "app/src/test/java",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "4c1e3f92fa7b94af71238b785be554dddfe5a817",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/4c1e3f92fa7b94af71238b785be554dddfe5a817"
+    },
+    {
+      "path": "app/src/test/java/com",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "607a19f9b1f7f9b10016f27e1d3544c811fbbd56",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/607a19f9b1f7f9b10016f27e1d3544c811fbbd56"
+    },
+    {
+      "path": "app/src/test/java/com/xiaoming",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "722b0c3307b5ec77fcaa0e499eb5f652b5519c6c",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/722b0c3307b5ec77fcaa0e499eb5f652b5519c6c"
+    },
+    {
+      "path": "app/src/test/java/com/xiaoming/closie",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "230dc326f92b559af6cae5f046a8bfc31aafe155",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/230dc326f92b559af6cae5f046a8bfc31aafe155"
+    },
+    {
+      "path": "app/src/test/java/com/xiaoming/closie/CalendarMathTest.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d3aaeeb9484a5c45bef050441715bfa81ef839b4",
+      "size": 1979,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d3aaeeb9484a5c45bef050441715bfa81ef839b4"
+    },
+    {
+      "path": "app/src/test/java/com/xiaoming/closie/DraftStoreTest.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a016ec43b78d831fd7b2b0590ff62bdf9862c2b2",
+      "size": 3985,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a016ec43b78d831fd7b2b0590ff62bdf9862c2b2"
+    },
+    {
+      "path": "app/src/test/java/com/xiaoming/closie/MeasurementParserTest.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a9e2796e711b79d5b7011725d2fd8ae62c751bf9",
+      "size": 3738,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a9e2796e711b79d5b7011725d2fd8ae62c751bf9"
+    },
+    {
+      "path": "app/src/test/java/com/xiaoming/closie/ProductLinkExtractorTest.kt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "eda560377f840c3975b5f7bc866877e759c1e21f",
+      "size": 4339,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/eda560377f840c3975b5f7bc866877e759c1e21f"
+    },
+    {
+      "path": "build.gradle.kts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "47fc5918c8602861962edda73f1fc1b955dd083c",
+      "size": 142,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/47fc5918c8602861962edda73f1fc1b955dd083c"
+    },
+    {
+      "path": "docs",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "c143f830d15cdddef6a60b8afa8a58640b481bc2",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/c143f830d15cdddef6a60b8afa8a58640b481bc2"
+    },
+    {
+      "path": "docs/life-os",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "1f921699b694ae6374a00959e9bf7a6de9b7058a",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/1f921699b694ae6374a00959e9bf7a6de9b7058a"
+    },
+    {
+      "path": "docs/life-os/00-产品愿景",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "f7c6f122870a54af5450165de608a11136fc3836",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/f7c6f122870a54af5450165de608a11136fc3836"
+    },
+    {
+      "path": "docs/life-os/00-产品愿景/原始需求基线-v0.6.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "be8259237219edb1e91bea40d78e56252c91b5f9",
+      "size": 31907,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/be8259237219edb1e91bea40d78e56252c91b5f9"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "fda4292342c3262c9290c67d8a977dd31e969149",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/fda4292342c3262c9290c67d8a977dd31e969149"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "ef213a4dfbe1a812c80958730f8631efea31d1a4",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/ef213a4dfbe1a812c80958730f8631efea31d1a4"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/Capture 快速记录讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "96f5768c49bb0ef55c5b2ab5be48d2cc15a7bc0d",
+      "size": 32528,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/96f5768c49bb0ef55c5b2ab5be48d2cc15a7bc0d"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/finance讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b1d349bf0753d8c93702275558546a262e607783",
+      "size": 42708,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b1d349bf0753d8c93702275558546a262e607783"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/food plog讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "3a84a32756163629a4edeaac08d788a07f4b58fe",
+      "size": 18227,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/3a84a32756163629a4edeaac08d788a07f4b58fe"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/h 和c补充讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fe06d3808682a60d6def3e68f33326e117391d35",
+      "size": 6449,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/fe06d3808682a60d6def3e68f33326e117391d35"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/home讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "69c3497b74b40a7b045ae378318af650cd055cab",
+      "size": 25984,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/69c3497b74b40a7b045ae378318af650cd055cab"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/mark和健康讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b9dcaa621ca4c03cf936d9e073e2c63eea73d00b",
+      "size": 25761,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b9dcaa621ca4c03cf936d9e073e2c63eea73d00b"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/reading讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "855eacc38b815eeaafc23db95245c3749c2af536",
+      "size": 14244,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/855eacc38b815eeaafc23db95245c3749c2af536"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/v0-需求讨论上下文.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "66cbcbfa03a8ccac604e688341060a849f70fc86",
+      "size": 136392,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/66cbcbfa03a8ccac604e688341060a849f70fc86"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/会员讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "954905ac37c9ef97648b87da6ea345e803d8a379",
+      "size": 28145,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/954905ac37c9ef97648b87da6ea345e803d8a379"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/全局以及细节讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "242478ac072dc19f485c548ba2d99f0f6cf4d788",
+      "size": 69832,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/242478ac072dc19f485c548ba2d99f0f6cf4d788"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/兴趣讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dc5a5f57f3144df806dffffc0fc4d10dc0fda392",
+      "size": 9051,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/dc5a5f57f3144df806dffffc0fc4d10dc0fda392"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/创作讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b160a7dc857a40ed95bbe584ba928ed7aa2be92c",
+      "size": 12056,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b160a7dc857a40ed95bbe584ba928ed7aa2be92c"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/园艺讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "609015a5ca0e0a28f39fe4536bde8f4ce2039738",
+      "size": 13168,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/609015a5ca0e0a28f39fe4536bde8f4ce2039738"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/旅行讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c57bc95adb8af138b688acc378c67f6ea44c8d25",
+      "size": 7151,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/c57bc95adb8af138b688acc378c67f6ea44c8d25"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/物品库存讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1a844474e37cff62efe56e7f3e3005911aa0c13d",
+      "size": 41512,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/1a844474e37cff62efe56e7f3e3005911aa0c13d"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/知识库.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "01e6761a57d061c02577da891f370cbbfa5253c1",
+      "size": 18367,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/01e6761a57d061c02577da891f370cbbfa5253c1"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/衣橱讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4ec6f4817b41ca2a625989e1b9cecf37b60c4350",
+      "size": 20541,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/4ec6f4817b41ca2a625989e1b9cecf37b60c4350"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/计划待办讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b7a5a95662f700c7794d6adb12d1ca129186208c",
+      "size": 14025,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b7a5a95662f700c7794d6adb12d1ca129186208c"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/原始讨论/购物讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b066e54e1d6aa7749f0a3a7b2823f28cc16e3d89",
+      "size": 27656,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b066e54e1d6aa7749f0a3a7b2823f28cc16e3d89"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/开发阶段记录",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "fee7238b886f464817074d8393d6d07ea2b60e79",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/fee7238b886f464817074d8393d6d07ea2b60e79"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/开发阶段记录/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8b137891791fe96927ad78e64b0aad7bded08bdc",
+      "size": 1,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/开发阶段记录/2026-10-Android正式开发-Shell与架构审查上下文.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "80c2e51a02cdaa402173ecd1e5c7237fab94d9bf",
+      "size": 12333,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/80c2e51a02cdaa402173ecd1e5c7237fab94d9bf"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/开发阶段记录/2026-10-Finance开发启动-F1与可覆盖更新讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "749384f3cc46acfda941caf201d953e3b2799fc4",
+      "size": 47507,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/749384f3cc46acfda941caf201d953e3b2799fc4"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/开发阶段记录/2026-10-V14-V15真机反馈与Finance自动发现讨论.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "24c82fe612eabbf2243a1cf25c46df625ade94aa",
+      "size": 25140,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/24c82fe612eabbf2243a1cf25c46df625ade94aa"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/需求讨论总结",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "d564d0bc3dd917926892c55e3706cc116d5b165e",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/d564d0bc3dd917926892c55e3706cc116d5b165e"
+    },
+    {
+      "path": "docs/life-os/01-讨论记录/需求讨论总结/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/02-调研",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "eac43343a07043cf72d66023469d14c1b00dfd61",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/eac43343a07043cf72d66023469d14c1b00dfd61"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "43bda939d75ad28cc53e8c097f92e35bdaad1d45",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/43bda939d75ad28cc53e8c097f92e35bdaad1d45"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-UI与Finance深度对齐研究.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "61c70b8d36419bb9efdfb07155037ac8bcb82f5d",
+      "size": 29832,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/61c70b8d36419bb9efdfb07155037ac8bcb82f5d"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "e59f89eb403a7be195df2ae74f52b6e4cc5d5a89",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/e59f89eb403a7be195df2ae74f52b6e4cc5d5a89"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8b137891791fe96927ad78e64b0aad7bded08bdc",
+      "size": 1,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "10e8c4c2e80b19af125eca7ce2fe9cf4cd3ebba9",
+      "size": 2104,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/10e8c4c2e80b19af125eca7ce2fe9cf4cd3ebba9"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/V15-R2到V16架构与产品决策报告.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "66696ad27f821551f37be538fc217b00758b43c8",
+      "size": 50442,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/66696ad27f821551f37be538fc217b00758b43c8"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/V15R2-V16-初版研究复审意见.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7d4357410d8cfbed6d66684042beb631e4914694",
+      "size": 18681,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/7d4357410d8cfbed6d66684042beb631e4914694"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/V16-决策收敛研究-40项范围与实施边界.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "82a73037c90299c87bc0926566e3d534f9b11369",
+      "size": 41836,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/82a73037c90299c87bc0926566e3d534f9b11369"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/案例与证据索引.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d253c3ed11327406bb135c0961dbec486ce4aea4",
+      "size": 21218,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d253c3ed11327406bb135c0961dbec486ce4aea4"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/2026-10-V15R2至V16-研究/记账功能候选清单.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "ebc19f6e845bac1d08ab70ed434a91ecd18fc60c",
+      "size": 24776,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/ebc19f6e845bac1d08ab70ed434a91ecd18fc60c"
+    },
+    {
+      "path": "docs/life-os/02-调研/专题调研/新增文件夹",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8b137891791fe96927ad78e64b0aad7bded08bdc",
+      "size": 1,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "docs/life-os/02-调研/原始调研",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "d0835495681ceb4cf9996c5fdeaf82978e92c360",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/d0835495681ceb4cf9996c5fdeaf82978e92c360"
+    },
+    {
+      "path": "docs/life-os/02-调研/原始调研/调研参考设计-1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "48fca8e067133da8a412272f698916ce36982837",
+      "size": 134358,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/48fca8e067133da8a412272f698916ce36982837"
+    },
+    {
+      "path": "docs/life-os/02-调研/原始调研/调研参考设计-2.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "580cd21ac52850991debacfa646dd0680289fffe",
+      "size": 115461,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/580cd21ac52850991debacfa646dd0680289fffe"
+    },
+    {
+      "path": "docs/life-os/02-调研/原始调研/调研参考设计-3.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bec7e6f2a818b807b7327bb06d356ad73eeccb21",
+      "size": 62661,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/bec7e6f2a818b807b7327bb06d356ad73eeccb21"
+    },
+    {
+      "path": "docs/life-os/03-产品需求",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "2a18cae8b107671ad0260fe2eea0df04df59be6d",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/2a18cae8b107671ad0260fe2eea0df04df59be6d"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已废弃",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "d564d0bc3dd917926892c55e3706cc116d5b165e",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/d564d0bc3dd917926892c55e3706cc116d5b165e"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已废弃/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "633bcefb4638bfe5d1488e3166209864a75cc035",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/633bcefb4638bfe5d1488e3166209864a75cc035"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/AI伙伴与Agent工具技能-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7ade00608369f8aa7539e10d6c419bec2ddb15b6",
+      "size": 15009,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/7ade00608369f8aa7539e10d6c419bec2ddb15b6"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/Plog生活手账-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "99bfdf666b929edda0010698c6133f55b2193d35",
+      "size": 7305,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/99bfdf666b929edda0010698c6133f55b2193d35"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/伙伴聊天-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "36e0f9c9296e35bbf22321207f3738388305221f",
+      "size": 7739,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/36e0f9c9296e35bbf22321207f3738388305221f"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/会员-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1a7c555e28774730abd9ac138282fad9f09bce4a",
+      "size": 21669,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/1a7c555e28774730abd9ac138282fad9f09bce4a"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/健康-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "ed62ef52a5ac63199b9836e82aa17ecbb9c9aed7",
+      "size": 7867,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/ed62ef52a5ac63199b9836e82aa17ecbb9c9aed7"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/兴趣-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "59a345e06459eb03556a19e7e352c46d9a9c6967",
+      "size": 7694,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/59a345e06459eb03556a19e7e352c46d9a9c6967"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/分享导出与作品集-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "cbf62fe1adc797d4aeccf60a4f8d8f51e7a65f61",
+      "size": 11819,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/cbf62fe1adc797d4aeccf60a4f8d8f51e7a65f61"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/创作库-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e8f8dfcca6d192a8d56b31ef4f9eb0fee68c7cca",
+      "size": 4839,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e8f8dfcca6d192a8d56b31ef4f9eb0fee68c7cca"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/同步与备份-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f291c22dbd48ad77f780ee8011d83760573cdda9",
+      "size": 12313,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/f291c22dbd48ad77f780ee8011d83760573cdda9"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/园艺-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bba2085495316558a1b8c4f2536d741bf177fe8b",
+      "size": 11924,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/bba2085495316558a1b8c4f2536d741bf177fe8b"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/地点-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c5d261ad5c89d24f792dca0559d6bab769e90846",
+      "size": 7332,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/c5d261ad5c89d24f792dca0559d6bab769e90846"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/媒体库-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "93b9488bb61abf0e64944ce38409877b97423a74",
+      "size": 15434,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/93b9488bb61abf0e64944ce38409877b97423a74"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/捕获-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1234df4ab186c3c7569ce6c7872fceb4c5acb17b",
+      "size": 12285,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/1234df4ab186c3c7569ce6c7872fceb4c5acb17b"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/搜索-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "04ac0051ca44718acf73150c8e68e6cf98d7e4d6",
+      "size": 9843,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/04ac0051ca44718acf73150c8e68e6cf98d7e4d6"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/旅行-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "221d0d6206d3151d1e4259362c32ba98e9aebf72",
+      "size": 8901,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/221d0d6206d3151d1e4259362c32ba98e9aebf72"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/日历与时间线-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a53e9bef615b6967cdc253ea32eb29a8e9c7f773",
+      "size": 9611,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a53e9bef615b6967cdc253ea32eb29a8e9c7f773"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/物品-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "5369e9e847dfa11ed46e14d7a31dbbedf10dad47",
+      "size": 14412,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/5369e9e847dfa11ed46e14d7a31dbbedf10dad47"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/生活印记-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9686bf874494dbbe7e9a30e3f8f0c58b39fdbbb0",
+      "size": 4954,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/9686bf874494dbbe7e9a30e3f8f0c58b39fdbbb0"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/知识库-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "886840294e6d2ab81179b4a1a741a1a99e0a5065",
+      "size": 6758,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/886840294e6d2ab81179b4a1a741a1a99e0a5065"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/衣橱-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "811bd1e43485acd1d6fd895f8b4cb497e1fdbb0b",
+      "size": 8527,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/811bd1e43485acd1d6fd895f8b4cb497e1fdbb0b"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/计划与目标-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "aea53dd91eb5dc166bc379347aa349da3e9c7c3c",
+      "size": 8476,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/aea53dd91eb5dc166bc379347aa349da3e9c7c3c"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/财务-V16-已确认增量.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "273a453a8183c35164e360c039e0a21eede77ccb",
+      "size": 6523,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/273a453a8183c35164e360c039e0a21eede77ccb"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/购物订单与价格-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "533dc6f33eb49e891d10736bd7e0486038b0c522",
+      "size": 21499,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/533dc6f33eb49e891d10736bd7e0486038b0c522"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/跨模块数据与事件-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b0d895a61aecd3ffc7831e941674b0c75cba574e",
+      "size": 18772,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b0d895a61aecd3ffc7831e941674b0c75cba574e"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/阅读-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9e76255bf175d88013ca8f8d0ba3a41bcd6cb622",
+      "size": 8633,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/9e76255bf175d88013ca8f8d0ba3a41bcd6cb622"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/隐私与AI权限-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "faf587a570f595e560ca987e120dda64dcc45670",
+      "size": 8343,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/faf587a570f595e560ca987e120dda64dcc45670"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/已确认/饮食-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8af484851ed95c4e9a4d2fd8be4a537050b12652",
+      "size": 9364,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8af484851ed95c4e9a4d2fd8be4a537050b12652"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/草案",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "fe6e1e8ab2c76764fd904207b9a8615cacaf5c75",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/fe6e1e8ab2c76764fd904207b9a8615cacaf5c75"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/草案/财务-v0.2.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "30053226124d9bf1bf4cdc441b43f2548d49e95d",
+      "size": 19633,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/30053226124d9bf1bf4cdc441b43f2548d49e95d"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/草案/首页-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e5855c848164fdb7bc95618c2ab5b50efd315ffa",
+      "size": 7429,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e5855c848164fdb7bc95618c2ab5b50efd315ffa"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/讨论中",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "d564d0bc3dd917926892c55e3706cc116d5b165e",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/d564d0bc3dd917926892c55e3706cc116d5b165e"
+    },
+    {
+      "path": "docs/life-os/03-产品需求/讨论中/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/04-统一架构",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "7d36bb704e42962bfb8d44d8f6b7b0e0eac469db",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/7d36bb704e42962bfb8d44d8f6b7b0e0eac469db"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/00-统一架构总览.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e4641df88d3a259428e02c73517d3d88a4dbec0d",
+      "size": 30820,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e4641df88d3a259428e02c73517d3d88a4dbec0d"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/01-世界模型与核心数据语义.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "5b991e0698360a34405279d13a8a433a9412b613",
+      "size": 30902,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/5b991e0698360a34405279d13a8a433a9412b613"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/02-数据分层与事实生命周期.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "59af9bd02b7dd0d286e9ea63e43996919b492892",
+      "size": 27738,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/59af9bd02b7dd0d286e9ea63e43996919b492892"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/03-命令流与查询流.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e9d24aa71bc21c4072cc4f8130b719805070dd87",
+      "size": 6684,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e9d24aa71bc21c4072cc4f8130b719805070dd87"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/04-领域归属与跨模块共享.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b913bbe26a72d7ed7508992042da5be4dc049582",
+      "size": 6522,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b913bbe26a72d7ed7508992042da5be4dc049582"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/05-控制平面.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "89e529cfdccebd94c8b72a3f2cd5017ff7413baa",
+      "size": 5399,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/89e529cfdccebd94c8b72a3f2cd5017ff7413baa"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/06-AI与Ombre边界.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a0a7644b7d9aa3c2616df7bb03fc1e956a87f0fb",
+      "size": 5926,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a0a7644b7d9aa3c2616df7bb03fc1e956a87f0fb"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/07-存储模型与API边界.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "909924e1a8fc7e69b03cbdbacccc5f4e0b4da81c",
+      "size": 4423,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/909924e1a8fc7e69b03cbdbacccc5f4e0b4da81c"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/08-同步备份与恢复.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f74b24af317adc0f9da64cafbd38517dfa1ddefb",
+      "size": 5186,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/f74b24af317adc0f9da64cafbd38517dfa1ddefb"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/09-媒体架构.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0d1b636aef75c1054ac6459f05694857f0dabff5",
+      "size": 4251,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/0d1b636aef75c1054ac6459f05694857f0dabff5"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/10-安全与隐私.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d77413c7302eb2177b9f75c94f566523b3fc730d",
+      "size": 5318,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d77413c7302eb2177b9f75c94f566523b3fc730d"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/11-扩展与版本演进.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "23332ea2142c3d8af3875dd499a486460eb415a2",
+      "size": 4278,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/23332ea2142c3d8af3875dd499a486460eb415a2"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/12-架构不变量与工程红线.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "80d5219dc4de68bbabf19f1e8258a98bae234bde",
+      "size": 8053,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/80d5219dc4de68bbabf19f1e8258a98bae234bde"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/13-统一术语表.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "596b04a8293662eeb7734ea31ffc34bb445bb006",
+      "size": 3768,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/596b04a8293662eeb7734ea31ffc34bb445bb006"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/14-领域归属注册表.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bbbfc269bdc9440246937326f9ebc22f971a00e4",
+      "size": 6617,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/bbbfc269bdc9440246937326f9ebc22f971a00e4"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1aea38542248c90560422bd415b30c1350633753",
+      "size": 2431,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/1aea38542248c90560422bd415b30c1350633753"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/架构决策记录",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "3fc7542a0d7b709b7821a11ab39ec2409fd60770",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/3fc7542a0d7b709b7821a11ab39ec2409fd60770"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/架构决策记录/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/架构决策记录/Life OS V16 最终架构审查与工程交接备忘录.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b0663d6be766d2673ec16fd1168588ee75960241",
+      "size": 72418,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/b0663d6be766d2673ec16fd1168588ee75960241"
+    },
+    {
+      "path": "docs/life-os/04-统一架构/架构决策记录/V16-G0领域契约与实施交接方案.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6c2a2479a54741bf878f17e9271a2d0c436674a5",
+      "size": 22795,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/6c2a2479a54741bf878f17e9271a2d0c436674a5"
+    },
+    {
+      "path": "docs/life-os/05-界面与体验",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "89813d11110a5d0852312af29732f7ecb38b5770",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/89813d11110a5d0852312af29732f7ecb38b5770"
+    },
+    {
+      "path": "docs/life-os/05-界面与体验/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/05-界面与体验/2026-10-UI与交互收口基线-v0.1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2d32656082c76e5d461ed2787be413abd1967c08",
+      "size": 5638,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/2d32656082c76e5d461ed2787be413abd1967c08"
+    },
+    {
+      "path": "docs/life-os/06-路线图",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "4c6f4b23be4992de1775222840734056e2229b11",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/4c6f4b23be4992de1775222840734056e2229b11"
+    },
+    {
+      "path": "docs/life-os/06-路线图/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/06-路线图/2026-10-V16-Owner-决策与实施交接.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6d38fd6edd746b9ca31303e5e7dc0db92c440310",
+      "size": 8953,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/6d38fd6edd746b9ca31303e5e7dc0db92c440310"
+    },
+    {
+      "path": "docs/life-os/06-路线图/开发协作与交付约定.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d618e6fc6351ccbccb5e34927ed018cf5241d699",
+      "size": 9251,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d618e6fc6351ccbccb5e34927ed018cf5241d699"
+    },
+    {
+      "path": "docs/life-os/06-路线图/当前开发状态.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "cf94b4502722f24130e9eccf4214458c42a8a560",
+      "size": 3727,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/cf94b4502722f24130e9eccf4214458c42a8a560"
+    },
+    {
+      "path": "docs/life-os/99-历史归档",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "e1b3862d4763cb9a5d51885ff9e543b6a6b4656c",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/e1b3862d4763cb9a5d51885ff9e543b6a6b4656c"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/产品需求源文件",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "7d38fe8480044b708036081b07e072a8b37d43e4",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/7d38fe8480044b708036081b07e072a8b37d43e4"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/产品需求源文件/捕获-v0.1-原始DRAFT.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d4e8328600659483de8d977c3f06f3a12a3dd79b",
+      "size": 11351,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d4e8328600659483de8d977c3f06f3a12a3dd79b"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/产品需求源文件/捕获-v0.1-确认补充源文件.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "49d4673cce4a6cb2cbb5871825e84f395c602292",
+      "size": 581,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/49d4673cce4a6cb2cbb5871825e84f395c602292"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/产品需求源文件/物品-v0.1-后续摘要源文件.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "34db293ed983d15dd4c11b714192a138b18ba17b",
+      "size": 520,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/34db293ed983d15dd4c11b714192a138b18ba17b"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/产品需求源文件/购物订单与价格-v0.1-后续摘要源文件.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c57cee58ff628ccade0fad31d452a097da3d98ad",
+      "size": 641,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/c57cee58ff628ccade0fad31d452a097da3d98ad"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/架构形成过程",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "3fb65291e8af9dc49ca5c05cfb3bb4d5fc94478e",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/3fb65291e8af9dc49ca5c05cfb3bb4d5fc94478e"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/架构形成过程/统一架构设计-1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "47ffd3c4609ae22fba3c300bca9a2def1dd962ff",
+      "size": 88872,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/47ffd3c4609ae22fba3c300bca9a2def1dd962ff"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/架构形成过程/统一架构设计-2.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8aedfa5e2c870e6ed92fc518f80fdf7c69c86cb6",
+      "size": 55174,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/8aedfa5e2c870e6ed92fc518f80fdf7c69c86cb6"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/空文件待确认",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "d564d0bc3dd917926892c55e3706cc116d5b165e",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/d564d0bc3dd917926892c55e3706cc116d5b165e"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/空文件待确认/.gitkeep",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/项目交接",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "9191d81ad7afc6b26f65394c751692c8efec753e",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/9191d81ad7afc6b26f65394c751692c8efec753e"
+    },
+    {
+      "path": "docs/life-os/99-历史归档/项目交接/旧版开发交接-v1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "013de90530b188f4e913f9f8d14c516d652cae5b",
+      "size": 3805,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/013de90530b188f4e913f9f8d14c516d652cae5b"
+    },
+    {
+      "path": "docs/life-os/README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a27fb779c0e5a074d4172d202b43e5f3eb51afab",
+      "size": 957,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a27fb779c0e5a074d4172d202b43e5f3eb51afab"
+    },
+    {
+      "path": "docs/life-os/待核对清单.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "45f22a943acc0d91a7081004c15c6157dbdfca34",
+      "size": 14932,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/45f22a943acc0d91a7081004c15c6157dbdfca34"
+    },
+    {
+      "path": "docs/life-os/文档索引.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "5033949b283fcc4188ba5d69f1c561caa4d5239f",
+      "size": 14634,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/5033949b283fcc4188ba5d69f1c561caa4d5239f"
+    },
+    {
+      "path": "gradle.properties",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "253b779252a2a347d8c0c1c4bcf95cf67dff92e0",
+      "size": 104,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/253b779252a2a347d8c0c1c4bcf95cf67dff92e0"
+    },
+    {
+      "path": "gradle",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "588d9278c809ec6565cff2857dd87120fb180795",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/588d9278c809ec6565cff2857dd87120fb180795"
+    },
+    {
+      "path": "gradle/wrapper",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "976b56f9a286fcfa7b2a07db369f5bfa9c31e30a",
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/trees/976b56f9a286fcfa7b2a07db369f5bfa9c31e30a"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.jar",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a4b76b9530d66f5e68d973ea569d8e19de379189",
+      "size": 43583,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/a4b76b9530d66f5e68d973ea569d8e19de379189"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.properties",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "df97d72b8b91fa0e088ae27b1c84a6063481fe22",
+      "size": 253,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/df97d72b8b91fa0e088ae27b1c84a6063481fe22"
+    },
+    {
+      "path": "gradlew",
+      "mode": "100755",
+      "type": "blob",
+      "sha": "d95bf6131dc41079a1665889f84d4cfec92a2bc1",
+      "size": 8784,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/d95bf6131dc41079a1665889f84d4cfec92a2bc1"
+    },
+    {
+      "path": "gradlew.bat",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "640d68685c14950470c82031e02198e220b96e62",
+      "size": 2894,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/640d68685c14950470c82031e02198e220b96e62"
+    },
+    {
+      "path": "settings.gradle.kts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6118dd7f0415558ecd40f5aa4d5425d8f4f9aa76",
+      "size": 306,
+      "url": "https://api.github.com/repos/cnsj-123/qqhome/git/blobs/6118dd7f0415558ecd40f5aa4d5425d8f4f9aa76"
+    }
+  ],
+  "truncated": false
+}

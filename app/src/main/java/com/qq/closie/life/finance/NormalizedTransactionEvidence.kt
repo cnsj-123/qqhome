@@ -5,16 +5,14 @@ enum class TransactionSourceHint { DIDI, ELEME, RAILWAY_12306, JD, JD_BAITIAO, X
 enum class PaymentChannelHint { WECHAT_PAY, ALIPAY, HUABEI, JD_BAITIAO, MEITUAN_MONTHLY, FAMILY_CARD,
     WECHAT_BALANCE, ACCOUNT_BALANCE, YUEBAO, DEBIT_CARD, CREDIT_CARD, BANK_CARD }
 
-/** Transient, minimized detail evidence. No nodes, raw text, account identifiers or counterparty PII.
- * Room v4 has no approved columns for business/channel provenance or reference correlation.
- * These optional hints remain transient; they are not hidden in description or a shadow store. */
+/** Transient minimized detail facts. Typed provenance stores only approved fields, never raw nodes/text. */
 data class NormalizedTransactionEvidence(
     val providerKey: String, val amountMinor: Long, val currencyCode: String,
     val kind: FinanceProposalKind, val occurredAt: Long, val observedAt: Long,
     val referenceDigest: String, val extractionVersion: String,
     val transactionSource: TransactionSourceHint? = null, val paymentChannelHint: PaymentChannelHint? = null,
     val role: FinanceFlowRole = if (kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT,
-    val relatedOrderDigest: String? = null
+    val relatedOrderDigest: String? = null,val referenceKind:FinanceReferenceKind=FinanceReferenceKind.PAYMENT
 ) {
     val hostProvider: String get() = providerKey
     fun toProposal(): FinanceProposalEntity {
@@ -25,8 +23,7 @@ data class NormalizedTransactionEvidence(
         require(relatedOrderDigest == null || relatedOrderDigest.matches(Regex("[a-f0-9]{64}")))
         require(role != FinanceFlowRole.REFUND || kind == FinanceProposalKind.INCOME)
         require(occurredAt in 946684800000L..(observedAt + 300000L))
-        // Extraction version is transient provenance, never transaction identity.
-        // A persistent Evidence/provenance model is deferred to the separately approved v5 work.
+        // This compatibility shape also validates extractor output. Acquisition assigns a v3 capture ID.
         return FinanceProposalEntity(java.util.UUID.randomUUID().toString(), FinanceSource.VISIBLE_DETAIL,
             "visible:v2:$providerKey:$referenceDigest", "", observedAt, occurredAt,
             kind, amountMinor, "", role = role)
@@ -34,7 +31,8 @@ data class NormalizedTransactionEvidence(
 }
 
 object FinanceEvidenceOrigin {
-    fun isVisible(proposal: FinanceProposalEntity) = proposal.sourceKey.startsWith("visible:v1:") || proposal.sourceKey.startsWith("visible:v2:")
+    fun requiresManualAccount(proposal:FinanceProposalEntity)=isVisible(proposal) || proposal.source==FinanceSource.SELECTED_IMAGE
+    fun isVisible(proposal: FinanceProposalEntity) = proposal.sourceKey.startsWith("visible:v1:") || proposal.sourceKey.startsWith("visible:v2:") || proposal.sourceKey.startsWith("visible:v3:")
     /** sourceKey is the existing typed evidence identity field, not user-visible prose. */
     fun strongReference(proposal: FinanceProposalEntity): String? {
         val parts = proposal.sourceKey.split(':')
@@ -53,7 +51,7 @@ object FinanceEvidenceOrigin {
         if (!provider.matches(Regex("[a-z][a-z0-9-]{0,31}")) || !reference.matches(Regex("[a-f0-9]{64}"))) return null
         return "visible:v2:$provider:$reference"
     }
-    fun providerKey(proposal: FinanceProposalEntity) = strongReference(proposal)?.split(':')?.get(2)
+    fun providerKey(proposal: FinanceProposalEntity) = if(proposal.sourceKey.startsWith("visible:v3:")) proposal.sourceKey.split(':').getOrNull(2) else strongReference(proposal)?.split(':')?.get(2)
     fun sameFacts(a: FinanceProposalEntity, b: FinanceProposalEntity) =
         a.amountMinor == b.amountMinor && a.kind == b.kind && a.occurredAt == b.occurredAt && a.role == b.role
     fun conflictKey(proposal: FinanceProposalEntity): String {
@@ -68,6 +66,7 @@ object FinanceEvidenceOrigin {
         return all.filter { it.id != proposal.id && strongReference(it) == identity &&
             it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED, FinanceProposalStatus.CONFIRMED) }
     }
-    fun label(proposal: FinanceProposalEntity) = if (isVisible(proposal)) "当前可见交易详情 · 多字段一致"
+    fun label(proposal: FinanceProposalEntity) = if(proposal.source==FinanceSource.SELECTED_IMAGE) "用户所选图片 · 本地识别，字段需核对"
+        else if (isVisible(proposal)) "当前可见交易详情 · 多字段一致"
         else "通知自动发现"
 }

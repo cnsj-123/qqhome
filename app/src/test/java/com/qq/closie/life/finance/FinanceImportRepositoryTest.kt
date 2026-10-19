@@ -163,6 +163,53 @@ class FinanceImportRepositoryTest : FinanceRoomTest() {
         assertEquals(before, readFinanceSnapshot(db, true))
     }
 
+    @Test fun importedBlankNotesStayBlankAndRepeatedSourceStillRequiresDuplicateReview() = runTest {
+        val preview=stage(listOf(SyntheticLegacyLedger.row("备注" to "")))
+        val mappings=listOf(FinanceAccountMapping("合成钱包"))
+        imports.commit(preview.batch.id,mappings,preview.rows.map {it.id}.toSet(),emptySet(),false,false)
+        val before=finance.snapshot()
+        assertEquals("",before.entries.single().description)
+        assertEquals("",before.v4!!.events.single().description)
+        val again=stage(listOf(SyntheticLegacyLedger.row("备注" to ""),
+            SyntheticLegacyLedger.row("备注" to "另一个合成记录","金额" to "1.00")),"another.csv")
+        val checked=imports.preview(again.batch.id,listOf(FinanceAccountMapping("合成钱包",existingId=before.accounts.single().id)))
+        assertEquals(FinanceRowStatus.DUPLICATE,checked.rows.single {it.description.isEmpty()}.status)
+        assertEquals(before.entries,finance.snapshot().entries)
+    }
+
+    @Test fun importUndoRetainsLaterMediaRelationsAndDoesNotArchiveAnActivelyBoundAccount() = runTest {
+        val preview=stage(listOf(SyntheticLegacyLedger.row()))
+        imports.commit(preview.batch.id,listOf(FinanceAccountMapping("合成钱包")),preview.rows.map {it.id}.toSet(),emptySet(),false,false)
+        val before=finance.snapshot();val a=before.accounts.single();val event=before.v4!!.events.single()
+        fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
+        val identity=finance.provenance.createIdentity(token(),"wechat","合成身份")
+        val instrument=finance.provenance.createInstrument(token(),identity,"合成工具",PaymentChannelHint.WECHAT_BALANCE.name)
+        val binding=finance.provenance.bindInstrument(token(),instrument,a.id,clock,null)
+        // Missing source is a valid attachment state; no real device document is accessed.
+        db.financeV16Dao().putMediaLink(listOf(FinanceMediaLinkEntity("synthetic-link","missing-synthetic-asset",eventId=event.id,
+            sourceHash="a".repeat(64),label="合成凭据",createdAt=clock,updatedAt=clock)))
+        assertEquals(FinanceUndoResult(0,1),imports.undo(preview.batch.id))
+        val after=finance.snapshot()
+        assertNull(after.entries.single().voidedAt);assertNull(after.accounts.single().archivedAt)
+        assertNull(after.v16!!.accountBindingRows.single {it.id==binding}.voidedAt)
+        assertEquals(before.entries,after.entries)
+        FinanceIntegrity.validate(after)
+    }
+
+    @Test fun undoPreservesAccountBindingEvenWhenAllImportedCashCanBeRetired() = runTest {
+        val preview=stage(listOf(SyntheticLegacyLedger.row()))
+        imports.commit(preview.batch.id,listOf(FinanceAccountMapping("合成钱包")),preview.rows.map {it.id}.toSet(),emptySet(),false,false)
+        val a=finance.snapshot().accounts.single()
+        fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
+        val identity=finance.provenance.createIdentity(token(),"wechat","合成身份")
+        val instrument=finance.provenance.createInstrument(token(),identity,"合成工具",PaymentChannelHint.WECHAT_BALANCE.name)
+        finance.provenance.bindInstrument(token(),instrument,a.id,clock,null)
+        assertEquals(FinanceUndoResult(1,0),imports.undo(preview.batch.id))
+        val after=finance.snapshot()
+        assertNotNull(after.entries.single().voidedAt);assertNull(after.accounts.single().archivedAt)
+        FinanceIntegrity.validate(after)
+    }
+
     @Test fun undoKeepsLaterEditedOrLinkedImportedEntriesAndTheirLiveRelations() = runTest {
         val preview = stage(listOf(SyntheticLegacyLedger.row()))
         val mappings = listOf(FinanceAccountMapping("合成钱包"))

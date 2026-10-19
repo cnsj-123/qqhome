@@ -36,23 +36,26 @@ fun FinanceRoute(repository: FinanceRepository, onBack: () -> Unit) = FinanceRou
 @Composable
 fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportRepository?,
     automationRepository: FinanceAutomationRepository?, onBack: () -> Unit) {
-    val vm: FinanceViewModel = viewModel(factory = PresentationFactory(FinanceViewModel::class.java) { FinanceViewModel(repository) })
+    val vm: FinanceViewModel = viewModel(factory = remember(repository) {FinancePresentationFactory(repository)})
     val state by vm.state.collectAsStateWithLifecycle()
     var importOpen by rememberSaveable { mutableStateOf(false) }
     var automationOpen by rememberSaveable { mutableStateOf(false) }
     var relationsOpen by rememberSaveable { mutableStateOf(false) }
+    var workspaceOpen by rememberSaveable {mutableStateOf(false)}
     val pending by produceState<Int?>(null, automationRepository) {
         automationRepository?.observe()?.catch { value = null }?.collect { snapshot ->
             value = snapshot.proposals.count { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
         }
     }
-    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(importOpen || automationOpen || relationsOpen)
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(importOpen || automationOpen || relationsOpen || workspaceOpen)
     if (importOpen && importRepository != null) FinanceImportScreen(importRepository, state.snapshot.accounts) { importOpen = false }
     else if (automationOpen && automationRepository != null) FinanceAutomationScreen(automationRepository, repository) { automationOpen = false }
     else if (relationsOpen) FinanceRelationsScreen(state, vm) { relationsOpen = false }
+    else if(workspaceOpen) FinanceWorkspaceScreen(state,vm) {workspaceOpen=false}
     else FinanceModuleScreen(state, vm, onBack, onRelations = { relationsOpen = true }) {
         if (automationRepository != null) TextButton(onClick = { automationOpen = true }) { Text("自动发现" + (pending?.let { " · $it 笔待确认" } ?: " · 查看状态")) }
         if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账 →") }
+        TextButton({workspaceOpen=true}) {Text("事项、购买、查询与隐私 →")}
     }
 }
 
@@ -79,7 +82,7 @@ internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: ()
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(if (row.transfer != null) "${row.account.name} → ${row.targetAccount?.name}" else row.entry.description,
+            Text(if (row.transfer != null) "${row.account.name} → ${row.targetAccount?.name}" else row.entry.description.ifBlank { row.category ?: if(row.entry.direction==FinanceDirection.INFLOW) "收入" else "支出" },
                 style = LifeText.body, color = colors.ink, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(if (row.transfer != null) "转账 · ${row.entry.description.ifBlank { "账户间转移" }}" else
                 listOfNotNull(row.category ?: "未分类", row.account.name).joinToString(" · "),

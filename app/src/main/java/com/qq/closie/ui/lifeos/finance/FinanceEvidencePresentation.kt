@@ -12,4 +12,5 @@ internal fun FinanceProposalEntity.discoverySourceLabel(): String =
         FinanceSource.ALIPAY -> "支付宝"
         FinanceSource.LEGACY_IMPORT -> "导入"
         FinanceSource.VISIBLE_DETAIL -> "交易详情来源"
+        FinanceSource.SELECTED_IMAGE -> "用户选图 · 本地识别"
     }

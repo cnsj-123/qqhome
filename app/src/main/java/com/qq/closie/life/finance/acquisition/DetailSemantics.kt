@@ -104,7 +104,11 @@ abstract class SemanticDetailAdapter : TransactionDetailAdapter {
         val result = NormalizedTransactionEvidence(host, minor, "CNY", kind, occurred, observed,
             DetailSemantics.digest("$namespace:$ref"), "$host-detail-v2", source ?: fields.transactionSource, channel,
             if (refund) FinanceFlowRole.REFUND else if (kind == FinanceProposalKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT,
-            orderReference?.let { DetailSemantics.digest("$host:order:$it") })
+            orderReference?.let { DetailSemantics.digest("$host:order:$it") },
+            if(namespace.endsWith(":order") || (refund && host in setOf(VisibleProviderKeys.TAOBAO,VisibleProviderKeys.JD))) FinanceReferenceKind.ORDER
+                // These grammars do not yet distinguish a refund-specific ID from the original
+                // payment reference. Keep it a hint so partial refunds are never collapsed.
+                else if(refund) FinanceReferenceKind.NONE else FinanceReferenceKind.PAYMENT)
         result.toProposal()
         DetailResult(DetailRecognition.RECOGNIZED, result)
     }.getOrElse { low() }

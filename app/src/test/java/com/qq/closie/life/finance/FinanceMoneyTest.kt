@@ -2,7 +2,6 @@ package com.qq.closie.life.finance
 
 import org.junit.Assert.*
 import org.junit.Test
-import com.qq.closie.ui.lifeos.finance.FinanceTime
 
 class FinanceMoneyTest {
     @Test fun decimalMoneyNeverUsesFloatingPointRounding() {

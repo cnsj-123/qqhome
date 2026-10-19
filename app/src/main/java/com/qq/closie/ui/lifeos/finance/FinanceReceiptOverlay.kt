@@ -1,19 +1,17 @@
 package com.qq.closie.ui.lifeos.finance
 
 import android.app.KeyguardManager
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.provider.Settings
-import android.view.Gravity
-import android.view.View
-import android.view.WindowManager
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.*
+import android.view.inputmethod.InputMethodManager
+import android.widget.*
 import com.qq.closie.ClosieApplication
 import com.qq.closie.data.appearance.ThemePalette
 import com.qq.closie.life.data.LifeContainer
@@ -22,122 +20,189 @@ import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.life.ui.theme.applyLifeTypography
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-/** Optional display adapter owned by the existing listener's lifecycle. Input is a proposal ID only.
- * No new service, acquisition APIs, DAO access or confirmation business logic. */
-internal class FinanceReceiptOverlay(private val context: Context, private val scope: CoroutineScope) {
-    private val windows = context.getSystemService(WindowManager::class.java)
-    private var window: View? = null
-    private var observer: Job? = null
-    private var timeout: Job? = null
+/** One editable surface at a time. New proposals remain in the durable inbox and notifications. */
+internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope) {
+    private val windows=context.getSystemService(WindowManager::class.java)
+    private val editScope get()=(context.applicationContext as ClosieApplication).financeReviewEditScope
+    private var window:View?=null
+    private var observer:Job?=null
+    private var monitor:Job?=null
+    private var autosave:Job?=null
+    private var flushLater:(()->Unit)?=null
+    private var screenReceiver:BroadcastReceiver?=null
+    private var configuration:ComponentCallbacks?=null
 
-    suspend fun show(id: String): Boolean {
-        if (!Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
+    suspend fun show(id:String):Boolean {
+        if(!Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
         return try {
-            val container = LifeContainer.getInstance(context)
-            val automation = container.financeAutomationRepository.observe().first()
-            val proposal = automation.proposals.find { it.id == id } ?: return false
-            val snapshot = container.financeRepository.observeSnapshot().first()
-            val model = FinanceReviewReceiptModel.from(proposal, snapshot.copy(v4 = (snapshot.v4 ?: FinanceV4Snapshot()).copy(proposals = automation.proposals)),
-                automation.tags.filter { it.proposalId == id }.map { it.name }, FinanceProposalPrivacy.userDescriptions(automation.rules.flatMap { it.actions }))
-            val tokens = ThemePalette.resolve((context.applicationContext as ClosieApplication).appearanceRepository.read())
+            val container=LifeContainer.getInstance(context)
+            val automation=container.financeAutomationRepository.observe().first()
+            val proposal=automation.proposals.singleOrNull {it.id==id && it.status in setOf(FinanceProposalStatus.ACTIVE,FinanceProposalStatus.SNOOZED)} ?: return false
+            val snapshot=container.financeRepository.snapshot()
+            val epoch=snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L
+            val saved=snapshot.v16?.reviewSessionRows.orEmpty().singleOrNull {it.proposalId==id && it.voidedAt==null && it.state!=FinanceReviewState.COMPLETED}
+            val safe=FinanceProposalPrivacy.sanitize(proposal,FinanceProposalPrivacy.userDescriptions(automation.rules.flatMap {it.actions}))
+            val initial=saved?.toEntryDraft(snapshot) ?: FinanceEntryDraft(FinanceEditorKind.valueOf(proposal.kind.name),
+                proposal.amountMinor?.let {FinanceMoney.input(it)}.orEmpty(),proposal.accountId.orEmpty(),proposal.targetAccountId.orEmpty(),
+                FinanceTime.input(proposal.occurredAt),safe.description,proposal.category,
+                automation.tags.filter {it.proposalId==id}.joinToString("，"){it.name},proposal.occurredAt,proposal.subcategory,
+                FinanceRelationshipDraft.fromProposal(proposal),FinanceCategoryTree(snapshot.categories).find(proposal.category,proposal.subcategory)?.id)
+            val tokens=ThemePalette.resolve((context.applicationContext as ClosieApplication).appearanceRepository.read())
             withContext(Dispatchers.Main.immediate) {
-                val settings = FinanceAutomationSettings(context).read()
-                if (settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.permits(proposal) || FinanceReviewRequests.foreground ||
-                    !Settings.canDrawOverlays(context)) return@withContext false
-                close()
-                val density = context.resources.displayMetrics.density
-                fun dp(value: Int) = (value * density).toInt()
-                val body = LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(dp(20), dp(16), dp(20), dp(16))
-                    background = GradientDrawable().apply { setColor(Color.parseColor(tokens.card)); cornerRadius = dp(24).toFloat() }
+                val settings=FinanceAutomationSettings(context).read()
+                if(window!=null || settings.deliveryMode!=FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay ||
+                    !settings.permits(proposal) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
+                val density=context.resources.displayMetrics.density
+                fun dp(n:Int)=(n*density).toInt()
+                val body=LinearLayout(context).apply {
+                    orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(12),dp(20),dp(12))
+                    background=GradientDrawable().apply {setColor(Color.parseColor(tokens.card));cornerRadius=dp(24).toFloat()}
                 }
-                fun text(value: String, style: androidx.compose.ui.text.TextStyle = LifeType.Body) = TextView(context).apply {
-                    text = value; applyLifeTypography(style)
-                    setTextColor(Color.parseColor(tokens.ink)); setPadding(0, dp(5), 0, dp(5))
-                }.also(body::addView)
-                text("Life OS · 消费小票", LifeType.SectionTitle)
-                text(model.amountMinor?.let { FinanceMoney.display(it, "CNY") } ?: "金额待核对", LifeType.Money)
-                text("${model.source} · ${if (model.direction == FinanceProposalKind.INCOME) "收入" else "支出"} · ${FinanceTime.input(model.occurredAt)}", LifeType.Caption)
-                text("账户：${model.accountName ?: "待选择"}")
-                text("分类：${model.categoryPath ?: "待选择"}")
-                text("说明：${model.safeDescription}")
-                text("性质：${model.nature.label} · 尚未入账", LifeType.Caption)
-                val message = text(model.ambiguityReason ?: "核对后确认，原始通知不保存。", LifeType.Caption)
-                val actions = LinearLayout(context)
-                body.addView(actions)
-                var busy = false
-                val confirm = Button(context).apply { text = if (model.directlyConfirmable) "确认" else "需要完善" }
-                val later = Button(context).apply { text = "稍后" }
-                confirm.applyLifeTypography(LifeType.Action)
-                later.applyLifeTypography(LifeType.Action)
-                confirm.setTextColor(Color.parseColor(tokens.onAccent))
-                confirm.background = GradientDrawable().apply { setColor(Color.parseColor(tokens.accent)); cornerRadius = dp(12).toFloat() }
-                later.setTextColor(Color.parseColor(tokens.ink))
-                later.background = GradientDrawable().apply { setColor(Color.parseColor(tokens.paperSecondary)); cornerRadius = dp(12).toFloat() }
-                actions.addView(later, LinearLayout.LayoutParams(0, dp(52), 1f))
-                actions.addView(confirm, LinearLayout.LayoutParams(0, dp(52), 1f))
-                later.setOnClickListener {
-                    if (!busy) { busy = true; later.isEnabled = false; confirm.isEnabled = false
-                        scope.launch {
-                            try { container.financeAutomationRepository.dismiss(id, model.revision, FinanceProposalStatus.SNOOZED)
-                                withContext(Dispatchers.Main.immediate) { close() }
-                            } catch (e: CancellationException) { throw e }
-                            catch (_: Exception) { withContext(Dispatchers.Main.immediate) {
-                                busy = false; later.isEnabled = true; confirm.isEnabled = true; message.text = "状态已改变，请打开应用核对"
-                            } }
+                val editable=mutableListOf<View>();var ready=false;var busy=false
+                fun setBusy(value:Boolean){busy=value;editable.forEach {it.isEnabled=!value}}
+                fun text(value:String)=TextView(context).apply {text=value;applyLifeTypography(LifeType.Caption);setTextColor(Color.parseColor(tokens.ink));setPadding(0,dp(6),0,dp(6))}.also(body::addView)
+                text("Life OS · 可编辑消费小票 · 尚未入账")
+                text(proposal.discoverySourceLabel()+" · 新小票会留在待确认队列，不覆盖本次编辑。")
+                var scheduleSave:()->Unit={}
+                fun input(label:String,value:String,numeric:Boolean=false):EditText {
+                    text(label)
+                    return EditText(context).apply {
+                        setSingleLine(true);inputType=if(numeric) android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL else android.text.InputType.TYPE_CLASS_TEXT
+                        imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE;setText(value);applyLifeTypography(LifeType.Body)
+                        setTextColor(Color.parseColor(tokens.ink));minHeight=dp(48)
+                        setOnEditorActionListener {view,action,_->if(action==android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                            context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);true
+                        } else false}
+                        addTextChangedListener(object:TextWatcher {override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+                            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){if(ready && !busy)scheduleSave()}
+                            override fun afterTextChanged(s:Editable?){} })
+                    }.also {body.addView(it);editable.add(it)}
+                }
+                fun choice(label:String,options:List<Pair<String,String>>,selected:String):()->String {
+                    text(label)
+                    val spinner=Spinner(context).apply {
+                        minimumHeight=dp(48);adapter=ArrayAdapter(context,android.R.layout.simple_spinner_dropdown_item,options.map {it.second})
+                        setSelection(options.indexOfFirst {it.first==selected}.coerceAtLeast(0))
+                        onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
+                            override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,itemId:Long){if(ready && !busy)scheduleSave()}
+                            override fun onNothingSelected(parent:AdapterView<*>?){}
+                        }
+                    };body.addView(spinner);editable.add(spinner)
+                    return {options.getOrNull(spinner.selectedItemPosition)?.first.orEmpty()}
+                }
+                val kind=choice("类型",FinanceEditorKind.entries.map {it.name to it.label},initial.kind.name)
+                val amount=input("金额 · CNY",initial.amount,true)
+                val accounts=listOf("" to "请选择真实账户")+snapshot.accounts.filter {it.archivedAt==null && it.currencyCode=="CNY"}.map {it.id to it.name}
+                val account=choice("收付/转出账户",accounts,initial.accountId)
+                val target=choice("转账时的转入账户",accounts,initial.targetAccountId)
+                val date=input("实际发生时间 · 年-月-日 时:分",initial.occurredAt)
+                val description=input("备注（可留空）",initial.description)
+                val category=choice("分类",listOf("" to "未分类/自定义")+snapshot.categories.map {it.id to (FinanceProjection.categoryPath(snapshot.categories,it.id) ?: it.name)},initial.categoryId.orEmpty())
+                val customCategory=input("自定义主分类（选填）",initial.category)
+                val customSubcategory=input("自定义子分类（选填）",initial.subcategory)
+                val tags=input("标签 · 逗号分隔",initial.tags)
+                val nature=choice("业务性质",FinanceNature.entries.map {it.name to it.label},initial.relationship.nature.name)
+                val role=choice("资金角色",FinanceFlowRole.entries.map {it.name to it.label},initial.relationship.role.name)
+                val event=choice("关联原事项（退款等需要）",listOf("" to "新事项/无关联")+snapshot.v4?.events.orEmpty().filter {it.voidedAt==null}.map {it.id to (it.description.ifBlank {"事项"}+" · "+FinanceTime.input(it.occurredAt))},initial.relationship.eventId.orEmpty())
+                val share=input("个人承担（特殊事项可填，可留空）",initial.relationship.share,true)
+                val reduction=input("退款/返利冲减个人成本（新经济事项需明确，可填0）",initial.costReductionText,true)
+                fun current():FinanceEntryDraft {
+                    val eventId=event().ifBlank {null}
+                    return initial.copy(kind=FinanceEditorKind.valueOf(kind()),amount=amount.text.toString(),accountId=account(),targetAccountId=target(),
+                        occurredAt=date.text.toString(),description=description.text.toString(),categoryId=category().ifBlank {null},
+                        category=customCategory.text.toString(),subcategory=customSubcategory.text.toString(),tags=tags.text.toString(),
+                        relationship=initial.relationship.copy(nature=FinanceNature.valueOf(nature()),role=FinanceFlowRole.valueOf(role()),
+                            eventId=eventId,eventUpdatedAt=snapshot.v4?.events.orEmpty().singleOrNull {it.id==eventId}?.updatedAt,share=share.text.toString()),
+                        costReductionText=reduction.text.toString())
+                }
+                val message=text("自动保存复核草稿；确认前不改变余额。复杂关系或重复核对可接力到应用内。")
+                val mutex=Mutex();var revision=saved?.revision
+                suspend fun persist(draft:FinanceEntryDraft,later:Boolean=false)=mutex.withLock {withContext(NonCancellable) {
+                    container.financeRepository.reviews.save(FinanceCommandToken(java.util.UUID.randomUUID().toString(),epoch),
+                        draft.reviewInput(proposal,epoch),revision,draft.reviewExpected(id),later)
+                    revision=Math.addExact(revision ?: 0L,1L)
+                }}
+                scheduleSave={if(!busy){autosave?.cancel();val draft=current();autosave=editScope.launch {
+                    delay(250);try{persist(draft)}catch(e:CancellationException){throw e}catch(_:Exception){message.text="草稿状态已改变，请接力到应用内核对"}
+                }}}
+                fun later(openApp:Boolean=false) {
+                    if(busy)return
+                    setBusy(true);autosave?.cancel();val draft=current()
+                    editScope.launch {
+                        try {persist(draft,true);if(openApp)context.startActivity(FinanceReviewNotifications.openIntent(context,id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));close(false)}
+                        catch(e:CancellationException){throw e}
+                        catch(_:Exception){setBusy(false);message.text="保存未完成；已保存内容仍保留，请在应用内复核"}
+                    }
+                }
+                val actions=LinearLayout(context);body.addView(actions)
+                fun button(label:String,action:()->Unit)=Button(context).apply {text=label;minHeight=dp(48);applyLifeTypography(LifeType.Action);setOnClickListener {action()}}.also {actions.addView(it,LinearLayout.LayoutParams(0,dp(52),1f));editable.add(it)}
+                button("稍后"){later()};button("应用内接力"){later(true)}
+                button("确认保存") {
+                    if(!busy) {setBusy(true);autosave?.cancel();val draft=current()
+                        editScope.launch {
+                            try {persist(draft);mutex.withLock {
+                                container.financeRepository.reviews.confirm(FinanceCommandToken(java.util.UUID.randomUUID().toString(),epoch),id,
+                                    requireNotNull(revision),FinanceTime.resolve(draft.occurredAt,draft.preservedOccurredAt))
+                            };FinanceReviewNotifications.cancel(context,id);close(false)}
+                            catch(e:CancellationException){throw e}
+                            catch(e:Exception){setBusy(false);message.text=e.message ?: "确认未完成，请接力到应用内核对"}
                         }
                     }
                 }
-                confirm.setOnClickListener {
-                    if (busy) return@setOnClickListener
-                    if (!model.directlyConfirmable) {
-                        // Activity launch is only the user's explicit tap, never discovery itself.
-                        try { context.startActivity(FinanceReviewNotifications.openIntent(context, id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); close() }
-                        catch (_: Exception) { message.text = "请点按账目复核通知，或打开 Life OS" }
-                    } else {
-                        busy = true; later.isEnabled = false; confirm.isEnabled = false
-                        scope.launch {
-                            try {
-                                container.financeAutomationRepository.confirm(id, model.revision, requireNotNull(model.confirmation))
-                                FinanceReviewNotifications.cancel(context, id)
-                                withContext(Dispatchers.Main.immediate) { close() }
-                            } catch (e: CancellationException) { throw e }
-                            catch (_: Exception) { withContext(Dispatchers.Main.immediate) {
-                                busy = false; later.isEnabled = true; confirm.isEnabled = true; message.text = "确认未完成，请打开应用核对"
-                            } }
-                        }
+                val scroll=object:ScrollView(context) {
+                    private fun back(event:KeyEvent):Boolean {
+                        if(event.keyCode!=KeyEvent.KEYCODE_BACK)return false
+                        val ime=rootWindowInsets?.let {androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(it,this).isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())}==true
+                        if(ime)return false
+                        if(event.action==KeyEvent.ACTION_UP)later()
+                        return true
                     }
+                    override fun dispatchKeyEvent(event:KeyEvent)=back(event)||super.dispatchKeyEvent(event)
+                    override fun dispatchKeyEventPreIme(event:KeyEvent)=back(event)||super.dispatchKeyEventPreIme(event)
+                }.apply {isFocusableInTouchMode=true;addView(body)}
+                val params=WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,
+                    (context.resources.displayMetrics.heightPixels*.5f).toInt(),WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT).apply {
+                    gravity=Gravity.BOTTOM;softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 }
-                val scroll = ScrollView(context).apply { addView(body) }
-                val params = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,
-                    (context.resources.displayMetrics.heightPixels * .5f).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_SECURE, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM }
-                windows.addView(scroll, params)
-                window = scroll
-                observer = scope.launch(Dispatchers.Main.immediate) {
-                    combine(container.financeAutomationRepository.observe(), FinanceReviewRequests.visible,
-                        FinanceAutomationSettings(context).observe()) { data, foreground, settings ->
-                        foreground || settings.deliveryMode != FinanceReviewDeliveryMode.IMMEDIATE || !settings.enhancedReceiptOverlay || !settings.permits(proposal) ||
-                            data.proposals.none { it.id == id && it.revision == model.revision &&
-                                it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
-                    }.catch { emit(true) }.first { it }
-                    close()
+                windows.addView(scroll,params);window=scroll;scroll.requestFocus();ready=true
+                flushLater={later()};scheduleSave()
+                configuration=object:ComponentCallbacks {
+                    override fun onLowMemory(){}
+                    override fun onConfigurationChanged(newConfig:android.content.res.Configuration) {
+                        params.height=(context.resources.displayMetrics.heightPixels*.5f).toInt()
+                        runCatching {windows.updateViewLayout(scroll,params)}.onFailure {close()}
+                    }
+                }.also(context::registerComponentCallbacks)
+                screenReceiver=object:BroadcastReceiver(){override fun onReceive(c:Context?,intent:Intent?){close()}}.also {receiver->
+                    if(Build.VERSION.SDK_INT>=33)context.registerReceiver(receiver,IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED)
+                    else context.registerReceiver(receiver,IntentFilter(Intent.ACTION_SCREEN_OFF))
                 }
-                timeout = scope.launch(Dispatchers.Main.immediate) { delay(60_000); close() }
+                observer=scope.launch(Dispatchers.Main.immediate) {
+                    combine(container.financeAutomationRepository.observe(),FinanceReviewRequests.visible,FinanceAutomationSettings(context).observe(),container.financeRepository.observeSnapshot(),
+                        com.qq.closie.data.backup.RestoreStartupGate.state.map {it.status}.distinctUntilChanged()) {data,foreground,prefs,finance,gate->
+                        gate!=com.qq.closie.data.backup.RestoreStartupGate.Status.READY || foreground || prefs.deliveryMode!=FinanceReviewDeliveryMode.IMMEDIATE || !prefs.enhancedReceiptOverlay || !prefs.permits(proposal) ||
+                            (finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L)!=epoch || data.proposals.none {it.id==id && it.revision==proposal.revision && it.status in setOf(FinanceProposalStatus.ACTIVE,FinanceProposalStatus.SNOOZED)}
+                    }.catch {emit(true)}.first {it};close()
+                }
+                monitor=scope.launch(Dispatchers.Main.immediate) {while(isActive){delay(500)
+                    if(!Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
+                }}
                 true
             }
-        } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { withContext(Dispatchers.Main.immediate) { close() }; false }
+        } catch(e:CancellationException){throw e}
+        catch(_:Exception){withContext(Dispatchers.Main.immediate){close()};false}
     }
-
-    /** Listener callbacks and all window mutations run on the main thread. */
-    fun close() {
-        observer?.cancel(); observer = null
-        timeout?.cancel(); timeout = null
-        window?.let { runCatching { windows.removeViewImmediate(it) } }
-        window = null
+    /** Never discards a candidate. Application-owned edit work survives listener teardown. */
+    fun close(persist:Boolean=true) {
+        val flush=flushLater;flushLater=null
+        observer?.cancel();observer=null;monitor?.cancel();monitor=null;autosave?.cancel();autosave=null
+        screenReceiver?.let {runCatching {context.unregisterReceiver(it)}};screenReceiver=null
+        configuration?.let {context.unregisterComponentCallbacks(it)};configuration=null
+        window?.let {view->context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
+        if(persist)flush?.invoke()
     }
 }

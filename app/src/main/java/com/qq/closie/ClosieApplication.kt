@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.first
  */
 class ClosieApplication : Application() {
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Finishes already-entered review edits when a listener is destroyed; not an acquisition scope. */
+    internal val financeReviewEditScope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
 
     /** Application wiring; acquisition knows only the delivery port. */
     fun createFinanceReviewDelivery(scope: CoroutineScope): FinanceReviewDelivery =
@@ -99,6 +101,8 @@ class ClosieApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.qq.closie.data.backup.EncryptedBackupManager.cleanInterruptedScratch(this)
+        com.qq.closie.data.backup.FinanceExportManager.cleanInterruptedScratch(this)
         // Debug builds only: local crash journal at filesDir/debug/last_crash.txt. The real
         // device had a crash CI could not see — this is the v0.2.0 floor under that gap.
         // Release builds must never install it (guarded again inside LifeCrashLog.install).

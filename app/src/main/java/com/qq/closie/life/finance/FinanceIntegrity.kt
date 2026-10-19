@@ -68,10 +68,10 @@ object FinanceIntegrity {
             }
             v4.events.forEach {
                 require(it.relatedTransferId == null || data.transfers.any { transfer -> transfer.id == it.relatedTransferId }) { "手续费对应的转账缺失" }
-                require(it.description.isNotBlank() && (it.personalShareMinor == null || it.personalShareMinor >= 0)) { "事件信息无效" }
+                require(it.personalShareMinor == null || it.personalShareMinor >= 0) { "事件信息无效" }
                 FinanceMoney.fractionDigits(it.currencyCode)
-                require(it.voidedAt != null || eventLinks[it.id].orEmpty().isNotEmpty()) { "有效事件缺少有效流水" }
-                if (it.voidedAt == null && it.personalShareMinor != null) {
+                require(it.voidedAt != null || eventLinks[it.id].orEmpty().isNotEmpty() || data.v16?.economicRows?.any { detail -> detail.eventId == it.id && detail.voidedAt == null } == true) { "有效事件缺少有效流水" }
+                if (it.voidedAt == null && it.personalShareMinor != null && data.v16?.economicRows?.none { detail -> detail.eventId == it.id && detail.voidedAt == null } != false) {
                     val paid = eventLinks[it.id].orEmpty().filter { link ->
                         entries[link.entryId]?.voidedAt == null && link.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE)
                     }.fold(java.math.BigInteger.ZERO) { sum, link -> sum + link.allocatedMinor.toBigInteger() }
@@ -81,7 +81,7 @@ object FinanceIntegrity {
             v4.expected.forEach {
                 require(it.eventId in events && (it.amountMinor == null || it.amountMinor > 0)) { "预计关系无效" }
                 require(it.cancelledAt != null || (events.getValue(it.eventId).voidedAt == null &&
-                    eventLinks[it.eventId].orEmpty().isNotEmpty())) { "有效预计关系不能依附孤立或已作废事件" }
+                    (eventLinks[it.eventId].orEmpty().isNotEmpty() || data.v16?.economicRows?.any { detail -> detail.eventId == it.eventId && detail.voidedAt == null } == true))) { "有效预计关系不能依附孤立或已作废事件" }
             }
             unique(v4.batches) { it.id }; unique(v4.staging) { it.id }; unique(v4.proposals) { it.id }; unique(v4.rules) { it.id }
             require(v4.batches.map { it.digest }.distinct().size == v4.batches.size)
@@ -104,6 +104,7 @@ object FinanceIntegrity {
                 FinanceRuleEngine.validate(FinanceRuleSet(it, conditions[it.id].orEmpty(), actions[it.id].orEmpty()))
             }
         }
+        FinanceV16Integrity.validate(data)
         FinanceProjection.totals(FinanceProjection.ledger(data))
     }
 }

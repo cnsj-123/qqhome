@@ -44,6 +44,7 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
     var overlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var settingsError by remember { mutableStateOf<String?>(null) }
     var editRule by remember { mutableStateOf<FinanceRuleSet?>(null) }
+    var processedShown by androidx.compose.runtime.saveable.rememberSaveable {mutableIntStateOf(30)}
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) {
@@ -71,6 +72,12 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                if(state.loaded) {
+                val epoch=androidx.compose.runtime.saveable.rememberSaveable {state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
+                FinanceOcrIntake(state.busy) {block->vm.mediaAction(epoch,block)}
+                }
+            }
             item { VisibleDetailSettings(discovery, settings) }
             item { FinanceDiagnosticsCard(access, discovery) }
             item {
@@ -136,13 +143,17 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
                 }
             }
             item { Text("最近处理", style = MaterialTheme.typography.titleMedium) }
-            items(state.data.proposals.filter { it.status !in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }.take(30), key = { it.id }) {
-                Text("${FinanceTime.input(it.createdAt)} · ${it.description} · " + when (it.status) {
+            val processed=state.data.proposals.filter { it.status !in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }.sortedByDescending {it.createdAt}
+            items(processed.take(processedShown), key = { it.id }) {proposal->
+                Text("${FinanceTime.input(proposal.createdAt)} · ${proposal.description} · " + when (proposal.status) {
                     FinanceProposalStatus.CONFIRMED -> "已确认"
                     FinanceProposalStatus.REJECTED -> "已忽略"
                     else -> "已失效"
                 }, style = MaterialTheme.typography.bodySmall)
+                val epoch=androidx.compose.runtime.saveable.rememberSaveable {state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
+                FinanceAttachments(state.finance,FinanceMediaTarget(proposalId=proposal.id),state.busy,state.error) {block->vm.mediaAction(epoch,block)}
             }
+            if(processed.size>processedShown) item {TextButton({processedShown+=30}) {Text("再显示 30 条已处理记录")}}
         }
     }
     editRule?.let { set -> key(set.rule.id) { FinanceRuleEditor(set, state, vm) { editRule = null } } }
