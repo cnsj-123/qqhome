@@ -1,5 +1,11 @@
 # V16 连续施工 checkpoint（2026-10-19）
 
+最终P1固定规则修复：FinanceCivilDate.assess按ZoneRules.isFixedOffset识别包括UTC/Etc/UTC/UTC+09:00的命名固定时区，矛盾区间拒绝为INVALID；非固定规则仍保留历史待核验。新增2个真实路径方法：原epoch位于整体偏移30分钟区间内的完整性反例、三种命名时区的加密恢复原子拒绝；最低97/660、增量33/170，既有658方法和此前展示/双Observation回归保留。Entity/DAO/Migration/官方5、现金/anchor、compare与CI门禁不变。日期及测试更正收进原第2逻辑提交，工程记录在第3提交。当前Kotlin/JUnit/设备均UNVERIFIED，无下载或远端操作；以下为此前快照。
+
+CI52最终Review更正：日期入账/观察/区间/净额展开统一可信度标签；修正净额页直接格式化epoch的旁路，未保存核对只表示现金推算、不认证入账证据。观察区间回归现用两个不同且同时持久存在的ID，不改compare契约。新增2个Room方法及1个真实Compose显示方法；最低97/658、增量33/168，原648及此前全部方法保留。辅助官方DDL结构比对仅本地执行，不是android.yml强制步骤；既有CI门禁未改。Entity/DAO/Migration/官方5与现金/anchor未改，Kotlin/JUnit/设备仍UNVERIFIED；以下首版CI52状态为历史快照。
+
+最新定点任务：CI52 Repair，唯一代码输入e440e6dd39ddb140e9aa55f90e8505e96845f605，文档输入60bdce7361649c47699c2a328a0cc1ecd746b1b5；本地分支fix/v16-ci52-integrity-local。媒体测试修正row.managedPath；Civil Date四类证据集中校验，不可靠历史区间保留但不用于范围，算法5使旧结论重核；新增7个真实路径方法，最低97/655、增量33/165。Entity/DAO/TypeConverter/Migration未改，指定CI52 artifact的官方5原字节归档。Python22/22、结构、SQLite、官方DDL/迁移结构、历史及提交后严格Schema本地PASS。当前Android重新编译、全部JUnit、Room/Compose/恢复/2000条实测与APK仍UNVERIFIED。完整交接及最终HEAD/patch哈希定位见CI52-FIX.md；无push/PR/merge/工具链下载。下文保留各阶段历史状态，不能将旧UNVERIFIED冒充本轮PASS。
+
 最新指令：本聊天粘贴的 G0–G7 全量施工要求。旧资料中的 G0/G1 限制已被替代。
 Owner 后续明确：本机没有 Android 工具链，不要下载；继续代码施工，后续交给 GitHub 验证。
 

@@ -1,0 +1,127 @@
+{
+  "repository": "cnsj-123/qqhome",
+  "codeBase": "e440e6dd39ddb140e9aa55f90e8505e96845f605",
+  "docsBase": "60bdce7361649c47699c2a328a0cc1ecd746b1b5",
+  "historicalR2": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+  "runId": 39213117803,
+  "jobId": 117930744565,
+  "url": "https://github.com/cnsj-123/qqhome/actions/runs/39213117803",
+  "observedSteps": [
+    {
+      "name": "Set up job",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/setup-java@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run gradle/actions/setup-gradle@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "V16 source structure and production SQLite migration checks",
+      "conclusion": "success"
+    },
+    {
+      "name": "Generate Room schema",
+      "conclusion": "success"
+    },
+    {
+      "name": "Strict committed official Room schema gate (bootstrap remains red until committed)",
+      "conclusion": "failure"
+    },
+    {
+      "name": "Full tests (populated migrations, Finance, D1-D5, backup, concurrency, UI, 2000-row fixture)",
+      "conclusion": "failure"
+    },
+    {
+      "name": "Require actual JUnit coverage and 2000-row metrics",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Assemble CI debug APK",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Record debug APK checksums and commit",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload CI debug APK (com.qqhome.lifeos.debug)",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload unit test report",
+      "conclusion": "success"
+    },
+    {
+      "name": "Upload Room schema",
+      "conclusion": "success"
+    },
+    {
+      "name": "Upload V16 gate and execution evidence",
+      "conclusion": "success"
+    },
+    {
+      "name": "Check release signing availability",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Build signed Life OS update APK",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload signed update release APK",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Remove temporary release keystore",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run gradle/actions/setup-gradle@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run actions/setup-java@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success"
+    }
+  ],
+  "observedLogExcerpts": [
+    "2026-10-19T07:00:28.4197073Z {\"check\": \"strict-committed-official-room-schema\", \"status\": \"FAIL\", \"comparisonBase\": \"245e1475cd1d47a4205ab49f75d5e06d22de701c\", \"errors\": [\"Committed KSP official Room 5 (bootstrap must fail until committed): Command '['git', 'ls-files', '--error-unmatch', '--', 'app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json']' returned non-zero exit status 1.\"], \"schemaSha256\": {\"1\": \"af8a75debb4670529fbe2ec2e40b37acbdda7e00d3851f86dd42e19937666db1\", \"2\": \"9e59e50eeefec1286dbd2fd1dacedb4200c4a4bb2ccfb6fd5c2f2b48d9718786\", \"3\": \"d11e8bcebd9b3ae61a88a373a9072159100b8571eb03fe5ab588de0c1e545fff\", \"4\": \"c88b489e9c8b1edb148805cf2dbe021e89384eee75043fe7dbd13d1511c23d7a\"}, \"versions\": {\"roomDatabase\": 5, \"backupFormat\": 5, \"backupManifestSchema\": 1, \"aeadEnvelope\": 2}, \"androidRuntime\": \"UNVERIFIED\"}",
+    "2026-10-19T07:01:00.4972414Z > Task :app:compileDebugKotlin",
+    "2026-10-19T07:02:43.6059061Z > Task :app:compileDebugJavaWithJavac",
+    "2026-10-19T07:03:03.7981504Z > Task :app:compileDebugUnitTestKotlin FAILED",
+    "2026-10-19T07:03:03.7983673Z e: file:///home/runner/work/qqhome/qqhome/app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt:24:51 Unresolved reference: managedPath",
+    "2026-10-19T07:03:03.9585122Z BUILD FAILED in 2m 35s"
+  ],
+  "artifact": {
+    "id": 12168253801,
+    "name": "room-schema-run52-e440e6dd39ddb140e9aa55f90e8505e96845f605",
+    "runId": 39213117803,
+    "headSha": "e440e6dd39ddb140e9aa55f90e8505e96845f605",
+    "zipSha256": "e07044391b14115d291aa5080efc3298405e20a255a452ce51b989917157badd",
+    "zipDigestMatchedGitHub": true,
+    "official5Sha256": "0552aba2f220be4a927b455db260aec8cefc787e4c26801906265bbdf5b58aea",
+    "official5Bytes": 225392,
+    "identityHash": "f251a04bbe24f7c79d40d1ff715805f4",
+    "entities": 75,
+    "historicalSchemas1To4": "Artifact bytes == Git R2 bytes; working files unchanged"
+  },
+  "baseRunJUnit": "NOT_RUN: unit test compilation failed",
+  "baseRunAssemble": "NOT_RUN: skipped; no CI52 APK",
+  "currentPatchAndroidExecution": "UNVERIFIED"
+}

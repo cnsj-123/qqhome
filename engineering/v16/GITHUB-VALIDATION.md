@@ -1,5 +1,11 @@
 # V16 严格 CI 与官方 Schema Bootstrap（2026-10-19）
 
+最终固定规则更正：最低97文件/660方法、V16增量33文件/170方法，既有658全部保留；命名固定时区30分钟矛盾区间及实际加密恢复反例新增，当前Android/JUnit均UNVERIFIED。生产Schema/迁移/现金/anchor与CI工作流保持；辅助官方DDL结构检查仍仅本地使用，未接入强制CI。最终补丁/来源及复验证据见CI52-FIX.md与交付manifest；以下为此前快照。
+
+CI52最终Review状态：最低97文件/658方法、增量33文件/168方法，原648及此前新方法均保留；新增标签/真实Compose回归及修正双持久观察点测试，执行仍UNVERIFIED。check-official-schema-migration.py仅为本地辅助结构比对，android.yml未调用；强制CI步骤仍为既有工程/历史/KSP/verify-room-schema.py/完整JUnit及逐方法与2000条指标/APK链，未弱化也未声称该辅助脚本在CI强制执行。最新内容见CI52-FIX.md；下文为首版及更早状态快照。
+
+当前CI52修复入口：[CI52-FIX.md](CI52-FIX.md)。唯一增量基线为e440e6dd39ddb140e9aa55f90e8505e96845f605；官方5已从指定#52 artifact原字节归档，Entity/Migration未改变。最低契约97文件/655方法，V16审计33文件/165方法，核对算法5；本地严格Schema/辅助检查PASS，最终KSP重生成、JUnit/Room/Compose/备份运行与APK仍UNVERIFIED。Owner从该基线应用单份multi-commit patch后手动推送，继续原严格CI流程。以下CI51/首次Bootstrap说明保留为历史，旧“5未生成/648方法/算法4”不代表本轮现状。
+
 CI51综合修复增量基线为 `78950821129f522d17359a7ec3bca2232c120601`，分支feature/life-os-v16-ci-review，R2仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。以交接包manifest中最终HEAD和补丁SHA-256为准。本机未下载工具链，只读获取CI51日志/元数据，未push、PR、merge、发布或触发CI。
 
 官方Room1–4已跟踪且Git内容与R2相同；当前最终模型的官方5尚未生成或提交。engineering/v16/schema-v5.json只是设计契约，不能替代官方导出。严格门禁状态是FAIL（缺少最终已提交官方5），不代表当前Android编译已通过。

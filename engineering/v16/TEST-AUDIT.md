@@ -1,5 +1,11 @@
 # V16 测试源码自审（2026-10-19）
 
+最终固定规则Review：保留已有658方法，新增shiftedFixedNamedZoneEvidenceIsInvalidEvenWithUnchangedEpochInsideTheRange及forgedFixedNamedZoneEncryptedBackupsCannotChangeAnExistingLedger。固定命名别名与字面offset均校验，东京/洛杉矶作非固定规则对照；仅移动区间两端、原epoch不动，分别检验两类Entity的FinanceIntegrity拒绝及实际加密恢复的非空目标全Snapshot不变。最低97/660、增量33/170，pin与inventory同步；两项Android/JUnit执行均UNVERIFIED。既有标签/真实双ID区间/Compose方法保留，未旁路或降低断言。以下为此前快照。
+
+CI52最终Review：新增CivilDate四类精确标签/已保存信心、无已保存核对说明两方法及FinanceSmokeTest真实净额展开标签方法；原unverifiedObservation…方法保留并改用当前快照内两个不同Observation ID，增加现金/账户/anchor/入账行不变断言。最低97/658、增量33/168；原648及首版新增7方法全部保留，pin与inventory同步。实际源码/工程验证与未执行Android边界见CI52-FIX.md；本次Kotlin/Compose/JUnit仍UNVERIFIED。以下审计数值为此前快照。
+
+CI52增量审计：保留原648最低方法，新增CivilDate 7方法，固定97文件/655方法，V16清单33文件/165方法；pin与动态inventory同步更新。新方法逐项映射和恢复/区间反向审查见CI52-FIX.md的T01–T15表。既有跨时区/DST及备份方法仅加强状态/差额/现金/anchor断言，媒体仅修正typed row字段访问；没有删除或旁路。22例Python工程门禁实际PASS；全部当前Kotlin方法执行仍UNVERIFIED。以下CI51审计为历史快照。
+
 当前CI51修复范围：R2以来新增或修改33个Kotlin测试文件/158个方法；含第二轮4个精度方法和本轮10个方法。逐文件清单、完整类名/方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有当前SHA的Kotlin测试运行仍UNVERIFIED。
 
 固定最低契约增至97个测试源文件、648个方法，原638全部保留，详见test-minimum-contract.json；最低契约由规范化SHA-256锁定，独立于动态清单，删除文件/方法、重命名或暂存删除均明确FAIL。JUnit按完整类名和方法/显式参数调用名逐项核验，不能按重复用例数量填覆盖。该固定覆盖要求不代表对其余R2文件新增产品语义审查，也不代表648个方法已执行。
