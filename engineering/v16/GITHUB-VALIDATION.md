@@ -1,32 +1,30 @@
-# V16 GitHub 验证交接（2026-10-19，尚未执行）
+# V16 严格 CI 与官方 Schema Bootstrap（2026-10-19）
 
-Owner 要求本机不下载 JDK/SDK/Gradle/模拟器，后续由 GitHub 验证。本文件不授权 push、PR、merge 或发布；本地未触发任何远端运行。
+本轮增量基线为 `9a0acf0da84544750bd37f1e15e5220c4a899a95`，R2 仍为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`。以交接包 manifest 中最终 HEAD 和补丁 SHA-256 为准。本机按 Owner 要求未下载工具链，未 push、PR、merge、发布或触发 CI。
 
-Android 基线为 `245e1475cd1d47a4205ab49f75d5e06d22de701c`，文档依据为独立文档分支 `60bdce7361649c47699c2a328a0cc1ecd746b1b5`。核对交接包 manifest 的 HEAD、补丁 SHA-256 和本地分支，不与文档分支混合历史。当前交接仍属施工 checkpoint，所有 40 项均未完成整体验收，没有候选 APK。
+官方 Room `1.json`–`4.json` 已跟踪且 Git 内容与 R2 相同；官方 `5.json` 尚未生成或提交。`engineering/v16/schema-v5.json` 只是设计契约，不能替代官方导出。当前严格门禁真实状态是 FAIL（缺少已提交的官方5），不是 Android 编译失败或通过的证据。
 
-现有 `.github/workflows/android.yml` 已按以下顺序准备。仅在 Owner 后续自行授权的 GitHub 环境运行；本机不执行 Gradle。
+Owner 授权后，在干净的上述 V16 HEAD 上用 `git am` 应用本轮 format-patch，再推送匹配 `feature/life-os-v16-*` 的功能分支，例如现有 `feature/life-os-v16-g0-g7-local`，自动触发 Android CI。main push、pull_request 和 Actions 页 Android CI 的 Run workflow 入口保留；手动运行时选择同一功能分支。每次先核对 Actions 的完整 commit SHA，禁止混用旧运行的报告或 APK。
 
-1. 记录 `git rev-parse HEAD`、JDK/Gradle/SDK 实际版本。使用工程现有 JDK 17、Gradle wrapper、compileSdk 35 配置。
-2. `python3 engineering/v16/check-source.py` 与 `python3 engineering/v16/check-migration.py`。这是结构/SQLite辅助证据，不替代 Room/Kotlin。
-3. `./gradlew :app:kspDebugKotlin --stacktrace`。修复所有实际 Kotlin/KSP 错误，由 KSP 生成 `app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json`；不得手写此官方 schema。已发布 1–4.json 与基线必须完全一致。
-4. `./gradlew :app:testDebugUnitTest --stacktrace`，完整执行，保留 XML 和 HTML 报告。任何 failure、ignored 或超时都按实际记录，禁止删测试或改弱断言使其变绿。
-5. 上述通过后执行 `./gradlew :app:assembleDebug --stacktrace`，保留 APK、SHA-256、applicationId、versionCode、versionName 和对应 HEAD。
-6. 对唯一修复后 SHA 做完整独立审查，修复确定问题，再执行受影响及必要完整回归。独立 Reviewer 本轮因使用额度未完成复查，上轮静态意见不能自动覆盖当前 HEAD。
-7. 全部本机可替代的验证通过后，统一使用 `OWNER-ONE-ROUND.md` 做一轮设备验证。七宿主、vivo/IME/Back/旋转/锁屏/撤权和性能不能由 Robolectric 结果冒充通过。
+首次 Bootstrap 及后续门禁：
 
-重点回归位置：
+1. CI 完整 checkout，使用 JDK 17、工程 Gradle wrapper 和 compileSdk 35。源码检查、9例工程门禁测试、测试清单、真实 SQLite 辅助检查及历史1–4校验先执行；这些结果不替代 Kotlin/Room。
+2. 执行 `./gradlew :app:kspDebugKotlin --stacktrace`，日志在 `ksp.log`。若此处失败，先按实际编译/KSP根因修复；不能手写官方5来绕开。
+3. 严格脚本要求5同时被跟踪、存在于 HEAD、KSP生成字节与HEAD一致，且整个schema目录无diff；1–4同时检查R2。第一次缺少已提交5时必须红灯。
+4. KSP成功后，即使Bootstrap门禁失败也继续 `./gradlew :app:testDebugUnitTest --stacktrace` 收集完整测试结果，job仍为失败。真实JUnit不得失败或跳过；`verify-ci-tests.py` 检查V16清单中的类/方法数量及本次SHA的实际2000条指标，缺报告、缺指标或错SHA均FAIL。CSV目录声明为测试输入，CI禁用该Test任务的旧结果缓存和up-to-date跳过。
+5. 下载本次 `room-schema-run<run>-<SHA>` 中KSP导出的官方5，核对运行SHA、KSP日志及 `database.version=5`、实体集合、identityHash；原样放入 `app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json` 并本地提交。由Owner决定下一次推送；不能用设计JSON重写文件。此动作产生新的代码SHA。
+6. 下一轮KSP再次生成并严格逐字节比较，任何变化仍FAIL。只有所有必要门禁与完整测试通过才运行 `./gradlew :app:assembleDebug --stacktrace`。Sol负责定位实际首个失败根因并提供新的本地增量修复，Owner决定推送。
 
-| 范围 | 已准备的真实用例 |
+| Artifact 名称（`<run>`为run number，`<SHA>`为完整提交SHA） | 内容与检查方法 |
 |---|---|
-| G0/D1–D5 | FinanceV16ContractTest（含正债务起点/还款不反转/超额/新起点） |
-| 迁移 | FinanceV5MigrationTest：已发布1–4→5，有数据、旧ID/anchor；原3/4迁移用例继续保留 |
-| 草稿/生命周期 | FinanceEconomicDraftV16Test、FinanceWorkspaceV16Test、FinanceReviewSessionV16Test |
-| 预计/商品 | FinanceExpectedTasksV16Test、FinancePurchaseAllocationV16Test、FinanceInsightsV16Test |
-| 导入 | FinanceImportRepositoryTest：后段真实失败整批回滚、空备注、绑定/附件后撤销、去重与原ID |
-| 备份/隐私 | EncryptedBackupEnvelopeTest、EncryptedBackupManagerV16Test、FinancePurposeReadV16Test、FinanceShareV16Test及原Restore/Backup全套 |
-| 来源/OCR/附件 | FinanceProvenanceV16Test、FinanceMediaV16Test、FinanceLocalOcrParserTest、HostDetailAdaptersTest及原采集测试 |
-| Compose | FinanceSmokeTest（含真实还款两腿与净额）、LifeSwipeOwnershipTest、FinanceFilterStateV16Test |
+| `room-schema-run<run>-<SHA>` | 官方1–5 JSON；首次KSP成功才会有5，先核对本次运行再原样归档。没有5时查ksp.log |
+| `unit-test-results-run<run>-<SHA>` | JUnit XML、HTML和 `reports/v16/testDebugUnitTest/synthetic-history-2000.json`；检查failures/errors/skipped、144个V16源码方法对应执行及真实指标 |
+| `v16-ci-evidence-run<run>-<SHA>` | KSP/全套测试/assemble等日志、严格schema报告、执行报告校验、结构/SQLite/测试清单；失败时也上传可取得的材料 |
+| `lifeos-ci-debug-run<run>-<SHA>` | 仅assemble成功后上传；debug APK（applicationId `com.qqhome.lifeos.debug`）、`commit-sha.txt` 和 `SHA256SUMS.txt`。校验SHA文件与本次运行/下载APK哈希 |
+| `lifeos-update-release-run<run>-<SHA>` | 保留的main正式签名流程产物；feature不读取release signing secrets，不将此产物作为功能分支CI必要项 |
 
-本地现有可复核证据：`static-result.json`（403 Kotlin 文件/75实体，结构检查）、`migration-sqlite-result.json`（旧27表/新48表/外键/3故障回滚）。这些文件没有 Kotlin、Room、Compose、Android 或设备 PASS。
+报告/schema/logs使用 `always()` 上传。没有APK表示本次尚未完成构建，不能取旧APK补齐。2000条报告包含实际分阶段/总耗时和JVM堆采样，属于CI算法与数据回归，不能冒充真机帧率或峰值内存验收。
 
-不接真实云、不发送真实数据。若需补充现场记录，仅用新建合成账本和不含私密信息的所选测试图。目标机不存在某个宿主或没有安全测试形态时记录 NOT_TESTED，不填写虚构 App 版本。
+新增/修改测试逐文件自审见 `TEST-AUDIT.md`，问题/文件矩阵见 `REVIEW-FIX.md`。Room数据库5、备份格式5、manifest schema1、AEAD envelope2和核对指纹算法2是不同版本空间。本轮没有更改实体DDL或typed备份结构。
+
+所有Android/KSP/Room/Compose、2000条真实运行、Actions实际执行和APK均UNVERIFIED；本地只有工程门禁9例、历史schema、结构与SQLite辅助证据。完整CI通过后才对唯一SHA进行最终独立Reviewer审查；无阻断后按 `OWNER-ONE-ROUND.md` 集中一次设备验收。七宿主、vivo/IME/Back/锁屏/撤权和真机性能保持DEVICE UNVERIFIED，不安排逐阶段Owner手验。

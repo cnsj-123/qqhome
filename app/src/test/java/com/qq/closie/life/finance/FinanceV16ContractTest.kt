@@ -106,6 +106,15 @@ class FinanceV16ContractTest {
             expectedRevision = before.v16!!.economicRows.single().revision, allocationsComplete = true)); fail() }
         catch (_: IllegalArgumentException) { }
         assertEquals(before, cash.snapshot())
+        val complete=input.copy(eventId=eventId,expectedRevision=before.v16!!.economicRows.single().revision,
+            allocationsComplete=true,shares=input.shares+FinanceShareInput("three",12_000,"self","self","fund",FinanceShareRelation.REPAYABLE_CONFIRMED))
+        economics.confirmEconomic(economics.token(),complete)
+        val after=cash.snapshot()
+        assertEquals(30_000L,exactSum(after.v16!!.shareRows.filter {it.voidedAt==null}.map {requireNotNull(it.amountMinor)}))
+        assertEquals(PersonalCostTotal(12_000,0),FinanceCostProjection.eventTotal(after,eventId))
+        assertEquals(12_000L,FinanceObligationProjection.rows(after).single().openMinor)
+        assertTrue(after.entries.isEmpty())
+        FinanceIntegrity.validate(after)
     }
 
     @Test fun T06_historicalResolutionClosesWorkWithoutManufacturingBankEvidence() = runTest {
@@ -154,6 +163,21 @@ class FinanceV16ContractTest {
         val first = economics.recordSettlement(token, debt.id, debt.revision, request)
         assertEquals(first, economics.recordSettlement(token, debt.id, debt.revision, request))
         assertEquals(1, cash.snapshot().entries.size)
+        val before=cash.snapshot();val v=before.v16!!
+        val economic=v.economicRows.single();val funding=v.fundingRows.single();val share=v.shareRows.single()
+        val edit=FinanceEconomicInput(eventId=debt.eventId,expectedRevision=economic.revision,description="",currencyCode="CNY",
+            occurredAt=day(9),valueMinor=12_000,valueBasis="合成明确更正",categoryId=null,allocationsComplete=true,
+            funding=listOf(FinanceFundingInput(funding.id,funding.partyId,funding.amountMinor,funding.entryLinkId,funding.basis)),
+            shares=listOf(FinanceShareInput(share.id,share.amountMinor,share.beneficiaryId,share.bearerId,share.fundingId,share.relation)))
+        try {economics.confirmEconomic(economics.token(),edit.copy(expectedRevision=economic.revision-1));fail()}
+        catch (_:IllegalArgumentException) { }
+        assertEquals(before,cash.snapshot())
+        val gift=edit.copy(shares=listOf(edit.shares.single().copy(bearerId=funding.partyId,relation=FinanceShareRelation.GIFT_CONFIRMED)))
+        try {economics.confirmEconomic(economics.token(),gift);fail()}
+        catch (_:IllegalArgumentException) { }
+        assertEquals(before,cash.snapshot()) // Existing repayment and its obligation cannot be erased by an enum edit.
+        assertEquals(4_000L,FinanceObligationProjection.rows(cash.snapshot()).single().openMinor)
+        assertEquals(12_000L,FinanceCostProjection.eventTotal(cash.snapshot(),debt.eventId).confirmedMinor)
         val snapshot = LifeBackupApplier.snapshot(db)
         LifeBackupApplier.restoreSnapshot(db, snapshot)
         try { economics.recordSettlement(token, debt.id, debt.revision, request); fail() }

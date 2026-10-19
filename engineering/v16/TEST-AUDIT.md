@@ -1,0 +1,63 @@
+# V16 测试源码自审（2026-10-19）
+
+范围：R2以来新增或修改的32个Kotlin测试文件，含本轮3个新文件；逐文件清单、方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有Kotlin测试运行仍UNVERIFIED。
+
+| 测试文件/类 | 检查内容与真实边界 | 自审说明 |
+|---|---|---|
+| ArchitectureBoundaryTest | 源码依赖、唯一Root、debug标识、schema只进debug assets | 架构静态断言，不冒充运行UI |
+| BackupManagerTest | 实际URI归档、typed数据库、媒体、恢复后可继续写 | 保留原失败/坏包/回滚断言；备份格式与受支持旧包兼容 |
+| EncryptedBackupEnvelopeTest | 真正分段AEAD、盐、错密钥、篡改/截断/乱序/尾随字节 | 有界真实加解密，不是JSON模拟 |
+| EncryptedBackupManagerV16Test | 实际manager导出文件/解密/跨库恢复/损坏/错密码/写入失败 | 密码清零、暂存清理、失败数据库不变，真实Room |
+| FinanceAssistantProviderTest | T09/T10用途/范围/撤销/恶意建议 | 使用获准的离线Fake transport，测试真实Coordinator；没有真实云或网络执行，建议仅惰性数据 |
+| FinanceAutomationTest | 候选、正式确认、原子失败、重复确认、规则顺序 | 真实Repository/DAO与纯规则引擎；保留权威来源断言 |
+| FinanceCalculatorTest | 精确表达式/非法/溢出 | 调生产计算器，不改变正确金额 |
+| FinanceMoneyTest | 十进制精度、符号、范围、日期解析与原时间保留 | 无Double近似，无默认时区固定epoch假设 |
+| FinanceEconomicDraftV16Test | 原始草稿/恢复/epoch/确认幂等/报销500/50/450 | 真实Room；300+150结算后成本仍50，不用假现金替代 |
+| FinanceExpectedTasksV16Test | 未知/部分到账/明确结束/恢复/历史累计目标 | 不把预计写收入；固定clock用来证明非按墙钟猜顺序 |
+| FinanceImportRepositoryTest | 真CSV/XLSX、去重、后段失败整批回滚、后续关系保留、空备注 | 调生产stage/commit/undo；新typed兼容断言保留完整事实 |
+| FinanceInsightsV16Test | 独立统计/预算、商品退款、未分配、账期 | 保留D4和原付款；原流水关联检查完整ID集合 |
+| FinanceLocalOcrParserTest | 原文候选、歧义/余额/编号/不完整日期 | 纯parser测试，不冒充MLKit或手机OCR运行 |
+| FinanceMediaV16Test | 真实跨域引用、恢复缺源、重连、OCR候选 | 本轮修复DAO无ORDER BY下的插入顺序假设：比较两条完整实体的ID映射并另断言数量2，内容断言未降低 |
+| FinanceMigrationTest | populated v2、旧记录/ID/精度 | 真实MigrationTestHelper及Room打开到v5 |
+| FinanceV4MigrationTest | populated v2/v3→4与继续打开v5、anchor/旧语义 | 不只建空库；官方已发布schema保留 |
+| FinanceV5MigrationTest | populated v1/v2/v3/v4→5 | 4个入口版本，旧capture/账户/Entry/anchor，typed不伪造；依赖KSP官方5.json |
+| FinancePortableExportTest | 真实ZIP条目与CSV公式防护 | 是导出单元边界；Manager实际恢复由其他文件覆盖 |
+| FinanceProvenanceV16Test | 编号/身份/工具/时效绑定/旧证据版本/恢复 | 真实Repository/DAO；无真实账号，恢复先禁用匹配 |
+| FinancePurchaseAllocationV16Test | 更正/解绑、释放调整、跨事项错误覆盖 | 真实事务；失败前后完整快照相等，现金及成本值不减弱 |
+| FinancePurposeReadV16Test | 用途隔离、整笔现金不继承事项授权、未知、字段独立到期 | 真实Room+生产投影；本轮补prepared字段到期 |
+| FinanceRecoveryV16Test | 双腿整组/单调版本/批量冲突/安全恢复 | 真实Room，无部分提交；后续无关新增不阻止安全恢复 |
+| FinanceReviewSessionV16Test | 草稿/稍后/跨表面竞争/明确退款/已有现金关联 | 本轮将helper日期设为可提交值，仅未完成场景显式使用“未完成日期”并断言保存；不改钱数或成功/失败预期 |
+| FinanceShareV16Test | 单grant片段、撤销/改账/到期/恢复后拒绝旧预览 | 真实Repository；没有实际发送消息或启动外部接收应用 |
+| FinanceV16ContractTest | T01–T08/T11/T12、gift/debt/unknown、D4、净额起点/还款 | 真实Room及加密typed恢复；本轮补T05完整100/80/120分配、T08过期revision及已有还款拒绝改赠与，失败前后完整快照相等；正确金额保持200/-40/160及报销500/50/450 |
+| FinanceWorkspaceV16Test | 真实草稿/连续editGeneration/提交后取消/anchor/posted/单调核对 | 固定clock制造竞争边界；post已知测试不拿occurredAt回填 |
+| FinanceCalendarStopsTest | 纯停靠状态函数 | 不能替代系统Back/IME/厂商手势 |
+| FinanceFilterStateV16Test | Bundle条件恢复、完整账扫描后筛选、posted精确区间 | 同行余额与完整算术一致，cash与posted不混 |
+| FinanceSmokeTest | 真实Compose→VM→Repository→Room，账户/流水/转账/筛选/还款 | 操作前等真实loaded，不操作真实设备；Compose未运行 |
+| FinanceReconciliationScopeV16Test | 本轮新增：范围外/未知/早于cash/后补/anchor/void/算法升级 | 无法定位时book与difference均null；真实保存结论再作废验证失效，不把模拟saved当持久命令 |
+| FinanceSyntheticHistoryV16Test | 本轮新增：真实已提交2000条fixture→导入/DAO/投影/重复/过滤 | SHA对照、独立逐笔加减oracle、最终金额；指标仅在实际运行时写出，无假性能PASS |
+| FinanceHomeProjectionV16Test | 本轮新增：时钟/相关依赖/到期/撤销/门禁/恢复 | 控制时间和通知调度，财务快照来自真实Room，计数器委托真实生产成本计算；100tick不重算 |
+
+旁路检查：未发现新增/修改测试里的Ignore、Disabled、Assume或return@runTest绕过；CI无忽略Gradle失败的`|| true`/continue-on-error，日志管道用pipefail。断言个数、源码文字检查不能证明Kotlin类型正确，因此KSP、真实JUnit XML和完整测试仍是强制门禁。
+
+状态隔离：Room用例每例新建in-memory DB，Before/After重置RestoreStartupGate；备份额外目标库在finally关闭。新Home用例使用testScheduler/backgroundScope，时区由同一默认时区计算比较日期，不依赖固定墙钟。2000条测试金额与时区无关，10分钟仅是防卡死超时，不是性能通过线。现有真实线程restore竞争用例保留有界等待，运行稳定性仍由CI报告验证。
+
+D1/D2/D3/D4主要由FinanceV16Contract/Workspace/Insights/Purchase/Recovery覆盖；D5与T09/T10由PurposeRead/Share/Assistant/Backup覆盖。
+
+| G0 不变量 | 对应现有方法/本轮补强（全部运行UNVERIFIED） |
+|---|---|
+| T01 赠与无本人现金/债务 | Contract.T01，价值120、成本0、Entry/义务为空 |
+| T02 垫付及还款不重复消费 | Contract.T02，承担120、还款120后成本仍120/义务0 |
+| T03 赠与/债务混合 | Contract.T03，300中赠100/需还200，还80后义务120 |
+| T04 未知不等于0 | Contract.T04、PurposeRead.unknownLegacyShareNeverBecomesConfirmedZeroOnHome |
+| T05 精确分配 | Contract.T05，缺120时不完整；本轮补100/80/120闭合、只需还部分形成义务 |
+| T06 历史结清非银行证据 | Contract.T06，无Entry、现金证据仍不足 |
+| T07 跨月调整 | Contract.T07、Insights.purchasePartialRefundTimeline…，200/-40/160保留 |
+| T08 关系更正/版本/恢复 | Contract.T08，本轮补过期revision和已还80后拒绝删除需还关系；原重复确认/restore epoch拒绝不变 |
+| T09 关闭/未授权不出站 | Assistant.T09、PurposeRead、Share；Fake transport只观察真实Coordinator边界 |
+| T10 在途撤销/恶意结果 | Assistant.T10，生产Coordinator拒绝落地及扩范围 |
+| T11 加密跨库恢复 | Contract.T11、EncryptedBackupManagerV16Test/EnvelopeTest，typed金额守恒及撤销授权 |
+| T12 分币/负债/旧anchor | Contract.T12及positiveLegacyDebt…/negativeOpening…、Workspace.anchorPreview… |
+
+F44/F46/F48真实宿主、MLKit离线与vivo/IME/权限/Back仍DEVICE UNVERIFIED。40项功能映射沿用feature-matrix.md，不把源码测试清单写成40项验收通过。
+
+本地已实际运行的另9例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节校验、4例JUnit/指标报告解析，使用合成文本仓库和报告，不是上述144个Kotlin方法。首次Windows运行失败在只读Git对象清理；已加限定合成目录的只读标志处理，原断言不变，最终9例通过。未添加/下载任何Android工具链或YAML依赖；Actions实际解析和执行待Owner推送。

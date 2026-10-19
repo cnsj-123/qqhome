@@ -26,7 +26,9 @@ class FinanceMediaV16Test:FinanceRoomTest() {
         finance.media.unlink(token(),first,1)
         assertEquals(before.mediaAssets,LifeBackupApplier.snapshot(db).mediaAssets)
         assertEquals(1,finance.snapshot().v16!!.mediaLinkRows.count {it.voidedAt==null})
-        assertEquals(listOf(one,two),finance.snapshot().entries)
+        val cashAfter=finance.snapshot().entries
+        assertEquals(2,cashAfter.size)
+        assertEquals(listOf(one,two).associateBy {it.id},cashAfter.associateBy {it.id})
     }
     @Test fun olderRestoreCanRemoveSharedAssetWhileRetiringNewReferenceWithoutErasingCash()=runTest {
         val a=account();val entry=payment(a.id)

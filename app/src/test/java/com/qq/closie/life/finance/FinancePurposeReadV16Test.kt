@@ -26,6 +26,17 @@ class FinancePurposeReadV16Test:FinanceRoomTest() {
         finance.workspace.revoke(token(),grant);s=finance.snapshot()
         assertTrue(FinancePurposeRead.facts(s,FinanceReadPurpose.HOME,"home-memory",1_000).isEmpty())
     }
+    @Test fun preparedFactsDropOnlyExpiredFieldsWithoutReenteringCostProjection()=runTest {
+        val a=account();val p=payment(a.id,123);val event=eventId(p.id)
+        finance.workspace.grant(token(),FinanceReadPurpose.HOME,"home-memory",setOf(event),emptySet(),true,true,false,3_000)
+        finance.workspace.grant(token(),FinanceReadPurpose.HOME,"home-memory",setOf(event),emptySet(),false,true,true,5_000)
+        val prepared=FinancePurposeRead.prepareFacts(finance.snapshot(),FinanceReadPurpose.HOME,"home-memory",1_000)
+        assertEquals(123L,prepared.at(2_999).single().amountMinor)
+        val after=prepared.at(3_000).single()
+        assertNull(after.amountMinor);assertFalse(after.incomplete)
+        assertEquals(p.description,after.description);assertEquals(p.occurredAt,after.occurredAt)
+        assertTrue(prepared.at(5_000).isEmpty())
+    }
     @Test fun eventGrantDoesNotDiscloseWholeSharedCashEntry()=runTest {
         val a=account();val entry=payment(a.id,10_000)
         val s=finance.snapshot();val first=s.v4!!.events.single()

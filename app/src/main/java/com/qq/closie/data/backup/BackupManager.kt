@@ -20,7 +20,7 @@ import java.io.File
  * media without a single warning. A backup that silently omits half the app is worse than no backup,
  * because it is trusted.
  */
-// v3 requires the typed Finance section. Older clients reject it instead of silently losing money rows.
+// v5 requires typed Finance V16 facts; the manifest schema and AEAD envelope have independent versions.
 const val BACKUP_FORMAT_VERSION = 5
 const val BACKUP_SCHEMA_VERSION = 1
 

@@ -40,7 +40,7 @@ internal class StagedRestore(
 internal object BackupImporter {
 
     /**
-     * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 3):
+     * Format versions this build can *restore*. A superset of what it *writes* (`FORMAT_VERSION` = 5):
      * v1 archives from before v0.3.0 remain restorable forever.
      */
     val SUPPORTED_RESTORE_FORMATS = setOf(1, 2, 3, 4, 5)

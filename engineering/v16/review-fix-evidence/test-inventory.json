@@ -1,0 +1,475 @@
+{
+  "check": "V16-test-source-inventory",
+  "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+  "testFiles": 32,
+  "testMethods": 144,
+  "bypassFindings": [],
+  "files": [
+    {
+      "file": "app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt",
+      "sha256": "c94594b8d7c7be991517e5fe4125ce1de85d3b84e02481093d4cab2fbeb7496b",
+      "tests": [
+        "financeOwnsTypedFactsInsideTheExistingDatabase",
+        "financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay",
+        "captureHasNoUserLevelPhysicalDeleteApi",
+        "appearanceLoadingRendersBeforeBusinessStorageIsObtained",
+        "migrationSchemaFixturesAreDebugOnly",
+        "thereIsOnlyOneProductRootAndNoObsoleteShell",
+        "projectionsCannotOwnDomainStorageOrDependOnClosetCalendar",
+        "galleryCopyBackendIsNotExposedByTheCompositionRoot",
+        "debugIdentityCannotOccupyTheReleaseUpdateChain"
+      ],
+      "assertionCalls": 48,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/BackupManagerTest.kt",
+      "sha256": "2ad1d8be032cca233f5a75e6ba91f64aaac73d10ce3ae1ca17ba0e6ced602358",
+      "tests": [
+        "backupV2_containsLifeData",
+        "backupV2_containsManagedMedia",
+        "backupV2_restoresCaptureReferenceAndPlan",
+        "backupV2_restoresTagsAndRelations",
+        "backupV2_restoresManagedMediaToCurrentFilesDir",
+        "backupV2_rewritesManagedPathForCurrentDevice",
+        "backupV2_afterRestoreDatabaseRemainsUsable",
+        "backupV1_stillRestoresClosie",
+        "backupV1_doesNotEraseExistingLifeData",
+        "wardrobeOnlyArchive_isBuiltOnlyByTheTestFixture_andRestoresWithoutTouchingLifeOs",
+        "completeExport_alwaysCarriesTheLifeOsSection",
+        "completeExport_carriesEveryLifeOsTable",
+        "export_isASingleConsistentSnapshot",
+        "export_failsWhenAManagedMediaFileIsMissing",
+        "backupV2_failureDoesNotHalfRestore"
+      ],
+      "assertionCalls": 61,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/EncryptedBackupEnvelopeTest.kt",
+      "sha256": "5f543589fe0fd143e76bd1575209020848ffa319d17bd72e3a68662f8b2b66eb",
+      "tests": [
+        "T11_portableRoundTripUsesFreshSaltAndAuthenticatesAllBytes",
+        "malformedHeaderIsRejectedBeforeAnUnboundedKdfCanRun",
+        "authenticatedSegmentsRejectTruncationDuplicationOrderAndTrailingBytes"
+      ],
+      "assertionCalls": 13,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/data/backup/EncryptedBackupManagerV16Test.kt",
+      "sha256": "cc72cc16f22b2cc95291a28dc5fce979ab11b08feffa730c8e6d19fb29d4f62d",
+      "tests": [
+        "wrongPasswordAndLateCorruptionCannotReachCanonicalRestoreAndScratchIsRemoved",
+        "verifiedManagerArchiveRestoresTypedUnknownToAnotherDatabaseAndRevokesGrant",
+        "inaccessibleOutputReportsFailureWithoutChangingFactsAndErasesPassword"
+      ],
+      "assertionCalls": 26,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAssistantProviderTest.kt",
+      "sha256": "67cb3dc38542c81e248e5b6c2f3a1726f706722bbf14de651423b07c8103e493",
+      "tests": [
+        "T09_defaultOffAndSeparatePurposeScopeStopProviderBeforeData",
+        "T10_inFlightRevocationAndHostileResultCannotWriteOrExpandScope"
+      ],
+      "assertionCalls": 9,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt",
+      "sha256": "6b4e3b2e045cfa73519e9af7b330c6a969d578091c0d3163061b9e8ae1e090cb",
+      "tests": [
+        "allowlistPaymentEvidenceAndAmountAmbiguityProduceOnlyTypedProposals",
+        "sourceKeyDiscoveryIsIdempotentRejectAndSnoozeNeverCreateTruth",
+        "visibleConflictIsStagedAndCannotCreateSecondTruth",
+        "visibleRefundCannotBeConfirmedAsOrdinaryIncomeOrWithoutOriginalEvent",
+        "confirmationCreatesExactlyOneCanonicalResultAndOneRelationWithProposalAuthority",
+        "snoozedProposalCanConfirmOnceAndFailedConfirmationKeepsProposalUnchanged",
+        "rulesSortByPriorityThenIdFirstScalarWinsAndTagsMergeInStableOrder"
+      ],
+      "assertionCalls": 53,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCalculatorTest.kt",
+      "sha256": "b86259a3e82092b00c2ed1bb6daf88679bbdea30ab680006eeb03285096c525e",
+      "tests": [
+        "exactArithmeticAndPrecedence",
+        "rejectsRoundingOverflowBadInputAndExecutableText"
+      ],
+      "assertionCalls": 6,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceEconomicDraftV16Test.kt",
+      "sha256": "9561662e76c4fb8baa90d164f9a3d0e388d2c629b403bc681e7eff443a85430a",
+      "tests": [
+        "incompleteDraftSurvivesRecreationAndBackupWithoutCreatingFinancialFacts",
+        "explicitCommitConsumesExactDraftVersionAndReplayCreatesOnlyOneNonCashEvent",
+        "legacyEventChangingAfterDraftStartsRejectsConversionAndKeepsDraft",
+        "explicitReimbursementTemplateKeeps500Cash50CostAnd450ReceivableThroughTwoReceipts",
+        "reimbursementSplitsAcrossFundingAndRejectsTooManySharesBeforeReplacingDraft"
+      ],
+      "assertionCalls": 32,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceExpectedTasksV16Test.kt",
+      "sha256": "7ebf9fd65a581d14520fec9c610ec5e26511ba7d0bfb0e286bb1effcc2622a8b",
+      "tests": [
+        "unknownPlanPartialReceiptExplicitEndingAndRestoreDoNotInventMoneyOrReopenTask",
+        "duplicateTargetAndStalePlanEditAreRejectedAtomically",
+        "closedCumulativeTargetsWithEqualClockArePresentedSeparatelyAndNeverAdded"
+      ],
+      "assertionCalls": 23,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt",
+      "sha256": "6e040555ef568a3eb8fe06f95dc15ea6fa995ccb71e7df35ff623a3f2f5dc011",
+      "tests": [
+        "confirmedXlsxBatchCreatesOnlyRealFlowsFeeAndHierarchyThenUndoRetiresAllSemantics",
+        "csvSameFileIdempotencyWithinFileAndExistingCanonicalDuplicatesNeedExplicitOverride",
+        "currentBalanceAnchorKeepsBackfilledEntriesInHistoryWithoutChangingCurrentBalance",
+        "lateCanonicalFailureRollsBackEntriesRelationsJournalAndStagingAsOneBatch",
+        "importedBlankNotesStayBlankAndRepeatedSourceStillRequiresDuplicateReview",
+        "importUndoRetainsLaterMediaRelationsAndDoesNotArchiveAnActivelyBoundAccount",
+        "undoPreservesAccountBindingEvenWhenAllImportedCashCanBeRetired",
+        "undoKeepsLaterEditedOrLinkedImportedEntriesAndTheirLiveRelations"
+      ],
+      "assertionCalls": 91,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt",
+      "sha256": "30cf4d24006c45f66f04fd680f552bef254dbeb55a64bc057ef5ab2577225224",
+      "tests": [
+        "budgetsUseIndependentPolicyForBothLegacyAndEconomicFacts",
+        "legacyPrincipalSettlementDoesNotCreateSecondCostOrDuplicateDebtOnConversion",
+        "purchasePartialRefundTimelinePreservesOriginalMonthAndRejectsOverAllocatedLine",
+        "creditShortMonthUsesKnownPostingAndRepaymentIsOnlyCashMovement",
+        "explicitQueryNeverBroadensUnknownIdsAndLocalLanguageIsFullyConsumed",
+        "ordinaryRelinkCannotBypassTypedRefundAndEditingKeepsConfirmedAllocationIdentity",
+        "assigningAlreadyReceivedRefundChangesCostWithoutAddingOrRewritingCash"
+      ],
+      "assertionCalls": 38,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceLocalOcrParserTest.kt",
+      "sha256": "a8642d789014c6ab3cc63434a3e9fe20e663bfe5d85713e29995d111f144f4b6",
+      "tests": [
+        "balanceAndIdentifierAreNotTransactionAmounts",
+        "ambiguousFactsAndDateWithoutTimeRemainUnknown"
+      ],
+      "assertionCalls": 7,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt",
+      "sha256": "5dd8f08644d5160aac73ea30bb482915cecb664b5e5907d1ff7995f19957c80d",
+      "tests": [
+        "oneSharedOriginalCanServeTwoFinancialTargetsAndUnlinkDoesNotDeleteIt",
+        "olderRestoreCanRemoveSharedAssetWhileRetiringNewReferenceWithoutErasingCash",
+        "reconnectionRejectsDifferentFileAndPreservesStableMediaIdentity",
+        "ocrCandidateIsDurableAndIncompleteWithoutKeepingImageOrWritingMoney",
+        "explicitlyRetainedOcrReceiptUsesSameMediaAndRefundCannotBecomeExpense"
+      ],
+      "assertionCalls": 35,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt",
+      "sha256": "d94102c4bb462ff7c303b28d10da21ddc634d0fac5b33e6a80cdb4d960be404c",
+      "tests": [
+        "populatedV2IsAdditivelyMigratedAndFinanceWorksThroughRoom"
+      ],
+      "assertionCalls": 10,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceMoneyTest.kt",
+      "sha256": "40a48868ab3f9c70a9a6a3038b3a57981cede3a6744da24f9dbaad5009ef6b93",
+      "tests": [
+        "decimalMoneyNeverUsesFloatingPointRounding",
+        "excessPrecisionInvalidAmountsAndOverflowAreRejected",
+        "malformedCalendarDatesCannotBeSilentlyAdjusted",
+        "untouchedMinuteDisplayPreservesExactOccurrenceWhileEditsUseExplicitTime"
+      ],
+      "assertionCalls": 15,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePortableExportTest.kt",
+      "sha256": "22807f30432ed65ce34da0bc83841cbe7a71c8e5bc3a7b15be911aa0b4b6ff4b",
+      "tests": [
+        "csvProtectsTextFormulasAndKeepsNumericNegativeAdjustmentsNumeric",
+        "emptyPortableArchiveContainsTypedFactsAndSeparateReadableTables"
+      ],
+      "assertionCalls": 5,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceProvenanceV16Test.kt",
+      "sha256": "10a81d254cfd6c18060bf87cd5c03798b2c3524d14d45d331fb75c86eae1a0fd",
+      "tests": [
+        "sameOrderDoesNotCollapseDistinctPaymentsAndDiscoveryNeverCreatesCash",
+        "explicitDistinctIdentitiesResolvePotentialReferenceCollisionAndBindingIsDated",
+        "restoredIdentitiesCannotDisambiguateUntilExplicitlyApproved",
+        "olderRestoreRetiresEvidenceWithNewerIdentityAndBindingProofVersions",
+        "finalEditedDateMustBelongToCapturedBindingAndExplicitAdoptionUpdatesSession"
+      ],
+      "assertionCalls": 21,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePurchaseAllocationV16Test.kt",
+      "sha256": "abad78c3f03bab75021b78257ea8af2f2389f5cbc03ed7388297de5fd0fc434c",
+      "tests": [
+        "removingPurchaseAttributionRequiresExplicitReleaseOfRefundsAndNeverChangesCashOrEventCost",
+        "anotherEventOnSameLineCannotCoverThisEventsRefundAfterCorrection"
+      ],
+      "assertionCalls": 18,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt",
+      "sha256": "4ef53ee12a7e0e5a9cbb7d639455acd6cc760c7b9a56d7de5a96fd46c05e38a0",
+      "tests": [
+        "excludedStatisticsAreStillFactsAndPurposesExpireIndependently",
+        "preparedFactsDropOnlyExpiredFieldsWithoutReenteringCostProjection",
+        "eventGrantDoesNotDiscloseWholeSharedCashEntry",
+        "unknownLegacyShareNeverBecomesConfirmedZeroOnHome"
+      ],
+      "assertionCalls": 18,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt",
+      "sha256": "27f469c1a60dccdfa4004b8ec0be88727ecad716212e2133a0fa4656ba63c822",
+      "tests": [
+        "unknownPostingCannotBeExcludedUsingFutureOrPreAnchorCashDate",
+        "explicitOutsidePostingAndOtherAccountUnknownDoNotInvalidateButBackfillIntoRangeDoes",
+        "missingDateIntroducedAfterConfirmationIsIncompleteUntilExplicitOutsideEvidenceArrives",
+        "legacyScopeKeepsInclusiveAnchorAndOnlyRelevantEditsInvalidate"
+      ],
+      "assertionCalls": 25,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRecoveryV16Test.kt",
+      "sha256": "d03a47392fcc81a362d42eec67b605c1ac990ee81ddb7a7728f6e234cff8e8f0",
+      "tests": [
+        "transferVoidAndRecoveryRestoreBothLegsWithMonotonicRevisions",
+        "batchPreviewBindsPayloadAndConflictHasNoPartialCommit",
+        "successfulBatchCanRecoverBeforeAnUnrelatedNewEntry"
+      ],
+      "assertionCalls": 13,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt",
+      "sha256": "b3f4eea46b10644576b7e82e361305639ab64da231be11dabc6453d16a0432fe",
+      "tests": [
+        "durablePartialEditsResumeLaterWithoutMoneyAndSecondProposalDoesNotReplaceThem",
+        "explicitConfirmationIsAtomicAndReplayDoesNotProduceSecondEntry",
+        "staleEditorAndRestoreCannotConfirmOldCandidateOrReceipt",
+        "competingSurfaceConfirmationCannotPretendSavedEditsWerePosted",
+        "typedRefundRequiresExplicitReductionAndCreatesCashAndCostTogether",
+        "linkingAnAlreadyRecordedEntryOnlyAddsProvenanceAndNeverChangesCanonicalCash",
+        "visibleRefundCannotBeLinkedAsTransferOrAsUnrelatedOrdinaryIncome",
+        "cnyCandidateCannotBeLinkedToAnotherCurrency"
+      ],
+      "assertionCalls": 36,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt",
+      "sha256": "3a4c96280e747c411878d4172efbc98a89e55dfee5e8771966bb41fa1628bf52",
+      "tests": [
+        "shareGrantDoesNotInheritFieldsOrScopeFromHomeOrOtherShareGrants",
+        "changedFactRevocationExpiryAndRestoreAllRejectStaleSharePreview"
+      ],
+      "assertionCalls": 12,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt",
+      "sha256": "0e6e76a071e030f7fef3b2a6b21fc98849fa669059fc76c3402dfdd44db07659",
+      "tests": [
+        "committedTwoThousandRowsImportBalancesCostsNetFiltersAndRepeatAreConsistent"
+      ],
+      "assertionCalls": 28,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt",
+      "sha256": "7c3efd58983e5b2127b9193a7cbf41cf1dd224ead2263ab2609c3f5ad73817d6",
+      "tests": [
+        "T01_giftHasValueButNoOwnCashCostOrDebt",
+        "T02_repayableCreatesDebtAndRepaymentDoesNotConsumeTwice",
+        "T03_mixedGiftDebtAndPartialSettlementConserveAmounts",
+        "T04_unknownRelationshipIsNotZeroAndDoesNotInventDebt",
+        "T05_incompleteUnequalAllocationRetainsUnassignedPortion",
+        "T06_historicalResolutionClosesWorkWithoutManufacturingBankEvidence",
+        "T07_refundAndRebateBelongToActualMonthAndAllowNegativeBudgetUse",
+        "T08_duplicateConfirmationAndRestoreEpochCannotCreateSecondCash",
+        "T12_currencyNetAndLegacyAnchorDoNotChangeByAccountKind",
+        "positiveLegacyDebtNormalizesOpeningOnlyAndInternalRepaymentPreservesNet",
+        "negativeOpeningCannotBeConvertedTwiceAndNetExclusionIsExplicit",
+        "accountCreationAnchorsAndStaleMetadataKeepCanonicalHistoryIntact",
+        "settlementCannotExceedItsEventAllocationAfterRelinking",
+        "restorationRetiresPolicyAndSelfCanBeUsedAgain",
+        "T11_encryptedTypedPayloadRestoresOnAnotherDatabaseWithGrantsRevoked"
+      ],
+      "assertionCalls": 83,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt",
+      "sha256": "b7da84e4c25c2657407304bd2f0e629731ddd97dce42c67895a07a47919e247e",
+      "tests": [
+        "populatedV3PreservesDomainFinanceAnchorsAndBalanceAndAcceptsV4Semantics",
+        "v2ThroughV3ToV4KeepsOldPlanIdentityCaptureAndRevision"
+      ],
+      "assertionCalls": 16,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
+      "sha256": "d6a9e16f19a2cdfc8ea66695c9d0554218a1b1dab8e7cd3c679661d4b27d68b3",
+      "tests": [
+        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
+      ],
+      "assertionCalls": 9,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceWorkspaceV16Test.kt",
+      "sha256": "5994945f5c8d40333462c77808369e0eeac2d46048146b1099f0123daea72192",
+      "tests": [
+        "partialDraftDoesNotAffectCashAndConfirmIsAtomicIdempotent",
+        "invalidConfirmRollsBackAllCanonicalAndKeepsRecoverableDraft",
+        "continuousIncomeResetsRelationshipButPreservesLockedFieldsAndRejectsStaleEditor",
+        "transferDraftFailureCannotLeaveOneLegAndOldEpochCannotReplayReceipt",
+        "anchorPreviewBindsProposedContentAndDoesNotRewriteHistory",
+        "postedBasisNeverFallsBackToCashAndHistoricalInsertInvalidatesConclusion",
+        "reconfirmationUsesMonotonicOrderEvenWithIdenticalWallClock",
+        "cancellationAfterCommitCannotStrandAutosaveAtOldExpectedRevision"
+      ],
+      "assertionCalls": 51,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceCalendarStopsTest.kt",
+      "sha256": "ba4133263844ec3f1b0fc07aec92d80298cebd275ffe713eddf84d6cb4b805fd",
+      "tests": [
+        "releaseDocksAtOneStopAndVelocityMovesOnlyToNextAvailableStop"
+      ],
+      "assertionCalls": 6,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceFilterStateV16Test.kt",
+      "sha256": "214f33a854a30b6a2ba1966f19923b9208b00e9c044bd3e40c394027f7d8951f",
+      "tests": [
+        "processStatePreservesIndependentRangeAndNegativeAmountBoundsWithoutFinancialTotals",
+        "intervalDrilldownUsesExactOpenClosedBoundsAndKeepsPostingSeparateFromCash",
+        "actualAccountFilterKeepsEveryVisibleRunningBalanceIdenticalToCompleteRegister"
+      ],
+      "assertionCalls": 12,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt",
+      "sha256": "59132a0bd4c5cec75aa085901e5e0815690b8f7820c653d2cdd09aaf867545cb",
+      "tests": [
+        "insightsStartsWithItsOwnRangeAfterLedgerSelectedAllDates",
+        "establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets",
+        "transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid",
+        "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
+        "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
+      ],
+      "assertionCalls": 47,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt",
+      "sha256": "2cc7c2eca08855e35dfaf52998516fb533d1cf34326c659b32bad126b4f71f50",
+      "tests": [
+        "ticksAndJournalNotificationsDoNotRecomputeWhileFinancialEditsAndRevocationDo",
+        "restoreGateClearsHomeAndNewCollectorReadsRevokedRestoredGrants"
+      ],
+      "assertionCalls": 17,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    }
+  ],
+  "semanticAudit": "See TEST-AUDIT.md; counts and flags cannot prove test correctness",
+  "execution": "UNVERIFIED"
+}

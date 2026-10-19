@@ -13,3 +13,6 @@ web/dist/
 *.jks
 *.keystore
 keystore.properties
+engineering/v16/ci-logs/
+engineering/v16/.ci-gate-test-*/
+engineering/v16/__pycache__/

@@ -22,8 +22,9 @@ object FinanceAccountStatusProjection {
         if(last==null) return FinanceAccountStatus(FinanceTrust.DERIVED,"余额由起点及真实流水推算，尚无已保存的核对结论。")
         val result=FinanceAccountProjection.reconcile(s,observations.getValue(last.observationId),last)
         return when {
+            result.bookMinor==null -> FinanceAccountStatus(FinanceTrust.INCOMPLETE,
+                (if(result.invalidated) "旧核对已失效；" else "")+"当前时间口径缺少起点或确知入账范围证据，无法得出差额。",result)
             result.invalidated -> FinanceAccountStatus(FinanceTrust.INVALIDATED,"起点、流水或入账事实已改变，请重新核对。",result)
-            result.bookMinor==null -> FinanceAccountStatus(FinanceTrust.INCOMPLETE,"当前时间口径缺少起点或确知入账日，无法得出差额。",result)
             result.differenceMinor!=0L -> FinanceAccountStatus(FinanceTrust.DIFFERENT,"观察余额与账面存在差额；没有生成调账流水。",result)
             else -> FinanceAccountStatus(FinanceTrust.RECONCILED,"仅代表所选观察时点与口径相符；之后余额仍由流水推算。",result)
         }

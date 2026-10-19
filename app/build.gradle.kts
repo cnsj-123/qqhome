@@ -1,4 +1,5 @@
 import java.io.File
+import org.gradle.api.tasks.PathSensitivity
 
 plugins {
     id("com.android.application")
@@ -67,6 +68,18 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all { test ->
+                val fixtures=rootProject.file("engineering/v16/fixtures")
+                val metrics=project.layout.buildDirectory.dir("reports/v16/${test.name}").get().asFile
+                test.systemProperty("lifeos.v16.fixtureDir", fixtures.absolutePath)
+                test.systemProperty("lifeos.v16.metricsDir", metrics.absolutePath)
+                test.inputs.dir(fixtures).withPropertyName("v16SyntheticFixtures").withPathSensitivity(PathSensitivity.RELATIVE)
+                test.outputs.dir(metrics).withPropertyName("v16SyntheticMetrics")
+                if (System.getenv("CI") == "true") {
+                    test.outputs.upToDateWhen { false }
+                    test.outputs.cacheIf { false }
+                }
+            }
         }
     }
 

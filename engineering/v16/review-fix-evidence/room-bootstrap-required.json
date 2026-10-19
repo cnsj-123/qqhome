@@ -1,0 +1,20 @@
+{
+  "check": "strict-committed-official-room-schema",
+  "status": "FAIL",
+  "errors": [
+    "Committed KSP official Room 5 (bootstrap must fail until committed): Command '['git', 'ls-files', '--error-unmatch', '--', 'app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json']' returned non-zero exit status 1."
+  ],
+  "schemaSha256": {
+    "1": "af8a75debb4670529fbe2ec2e40b37acbdda7e00d3851f86dd42e19937666db1",
+    "2": "9e59e50eeefec1286dbd2fd1dacedb4200c4a4bb2ccfb6fd5c2f2b48d9718786",
+    "3": "d11e8bcebd9b3ae61a88a373a9072159100b8571eb03fe5ab588de0c1e545fff",
+    "4": "c88b489e9c8b1edb148805cf2dbe021e89384eee75043fe7dbd13d1511c23d7a"
+  },
+  "versions": {
+    "roomDatabase": 5,
+    "backupFormat": 5,
+    "backupManifestSchema": 1,
+    "aeadEnvelope": 2
+  },
+  "androidRuntime": "UNVERIFIED"
+}

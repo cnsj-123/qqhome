@@ -38,7 +38,7 @@ Owner 后续明确：本机没有 Android 工具链，不要下载；继续代�
     node engineering/v16/integrate-schema.cjs
     python engineering/v16/check-source.py
 
-当前源码结构检查：403 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
+当前源码结构检查：406 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
 SQL 检查：旧27表逐行保留、新48表、FK检查、3个事务故障点回滚 PASS。
 全部 Kotlin/Room/Compose 测试、KSP、assemble 和设备场景仍 UNVERIFIED。
 
@@ -59,3 +59,9 @@ Home未知/排除政策、整笔现金独立授权、复核并发确认、自动
 
 不要以这个 checkpoint 代替任务完成。所有40项最终验收仍0/40，不代表没有已写代码。
 后续 GitHub 必须先 KSP，再运行全套 Kotlin/Room/Compose 测试和 assembleDebug；本地不下载工具链。
+
+2026-10-19 Review Fix 增量：基于 `9a0acf0da84544750bd37f1e15e5220c4a899a95` 继续，修复范围/指纹、Home每秒成本重算，接入真实2000条fixture回归及严格CI。Owner已确认：只有明确时间证据才能排除范围外；无法定位postedAt的同账户交易保持INCOMPLETE，不能凭occurredAt排除。未重做40项或丢弃已有V16。
+
+本轮新增3个Kotlin测试文件，V16新增/修改测试自审共32文件/144方法，运行全部UNVERIFIED。工程门禁9例本地通过，严格官方Schema门禁因缺少已提交5.json明确FAIL；历史1–4保留，首次CI Bootstrap仍红，原样归档KSP产物后再次运行完整门禁。矩阵见REVIEW-FIX.md，逐测试自审见TEST-AUDIT.md，CI/Artifacts方法见GITHUB-VALIDATION.md。
+
+本轮只做本地逻辑提交及9a0acf0之后的format-patch，等待Owner授权推送；没有push/PR/merge/发布或触发CI。完整CI通过后再最终独立Review，无阻断后才统一一轮设备验收。

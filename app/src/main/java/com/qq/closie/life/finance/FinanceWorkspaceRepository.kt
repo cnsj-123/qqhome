@@ -114,7 +114,8 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
             require(projection.fingerprint==expectedFingerprint) { "核对范围发生变化，请重新计算" }
             val result=id(); val now=clock()
             val order=Math.addExact(dao.reconciliationRows().maxOfOrNull {it.confirmationOrder} ?: 0L,1L)
-            dao.putReconciliation(listOf(FinanceReconciliationEntity(result,observationId,projection.bookMinor,projection.fingerprint,1,note,order,now,now)))
+            dao.putReconciliation(listOf(FinanceReconciliationEntity(result,observationId,projection.bookMinor,projection.fingerprint,
+                FinanceAccountProjection.RECONCILIATION_ALGORITHM,note,order,now,now)))
             result
         }
     suspend fun setPostingDate(token:FinanceCommandToken,entryId:String,expectedRevision:Long,postedAt:Long?,

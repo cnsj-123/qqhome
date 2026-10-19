@@ -15,14 +15,15 @@ class FinanceReviewSessionV16Test:FinanceRoomTest() {
     private suspend fun proposal(key:String="synthetic")=FinanceAutomationRepository(db,finance).discover(
         FinanceNotificationParser.parse("com.tencent.mm",key,"微信支付","支付成功 ￥12.34",System.currentTimeMillis())!!)!!
     private fun input(p:FinanceProposalEntity,account:String)=FinanceReviewSessionEntity(p.id,p.revision,0,"12.34",account,"","","未完成的中文备注",
-        FinanceReviewState.EDITING,occurredAt=p.occurredAt,occurredText="未完成日期",createdAt=0,updatedAt=0)
+        FinanceReviewState.EDITING,occurredAt=p.occurredAt,occurredText=FinanceTime.input(p.occurredAt),createdAt=0,updatedAt=0)
 
     @Test fun durablePartialEditsResumeLaterWithoutMoneyAndSecondProposalDoesNotReplaceThem()=runTest {
-        val a=account();val p=proposal();val row=input(p,a.id)
+        val a=account();val p=proposal();val row=input(p,a.id).copy(occurredText="未完成日期")
         finance.reviews.save(token(),row,null,emptyList())
         proposal("synthetic-next")
         val recreated=FinanceRepository(db){clock}
         assertEquals(row.description,recreated.snapshot().v16!!.reviewSessionRows.single().description)
+        assertEquals("未完成日期",recreated.snapshot().v16!!.reviewSessionRows.single().occurredText)
         assertTrue(recreated.snapshot().entries.isEmpty())
         recreated.reviews.save(token(),row,1,emptyList(),later=true)
         val saved=recreated.snapshot().v16!!.reviewSessionRows.single()

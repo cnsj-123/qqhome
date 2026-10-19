@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/life-os-v16-*']
   pull_request:
   workflow_dispatch:
 
@@ -12,6 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     env:
       CI_BUILD_NUMBER: ${{ github.run_number }}
     steps:
@@ -26,45 +30,80 @@ jobs:
 
       - name: V16 source structure and production SQLite migration checks
         run: |
-          python3 engineering/v16/check-source.py
-          python3 engineering/v16/check-migration.py
+          set -euo pipefail
+          mkdir -p engineering/v16/ci-logs
+          python3 engineering/v16/test-ci-gates.py 2>&1 | tee engineering/v16/ci-logs/schema-gate-tests.log
+          python3 engineering/v16/audit-v16-tests.py 2>&1 | tee engineering/v16/ci-logs/test-inventory.log
+          python3 engineering/v16/check-source.py 2>&1 | tee engineering/v16/ci-logs/source.log
+          python3 engineering/v16/check-migration.py 2>&1 | tee engineering/v16/ci-logs/sqlite.log
+          python3 engineering/v16/verify-room-schema.py --history-only --report engineering/v16/ci-logs/room-history.json
 
       # Generate schema assets before the unit-test invocation merges debug assets.
       - name: Generate Room schema
-        run: ./gradlew :app:kspDebugKotlin --stacktrace
-      - name: Verify preserved published Room schemas and generated V16 schema
-        shell: bash
+        id: ksp
         run: |
-          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/4.json
-          test -f app/schemas/com.qq.closie.life.data.database.LifeDatabase/5.json
-          git diff --exit-code -- \
-            app/schemas/com.qq.closie.life.data.database.LifeDatabase/{1,2,3,4}.json
+          set -euo pipefail
+          ./gradlew :app:kspDebugKotlin --stacktrace 2>&1 | tee engineering/v16/ci-logs/ksp.log
+      - name: Strict committed official Room schema gate (bootstrap remains red until committed)
+        shell: bash
+        run: python3 engineering/v16/verify-room-schema.py --report engineering/v16/ci-logs/room-schema-check.json
 
-      # Includes Room migration, repository and restore-safety regression tests.
-      - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+      # A missing committed v5 stays a failed gate. Still collect real test failures after successful
+      # KSP during bootstrap; no continue-on-error and no failure suppression on this or any test step.
+      - name: Full tests (populated migrations, Finance, D1-D5, backup, concurrency, UI, 2000-row fixture)
+        id: tests
+        if: ${{ !cancelled() && steps.ksp.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          ./gradlew :app:testDebugUnitTest --stacktrace 2>&1 | tee engineering/v16/ci-logs/unit-tests.log
+      - name: Require actual JUnit coverage and 2000-row metrics
+        if: ${{ !cancelled() && steps.tests.outcome == 'success' }}
+        run: python3 engineering/v16/verify-ci-tests.py
       - name: Assemble CI debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        id: assemble
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee engineering/v16/ci-logs/assemble-debug.log
+      - name: Record debug APK checksums and commit
+        if: steps.assemble.outcome == 'success'
+        run: |
+          git rev-parse HEAD > app/build/outputs/apk/debug/commit-sha.txt
+          sha256sum app/build/outputs/apk/debug/*.apk > app/build/outputs/apk/debug/SHA256SUMS.txt
       - name: Upload CI debug APK (com.qqhome.lifeos.debug)
+        if: steps.assemble.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: lifeos-ci-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: lifeos-ci-debug-run${{ github.run_number }}-${{ github.sha }}
+          path: app/build/outputs/apk/debug/
           if-no-files-found: error
       - name: Upload unit test report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: unit-test-report-build${{ github.run_number }}
-          path: app/build/reports/tests/testDebugUnitTest/
+          name: unit-test-results-run${{ github.run_number }}-${{ github.sha }}
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/v16/
           if-no-files-found: ignore
       - name: Upload Room schema
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: room-schema-build${{ github.run_number }}
+          name: room-schema-run${{ github.run_number }}-${{ github.sha }}
           path: app/schemas/com.qq.closie.life.data.database.LifeDatabase/*.json
           if-no-files-found: error
+      - name: Upload V16 gate and execution evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-ci-evidence-run${{ github.run_number }}-${{ github.sha }}
+          path: |
+            engineering/v16/ci-logs/
+            engineering/v16/static-result.json
+            engineering/v16/migration-sqlite-result.json
+            engineering/v16/review-fix-evidence/test-inventory.json
+          if-no-files-found: warn
 
       # These secret-bearing steps are skipped on PR/feature/manual feature runs.
       - name: Check release signing availability
@@ -99,7 +138,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: lifeos-update-release-apk
+          name: lifeos-update-release-run${{ github.run_number }}-${{ github.sha }}
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
       - name: Remove temporary release keystore
