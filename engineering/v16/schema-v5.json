@@ -717,6 +717,31 @@
           "name": "voidedAt",
           "type": "Long?",
           "value": "null"
+        },
+        {
+          "name": "postedLocalDate",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "postedZoneId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "postedDayStartAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "postedDayEndExclusive",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "postedDateBasisVersion",
+          "type": "Int?",
+          "value": "null"
         }
       ],
       "refs": {
@@ -833,6 +858,31 @@
         {
           "name": "voidedAt",
           "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "observedLocalDate",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "observedZoneId",
+          "type": "String?",
+          "value": "null"
+        },
+        {
+          "name": "observedDayStartAt",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "observedDayEndExclusive",
+          "type": "Long?",
+          "value": "null"
+        },
+        {
+          "name": "observedDateBasisVersion",
+          "type": "Int?",
           "value": "null"
         }
       ],
@@ -2791,11 +2841,11 @@
     "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_eventId` ON `finance_cost_adjustments` (`eventId`)",
     "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_entryLinkId` ON `finance_cost_adjustments` (`entryLinkId`)",
     "CREATE INDEX IF NOT EXISTS `index_finance_cost_adjustments_lineId` ON `finance_cost_adjustments` (`lineId`)",
-    "CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE TABLE IF NOT EXISTS `finance_entry_timing` (`entryId` TEXT NOT NULL, `postedAt` INTEGER, `cashPrecision` TEXT NOT NULL, `postedPrecision` TEXT NOT NULL, `postedSource` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, `postedLocalDate` TEXT, `postedZoneId` TEXT, `postedDayStartAt` INTEGER, `postedDayEndExclusive` INTEGER, `postedDateBasisVersion` INTEGER, PRIMARY KEY(`entryId`), FOREIGN KEY(`entryId`) REFERENCES `finance_entries`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
     "CREATE INDEX IF NOT EXISTS `index_finance_entry_timing_entryId` ON `finance_entry_timing` (`entryId`)",
     "CREATE TABLE IF NOT EXISTS `finance_account_policies` (`accountId` TEXT NOT NULL, `includedInNet` INTEGER NOT NULL, `liabilityConvention` TEXT NOT NULL, `anchorBasis` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`accountId`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
     "CREATE INDEX IF NOT EXISTS `index_finance_account_policies_accountId` ON `finance_account_policies` (`accountId`)",
-    "CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
+    "CREATE TABLE IF NOT EXISTS `finance_observations` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `observedAt` INTEGER NOT NULL, `basis` TEXT NOT NULL, `precision` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, `observedLocalDate` TEXT, `observedZoneId` TEXT, `observedDayStartAt` INTEGER, `observedDayEndExclusive` INTEGER, `observedDateBasisVersion` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `finance_accounts`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
     "CREATE INDEX IF NOT EXISTS `index_finance_observations_accountId` ON `finance_observations` (`accountId`)",
     "CREATE TABLE IF NOT EXISTS `finance_reconciliations` (`id` TEXT NOT NULL, `observationId` TEXT NOT NULL, `bookMinor` INTEGER, `fingerprint` TEXT NOT NULL, `algorithmVersion` INTEGER NOT NULL, `note` TEXT NOT NULL, `confirmationOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `voidedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`observationId`) REFERENCES `finance_observations`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)",
     "CREATE INDEX IF NOT EXISTS `index_finance_reconciliations_observationId` ON `finance_reconciliations` (`observationId`)",

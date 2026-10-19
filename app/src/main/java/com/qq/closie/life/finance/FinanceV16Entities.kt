@@ -146,7 +146,12 @@ data class FinanceEntryTimingEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val revision: Long = 1,
-    val voidedAt: Long? = null
+    val voidedAt: Long? = null,
+    val postedLocalDate: String? = null,
+    val postedZoneId: String? = null,
+    val postedDayStartAt: Long? = null,
+    val postedDayEndExclusive: Long? = null,
+    val postedDateBasisVersion: Int? = null
 )
 
 @Entity(tableName = "finance_account_policies", primaryKeys = ["accountId"], indices = [Index("accountId")], foreignKeys = [ForeignKey(entity = FinanceAccountEntity::class, parentColumns = ["id"], childColumns = ["accountId"])])
@@ -173,7 +178,12 @@ data class FinanceObservationEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val revision: Long = 1,
-    val voidedAt: Long? = null
+    val voidedAt: Long? = null,
+    val observedLocalDate: String? = null,
+    val observedZoneId: String? = null,
+    val observedDayStartAt: Long? = null,
+    val observedDayEndExclusive: Long? = null,
+    val observedDateBasisVersion: Int? = null
 )
 
 @Entity(tableName = "finance_reconciliations", primaryKeys = ["id"], indices = [Index("observationId")], foreignKeys = [ForeignKey(entity = FinanceObservationEntity::class, parentColumns = ["id"], childColumns = ["observationId"])])

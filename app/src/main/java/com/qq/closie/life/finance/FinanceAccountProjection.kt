@@ -1,8 +1,6 @@
 package com.qq.closie.life.finance
 
 import java.security.MessageDigest
-import java.time.Instant
-import java.time.ZoneId
 
 data class FinanceRegisterRow(val entry: FinanceEntryEntity, val balanceMinor: Long?)
 data class FinanceReconciliationResult(val observation: FinanceObservationEntity, val bookMinor: Long?,
@@ -10,7 +8,7 @@ data class FinanceReconciliationResult(val observation: FinanceObservationEntity
 
 /** Complete-account scans always precede filtering; the original inclusive anchor is unchanged. */
 object FinanceAccountProjection {
-    const val RECONCILIATION_ALGORITHM=3
+    const val RECONCILIATION_ALGORITHM=4
     fun liabilitySignPending(s:FinanceSnapshot,account:FinanceAccountEntity):Boolean =
         account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0 &&
             s.v16?.accountPolicyRows.orEmpty().none {it.accountId==account.id && it.voidedAt==null}
@@ -58,58 +56,44 @@ object FinanceAccountProjection {
         return included.values.groupBy {it.currencyCode}.mapValues {(_,accounts)->exactSum(accounts.map {values.getValue(it.id).longValueExact()})}
     }
 
-    private data class TimeBounds(val earliest:Long,val latest:Long)
     private data class ScopedFact(val entry:FinanceEntryEntity,val effectiveAt:Long?,val precision:FinanceTimePrecision,
-        val bounds:TimeBounds?,val certainlyInside:Boolean)
+        val civilDate:FinanceCivilDate?,val bounds:FinanceTimeBounds?,val certainlyInside:Boolean)
     private data class ReconciliationScope(val account:FinanceAccountEntity,val anchorBasis:FinanceBalanceBasis?,
-        val observationBounds:TimeBounds?,val facts:List<ScopedFact>)
-
-    /** DATE is an unknown instant within that local calendar day, never midnight or end-of-day. */
-    private fun bounds(at:Long?,precision:FinanceTimePrecision,zone:ZoneId):TimeBounds? {
-        if(at==null) return null
-        return when(precision) {
-            FinanceTimePrecision.INSTANT -> TimeBounds(at,at)
-            FinanceTimePrecision.DATE -> runCatching {
-                val date=Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
-                TimeBounds(date.atStartOfDay(zone).toInstant().toEpochMilli(),
-                    Math.subtractExact(date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),1L))
-            }.getOrNull()
-            FinanceTimePrecision.UNKNOWN,FinanceTimePrecision.LEGACY -> null
-        }
-    }
+        val observationCivilDate:FinanceCivilDate?,val observationBounds:FinanceTimeBounds?,val facts:List<ScopedFact>)
 
     private fun scope(s:FinanceSnapshot,observation:FinanceObservationEntity):ReconciliationScope {
         val account = s.accounts.single { it.id == observation.accountId }
         val timings = s.v16?.entryTimingRows.orEmpty().filter { it.voidedAt == null }.associateBy { it.entryId }
         val anchorBasis = s.v16?.accountPolicyRows.orEmpty().singleOrNull { it.accountId == account.id && it.voidedAt == null }?.anchorBasis
-        val zone=ZoneId.systemDefault()
-        val observationBounds=bounds(observation.observedAt,observation.precision,zone)
+        val observationCivilDate=observation.observedCivilDate()
+        val observationBounds=financeTimeBounds(observation.observedAt,observation.precision,observationCivilDate)
         val facts=s.entries.filter {it.accountId==account.id && it.voidedAt==null}.mapNotNull {entry->
             val legacy=observation.basis==FinanceBalanceBasis.LEGACY_CASH
             val time=if(legacy) entry.occurredAt else timings[entry.id]?.postedAt
             val precision=if(legacy) FinanceTimePrecision.LEGACY else timings[entry.id]?.postedPrecision ?: FinanceTimePrecision.UNKNOWN
             // Keep the original cash/anchor convention. LEGACY posting precision is not an instant.
-            val interval=if(legacy) TimeBounds(entry.occurredAt,entry.occurredAt) else bounds(time,precision,zone)
+            val civilDate=if(legacy) null else timings[entry.id]?.postedCivilDate()
+            val interval=if(legacy) FinanceTimeBounds(entry.occurredAt,entry.occurredAt) else financeTimeBounds(time,precision,civilDate)
             // No reliable posting bounds exist for unknown dates in this model. Cash/recorded time
             // and free-text source descriptions cannot prove exclusion, including before the anchor.
             val outside=interval!=null && (interval.latest<account.balanceAnchorAt ||
                 (observationBounds!=null && interval.earliest>observationBounds.latest))
             val inside=interval!=null && observationBounds!=null && interval.earliest>=account.balanceAnchorAt &&
                 interval.latest<=observationBounds.earliest
-            if(outside) null else ScopedFact(entry,time,precision,interval,inside)
+            if(outside) null else ScopedFact(entry,time,precision,civilDate,interval,inside)
         }.sortedBy {it.entry.id}
-        return ReconciliationScope(account,anchorBasis,observationBounds,facts)
+        return ReconciliationScope(account,anchorBasis,observationCivilDate,observationBounds,facts)
     }
 
     private fun fingerprint(scope:ReconciliationScope,observation:FinanceObservationEntity):String {
         val account=scope.account
         val facts=scope.facts.map {
-            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt,it.precision,it.bounds,it.certainlyInside)
+            listOf(it.entry.id,it.entry.amountMinor,it.entry.direction,it.effectiveAt,it.precision,it.civilDate,it.bounds,it.certainlyInside)
             }
         val encoded = com.google.gson.Gson().toJson(listOf(RECONCILIATION_ALGORITHM, account.id, account.currencyCode,
             account.balanceAnchorAt, account.openingBalanceMinor,
             scope.anchorBasis.takeIf {observation.basis==FinanceBalanceBasis.KNOWN_POSTED},observation.basis,
-            observation.observedAt,observation.amountMinor,observation.precision,scope.observationBounds,facts))
+            observation.observedAt,observation.amountMinor,observation.precision,scope.observationCivilDate,scope.observationBounds,facts))
         return MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray()).joinToString("") { "%02x".format(it) }
     }
     fun fingerprint(s:FinanceSnapshot,observation:FinanceObservationEntity):String=fingerprint(scope(s,observation),observation)

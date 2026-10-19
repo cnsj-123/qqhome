@@ -45,7 +45,7 @@ object EncryptedBackupManager {
                 requireNotNull(resolver.openOutputStream(uri, "wt")) { "无法写入备份文件" }.use { out ->
                     encrypted.inputStream().use { it.copyTo(out) }
                 }
-                val stored = requireNotNull(resolver.openInputStream(uri)) { "无法重新读取并验证已写入的备份" }.use(::digest)
+                val stored:ByteArray = requireNotNull(resolver.openInputStream(uri)) { "无法重新读取并验证已写入的备份" }.use { input -> digest(input) }
                 check(stored.contentEquals(digest(encrypted))) { "备份文件写入不完整" }
             }
         } finally { password.fill('\u0000'); scratch.deleteRecursively() }
@@ -65,7 +65,7 @@ object EncryptedBackupManager {
         } } finally { password.fill('\u0000'); scratch.deleteRecursively() }
     }
 
-    private fun digest(file: File) = file.inputStream().use(::digest)
+    private fun digest(file: File): ByteArray = file.inputStream().use { input -> digest(input) }
     private fun digest(input: java.io.InputStream): ByteArray {
         val hash = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(64 * 1024)

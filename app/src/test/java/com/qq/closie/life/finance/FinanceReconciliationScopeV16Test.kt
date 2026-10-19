@@ -1,6 +1,7 @@
 package com.qq.closie.life.finance
 
 import java.time.LocalDate
+import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -23,7 +24,8 @@ class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
         return finance.snapshot().v16!!.observationRows.single {it.id==id}
     }
     private suspend fun post(entry:FinanceEntryEntity,at:Long,precision:FinanceTimePrecision=FinanceTimePrecision.INSTANT)=
-        finance.workspace.setPostingDate(token(),entry.id,entry.revision,at,precision,"合成明确入账凭据")
+        finance.workspace.setPostingDate(token(),entry.id,entry.revision,at,precision,"合成明确入账凭据",
+            if(precision==FinanceTimePrecision.DATE) FinanceCivilDate.capture(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate(),ZoneId.systemDefault()) else null)
     private fun moment(day:Int,hour:Int=0)=LocalDate.of(2026,10,day).atTime(hour,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
     private suspend fun precisionAccount(anchor:Long):FinanceAccountEntity {
         clock=moment(20)
@@ -32,7 +34,8 @@ class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
         return a
     }
     private suspend fun precisionObservation(account:String,at:Long,precision:FinanceTimePrecision):FinanceObservationEntity {
-        val id=finance.workspace.saveObservation(token(),account,10_000,at,FinanceBalanceBasis.KNOWN_POSTED,precision,"")
+        val id=finance.workspace.saveObservation(token(),account,10_000,at,FinanceBalanceBasis.KNOWN_POSTED,precision,"",
+            if(precision==FinanceTimePrecision.DATE) FinanceCivilDate.capture(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate(),ZoneId.systemDefault()) else null)
         return finance.snapshot().v16!!.observationRows.single {it.id==id}
     }
 
@@ -103,6 +106,7 @@ class FinanceReconciliationScopeV16Test:FinanceRoomTest() {
         assertFalse(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved).invalidated)
         assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=1)).invalidated)
         assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=2)).invalidated)
+        assertTrue(FinanceAccountProjection.reconcile(finance.snapshot(),o,saved.copy(algorithmVersion=3)).invalidated)
         assertNotEquals(initial.fingerprint,FinanceAccountProjection.fingerprint(finance.snapshot(),o.copy(amountMinor=9_899)))
         val preview=finance.workspace.previewAnchor(a.id,10_000,999,false)
         finance.workspace.confirmAnchor(token(),preview)

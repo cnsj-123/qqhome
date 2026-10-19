@@ -22,9 +22,9 @@ internal data class FinanceRegisterFilter(val query:String="",val direction:Stri
         val range=range()
         val timings=snapshot?.v16?.entryTimingRows.orEmpty().filter {it.voidedAt==null}.associateBy {it.entryId}
         return if(range.isFailure) emptyList() else all.filter {row->
-        val comparisonTime=if(posted) timings[row.entry.id]?.postedAt else row.entry.occurredAt
+        val comparison=if(posted) timings[row.entry.id]?.postedTimeBounds() else FinanceTimeBounds(row.entry.occurredAt,row.entry.occurredAt)
         range.getOrThrow().contains(row.entry.occurredAt) &&
-        ((after==null && through==null) || (comparisonTime!=null && (after==null || comparisonTime>after) && (through==null || comparisonTime<=through))) &&
+        ((after==null && through==null) || (comparison!=null && (after==null || comparison.earliest>after) && (through==null || comparison.latest<=through))) &&
         (direction.isBlank() || row.entry.direction.name==direction) && (query.isBlank() || row.entry.description.contains(query,true))}
     }
     companion object {

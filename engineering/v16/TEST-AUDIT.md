@@ -1,8 +1,8 @@
 # V16 测试源码自审（2026-10-19）
 
-范围：R2以来新增或修改的32个Kotlin测试文件，含第一轮3个新文件；第二轮再补4个日期精度方法，当前148个方法。逐文件清单、完整类名/方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有Kotlin测试运行仍UNVERIFIED。
+当前CI51修复范围：R2以来新增或修改33个Kotlin测试文件/158个方法；含第二轮4个精度方法和本轮10个方法。逐文件清单、完整类名/方法名、原始文件SHA与旁路扫描见review-fix-evidence/test-inventory.json。该清单是审查索引，不是编译或执行报告。所有当前SHA的Kotlin测试运行仍UNVERIFIED。
 
-第二轮固定最低契约另覆盖全部既有96个测试源文件、638个方法，详见test-minimum-contract.json；最低契约由规范化SHA-256锁定，独立于动态清单，删除文件/方法、重命名或暂存删除均明确FAIL。JUnit按完整类名和方法/显式参数调用名逐项核验，不能按重复用例数量填覆盖。该固定覆盖要求不代表对其余R2文件新增产品语义审查，也不代表638个方法已执行。
+固定最低契约增至97个测试源文件、648个方法，原638全部保留，详见test-minimum-contract.json；最低契约由规范化SHA-256锁定，独立于动态清单，删除文件/方法、重命名或暂存删除均明确FAIL。JUnit按完整类名和方法/显式参数调用名逐项核验，不能按重复用例数量填覆盖。该固定覆盖要求不代表对其余R2文件新增产品语义审查，也不代表648个方法已执行。
 
 | 测试文件/类 | 检查内容与真实边界 | 自审说明 |
 |---|---|---|
@@ -22,7 +22,7 @@
 | FinanceMediaV16Test | 真实跨域引用、恢复缺源、重连、OCR候选 | 本轮修复DAO无ORDER BY下的插入顺序假设：比较两条完整实体的ID映射并另断言数量2，内容断言未降低 |
 | FinanceMigrationTest | populated v2、旧记录/ID/精度 | 真实MigrationTestHelper及Room打开到v5 |
 | FinanceV4MigrationTest | populated v2/v3→4与继续打开v5、anchor/旧语义 | 不只建空库；官方已发布schema保留 |
-| FinanceV5MigrationTest | populated v1/v2/v3/v4→5 | 4个入口版本，旧capture/账户/Entry/anchor，typed不伪造；依赖KSP官方5.json |
+| FinanceV5MigrationTest | populated v1/v2/v3/v4→5；新增populated v4日期列写入 | 保留4个入口原断言，新增真实迁移后Repository/DAO写日期并验证旧ID/时间/anchor/现金；依赖最终KSP官方5.json |
 | FinancePortableExportTest | 真实ZIP条目与CSV公式防护 | 是导出单元边界；Manager实际恢复由其他文件覆盖 |
 | FinanceProvenanceV16Test | 编号/身份/工具/时效绑定/旧证据版本/恢复 | 真实Repository/DAO；无真实账号，恢复先禁用匹配 |
 | FinancePurchaseAllocationV16Test | 更正/解绑、释放调整、跨事项错误覆盖 | 真实事务；失败前后完整快照相等，现金及成本值不减弱 |
@@ -36,6 +36,7 @@
 | FinanceFilterStateV16Test | Bundle条件恢复、完整账扫描后筛选、posted精确区间 | 同行余额与完整算术一致，cash与posted不混 |
 | FinanceSmokeTest | 真实Compose→VM→Repository→Room，账户/流水/转账/筛选/还款 | 操作前等真实loaded，不操作真实设备；Compose未运行 |
 | FinanceReconciliationScopeV16Test | 范围外/未知/早于cash/后补/anchor/void/算法升级；第二轮再补4个DATE精度方法 | 同日/anchor重叠时book与difference均null；精度变化、保存资料不足后补精度重核、全日在范围外与范围内，真实保存结论验证失效 |
+| FinanceCivilDateV16Test | 本轮9个方法：东京/LA双向、23/25h DST、中午/范围、旧日期、时区依据、Int主键、筛选/账期、实际加密备份新旧恢复 | 时间域构造显式提供创建日历日/时区，经真实Repository及Room持久化；TimeZone.setDefault均finally恢复；备份使用Manager/AEAD/跨库完整恢复，旧ZIP仅移除新增字段以模拟旧候选格式，未将JSON往返冒充恢复 |
 | FinanceSyntheticHistoryV16Test | 本轮新增：真实已提交2000条fixture→导入/DAO/投影/重复/过滤 | SHA对照、独立逐笔加减oracle、最终金额；指标仅在实际运行时写出，无假性能PASS |
 | FinanceHomeProjectionV16Test | 本轮新增：时钟/相关依赖/到期/撤销/门禁/恢复 | 控制时间和通知调度，财务快照来自真实Room，计数器委托真实生产成本计算；100tick不重算 |
 
@@ -62,4 +63,4 @@ D1/D2/D3/D4主要由FinanceV16Contract/Workspace/Insights/Purchase/Recovery覆�
 
 F44/F46/F48真实宿主、MLKit离线与vivo/IME/权限/Back仍DEVICE UNVERIFIED。40项功能映射沿用feature-matrix.md，不把源码测试清单写成40项验收通过。
 
-本地已实际运行的另22例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节、10例JUnit/指标、7例最低契约及删除/历史检查，使用合成文本仓库和报告，不是上述148个Kotlin方法。第一轮Windows只读Git对象清理已修；第二轮辅助用例两行错位已归位，原断言保留，全套22例通过。未添加/下载任何Android工具链或YAML依赖；Actions实际解析和执行待Owner推送。
+本地已实际运行的另22例是Python工程门禁测试（test-ci-gates.py）：5例Schema提交字节、10例JUnit/指标、7例最低契约及删除/历史检查，使用合成文本仓库和报告，不是上述158个Kotlin方法。第一轮Windows只读Git对象清理已修；第二轮辅助用例两行错位已归位，原断言保留，全套22例通过。CI51旧SHA也已实际通过工程步骤，但在主Kotlin编译失败，因此不能算本轮648方法通过。未添加/下载任何Android工具链或YAML依赖；当前Actions执行待Owner推送。

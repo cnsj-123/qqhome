@@ -163,7 +163,11 @@ object FinanceV16Integrity {
         v.entryTimingRows.forEach {
             require((it.postedAt == null) == (it.postedPrecision == FinanceTimePrecision.UNKNOWN))
             require(it.postedAt == null || it.postedSource.isNotBlank())
+            FinanceCivilDate.validate(it.postedPrecision,it.postedAt,it.postedLocalDate,it.postedZoneId,
+                it.postedDayStartAt,it.postedDayEndExclusive,it.postedDateBasisVersion)
         }
+        v.observationRows.forEach {FinanceCivilDate.validate(it.precision,it.observedAt,it.observedLocalDate,it.observedZoneId,
+            it.observedDayStartAt,it.observedDayEndExclusive,it.observedDateBasisVersion)}
         v.accountPolicyRows.filter { it.voidedAt == null }.forEach {
             require(it.liabilityConvention != FinanceLiabilityConvention.POSITIVE_DEBT || accounts.getValue(it.accountId).openingBalanceMinor >= 0) {
                 "期初已经是负数时请按账面符号计入，不能再次转换负债起点"

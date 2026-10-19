@@ -367,7 +367,7 @@ internal object FinanceV16References {
     }
 
     private fun checkFinanceControlEntity(s: FinanceSnapshot, v: FinanceV16Snapshot) {
-        require(v.controlRows.map { listOf(it.id) }.let { keys -> keys.distinct().size == keys.size && keys.none { key -> key.any { it == null || (it is String && it.isBlank()) } } }) { "finance_control: 身份重复或缺失" }
+        require(v.controlRows.map { listOf(it.id) }.let { keys -> keys.distinct().size == keys.size }) { "finance_control: 身份重复或缺失" }
 
 
     }

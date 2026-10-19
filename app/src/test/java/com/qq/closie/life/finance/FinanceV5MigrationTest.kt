@@ -55,4 +55,37 @@ class FinanceV5MigrationTest {
             } finally { db.close() }
         }
     }
+    @Test fun populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds()=runTest {
+        val name="v16-date-populated-v4.db"
+        helper.createDatabase(name,4).apply {
+            execSQL("INSERT INTO finance_accounts(id,name,kind,currencyCode,openingBalanceMinor,createdAt,updatedAt,balanceAnchorAt) VALUES('account','合成旧账户','CASH','CNY',1000,100,100,100)")
+            execSQL("INSERT INTO finance_entries(id,accountId,direction,amountMinor,description,occurredAt,recordedAt,updatedAt) VALUES('entry','account','OUTFLOW',100,'合成旧现金',100,200,201)")
+            close()
+        }
+        helper.runMigrationsAndValidate(name,5,true,*LifeMigrations.ALL).close()
+        val db=Room.databaseBuilder(ApplicationProvider.getApplicationContext<Context>(),LifeDatabase::class.java,name)
+            .addMigrations(*LifeMigrations.ALL).allowMainThreadQueries().build()
+        try {
+            val finance=FinanceRepository(db){2_000_000_000_000L}
+            val before=finance.snapshot();val account=before.accounts.single();val entry=before.entries.single()
+            assertEquals("account",account.id);assertEquals("entry",entry.id)
+            assertEquals(100L,account.balanceAnchorAt);assertEquals(900L,FinanceProjection.balance(account,before.entries))
+            assertTrue(before.v16!!.entryTimingRows.isEmpty());assertTrue(before.v16!!.observationRows.isEmpty())
+            fun token()=FinanceCommandToken(java.util.UUID.randomUUID().toString(),0)
+            val civil=FinanceCivilDate.capture(java.time.LocalDate.of(2026,10,10),java.time.ZoneId.of("Asia/Tokyo"))
+            finance.workspace.setPostingDate(token(),entry.id,entry.revision,civil.startInclusive,FinanceTimePrecision.DATE,"新确认的日期证据",civil)
+            val next=FinanceCivilDate.capture(java.time.LocalDate.of(2026,10,11),java.time.ZoneId.of("Asia/Tokyo"))
+            finance.workspace.setAccountPolicy(token(),account.id,true,FinanceLiabilityConvention.SIGNED,FinanceBalanceBasis.KNOWN_POSTED,null)
+            finance.workspace.saveObservation(token(),account.id,900,next.startInclusive,FinanceBalanceBasis.KNOWN_POSTED,FinanceTimePrecision.DATE,"",next)
+            val after=finance.snapshot();val changed=after.entries.single()
+            assertEquals(before.accounts,after.accounts)
+            assertEquals(entry.id,changed.id);assertEquals(entry.occurredAt,changed.occurredAt)
+            assertEquals(entry.recordedAt,changed.recordedAt);assertEquals(entry.amountMinor,changed.amountMinor)
+            assertEquals(900L,FinanceProjection.balance(after.accounts.single(),after.entries))
+            assertEquals(civil,after.v16!!.entryTimingRows.single().postedCivilDate())
+            assertEquals(next,after.v16!!.observationRows.single().observedCivilDate())
+            assertEquals(900L,FinanceAccountProjection.reconcile(after,after.v16!!.observationRows.single()).bookMinor)
+            FinanceIntegrity.validate(after)
+        } finally {db.close()}
+    }
 }

@@ -61,6 +61,11 @@ assert all(t["name"] in tables for t in expected)
 for table in expected:
     columns = {r[1] for r in db.execute('PRAGMA table_info("'+table["name"]+'")')}
     assert columns == {f["name"] for f in table["fields"]}, table["name"]
+for table, prefix in [("finance_entry_timing", "posted"), ("finance_observations", "observed")]:
+    info = {r[1]: r for r in db.execute('PRAGMA table_info("'+table+'")')}
+    for suffix in ("LocalDate", "ZoneId", "DayStartAt", "DayEndExclusive", "DateBasisVersion"):
+        column=info[prefix+suffix]
+        assert column[3] == 0 and column[4] is None, (table, column) # nullable, no guessed migration default
 db.close()
 
 for stop in [1, len(statements)//2, len(statements)-1]:

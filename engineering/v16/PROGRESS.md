@@ -38,7 +38,7 @@ Owner 后续明确：本机没有 Android 工具链，不要下载；继续代�
     node engineering/v16/integrate-schema.cjs
     python engineering/v16/check-source.py
 
-当前源码结构检查：406 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
+当前源码结构检查：408 个 Kotlin 文件、75 个 Room 实体，PASS；它不解析或编译 Kotlin。
 SQL 检查：旧27表逐行保留、新48表、FK检查、3个事务故障点回滚 PASS。
 全部 Kotlin/Room/Compose 测试、KSP、assemble 和设备场景仍 UNVERIFIED。
 
@@ -67,3 +67,5 @@ Home未知/排除政策、整笔现金独立授权、复核并发确认、自动
 本轮只做本地逻辑提交及9a0acf0之后的format-patch，等待Owner授权推送；没有push/PR/merge/发布或触发CI。完整CI通过后再最终独立Review，无阻断后才统一一轮设备验收。
 
 2026-10-19 Review Fix第二轮：在7d9fe46之后定点补R2历史可读、JUnit逐方法/参数调用验证、固定最低契约与删除拦截、对账DATE精度不确定性。Python门禁22/22 PASS，最低契约96文件/638方法，当前V16审计32文件/148方法；Kotlin全部UNVERIFIED。官方5仍按严格红灯Bootstrap处理。交接矩阵与CI顺序复审见REVIEW-FIX-ROUND2.md；仅导出7d9fe46之后本地format-patch，无远端动作。
+
+2026-10-19 CI51综合修复：已取回远端feature/life-os-v16-ci-review的7895082并核实#51日志（KSP通过、4处Kotlin错误、运行测试未开始）。在该唯一基线上修复digest推断/Int主键/两处nullable版本状态；DATE新增持久化日历日/时区/区间/依据，核对算法4，不猜旧DATE。采用未发布候选v5的Schema情况B，两表各增5列、同步4→5迁移/typed备份，旧1–4保持。新增10方法，最低97文件/648方法，当前审计33文件/158方法。Python22/22与SQLite/结构/历史辅助通过；当前Kotlin/KSP/Room/Compose全UNVERIFIED，最终官方5待下一CI重新生成，不能使用#51旧5。详见CI51-FIX.md；仅本地单份7895082后增量patch，无push/merge/PR/CI触发。

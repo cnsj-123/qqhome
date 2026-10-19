@@ -67,6 +67,11 @@ def verify(root, history_only=False):
             expected = {entity["tableName"] for entity in historical["database"]["entities"]} | {table["name"] for table in design["tables"]}
             actual = [entity["tableName"] for entity in schema["database"]["entities"]]
             assert len(actual) == len(set(actual)) and set(actual) == expected, "official entity set differs from migration contract"
+            entities = {entity["tableName"]: entity for entity in schema["database"]["entities"]}
+            for table, prefix in (("finance_entry_timing", "posted"), ("finance_observations", "observed")):
+                fields={field["columnName"]:field for field in entities[table]["fields"]}
+                for suffix in ("LocalDate", "ZoneId", "DayStartAt", "DayEndExclusive", "DateBasisVersion"):
+                    assert not fields[prefix+suffix]["notNull"], "civil-date evidence must remain nullable for legacy archives"
             hashes["5"] = hashlib.sha256(raw).hexdigest()
             git_bytes(root, "diff", "HEAD", "--exit-code", "--", SCHEMA)
         check("Committed KSP official Room 5 (bootstrap must fail until committed)", official)

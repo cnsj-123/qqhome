@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeText
 import java.time.YearMonth
+import java.time.ZoneId
 
 @Composable
 internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccountEntity,vm:FinanceViewModel,
@@ -84,7 +85,7 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
         FinancePagedItems(observations,"observations-${account.id}",{it.id}) { observation ->
             val saved=s.v16?.reconciliationRows.orEmpty().filter {it.observationId==observation.id && it.voidedAt==null}.maxByOrNull {it.confirmationOrder}
             val result=FinanceAccountProjection.reconcile(s,observation,saved)
-            Text(FinanceTime.input(observation.observedAt)+" · 观察 "+FinanceMoney.display(observation.amountMinor,account.currencyCode),style=LifeText.body)
+            Text(observation.timeLabel()+" · 观察 "+FinanceMoney.display(observation.amountMinor,account.currencyCode),style=LifeText.body)
             Text((if(observation.basis==FinanceBalanceBasis.LEGACY_CASH) "实际收付" else "确知入账")+" · "+
                 (result.differenceMinor?.let {"差额 "+FinanceMoney.display(it,account.currencyCode)} ?: "口径资料不足，无法比较")+
                 (if(result.invalidated) " · 原结论失效" else if(saved!=null) " · 已保存结论" else ""),style=LifeText.caption)
@@ -93,7 +94,7 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
         FinancePagedItems(observations.groupBy {it.basis}.values.flatMap {it.zipWithNext()}.filter {it.first.observedAt>it.second.observedAt},
             "observation-intervals-${account.id}",{it.first.id+":"+it.second.id}) { (last,first) ->
             val interval=FinanceAccountStatusProjection.compare(s,first,last)
-            Text("区间 "+FinanceTime.input(first.observedAt)+" → "+FinanceTime.input(last.observedAt)+
+            Text("区间 "+first.timeLabel()+" → "+last.timeLabel()+
                 " · 观察变化 "+FinanceMoney.display(interval.observedMovementMinor,account.currencyCode)+" · "+
                 (interval.unexplainedMinor?.let {"未解释差额 "+FinanceMoney.display(it,account.currencyCode)} ?: "账面变化未知"),style=LifeText.caption)
             if(showInterval!=null) TextButton({showInterval(first,last)},enabled=interval.bookMovementMinor!=null) {Text("筛选此区间的账面流水")}
@@ -135,11 +136,24 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
 internal fun FinancePostingEditor(state:FinanceUiState,row:FinanceLedgerRow,vm:FinanceViewModel,epoch:Long) {
     var open by rememberSaveable(row.id) {mutableStateOf(false)}
     val timing=state.snapshot.v16?.entryTimingRows.orEmpty().singleOrNull {it.entryId==row.entry.id && it.voidedAt==null}
-    var text by rememberSaveable(row.id) {mutableStateOf(timing?.postedAt?.let(FinanceTime::input).orEmpty())}
-    TextButton({open=!open}) {Text("确知入账日 · "+(timing?.postedAt?.let(FinanceTime::input) ?: "未知"))}
+    var dateOnly by rememberSaveable(row.id) {mutableStateOf(timing?.postedPrecision==FinanceTimePrecision.DATE)}
+    var zone by rememberSaveable(row.id) {mutableStateOf(timing?.postedZoneId ?: if(dateOnly) "" else ZoneId.systemDefault().id)}
+    var text by rememberSaveable(row.id) {mutableStateOf(if(dateOnly) timing?.postedLocalDate.orEmpty() else timing?.postedAt?.let(FinanceTime::input).orEmpty())}
+    TextButton({open=!open}) {Text("确知入账日 · "+(timing?.postedTimeLabel() ?: "未知"))}
     if(open) {
-        OutlinedTextField(text,{text=it},label={Text("确知入账时间；留空恢复未知")},modifier=Modifier.fillMaxWidth())
-        TextButton({vm.workspaceAction(epoch,{open=false}) {repo,token ->repo.setPostingDate(token,row.entry.id,row.entry.revision,
-            text.takeIf(String::isNotBlank)?.let(FinanceTime::parse),if(text.isBlank()) FinanceTimePrecision.UNKNOWN else FinanceTimePrecision.INSTANT,"用户明确确认")}},enabled=!state.busy) {Text("保存入账事实")}
+        Row {Checkbox(dateOnly,{dateOnly=it});Text("仅知道日历日期")}
+        OutlinedTextField(text,{text=it},label={Text(if(dateOnly) "原始日期 · 年-月-日；留空恢复未知" else "确知入账时间；留空恢复未知")},modifier=Modifier.fillMaxWidth())
+        if(dateOnly) {
+            OutlinedTextField(zone,{zone=it},label={Text("日期所属时区")})
+            Text("只确认这一天，不代表已知当天的入账先后。旧记录缺少依据时须明确补充，不从旧时间猜日期。",style=LifeText.caption)
+        }
+        TextButton({vm.workspaceAction(epoch,{open=false}) {repo,token ->
+            val civil=if(dateOnly && text.isNotBlank()) FinanceCivilDate.capture(java.time.LocalDate.parse(text.trim()),ZoneId.of(zone.trim())) else null
+            val at=if(civil!=null) timing?.postedAt?.takeIf {timing?.postedCivilDate()==civil} ?: civil.startInclusive
+                else text.takeIf(String::isNotBlank)?.let(FinanceTime::parse)
+            repo.setPostingDate(token,row.entry.id,row.entry.revision,at,
+                if(text.isBlank()) FinanceTimePrecision.UNKNOWN else if(dateOnly) FinanceTimePrecision.DATE else FinanceTimePrecision.INSTANT,
+                "用户明确确认",civil)
+        }},enabled=!state.busy) {Text("保存入账事实")}
     }
 }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "basedOnCommit": "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319",
+  "basedOnCommit": "78950821129f522d17359a7ec3bca2232c120601",
   "reportNameRule": "Exact full classname + method; parameterized mappings enumerate every required JUnit invocation; no suffix stripping",
   "files": [
     {
@@ -547,6 +547,21 @@
       ]
     },
     {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceCivilDateV16Test",
+      "tests": [
+        "tokyoDateSurvivesLosAngelesDeviceZoneAndRepositoryRecreation",
+        "losAngelesDateSurvivesTokyoDeviceZoneAndRepositoryRecreation",
+        "daylightSavingDaysPersistTwentyThreeAndTwentyFiveHoursAndCannotProveNoonPosting",
+        "legacyDateHasNoGuessedZoneAndOnlyExplicitOutsideEvidenceCanExcludeIt",
+        "explicitZoneBasisChangeInvalidatesEvenWithIdenticalBoundsAndInvalidEvidenceRollsBack",
+        "integerControlIdentityStillRejectsDuplicatesAndWrongSingletonKey",
+        "postedFiltersAndStatementsAlsoRequirePersistedWholeDateIntervals",
+        "encryptedTypedBackupPreservesDateZoneBoundsAcrossDevices",
+        "olderTypedArchiveDoesNotInventDateOrZoneOnRestore"
+      ]
+    },
+    {
       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceDiscoveryHistoryTest.kt",
       "className": "com.qq.closie.life.finance.FinanceDiscoveryHistoryTest",
       "tests": [
@@ -864,7 +879,8 @@
       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
       "className": "com.qq.closie.life.finance.FinanceV5MigrationTest",
       "tests": [
-        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
+        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity",
+        "populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds"
       ]
     },
     {
@@ -1214,5 +1230,5 @@
       ]
     }
   ],
-  "additionalCoverage": "Four date-precision reconciliation methods added in review fix round 2"
+  "additionalCoverage": "CI51: nine civil date methods and one populated migration method; preserve all previous requirements"
 }

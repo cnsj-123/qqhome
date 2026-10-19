@@ -1,0 +1,31 @@
+{
+  "runNumber": 51,
+  "runId": 39208535139,
+  "jobId": 117916558369,
+  "branch": "feature/life-os-v16-ci-review",
+  "head": "78950821129f522d17359a7ec3bca2232c120601",
+  "url": "https://github.com/cnsj-123/qqhome/actions/runs/39208535139",
+  "observed": {
+    "sourceAndPython": "PASS",
+    "ksp": "PASS",
+    "strictSchema": "FAIL_OFFICIAL_5_NOT_COMMITTED",
+    "compileDebugKotlin": "FAIL",
+    "runtimeTests": "NOT_RUN_COMPILE_FAILED",
+    "assembleDebug": "SKIPPED"
+  },
+  "compilerErrors": [
+    "2026-10-19T06:13:54.1062232Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/data/backup/EncryptedBackupManager.kt:68:38 Type checking has run into a recursive problem. Easiest workaround: specify types of your declarations explicitly",
+    "2026-10-19T06:13:54.1076013Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/life/finance/FinanceV16References.kt:370:154 Incompatible types: String and Int",
+    "2026-10-19T06:13:54.1101307Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt:20:56 Type mismatch: inferred type is Long? but Long was expected",
+    "2026-10-19T06:13:54.1127498Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceAccountSheet.kt:20:56 Type mismatch: inferred type is Long? but TypeVariable(T) was expected",
+    "2026-10-19T06:13:54.1147844Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt:62:57 Type mismatch: inferred type is Long? but Long was expected",
+    "2026-10-19T06:13:54.1152232Z e: file:///home/runner/work/qqhome/qqhome/app/src/main/java/com/qq/closie/ui/lifeos/finance/FinanceShoppingWorkbench.kt:62:57 Type mismatch: inferred type is Long? but TypeVariable(T) was expected"
+  ],
+  "schemaArtifact": {
+    "id": 12166810831,
+    "name": "room-schema-run51-78950821129f522d17359a7ec3bca2232c120601",
+    "useForFinalModel": false,
+    "reason": "Candidate v5 now gains civil-date columns; final KSP export is required."
+  },
+  "currentFixCompilation": "UNVERIFIED"
+}

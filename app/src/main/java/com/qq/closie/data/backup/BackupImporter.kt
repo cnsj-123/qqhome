@@ -146,6 +146,8 @@ internal object BackupImporter {
                     require(section.has("recoveryTagRows") && section.get("recoveryTagRows").isJsonArray)
                     require(section.has("recoveryMemberRows") && section.get("recoveryMemberRows").isJsonArray)
                 }
+                // Civil-date groups are typed nullable columns. Old archives leave all five null;
+                // FinanceIntegrity rejects partial groups, without fabricating a date/zone from an epoch.
                 gson.fromJson(tree, LifeBackupPayload::class.java)
             }
                 .getOrNull() ?: throw IllegalStateException("Life OS 数据无法解析")

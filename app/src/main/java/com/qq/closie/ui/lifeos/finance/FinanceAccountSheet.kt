@@ -17,7 +17,7 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
     if(!state.loaded) {FinanceReceipt("正在打开账户",error=state.error,onClose=onClose){Text("读取账本快照后继续。")} ;return}
     val colors = LocalLifeOsColors.current
     val epoch=rememberSaveable(account?.id) {state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
-    val expectedVersion=rememberSaveable(account?.id) {account?.updatedAt}
+    val expectedVersion by rememberSaveable(account?.id) {mutableStateOf<Long?>(account?.updatedAt)}
     var openingChoice by rememberSaveable(account?.id) {mutableStateOf(FinanceOpeningChoice.SAVE_TIME.name)}
     var anchorText by rememberSaveable(account?.id) {mutableStateOf(FinanceTime.input(System.currentTimeMillis()))}
     var name by rememberSaveable(account?.id) { mutableStateOf(account?.name.orEmpty()) }

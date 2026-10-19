@@ -34,8 +34,11 @@ object FinanceAccountStatusProjection {
         require(first.voidedAt==null && last.voidedAt==null)
         val a=FinanceAccountProjection.reconcile(s,first).bookMinor
         val b=FinanceAccountProjection.reconcile(s,last).bookMinor
+        val firstBounds=financeTimeBounds(first.observedAt,first.precision,first.observedCivilDate())
+        val lastBounds=financeTimeBounds(last.observedAt,last.precision,last.observedCivilDate())
+        val ordered=firstBounds!=null && lastBounds!=null && firstBounds.latest<lastBounds.earliest
         val observed=Math.subtractExact(last.amountMinor,first.amountMinor)
-        val movement=if(a==null || b==null) null else Math.subtractExact(b,a)
+        val movement=if(!ordered || a==null || b==null) null else Math.subtractExact(b,a)
         return FinanceObservationInterval(first,last,observed,movement,movement?.let { Math.subtractExact(observed,it) })
     }
     fun statement(s:FinanceSnapshot,accountId:String,closingMonth:YearMonth):FinanceCreditStatement {
@@ -50,10 +53,13 @@ object FinanceAccountStatusProjection {
         val due=dueMonth.atDay(minOf(cycle.dueDay,dueMonth.lengthOfMonth())).atStartOfDay(zone).toInstant().toEpochMilli()
         val timing=v.entryTimingRows.filter { it.voidedAt==null }.associateBy { it.entryId }
         val all=s.entries.filter { it.accountId==accountId && it.voidedAt==null }
-        val known=all.filter { row -> timing[row.id]?.postedAt?.let { it>=start && it<end }==true }
+        val bounds=all.associate {it.id to timing[it.id]?.postedTimeBounds()}
+        val known=all.filter {row->bounds[row.id]?.let {it.earliest>=start && it.latest<end}==true}
+        val knownIds=known.map {it.id}.toSet()
         return FinanceCreditStatement(FinanceDateRange(start,end),due,
             exactSum(known.filter { it.direction==FinanceDirection.OUTFLOW }.map { it.amountMinor }),
             exactSum(known.filter { it.direction==FinanceDirection.INFLOW }.map { it.amountMinor }),known,
-            all.count { timing[it.id]?.postedAt==null })
+            all.count {row->val span=bounds[row.id]
+                span==null || (span.latest>=start && span.earliest<end && row.id !in knownIds)})
     }
 }

@@ -7,6 +7,9 @@ const tables = [];
 const field = (name, type = 'String', value) => ({ name, type, value });
 const id = () => field('id');
 const time = () => [field('createdAt', 'Long'), field('updatedAt', 'Long'), field('revision', 'Long', '1'), field('voidedAt', 'Long?', 'null')];
+// Nullable for older candidate-v5 archives: never infer missing civil dates/zones from old epochs.
+const civilDate = prefix => [field(prefix+'LocalDate','String?','null'),field(prefix+'ZoneId','String?','null'),
+  field(prefix+'DayStartAt','Long?','null'),field(prefix+'DayEndExclusive','Long?','null'),field(prefix+'DateBasisVersion','Int?','null')];
 const table = (name, cls, fields, refs = {}, primary = ['id'], indices = []) => {
   const t = { name, cls: (name.startsWith('shopping_') ? 'Shopping' : 'Finance') + cls + 'Entity', fields, refs, primary, indices };
   tables.push(t); return t;
@@ -45,14 +48,14 @@ table('finance_cost_adjustments', 'CostAdjustment', [id(), field('eventId'), fie
 table('finance_entry_timing', 'EntryTiming', [field('entryId'), field('postedAt', 'Long?', 'null'),
   field('cashPrecision', 'FinanceTimePrecision', 'FinanceTimePrecision.LEGACY'),
   field('postedPrecision', 'FinanceTimePrecision', 'FinanceTimePrecision.UNKNOWN'),
-  field('postedSource'), ...time()], {entryId:entry}, ['entryId']);
+  field('postedSource'), ...time(), ...civilDate('posted')], {entryId:entry}, ['entryId']);
 table('finance_account_policies', 'AccountPolicy', [field('accountId'), field('includedInNet', 'Boolean', 'true'),
   field('liabilityConvention', 'FinanceLiabilityConvention', 'FinanceLiabilityConvention.SIGNED'),
   field('anchorBasis','FinanceBalanceBasis','FinanceBalanceBasis.LEGACY_CASH'), ...time()],
   {accountId:account}, ['accountId']);
 table('finance_observations', 'Observation', [id(), field('accountId'), field('amountMinor', 'Long'),
   field('observedAt', 'Long'), field('basis', 'FinanceBalanceBasis'), field('precision', 'FinanceTimePrecision'),
-  field('note'), ...time()], {accountId:account});
+  field('note'), ...time(), ...civilDate('observed')], {accountId:account});
 table('finance_reconciliations', 'Reconciliation', [id(), field('observationId'), field('bookMinor', 'Long?', 'null'),
   field('fingerprint'), field('algorithmVersion', 'Int', '1'), field('note'), field('confirmationOrder','Long','1'), ...time()],
   {observationId:fk('FinanceObservationEntity')});
@@ -255,7 +258,9 @@ const existing = {'FinanceEventEntity':'s.v4?.events.orEmpty()', 'FinanceEntryEn
   'FinanceEventEntryLinkEntity':'s.v4?.links.orEmpty()','FinanceProposalEntity':'s.v4?.proposals.orEmpty()'};
 const referenceChecks = tables.map(t=>
  '    private fun check'+t.cls+'(s: FinanceSnapshot, v: FinanceV16Snapshot) {\n'+
- '        require(v.'+t.property+'.map { listOf('+t.primary.map(k=>'it.'+k).join(', ')+') }.let { keys -> keys.distinct().size == keys.size && keys.none { key -> key.any { it == null || (it is String && it.isBlank()) } } }) { "'+t.name+': 身份重复或缺失" }\n'+
+ '        require(v.'+t.property+'.map { listOf('+t.primary.map(k=>'it.'+k).join(', ')+') }.let { keys -> keys.distinct().size == keys.size'+
+ (t.primary.every(k=>['Int','Long'].includes(t.fields.find(f=>f.name===k).type))?'':' && keys.none { key -> key.any { it == null || (it is String && it.isBlank()) } }')+
+ ' }) { "'+t.name+': 身份重复或缺失" }\n'+
  Object.entries(t.refs).map(([c,r])=>{
    const target=tables.find(x=>x.cls===r.entity);
    const key=t.property+'_'+c;

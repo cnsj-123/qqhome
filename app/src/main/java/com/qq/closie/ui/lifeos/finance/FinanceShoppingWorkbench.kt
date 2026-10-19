@@ -59,7 +59,7 @@ internal fun FinanceShoppingWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
     if(open) {
         val purchase=remember {v?.purchaseRows.orEmpty().singleOrNull {it.id==editing}}
         val epoch=rememberSaveable {v?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
-        val purchaseRevision=rememberSaveable(editing) {purchase?.revision}
+        val purchaseRevision by rememberSaveable(editing) {mutableStateOf<Long?>(purchase?.revision)}
         var title by rememberSaveable {mutableStateOf(purchase?.title.orEmpty())}
         var currency by rememberSaveable {mutableStateOf(purchase?.currencyCode ?: "CNY")}
         var date by rememberSaveable {mutableStateOf(FinanceTime.input(purchase?.occurredAt ?: System.currentTimeMillis()))}

@@ -2,13 +2,13 @@
   "check": "V16-test-source-inventory",
   "status": "PASS",
   "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
-  "minimumBase": "7d9fe46d4f489d50f72cfcff3e3b1b5dce02b319",
+  "minimumBase": "78950821129f522d17359a7ec3bca2232c120601",
   "minimumContract": "engineering/v16/test-minimum-contract.json",
-  "minimumContractSha256": "732e114d7512f7b4bf53dc61f19002017357a25da64ac59effd3f0bb4e352ce5",
-  "minimumTestFiles": 96,
-  "minimumTestMethods": 638,
-  "testFiles": 32,
-  "testMethods": 148,
+  "minimumContractSha256": "39b20f28e84bf5ae71f2ff1b93417204d9459403f0b4f6477297a3b7d595ba36",
+  "minimumTestFiles": 97,
+  "minimumTestMethods": 648,
+  "testFiles": 33,
+  "testMethods": 158,
   "deletedFiles": [],
   "errors": [],
   "bypassFindings": [],
@@ -128,6 +128,26 @@
       "sha256": "b86259a3e82092b00c2ed1bb6daf88679bbdea30ab680006eeb03285096c525e",
       "assertionCalls": 6,
       "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceCivilDateV16Test",
+      "tests": [
+        "tokyoDateSurvivesLosAngelesDeviceZoneAndRepositoryRecreation",
+        "losAngelesDateSurvivesTokyoDeviceZoneAndRepositoryRecreation",
+        "daylightSavingDaysPersistTwentyThreeAndTwentyFiveHoursAndCannotProveNoonPosting",
+        "legacyDateHasNoGuessedZoneAndOnlyExplicitOutsideEvidenceCanExcludeIt",
+        "explicitZoneBasisChangeInvalidatesEvenWithIdenticalBoundsAndInvalidEvidenceRollsBack",
+        "integerControlIdentityStillRejectsDuplicatesAndWrongSingletonKey",
+        "postedFiltersAndStatementsAlsoRequirePersistedWholeDateIntervals",
+        "encryptedTypedBackupPreservesDateZoneBoundsAcrossDevices",
+        "olderTypedArchiveDoesNotInventDateOrZoneOnRestore"
+      ],
+      "sha256": "412f258458613d137efbe688683b1455b5772115928df12be736821b3b7c8a50",
+      "assertionCalls": 59,
+      "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []
     },
@@ -324,8 +344,8 @@
         "datePostingOverlappingAnchorIsUnknownAndOnlyWholeOutsideDaysCanBeExcluded",
         "dateObservationOverlappingAnchorRemainsIncompleteEvenWithoutEntries"
       ],
-      "sha256": "15efe20103e7d93bb5e9a1241232dcf0332c4d43a03d9168ff60d2ef528e3dae",
-      "assertionCalls": 52,
+      "sha256": "30bcccec89e8d03c15156489b0b523f88efc4272e8447d9108ab2857b7fd75ce",
+      "assertionCalls": 53,
       "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -431,10 +451,11 @@
       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt",
       "className": "com.qq.closie.life.finance.FinanceV5MigrationTest",
       "tests": [
-        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity"
+        "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity",
+        "populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds"
       ],
-      "sha256": "d6a9e16f19a2cdfc8ea66695c9d0554218a1b1dab8e7cd3c679661d4b27d68b3",
-      "assertionCalls": 9,
+      "sha256": "6a0c16940a8f388028c8621d5f9308bb62b75fb1dbe56f7f38fa5cf840eb2977",
+      "assertionCalls": 24,
       "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []

@@ -98,12 +98,16 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
         }
 
     suspend fun saveObservation(token:FinanceCommandToken,accountId:String,amount:Long,at:Long,
-        basis:FinanceBalanceBasis,precision:FinanceTimePrecision,note:String):String =
-        commands.run(token,"OBSERVATION_SAVE",listOf(accountId,amount,at,basis,precision,note)) {
+        basis:FinanceBalanceBasis,precision:FinanceTimePrecision,note:String,civilDate:FinanceCivilDate?=null):String =
+        commands.run(token,"OBSERVATION_SAVE",listOf(accountId,amount,at,basis,precision,note)+listOfNotNull(civilDate)) {
             require(db.financeDao().account(accountId)!=null)
             require(precision in setOf(FinanceTimePrecision.DATE,FinanceTimePrecision.INSTANT))
+            FinanceCivilDate.validateNew(precision,at,civilDate)
             val result=id(); val now=clock()
-            dao.putObservation(listOf(FinanceObservationEntity(result,accountId,amount,at,basis,precision,note,now,now)))
+            dao.putObservation(listOf(FinanceObservationEntity(result,accountId,amount,at,basis,precision,note,now,now,
+                observedLocalDate=civilDate?.localDate,observedZoneId=civilDate?.zoneId,
+                observedDayStartAt=civilDate?.startInclusive,observedDayEndExclusive=civilDate?.endExclusive,
+                observedDateBasisVersion=civilDate?.basisVersion)))
             result
         }
     suspend fun confirmReconciliation(token:FinanceCommandToken,observationId:String,expectedFingerprint:String,note:String):String =
@@ -119,15 +123,18 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
             result
         }
     suspend fun setPostingDate(token:FinanceCommandToken,entryId:String,expectedRevision:Long,postedAt:Long?,
-        precision:FinanceTimePrecision,source:String):String =
-        commands.run(token,"POSTING_CONFIRM",listOf(entryId,expectedRevision,postedAt,precision,source)) {
+        precision:FinanceTimePrecision,source:String,civilDate:FinanceCivilDate?=null):String =
+        commands.run(token,"POSTING_CONFIRM",listOf(entryId,expectedRevision,postedAt,precision,source)+listOfNotNull(civilDate)) {
             val entry=requireNotNull(db.financeDao().entry(entryId))
             require(entry.voidedAt==null && entry.revision==expectedRevision)
+            FinanceCivilDate.validateNew(precision,postedAt,civilDate)
             val old=dao.entryTimingRows().singleOrNull { it.entryId==entryId }
             val now=clock()
             dao.putEntryTiming(listOf(FinanceEntryTimingEntity(entryId,postedAt,
                 old?.cashPrecision ?: FinanceTimePrecision.LEGACY,precision,source,old?.createdAt ?: now,now,
-                Math.addExact(old?.revision ?: 0L,1L))))
+                Math.addExact(old?.revision ?: 0L,1L),postedLocalDate=civilDate?.localDate,postedZoneId=civilDate?.zoneId,
+                postedDayStartAt=civilDate?.startInclusive,postedDayEndExclusive=civilDate?.endExclusive,
+                postedDateBasisVersion=civilDate?.basisVersion)))
             db.financeDao().updateEntry(entry.copy(revision=Math.addExact(entry.revision,1L),updatedAt=now))
             entryId
         }
