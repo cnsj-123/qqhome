@@ -1,0 +1,1347 @@
+From ffe13b243c92c20455f006dca85099f07e4a3780 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Mon, 19 Oct 2026 20:58:47 +0800
+Subject: [PATCH 1/3] test(architecture): align guarded draft ownership
+
+---
+ .../com/qq/closie/ArchitectureBoundaryTest.kt | 48 +++++++++++++++----
+ engineering/v16/test-minimum-contract.json    |  4 +-
+ engineering/v16/v16_test_contract.py          |  2 +-
+ 3 files changed, 44 insertions(+), 10 deletions(-)
+
+diff --git a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+index 70fddbac72afc9138210b2206b2168deefcb01c1..ba6e8a21f3309208b703912634c5ac658b2715ff 100644
+--- a/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
++++ b/app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt
+@@ -8,6 +8,28 @@ import org.junit.Test
+ class ArchitectureBoundaryTest {
+     private val app = sequenceOf(File("."), File("app")).first { File(it, "src/main/java/com/qq/closie").isDirectory }
+     private val source = File(app, "src/main/java/com/qq/closie")
++    private val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
++        "finance_rule_conditions", "finance_rule_actions", "finance_draft_tags",
++        "finance_evidence_proposals", "finance_grant_events", "finance_draft_expected", "finance_grant_entries", "finance_review_expected")
++    private val economicDraftChildren = setOf("finance_economic_draft_funding", "finance_economic_draft_shares")
++    private fun financeWriteViolations(text:String):List<String> {
++        val failures=mutableListOf<String>()
++        if(Regex("@Delete\\b").containsMatchIn(text)) failures+="@Delete"
++        if(text.contains("OnConflictStrategy.REPLACE")) failures+="REPLACE"
++        val queries=Regex("@Query\\(\\s*\"([^\"]+)\"\\s*\\)").findAll(text).toList()
++        Regex("DELETE\\s+FROM\\s+[`\"]?(finance_\\w+)",RegexOption.IGNORE_CASE).findAll(text).forEach { deletion ->
++            val table=deletion.groupValues[1].lowercase()
++            if(table in economicDraftChildren) {
++                // These are mutable editor associations, not canonical funding or shares.
++                // Permit only the four actual DAO queries used by draft save / atomic restore.
++                val query=queries.singleOrNull {deletion.range.first in it.range}?.groupValues?.get(1)
++                    ?.trim()?.replace(Regex("\\s+")," ")
++                val approved=listOf("DELETE FROM $table","DELETE FROM $table WHERE draftId = :id")
++                if(approved.none {it.equals(query,ignoreCase=true)}) failures+=deletion.value
++            } else if(table !in allowedDeletes) failures+=deletion.value
++        }
++        return failures
++    }
+     @Test fun financeOwnsTypedFactsInsideTheExistingDatabase() {
+         val owner = File(source, "life/finance")
+         owner.walkTopDown().filter { it.extension == "kt" }.forEach {
+@@ -21,17 +43,10 @@ class ArchitectureBoundaryTest {
+             assertFalse(it.name, text.contains("financeDao("))
+             assertFalse(it.name, text.contains("life.data.database"))
+         }
+-        val allowedDeletes = setOf("finance_entry_tags", "finance_proposal_tags",
+-            "finance_rule_conditions", "finance_rule_actions", "finance_draft_tags",
+-            "finance_evidence_proposals", "finance_grant_events", "finance_draft_expected", "finance_grant_entries", "finance_review_expected")
+         (File(source, "life/data/database/dao").listFiles()!!.filter { it.name.startsWith("Finance") } +
+             File(source, "life/finance").walkTopDown().filter { it.extension == "kt" }.toList()).forEach { file ->
+             val dao = file.readText()
+-            assertFalse(file.name, dao.contains("@Delete"))
+-            assertFalse(file.name, dao.contains("OnConflictStrategy.REPLACE"))
+-            Regex("DELETE\\s+FROM\\s+(finance_\\w+)", RegexOption.IGNORE_CASE).findAll(dao).forEach {
+-                assertTrue(file.name + ": " + it.value, it.groupValues[1].lowercase() in allowedDeletes)
+-            }
++            assertEquals(file.name,emptyList<String>(),financeWriteViolations(dao))
+         }
+         assertTrue(File(source, "life/data/database/LifeDatabase.kt").readText().contains("version = 5"))
+         val version = Regex("version\\s*=\\s*(\\d+)").find(
+@@ -44,6 +59,23 @@ class ArchitectureBoundaryTest {
+         assertEquals(com.qq.closie.navigation.LifeOsRoute.FINANCE,
+             com.qq.closie.ui.lifeos.drawer.LifeModules.find("finance").route)
+     }
++    @Test fun economicDraftDeleteAllowanceIsLimitedToApprovedAssociationQueries() {
++        for(table in economicDraftChildren) {
++            assertTrue(financeWriteViolations("@Query(\"DELETE FROM $table\")").isEmpty())
++            assertTrue(financeWriteViolations("@Query(\"DELETE FROM $table WHERE draftId = :id\")").isEmpty())
++            assertFalse(financeWriteViolations("@Query(\"DELETE FROM $table WHERE revision < :revision\")").isEmpty())
++            assertFalse(financeWriteViolations("execSQL(\"DELETE FROM $table\")").isEmpty())
++        }
++    }
++    @Test fun permanentCanonicalDeletesAndReplaceRemainRejected() {
++        for(table in listOf("finance_accounts","finance_entries","finance_transfers","finance_events",
++            "finance_event_entries","finance_economics","finance_funding","finance_shares","finance_economic_drafts")) {
++            for(sql in listOf("DELETE FROM $table","DELETE FROM `$table` WHERE id = :id","delete from $table"))
++                assertFalse(sql,financeWriteViolations("@Query(\"$sql\")").isEmpty())
++        }
++        assertFalse(financeWriteViolations("@Delete suspend fun erase(row: FinanceEntryEntity)").isEmpty())
++        assertFalse(financeWriteViolations("@Insert(onConflict = OnConflictStrategy.REPLACE)").isEmpty())
++    }
+     @Test fun financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay() {
+         val listener = File(source, "life/finance/FinanceNotificationListener.kt").readText()
+         assertTrue(listener.contains("financeAutomationRepository"))
+diff --git a/engineering/v16/test-minimum-contract.json b/engineering/v16/test-minimum-contract.json
+index d23cd23e3c84b6b5664a99b126dec8972f7f252c..9fa7d1256c88b4aa5f7ac26dbfb0c89dd241f76e 100644
+--- a/engineering/v16/test-minimum-contract.json
++++ b/engineering/v16/test-minimum-contract.json
+@@ -36,7 +36,9 @@
+         "thereIsOnlyOneProductRootAndNoObsoleteShell",
+         "projectionsCannotOwnDomainStorageOrDependOnClosetCalendar",
+         "galleryCopyBackendIsNotExposedByTheCompositionRoot",
+-        "debugIdentityCannotOccupyTheReleaseUpdateChain"
++        "debugIdentityCannotOccupyTheReleaseUpdateChain",
++        "economicDraftDeleteAllowanceIsLimitedToApprovedAssociationQueries",
++        "permanentCanonicalDeletesAndReplaceRemainRejected"
+       ]
+     },
+     {
+diff --git a/engineering/v16/v16_test_contract.py b/engineering/v16/v16_test_contract.py
+index e0d63e25ff556ff9b79559a015c8fd6e904b2105..c10e0f17cb39d0e8bc46cb4db48172653eaf4d3b 100644
+--- a/engineering/v16/v16_test_contract.py
++++ b/engineering/v16/v16_test_contract.py
+@@ -4,7 +4,7 @@ import hashlib, json, pathlib, re, subprocess
+ R2 = "245e1475cd1d47a4205ab49f75d5e06d22de701c"
+ MINIMUM_BASE = "78950821129f522d17359a7ec3bca2232c120601"
+ CONTRACT = "engineering/v16/test-minimum-contract.json"
+-CONTRACT_SHA256 = "303247088a925db57f864fd154b3279aad3716290eab9ecdc567a8909ad5f9cc"
++CONTRACT_SHA256 = "e6f340a4fb3caf723cb80d7cd78fc8ca2445130c0d57ed17f3dac0d3fc01116a"
+ 
+ def contract_digest(data):
+     canonical=json.dumps(data,ensure_ascii=False,sort_keys=True,separators=(",", ":")).encode("utf-8")
+-- 
+2.53.0.windows.3
+
+
+From 6201c3d0c00b6af4be3199bb975495149bc6bd9f Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Mon, 19 Oct 2026 20:59:00 +0800
+Subject: [PATCH 2/3] test(finance): repair backup, restore and date contracts
+
+---
+ .../data/backup/FinanceBackupRecoveryTest.kt  |  15 +-
+ .../backup/FinanceV4BackupRecoveryTest.kt     |  13 +-
+ .../closie/data/backup/GateAwareFlowTest.kt   | 183 +++++++++---------
+ .../data/backup/RestoreGateConcurrencyTest.kt |  66 ++++---
+ .../life/finance/FinanceBalanceAnchorTest.kt  |  12 +-
+ .../life/finance/FinanceInsightsV16Test.kt    |  16 +-
+ .../qq/closie/life/finance/FinanceRoomTest.kt |  26 +++
+ 7 files changed, 206 insertions(+), 125 deletions(-)
+
+diff --git a/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt b/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt
+index 0bc44eaf68d3fad89968bc18245d5de97625a241..8b0255b2c4eb7173e67cce48ab5a4c5481fd0698 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt
+@@ -34,17 +34,26 @@ class FinanceBackupRecoveryTest {
+         return bank to entry
+     }
+     @Test fun snapshotAndJsonArchiveCarryEveryFinanceTableExactly() = runTest {
+-        seed()
++        val (_,entry)=seed()
++        repo.workspace.setPostingDate(FinanceCommandToken("synthetic-backup-posting",0),entry.id,entry.revision,
++            100L,FinanceTimePrecision.INSTANT,"合成已知入账")
+         val saved = LifeBackupApplier.snapshot(db)
+         assertEquals(readFinanceSnapshot(db, includeIntake = true), saved.finance)
+-        assertEquals(27, saved.toInsertOrder().size)
++        val tableNames=saved.toInsertOrder().map {it.first}
++        assertEquals("Duplicate serialized table",tableNames.size,tableNames.toSet().size)
+         val decoded = BackupValidator.gson.fromJson(BackupValidator.gson.toJson(saved), LifeBackupPayload::class.java)
++        assertEquals(saved,decoded)
++        assertEquals(saved.toInsertOrder(),decoded.toInsertOrder())
+         assertEquals(saved.finance, decoded.finance)
++        assertTrue(saved.finance!!.v4!!.changes.isNotEmpty())
++        assertEquals(100L,saved.finance!!.v16!!.entryTimingRows.single {it.entryId==entry.id}.postedAt)
+         FinanceIntegrity.validate(requireNotNull(decoded.finance))
+         val expectedTables = db.openHelper.writableDatabase.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('android_metadata','room_master_table')").use {
+             val names = mutableSetOf<String>(); while (it.moveToNext()) names += it.getString(0); names
+         }
+-        assertEquals(expectedTables, saved.toInsertOrder().map { it.first }.toSet())
++        assertTrue("Missing tables: ${expectedTables-tableNames.toSet()}",(expectedTables-tableNames.toSet()).isEmpty())
++        assertTrue("Unexpected tables: ${tableNames.toSet()-expectedTables}",(tableNames.toSet()-expectedTables).isEmpty())
++        assertEquals(expectedTables,tableNames.toSet())
+     }
+     @Test fun recoveryReplaysFinanceWhileKeepingRetiredCanonicalRows() = runTest {
+         val (bank, entry) = seed(); val before = LifeBackupApplier.snapshot(db)
+diff --git a/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt b/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt
+index 2f3dde2b3dc056e7df4e8fb9b503e1c286c198bf..5fb30c6c90073c0566764858479e7ef11dbb9780 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt
+@@ -48,7 +48,9 @@ class FinanceV4BackupRecoveryTest : FinanceRoomTest() {
+         try {
+             LifeBackupApplier.restoreSnapshot(target, archived)
+             val restored = readFinanceSnapshot(target, true)
+-            assertEquals(saved.finance, restored)
++            val epoch=assertFinanceFactsAfterRestore(requireNotNull(saved.finance),restored,0)
++            val targetRepo=FinanceRepository(target){clock}
++            assertStaleFinanceCommandRejected(targetRepo,paid.id,0)
+             assertEquals(2, restored.v4!!.links.size)
+             assertEquals(1, restored.v4!!.activeLinks.size)
+             assertEquals(1, restored.v4!!.links.count { it.voidedAt != null })
+@@ -62,7 +64,14 @@ class FinanceV4BackupRecoveryTest : FinanceRoomTest() {
+             assertEquals(1, restored.v4!!.staging.size)
+             FinanceIntegrity.validate(restored)
+             LifeBackupApplier.restoreSnapshot(target, archived)
+-            assertEquals(restored, readFinanceSnapshot(target, true))
++            val retried=readFinanceSnapshot(target,true)
++            assertFinanceFactsAfterRestore(restored,retried,epoch)
++            assertFinanceFactsAfterRestore(requireNotNull(saved.finance),retried,epoch)
++            assertStaleFinanceCommandRejected(targetRepo,paid.id,epoch)
++            assertEquals(1,retried.entries.count { it.voidedAt == null })
++            assertEquals(restored.entries,retried.entries)
++            assertEquals(restored.v4!!.links,retried.v4!!.links)
++            FinanceIntegrity.validate(retried)
+         } finally { target.close() }
+     }
+ 
+diff --git a/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt b/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
+index fc3339241c7a37accf04a71a947efb6d1f0c27b4..088ac7048eb2c8c222e3ae1c9522fcdee113a0e4 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt
+@@ -270,9 +270,9 @@ class GateAwareFlowTest {
+     fun whileBlockedTheDurableSourceIsNotSubscribedAtAll() = runTest {
+         life.createEntity(entityType = "seed")
+ 
+-        var subscriptions = 0
++        val subscriptions = java.util.concurrent.atomic.AtomicInteger(0)
+         val flow = gateAwareFlow {
+-            subscriptions++
++            subscriptions.incrementAndGet()
+             life.observeByType("note")
+         }
+ 
+@@ -282,23 +282,24 @@ class GateAwareFlowTest {
+         // at all, so the whole block runs on `IO`.
+         runBlocking(Dispatchers.IO) {
+             val job = launch { flow.collect { } }
+-            awaitTrue("block was never invoked") { subscriptions == 1 }
+-
+-            RestoreStartupGate.beginRestore()
+-            awaitTrue("the gate never entered RESTORING") { RestoreStartupGate.isRestoring }
+-            delay(TRACKER_SETTLE_MS)
+-            // Still one: the gate closed without re-subscribing. The `READY -> RESTORING` emission did
+-            // reach the `flatMapLatest`, and its branch chose `emptyFlow`, so `block` was not invoked
+-            // again.
+-            assertThat(subscriptions).isEqualTo(1)
+-
+-            RestoreStartupGate.endRestoreReady()
+-            // Re-subscribed: this is what proves the policy is `flatMapLatest` and not `filter`. With
+-            // `filter` the block would still have run exactly once, and the durable subscription would
+-            // never have been dropped across the swap.
+-            awaitTrue("block was not re-invoked after the gate reopened") { subscriptions == 2 }
+-
+-            job.cancel()
++            try {
++                awaitTrue("block was never invoked") { subscriptions.get() == 1 }
++
++                awaitTrue("the restore never acquired the gate") { RestoreStartupGate.beginRestore() }
++                awaitTrue("the gate never entered RESTORING") { RestoreStartupGate.isRestoring }
++                delay(TRACKER_SETTLE_MS)
++                // Still one: the gate closed without re-subscribing. The `READY -> RESTORING` emission did
++                // reach the `flatMapLatest`, and its branch chose `emptyFlow`, so `block` was not invoked
++                // again.
++                assertThat(subscriptions.get()).isEqualTo(1)
++
++                RestoreStartupGate.endRestoreReady()
++                // Re-subscribed: this is what proves the policy is `flatMapLatest` and not `filter`. With
++                // `filter` the block would still have run exactly once, and the durable subscription would
++                // never have been dropped across the swap.
++                awaitTrue("block was not re-invoked after the gate reopened") { subscriptions.get() == 2 }
++
++            } finally { job.cancelAndJoin() }
+         }
+     }
+ 
+@@ -350,72 +351,68 @@ class GateAwareFlowTest {
+                     if (rows.any { it.id == "after-restore" }) resumedEmission.countDown()
+                 }
+             }
+-
+-            assertThat(firstEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+-
+-            // firstEmission is counted down from inside the downstream collector.
+-            // emitUnderBusinessLease still owns its emission lease until that collector
+-            // returns, so wait for the delivery to be fully complete before asking a
+-            // restore to take ownership.
+-            awaitTrue("the first emission lease was never released") {
+-                RestoreStartupGate.activeBusinessOps == 0
+-            }
+-
+-            // ---- The gate closes underneath the running collector. ----
+-            assertThat(RestoreStartupGate.beginRestore()).isTrue()
+-            db.lifeEntityDao().insert(
+-                com.qq.closie.life.core.LifeEntityEntity(
+-                    id = "during-restore",
+-                    entityType = "stable",
+-                    createdAt = 1L,
+-                    updatedAt = 1L,
+-                    deletedAt = null,
+-                    revision = 1L
++            try {
++                assertThat(firstEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
++
++                // firstEmission is counted down from inside the downstream collector.
++                // emitUnderBusinessLease still owns its emission lease until that collector
++                // returns. Acquire ownership with beginRestore itself: observing a zero
++                // lease count does not reserve the gate against another Room emission.
++                awaitTrue("the restore never acquired the gate") { RestoreStartupGate.beginRestore() }
++                db.lifeEntityDao().insert(
++                    com.qq.closie.life.core.LifeEntityEntity(
++                        id = "during-restore",
++                        entityType = "stable",
++                        createdAt = 1L,
++                        updatedAt = 1L,
++                        deletedAt = null,
++                        revision = 1L
++                    )
+                 )
+-            )
+-            delay(TRACKER_SETTLE_MS)
+-
+-            // ---- The gate reopens; a row written while blocked is now visible. ----
+-            db.lifeEntityDao().insert(
+-                com.qq.closie.life.core.LifeEntityEntity(
+-                    id = "after-restore",
+-                    entityType = "stable",
+-                    createdAt = 2L,
+-                    updatedAt = 2L,
+-                    deletedAt = null,
+-                    revision = 1L
++                delay(TRACKER_SETTLE_MS)
++
++                // ---- The gate reopens; a row written while blocked is now visible. ----
++                db.lifeEntityDao().insert(
++                    com.qq.closie.life.core.LifeEntityEntity(
++                        id = "after-restore",
++                        entityType = "stable",
++                        createdAt = 2L,
++                        updatedAt = 2L,
++                        deletedAt = null,
++                        revision = 1L
++                    )
+                 )
+-            )
+-            RestoreStartupGate.endRestoreReady()
+-
+-            // The collector was never restarted, and it did receive the post-restore state — so it
+-            // survived the block rather than having been terminated by it.
+-            assertThat(resumedEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+-            job.cancel()
+-
+-            // ### The core assertion: nothing arrived *while the gate was closed*
+-            //
+-            // Note carefully what is and is not claimed. `during-restore` **does** legitimately appear
+-            // in the final post-restore snapshot: after the gate reopened, `flatMapLatest` re-invoked
+-            // `block()` and issued a fresh full query, and that query correctly returns every row,
+-            // including the one written while the gate was shut. A coherent read after the restore is
+-            // exactly what should happen, and asserting `during-restore` never appears anywhere would be
+-            // asserting a bug.
+-            //
+-            // What must never happen is a delivery *during* the closed window. So the assertion is on
+-            // the sequence, not on its contents: the emission carrying `during-restore` must be the one
+-            // that also carries `after-restore`, i.e. a single, complete, post-restore snapshot — never
+-            // a partial one that saw the restore-era row but not the final state.
+-            val emissionWithRestoreEraRow = received.filterIndexed { _, rows -> rows.contains("during-restore") }
+-            // Exactly one such emission, and it is the last one: the fresh post-restore query.
+-            assertThat(emissionWithRestoreEraRow).hasSize(1)
+-            assertThat(emissionWithRestoreEraRow.single()).isEqualTo(received.last())
+-            // And that snapshot is the complete post-restore world, not a half-applied one.
+-            assertThat(received.last()).containsAtLeast("after-restore", "during-restore", seeded.id)
+-
+-            // The pre-restore snapshot that preceded the block saw only the seeded row: proof the
+-            // restore-era write had not been observed before the gate reopened.
+-            assertThat(received.first()).containsExactly(seeded.id)
++                RestoreStartupGate.endRestoreReady()
++
++                // The collector was never restarted, and it did receive the post-restore state — so it
++                // survived the block rather than having been terminated by it.
++                assertThat(resumedEmission.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
++                job.cancelAndJoin()
++
++                // ### The core assertion: nothing arrived *while the gate was closed*
++                //
++                // Note carefully what is and is not claimed. `during-restore` **does** legitimately appear
++                // in the final post-restore snapshot: after the gate reopened, `flatMapLatest` re-invoked
++                // `block()` and issued a fresh full query, and that query correctly returns every row,
++                // including the one written while the gate was shut. A coherent read after the restore is
++                // exactly what should happen, and asserting `during-restore` never appears anywhere would be
++                // asserting a bug.
++                //
++                // What must never happen is a delivery *during* the closed window. So the assertion is on
++                // the sequence, not on its contents: the emission carrying `during-restore` must be the one
++                // that also carries `after-restore`, i.e. a single, complete, post-restore snapshot — never
++                // a partial one that saw the restore-era row but not the final state.
++                val emissionWithRestoreEraRow = received.filterIndexed { _, rows -> rows.contains("during-restore") }
++                // Exactly one such emission, and it is the last one: the fresh post-restore query.
++                assertThat(emissionWithRestoreEraRow).hasSize(1)
++                assertThat(emissionWithRestoreEraRow.single()).isEqualTo(received.last())
++                // And that snapshot is the complete post-restore world, not a half-applied one.
++                assertThat(received.last()).containsAtLeast("after-restore", "during-restore", seeded.id)
++
++                // The pre-restore snapshot that preceded the block saw only the seeded row: proof the
++                // restore-era write had not been observed before the gate reopened.
++                assertThat(received.first()).containsExactly(seeded.id)
++            } finally { job.cancelAndJoin() }
+         }
+     }
+ 
+@@ -626,17 +623,15 @@ class GateAwareFlowTest {
+             val collector = launch(Dispatchers.IO) {
+                 gateAwareFlow { life.observeByType("idle") }.collect { received.countDown() }
+             }
+-            assertThat(received.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+-
+-            // The collector has processed its emission and is now simply waiting for the next one.
+-            awaitTrue("the emission lease was never released") {
+-                RestoreStartupGate.activeBusinessOps == 0
+-            }
+-            // A restore can start while a UI screen merely has the flow open.
+-            assertThat(RestoreStartupGate.beginRestore()).isTrue()
+-            collector.cancel()
+-            collector.join()
+-            RestoreStartupGate.endRestoreReady()
++            try {
++                assertThat(received.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
++
++                // The collector has processed its emission and is now simply waiting for the next one.
++                // A restore can start while a UI screen merely has the flow open.
++                awaitTrue("the idle collector never permitted restore") { RestoreStartupGate.beginRestore() }
++                collector.cancelAndJoin()
++                RestoreStartupGate.endRestoreReady()
++            } finally { collector.cancelAndJoin() }
+         }
+     }
+ 
+diff --git a/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt b/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
+index b4ec04f3717ccca12ba26624955adda19714771d..0b543aeed7580e55cb41d56a99bc3ef22da04f87 100644
+--- a/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
++++ b/app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt
+@@ -313,30 +313,38 @@ class RestoreGateConcurrencyTest {
+         val barrier = CyclicBarrier(threads)
+         val violations = AtomicInteger(0)
+         val restoreWon = AtomicInteger(0)
++        val restoreAttempted = CountDownLatch(1)
++        val leases = AtomicInteger(0)
++        val refused = AtomicInteger(0)
+ 
+         val jobs = (0 until threads).mapIndexed { index, _ ->
+             async(Dispatchers.IO) {
+                 barrier.await(5, TimeUnit.SECONDS)
+                 if (index == 0) {
+                     // The would-be restorer.
+-                    if (RestoreStartupGate.beginRestore()) {
+-                        restoreWon.incrementAndGet()
+-                        // If it won, no lease may be obtainable, and none may be counted.
+-                        if (RestoreStartupGate.activeBusinessOps != 0) violations.incrementAndGet()
+-                        if (runCatching { RestoreStartupGate.withBusinessAccess { 1 } }.isSuccess) {
+-                            violations.incrementAndGet()
++                    try {
++                        if (RestoreStartupGate.beginRestore()) {
++                            restoreWon.incrementAndGet()
++                            // If it won, no lease may be obtainable, and none may be counted.
++                            if (RestoreStartupGate.activeBusinessOps != 0) violations.incrementAndGet()
++                            if (runCatching { RestoreStartupGate.withBusinessAccess { 1 } }.isSuccess) {
++                                violations.incrementAndGet()
++                            }
+                         }
+-                    }
++                    } finally { restoreAttempted.countDown() }
+                 } else {
+                     // A would-be business operation. It either takes the lease (and then the restore
+                     // must have lost) or is refused (the restore won first) — never both.
+-                    val acquired = runCatching {
++                    try {
+                         RestoreStartupGate.withBusinessAccess {
++                            leases.incrementAndGet()
++                            if (RestoreStartupGate.isRestoring) violations.incrementAndGet()
++                            // Keep this production lease until the actual restore attempt finishes.
++                            // Checking after release would falsely reject a subsequent legal restore.
++                            assertThat(restoreAttempted.await(5, TimeUnit.SECONDS)).isTrue()
+                             if (RestoreStartupGate.isRestoring) violations.incrementAndGet()
+-                            Thread.sleep(2)
+                         }
+-                    }.isSuccess
+-                    if (acquired && RestoreStartupGate.isRestoring) violations.incrementAndGet()
++                    } catch (_: RestoreRecoveryPendingException) { refused.incrementAndGet() }
+                 }
+             }
+         }
+@@ -345,6 +353,14 @@ class RestoreGateConcurrencyTest {
+         assertThat(violations.get()).isEqualTo(0)
+         assertThat(restoreWon.get()).isAtMost(1)
+         assertThat(RestoreStartupGate.activeBusinessOps).isEqualTo(0)
++        assertThat(leases.get() + refused.get()).isEqualTo(threads - 1)
++        if (restoreWon.get() == 1) {
++            assertThat(leases.get()).isEqualTo(0)
++            assertThat(refused.get()).isEqualTo(threads - 1)
++        } else {
++            assertThat(leases.get()).isEqualTo(threads - 1)
++            assertThat(refused.get()).isEqualTo(0)
++        }
+     }
+ 
+     /**
+@@ -561,24 +577,26 @@ class RestoreGateConcurrencyTest {
+         // comparison is now a property of a single observed object rather than a hope about two
+         // collectors' relative timing.
+         val seen = java.util.Collections.synchronizedList(mutableListOf<WardrobeSnapshot>())
+-        val started = CountDownLatch(1)
++        val firstSeen = CountDownLatch(1)
++        val restoredSeen = CountDownLatch(1)
+         val collector = launch(Dispatchers.IO) {
+             hooked.snapshot.collect { snap ->
+-                started.countDown()
+                 seen.add(snap)
++                if(snap.items.map {it.id}==listOf("gen-1-item") && snap.wearEvents.isEmpty()) firstSeen.countDown()
++                if(snap.items.map {it.id}==listOf("gen-2-item") && snap.wearEvents.map {it.id}==listOf("gen-2-wear")) restoredSeen.countDown()
+             }
+         }
+-        assertThat(started.await(5, TimeUnit.SECONDS)).isTrue()
+-        delay(TRACKER_SETTLE_MS)
+-
+-        // The exact call a completed restore makes while the gate is still closed.
+-        RestoreStartupGate.beginRestore()
+-        hooked.reloadFromDiskForRecoveryChecked()
+-        RestoreStartupGate.endRestoreReady()
+-
+-        delay(TRACKER_SETTLE_MS)
+-        collector.cancel()
+-        collector.join()
++        try {
++            assertThat(firstSeen.await(5, TimeUnit.SECONDS)).isTrue()
++            // The exact call a completed restore makes while the gate is still closed.
++            assertThat(RestoreStartupGate.beginRestore()).isTrue()
++            hooked.reloadFromDiskForRecoveryChecked()
++            RestoreStartupGate.endRestoreReady()
++            assertThat(restoredSeen.await(5, TimeUnit.SECONDS)).isTrue()
++        } finally {
++            collector.cancel()
++            collector.join()
++        }
+ 
+         assertThat(seen).isNotEmpty()
+ 
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt
+index de259984e5e4c708a432562fdef571634a931e92..73469e20d862e2e41715530bcb56965bddb1690e 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt
+@@ -169,7 +169,8 @@ class FinanceBalanceAnchorTest {
+         assertEquals(anchor, restored.accounts.single().createdAt)
+         assertEquals(anchor, restored.accounts.single().balanceAnchorAt)
+         assertEquals(FinanceMoney.parse("9800"), FinanceProjection.balance(restored.accounts.single(), restored.entries))
+-        assertEquals(savedBusiness, restored)
++        val epoch=assertFinanceFactsAfterRestore(savedBusiness,restored,0)
++        assertStaleFinanceCommandRejected(repo,restored.entries.first().id,0)
+         assertEquals(2, restored.entries.size)
+         assertTrue(restored.entries.all { it.voidedAt == null })
+         // Full backup state includes intake/config/history, unlike the ordinary business snapshot.
+@@ -178,5 +179,14 @@ class FinanceBalanceAnchorTest {
+         // Recovery retains the journal, including later changes; entity equality checks IDs,
+         // objectId, operation, authority and both revisions, not just the number of rows.
+         assertEquals(journalBeforeRestore.associateBy { it.id }, restoredV4.changes.associateBy { it.id })
++        LifeBackupApplier.restoreSnapshot(db,saved)
++        val retried=repo.snapshot()
++        assertFinanceFactsAfterRestore(restored,retried,epoch)
++        assertFinanceFactsAfterRestore(savedBusiness,retried,epoch)
++        assertStaleFinanceCommandRejected(repo,retried.entries.first().id,epoch)
++        assertEquals(anchor,retried.accounts.single().balanceAnchorAt)
++        assertEquals(980_000L,FinanceProjection.balance(retried.accounts.single(),retried.entries))
++        assertEquals(restored.entries,retried.entries)
++        assertEquals(restoredV4,requireNotNull(LifeBackupApplier.snapshot(db).finance?.v4))
+     }
+ }
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt
+index a931cb88ff633934ff9012f4715b5af0580bc5a0..859db9cdb686d0014d084426a8e8605e3510b910 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt
+@@ -92,10 +92,24 @@ class FinanceInsightsV16Test {
+         val e=cash.saveEntry(accountId=a.id,direction=FinanceDirection.OUTFLOW,amountMinor=100,description="",occurredAt=at(2,10))
+         cash.workspace.saveCreditCycle(economic.token(),a.id,31,5,zone.id)
+         assertEquals(1,FinanceAccountStatusProjection.statement(cash.snapshot(),a.id,YearMonth.of(2026,2)).unknownPostingCount)
+-        cash.workspace.setPostingDate(economic.token(),e.id,e.revision,at(2,28),FinanceTimePrecision.DATE,"确认入账")
++        val civil=FinanceCivilDate.capture(java.time.LocalDate.of(2026,2,28),zone)
++        cash.workspace.setPostingDate(economic.token(),e.id,e.revision,at(2,28),FinanceTimePrecision.DATE,"确认入账",civil)
+         val statement=FinanceAccountStatusProjection.statement(cash.snapshot(),a.id,YearMonth.of(2026,2))
+         assertEquals(100L,statement.outflowMinor);assertEquals(at(3,5),statement.dueAt)
+         assertEquals(at(3,1),statement.range.endExclusive)
++        assertEquals(at(2,1),statement.range.startInclusive)
++        assertEquals(listOf(e.id),statement.entries.map {it.id})
++        assertEquals(0,statement.unknownPostingCount)
++        assertTrue(FinanceAccountStatusProjection.statement(cash.snapshot(),a.id,YearMonth.of(2026,3)).entries.isEmpty())
++        val bank=account()
++        val payment=cash.saveTransfer(sourceAccountId=bank.id,targetAccountId=a.id,amountMinor=100,
++            description="实际还款",occurredAt=at(3,2))
++        val s=cash.snapshot()
++        assertEquals(2,s.entries.count {it.id in setOf(payment.outflowEntryId,payment.inflowEntryId)})
++        assertEquals(1,s.transfers.size)
++        assertEquals(100L,FinanceCostProjection.total(FinanceCostProjection.rows(s)).confirmedMinor)
++        assertEquals(1,FinanceAccountStatusProjection.statement(s,a.id,YearMonth.of(2026,2)).unknownPostingCount)
++        assertEquals(100L,FinanceAccountStatusProjection.statement(s,a.id,YearMonth.of(2026,2)).outflowMinor)
+     }
+     @Test fun explicitQueryNeverBroadensUnknownIdsAndLocalLanguageIsFullyConsumed()=runTest {
+         val a=account();owned(a)
+diff --git a/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt b/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt
+index 77d653b88f2ec3411e1bf864ddd340ad740522df..6272b64d69e8e50948e56387a4aa629c2c3869c6 100644
+--- a/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt
++++ b/app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt
+@@ -7,6 +7,32 @@ import com.qq.closie.data.backup.RestoreStartupGate
+ import com.qq.closie.life.data.database.LifeDatabase
+ import org.junit.After
+ import org.junit.Before
++import org.junit.Assert.*
++
++/** For fixtures whose ONLY permitted restore delta is the control singleton/epoch. */
++internal fun assertFinanceFactsAfterRestore(expected:FinanceSnapshot,actual:FinanceSnapshot,previousEpoch:Long):Long {
++    val expectedV16=requireNotNull(expected.v16)
++    val actualV16=requireNotNull(actual.v16)
++    assertEquals(1,actualV16.controlRows.size)
++    val control=actualV16.controlRows.single()
++    assertEquals(1,control.id)
++    assertTrue(control.restoreEpoch>previousEpoch)
++    assertTrue(control.restoreEpoch>(expectedV16.controlRows.singleOrNull()?.restoreEpoch ?: 0L))
++    // Compare every business field, ID, revision, lifecycle and historical relation.
++    // Do not drop v16 or normalize any other recovery policy/history fields.
++    assertEquals(expected,actual.copy(v16=actualV16.copy(controlRows=expectedV16.controlRows)))
++    return control.restoreEpoch
++}
++
++internal suspend fun assertStaleFinanceCommandRejected(repo:FinanceRepository,entryId:String,staleEpoch:Long) {
++    val before=repo.portableSnapshot();val entry=before.entries.single {it.id==entryId}
++    val result=runCatching {repo.workspace.setPostingDate(FinanceCommandToken(java.util.UUID.randomUUID().toString(),staleEpoch),
++        entry.id,entry.revision,null,FinanceTimePrecision.UNKNOWN,"合成旧恢复会话")}
++    val error=result.exceptionOrNull()
++    assertTrue(error is IllegalArgumentException)
++    assertTrue(error?.message.orEmpty().contains("恢复后"))
++    assertEquals(before,repo.portableSnapshot())
++}
+ 
+ /** One actual Room database per test, including generated DAO/transaction behavior. */
+ abstract class FinanceRoomTest {
+-- 
+2.53.0.windows.3
+
+
+From be26a74b3cb269073f8a013cc52d1bcce3c6ed29 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Mon, 19 Oct 2026 20:59:34 +0800
+Subject: [PATCH 3/3] test(ui): validate current navigation and real receipts
+
+---
+ .../qq/closie/ui/lifeos/ClosetSmokeTest.kt    |  37 +++--
+ .../ui/lifeos/finance/FinanceSmokeTest.kt     |  92 +++++++++--
+ engineering/v16/CI53-FIX.md                   |  63 ++++++++
+ engineering/v16/CI53-TEST-AUDIT.md            | 119 +++++++++++++++
+ engineering/v16/GITHUB-VALIDATION.md          |   2 +
+ engineering/v16/PROGRESS.md                   |   2 +
+ engineering/v16/TEST-AUDIT.md                 |   2 +
+ .../review-fix-evidence/test-inventory.json   | 144 ++++++++++++++++--
+ 8 files changed, 428 insertions(+), 33 deletions(-)
+ create mode 100644 engineering/v16/CI53-FIX.md
+ create mode 100644 engineering/v16/CI53-TEST-AUDIT.md
+
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+index 6dbaa154d527c88139c1131cb5d3e182ad6c6cda..23c8df4ba3a7e161ea72ddf6ccb93c5852a6f4f1 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+@@ -2,6 +2,8 @@ package com.qq.closie.ui.lifeos
+ 
+ import androidx.compose.ui.test.assertIsDisplayed
+ import androidx.compose.ui.test.assertIsNotDisplayed
++import androidx.compose.ui.test.assertIsSelected
++import androidx.compose.ui.test.assertCountEquals
+ import androidx.compose.ui.test.junit4.createAndroidComposeRule
+ import androidx.compose.ui.test.onNodeWithContentDescription
+ import androidx.compose.ui.test.onNodeWithTag
+@@ -47,6 +49,22 @@ class ClosetSmokeTest {
+         compose.waitForIdle()
+     }
+ 
++    private fun assertFinanceLedger() {
++        compose.waitUntil(10_000) {
++            compose.onAllNodes(hasTestTag("finance-ledger")).fetchSemanticsNodes().size == 1 &&
++                compose.onAllNodes(hasText("账簿")).fetchSemanticsNodes().size == 1
++        }
++        compose.onAllNodes(hasTestTag("finance-ledger")).assertCountEquals(1)
++        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
++        listOf("账簿", "账户", "分析").forEach {
++            compose.onAllNodes(hasText(it)).assertCountEquals(1)
++            compose.onNodeWithText(it).assertIsDisplayed()
++        }
++        compose.onNodeWithText("账簿").assertIsSelected()
++        compose.onNodeWithText("总览").assertDoesNotExist()
++        compose.onNodeWithText("流水").assertDoesNotExist()
++    }
++
+     private fun openCloset(physicalClick: Boolean = true) {
+         // Bring the row to a stable visible position in the partial-width drawer.
+         compose.onNodeWithTag("life-drawer")
+@@ -142,13 +160,16 @@ class ClosetSmokeTest {
+         openDrawer()
+         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
+         compose.onNodeWithTag("drawer-finance").performClick()
+-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
+-        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+-        compose.onNodeWithText("钱的位置").assertIsDisplayed()
+-        listOf("总览", "流水", "账户", "分析").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
++        assertFinanceLedger()
++        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+         compose.onNodeWithContentDescription("返回").assertIsDisplayed().performClick()
+-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
++        compose.waitUntil(10_000) {
++            compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
++                compose.onAllNodes(hasTestTag("finance-ledger")).fetchSemanticsNodes().isEmpty()
++        }
+         compose.onNodeWithText("Life OS").assertIsDisplayed()
++        compose.onNodeWithTag("finance-ledger").assertDoesNotExist()
++        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+     }
+ 
+     @Test
+@@ -156,11 +177,10 @@ class ClosetSmokeTest {
+         openDrawer()
+         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
+         compose.onNodeWithTag("drawer-finance").performClick()
+-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("钱的位置")).fetchSemanticsNodes().isNotEmpty() }
++        assertFinanceLedger()
+         compose.mainClock.advanceTimeBy(500)
+         compose.waitForIdle()
+         compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+-        compose.onNodeWithText("钱的位置").assertIsDisplayed()
+         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+ 
+         // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
+@@ -176,8 +196,7 @@ class ClosetSmokeTest {
+         compose.mainClock.advanceTimeBy(500)
+         compose.waitForIdle()
+         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+-        compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+-        compose.onNodeWithText("钱的位置").assertIsDisplayed()
++        assertFinanceLedger()
+     }
+ 
+ }
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+index dcd8304acd7e416674f2be1e3c906b4474ca72f8..a9337d26325ef815183d45ce182baf56b0497fe9 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt
+@@ -3,6 +3,8 @@ package com.qq.closie.ui.lifeos.finance
+ import android.content.Context
+ import androidx.compose.ui.test.*
+ import androidx.compose.ui.test.junit4.createComposeRule
++import androidx.lifecycle.ViewModelStore
++import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+ import androidx.room.Room
+ import androidx.test.core.app.ApplicationProvider
+ import com.qq.closie.data.backup.RestoreStartupGate
+@@ -27,6 +29,7 @@ class FinanceSmokeTest {
+     @get:Rule val compose = createComposeRule()
+     private lateinit var db: LifeDatabase
+     private lateinit var repository: FinanceRepository
++    private var models: ViewModelStore? = null
+ 
+     @Before fun setup() {
+         RestoreStartupGate.resetForTesting(); RestoreStartupGate.markReady()
+@@ -34,9 +37,16 @@ class FinanceSmokeTest {
+         db = Room.inMemoryDatabaseBuilder(context, LifeDatabase::class.java).allowMainThreadQueries().build()
+         repository = FinanceRepository(db)
+     }
+-    @After fun cleanup() { db.close(); RestoreStartupGate.resetForTesting() }
++    @After fun cleanup() {
++        // @After runs before the Compose rule disposes its Activity. Stop Room collectors first.
++        try { compose.runOnIdle { models?.clear() } }
++        finally { try { db.close() } finally { RestoreStartupGate.resetForTesting() } }
++    }
+     private fun launch() {
+-        compose.setContent { LifeOsTheme { FinanceRoute(repository, {}) } }
++        compose.setContent {
++            models = requireNotNull(LocalViewModelStoreOwner.current).viewModelStore
++            LifeOsTheme { FinanceRoute(repository, {}) }
++        }
+         compose.waitUntil(10_000) { compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
+             compose.onAllNodesWithText("账簿").fetchSemanticsNodes().isNotEmpty() }
+     }
+@@ -44,9 +54,16 @@ class FinanceSmokeTest {
+         compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
+     }
+     private fun click(text: String) {
+-        val node = compose.onNodeWithText(text)
+-        if (runCatching { node.assertIsDisplayed() }.isFailure) node.performScrollTo()
+-        node.performClick()
++        // Receipt content is eagerly composed in a verticalScroll. Lazy pages use their
++        // container below; an absent node is an assertion failure, never a scroll fallback.
++        val node = compose.onNodeWithText(text).assertExists()
++        if (!node.isDisplayed()) node.performScrollTo()
++        node.assertIsDisplayed().performClick()
++    }
++    private fun ledgerRow(matcher: SemanticsMatcher): SemanticsNodeInteraction {
++        compose.onNodeWithTag("finance-ledger").performScrollToNode(matcher)
++        compose.onAllNodes(matcher).assertCountEquals(1)
++        return compose.onNode(matcher).assertIsDisplayed()
+     }
+     private fun saved() {
+         compose.waitUntil(10_000) { compose.onAllNodesWithText("保存记录").fetchSemanticsNodes().isEmpty() &&
+@@ -116,12 +133,17 @@ class FinanceSmokeTest {
+ 
+     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {
+         launch()
+-        click("建立第一个账户")
++        compose.onNodeWithTag("finance-add").assertIsNotEnabled()
++        click("账户")
++        compose.onNodeWithText("账户").assertIsSelected()
++        ledgerRow(hasText("＋ 建立账户")).performClick()
+         input("账户名称", "工资卡")
+         input("期初余额", "1000.00")
+         click("保存账户"); saved()
+         assertEquals(100_000L, snapshot().accounts.single().openingBalanceMinor)
+         assertEquals("工资卡", snapshot().accounts.single().name)
++        click("账簿")
++        selectPeriod("全部")
+         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
+         input("金额 · CNY", "12.34")
+         input("备注（可留空）", "早餐豆浆")
+@@ -136,7 +158,8 @@ class FinanceSmokeTest {
+         assertEquals(setOf("早餐", "出门"), originalRow.tags.toSet())
+         assertTrue(original.occurredAt >= snapshot().accounts.single().createdAt)
+         assertEquals(98_766L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
+-        click("早餐豆浆")
++        val cashRow = hasText("早餐豆浆") and hasText("餐饮 · 工资卡") and hasClickAction()
++        ledgerRow(cashRow).performClick()
+         input("金额 · CNY", "10.00")
+         click("保存记录"); saved()
+         assertEquals(1_000L, snapshot().entries.single().amountMinor)
+@@ -150,39 +173,80 @@ class FinanceSmokeTest {
+         compose.waitForIdle()
+         compose.onNodeWithTag("finance-search").performTextReplacement("出门")
+         compose.waitForIdle()
+-        compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("早餐豆浆"))
+-        compose.onNodeWithText("早餐豆浆").assertIsDisplayed()
+-        click("早餐豆浆")
++        ledgerRow(cashRow).performClick()
+         click("作废这笔记录")
+         compose.onNodeWithText("确认作废").performClick(); saved()
+         assertNotNull(snapshot().entries.single().voidedAt)
+         assertTrue(FinanceProjection.ledger(snapshot()).isEmpty())
++        assertEquals(100_000L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
++        FinanceIntegrity.validate(snapshot())
+         compose.waitUntil(10_000) { compose.onAllNodesWithText("早餐豆浆").fetchSemanticsNodes().isEmpty() }
+     }
+ 
+     @Test fun transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid() {
++        lateinit var bank: FinanceAccountEntity
++        lateinit var wallet: FinanceAccountEntity
+         runBlocking {
+-            repository.saveAccount(name = "银行卡", kind = FinanceAccountKind.BANK_CARD)
+-            repository.saveAccount(name = "微信", kind = FinanceAccountKind.WECHAT)
++            val anchor = java.time.LocalDate.now().minusDays(2).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
++            bank = repository.saveAccount(name = "银行卡", kind = FinanceAccountKind.BANK_CARD,
++                openingBalanceMinor = 100_000, balanceAnchorAt = anchor)
++            wallet = repository.saveAccount(name = "微信", kind = FinanceAccountKind.WECHAT,
++                openingBalanceMinor = 50_000, balanceAnchorAt = anchor)
+         }
+         launch()
++        selectPeriod("全部")
+         compose.onNodeWithTag("finance-add").assertIsDisplayed().performClick()
+         click("转账")
++        compose.onNode(hasText("转出账户 ·", substring = true)).performScrollTo().performClick()
++        click("银行卡 · CNY")
++        compose.onNode(hasText("转入账户 ·", substring = true)).performScrollTo().performClick()
++        click("微信 · CNY")
+         input("金额 · CNY", "200.00")
+         click("保存记录"); saved()
+         assertEquals(2, snapshot().entries.size)
+         assertEquals(1, snapshot().transfers.size)
+-        click("银行卡 → 微信")
++        val original = snapshot()
++        val transfer = original.transfers.single()
++        val out = original.entries.single { it.id == transfer.outflowEntryId }
++        val incoming = original.entries.single { it.id == transfer.inflowEntryId }
++        assertEquals(bank.id, out.accountId); assertEquals(wallet.id, incoming.accountId)
++        assertEquals(FinanceDirection.OUTFLOW, out.direction); assertEquals(FinanceDirection.INFLOW, incoming.direction)
++        assertEquals(20_000L, out.amountMinor); assertEquals(out.amountMinor, incoming.amountMinor)
++        assertEquals(80_000L, FinanceProjection.balance(bank, original.entries))
++        assertEquals(70_000L, FinanceProjection.balance(wallet, original.entries))
++        assertTrue(FinanceCostProjection.rows(original).isEmpty())
++        assertEquals(transfer.id, FinanceProjection.ledger(original).single().id)
++        val transferRow = hasText("银行卡 → 微信") and hasClickAction()
++        ledgerRow(transferRow).performClick()
+         input("金额 · CNY", "250.00")
+         click("保存记录"); saved()
+         assertTrue(snapshot().entries.all { it.amountMinor == 25_000L })
++        assertEquals(original.entries.map { it.id }.toSet(), snapshot().entries.map { it.id }.toSet())
++        assertEquals(original.entries.associate { it.id to it.recordedAt }, snapshot().entries.associate { it.id to it.recordedAt })
++        assertEquals(original.entries.associate { it.id to it.occurredAt }, snapshot().entries.associate { it.id to it.occurredAt })
++        assertEquals(transfer.id, snapshot().transfers.single().id)
++        assertEquals(transfer.outflowEntryId, snapshot().transfers.single().outflowEntryId)
++        assertEquals(transfer.inflowEntryId, snapshot().transfers.single().inflowEntryId)
++        assertEquals(75_000L, FinanceProjection.balance(bank, snapshot().entries))
++        assertEquals(75_000L, FinanceProjection.balance(wallet, snapshot().entries))
++        assertTrue(FinanceCostProjection.rows(snapshot()).isEmpty())
++        FinanceIntegrity.validate(snapshot())
+         assertEquals(1, FinanceProjection.ledger(snapshot()).size)
+-        click("银行卡 → 微信")
++        ledgerRow(transferRow).performClick()
+         click("作废这笔记录")
+         compose.onNodeWithText("作废整笔转账？").assertIsDisplayed()
+         compose.onNodeWithText("确认作废").performClick(); saved()
+         assertTrue(snapshot().entries.all { it.voidedAt != null })
+         assertNotNull(snapshot().transfers.single().voidedAt)
++        assertEquals(1, snapshot().entries.map { it.voidedAt }.distinct().size)
++        assertEquals(snapshot().entries.first().voidedAt, snapshot().transfers.single().voidedAt)
++        assertEquals(2, snapshot().entries.size); assertEquals(1, snapshot().transfers.size)
++        assertEquals(100_000L, FinanceProjection.balance(bank, snapshot().entries))
++        assertEquals(50_000L, FinanceProjection.balance(wallet, snapshot().entries))
++        assertTrue(FinanceProjection.ledger(snapshot()).isEmpty())
++        assertTrue(FinanceCostProjection.rows(snapshot()).isEmpty())
++        FinanceIntegrity.validate(snapshot())
++        compose.waitUntil(10_000) { compose.onAllNodes(transferRow).fetchSemanticsNodes().isEmpty() }
+     }
+ 
+     @Test fun creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption() {
+diff --git a/engineering/v16/CI53-FIX.md b/engineering/v16/CI53-FIX.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..56429461ec2b09a5599055c44f401d40012d2841
+--- /dev/null
++++ b/engineering/v16/CI53-FIX.md
+@@ -0,0 +1,63 @@
++# CI53 定点测试修复：本地环境 BLOCKED，尚未验收
++
++唯一代码基线：`e84897a946cd258c3df22e55855205618401b930`。从已确认相等的远端分支建立本地修复分支，未从 main/旧 patch 重建；没有 push、merge、PR 或远端修改。
++
++## 真实失败证据
++
++已读取 [CI53](https://github.com/cnsj-123/qqhome/actions/runs/39249949151) 的完整 JUnit artifact `12185491670`，ZIP SHA-256 `12a110e98807bbdaafce4973476d4ec2c6011f3b4c0aa511db5ee8dc01834540` 与下载元数据一致。93 份 XML：660 执行、651 PASS、9 FAIL、0 SKIP。逐项读取完整 failure/stack trace；两个恢复相等失败的长快照经比较，仅 `controlRows=[]` 与 `controlRows=[FinanceControlEntity(id=1, restoreEpoch=1)]` 不同。
++
++这是基线的远端证据，不是本地最终树的通过证据。交付目录保存原 ZIP、逐 XML 哈希/完整失败消息及 metrics；不把它们复制到本地 app/build 充当新结果。
++
++## 九项修复矩阵
++
++下表“修改后”为源码处理和预期，不表示已执行通过；九项最终运行均 **UNVERIFIED**。
++
++| CI53 失败方法 | 精确原因 | 修改后检查 |
++|---|---|---|
++| ArchitectureBoundaryTest.financeOwnsTypedFactsInsideTheExistingDatabase | 新经济草稿 funding/share 子表维护 DELETE 未入窄白名单 | 仅两张子表的全表恢复清理及 `WHERE draftId = :id` 四种现有 @Query；拒绝其他 SQL/非 @Query。新增 canonical DELETE、@Delete、REPLACE 拒绝反例 |
++| FinanceBackupRecoveryTest.snapshotAndJsonArchiveCarryEveryFinanceTableExactly | 当前已 75 表，仍断言 27 | 与实际 SQLite registry 精确集合相等；重复/缺失/额外分别断言；完整 JSON/插入行列表往返、非空 v4 日志与 v16 timing |
++| FinanceV4BackupRecoveryTest.jsonArchiveRestoresActiveAndHistoricalLinksExpectedRulesProposalsAndStagingExactly | 合法恢复新增 epoch 控制单例，首相等及后续重试相等过期 | 只归一化控制行，全部其他字段完整相等；单例 ID、来源/目标 epoch 单调递增；两次恢复、旧 token 拒绝且完整快照不变；原历史 links/expected/proposal/rule/staging 全保留 |
++| FinanceBalanceAnchorTest.backupRecoveryPreservesAnchorAndBackfilledCanonicalRows | 同一控制单例差异 | 首次/重试只允许 epoch 差异；原 anchor/createdAt/现金 980000/两条历史记录保持；恢复前完整审计日志保留；两代旧 token 被拒绝 |
++| FinanceInsightsV16Test.creditShortMonthUsesKnownPostingAndRepaymentIsOnlyCashMovement | DATE 正常写入未提供 civil evidence，正确被 validateNew 拒绝 | 使用原选定 2026-02-28 / Asia/Shanghai 的 capture 证据走真实 Repository；二月边界、三月排除、还款双腿与个人成本不重复、未知入账仍未知 |
++| ClosetSmokeTest.drawerFinanceOpensRealLedgerAndReturnsToStableHome | 等待旧“钱的位置”，并期望旧四栏目 | 可见当前 ledger、唯一三导航“账簿/账户/分析”和选中态；返回唯一 Home、Finance 移除、抽屉关闭 |
++| ClosetSmokeTest.financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance | 同上 | 同一真实 ledger 的内侧身体手势打开 shell；Back 关闭后仍当前 Finance/账簿及完整三导航 |
++| FinanceSmokeTest.establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets | 查找已不存在的“建立第一个账户”，继而对缺失节点滚动 | 经真实账户页建立首账户；返回账簿并选择全部；懒容器先滚动、按说明+分类/账户合并语义定位现金行；创建/改额/日期分类标签保留/搜索/作废/余额回归/完整性 |
++| FinanceSmokeTest.transferIsOneVisualRecordAndEditsBothFlowsThenConfirmsWholeVoid | 全局文本查找依赖默认账户顺序与未组合的 lazy 行 | 显式选择源/目标；全部范围；先滚动当前账簿再唯一语义匹配；单一投影和视觉行、两现金腿 ID/角色、原时间/关系保持、两账户余额、双腿及 relation 同时作废、零额外消费和完整性 |
++
++经济草稿维护依据：`FinanceEconomicDraftRepository.save` 在命令事务内重建可变草稿的子关联；提交草稿前不写现金/正式成本。`FinanceV16BackupRecovery` 在事务中先清理再恢复这两张子表。正式 economic/funding/shares、账户/entries/transfers、历史 links、父草稿物理删除均继续受守卫拒绝；原 shadow storage、第二数据库、@Delete 和 REPLACE 禁令保留。没有修改 DAO。
++
++共用恢复断言位于测试夹具 `FinanceRoomTest.kt`，只处理明确允许的控制单例差异，不丢弃整个 v16、任何业务行、引用或日志。原失败/恶意恢复事务不变测试继续完全比较，不套用合法恢复归一化。
++
++## 全套审计与最小范围
++
++见 [逐 97 文件审计](CI53-TEST-AUDIT.md)。既有 660 个方法全保留，只新增 2 个架构反例；固定最低 **97 文件 / 662 方法**，digest `e6f340a4fb3caf723cb80d7cd78fc8ca2445130c0d57ed17f3dac0d3fc01116a`。R2 增量清单 40 文件 / 218 方法，不可用动态清单降低最低契约。
++
++另外修复两套已有并发测试的静态可证竞争：租约释放后检测恢复会误拒绝合法恢复；plain Int 跨线程订阅计数不保证可见性；先读 active count 不会预留恢复门；正向两代数据等待靠定时延迟不保证已经接收。采用生产租约内的闩锁、原子计数、直接获取 beginRestore、实际内容信号及取消 join，原正反断言保留。负向静默窗口仍有前后实际发射控制；不加任意 sleep、skip、ignore、Assume、过滤或 fallback success。
++
++FinanceSmoke 先清实际宿主 ViewModelStore 再关数据库，避免 @After 早于 Activity 销毁而遗留 Room collector。未发现已确认产品契约要求在账簿空态额外提供首次账户 CTA，因此测试使用现有账户页入口，没有改产品界面。**生产 Kotlin、Entity/DAO/迁移、原现金与 opening anchor、civil-date/加密备份/epoch 规则全部未改。**
++
++## 本地预检边界
++
++本机没有可用 JDK 17、Android SDK 或 Gradle 8.10.2 安装/缓存，JAVA_HOME/ANDROID_HOME/ANDROID_SDK_ROOT 未配置。旧 jdk17.zip 不完整，Gradle .part 为零字节。遵守不下载工具链的既有要求。最终提交后按同一顺序执行并记录：
++
++1. Python 工程门禁（22 个含反向门禁用例）。
++2. 固定最低契约与动态源清单。
++3. 结构检查（仅静态，不等于 Kotlin 编译）。
++4. 生产迁移 SQL 的真实 Python SQLite/3 个回滚故障点。
++5. R2 与历史 1–4 schema 校验。
++6. 离线调用 `gradlew.bat :app:kspDebugKotlin --stacktrace --offline`，环境缺少 Java 即阻塞，不触发下载。
++7. 后续同链严格 schema、全套 rerun JUnit、逐 XML/精确方法/当前 SHA 的 2000 指标、APK 与实际包名验证，均不得越过步骤 6 伪称完成。
++
++前五项可实际执行；交付目录 `local-preflight.json` / logs 记录最终 HEAD/树及每步实际状态。独立运行已提交 schema 静态字节门与 SQLite 官方 DDL 比较仅为辅助证据，不冒充 KSP 后门禁；`check-official-schema-migration.py` 仍是 **local-only**，不在 CI 强制步骤中。
++
++当前官方 5.json 原字节 SHA-256 `0552aba2f220be4a927b455db260aec8cefc787e4c26801906265bbdf5b58aea`，历史 1–4、最终官方 5、生产 Entity/DAO/迁移均无差异。KSP 重生成和真实 Room 迁移运行仍 UNVERIFIED；不手写 schema、不 destructive migration、不关闭严格门禁。
++
++## 尚未验收的项目
++
++最终本地 JUnit XML **不存在**：total/pass/fail/skip 均 N/A（未执行，不是 0/0/0/0 通过）。最终树的 Kotlin 编译、662 个最低方法、Room/Compose/备份/并发及 2000 条 Repository 实测、完整 APK 构建/实际 applicationId 均 UNVERIFIED。
++
++基线远端 2000 条旧指标 PASS：2000 活动行、netMinor -294950、对应 SHA e848；不能归为 LOCAL 或最终树证据。最终本地不生成假 metrics。debug applicationId 仅源码配置预期 `com.qqhome.lifeos.debug`，没有 APK 可验证。
++
++以下八套至少两轮真实重复执行仍待具备环境后运行：FinanceSmokeTest、ClosetSmokeTest、FinanceCivilDateV16Test、FinanceBackupRecoveryTest、FinanceV4BackupRecoveryTest、FinanceBalanceAnchorTest、RestoreGateConcurrencyTest、GateAwareFlowTest。专用重复运行不得替代最终一次全套；若再次运行全套生成指标，GITHUB_SHA 必须为实际受测最终 HEAD，证据明确 LOCAL。
++
++本轮保存的是 **环境受阻的可审阅 checkpoint**，不是“九项已实测通过”的已完成交付，不建议凭未执行结果推送。唯一完整三提交 format-patch、最终 SHA/树、逐文件变更及独立基线重放一致性保存在交付目录 manifest；本文件不自引用尚未生成的 commit ID。
+diff --git a/engineering/v16/CI53-TEST-AUDIT.md b/engineering/v16/CI53-TEST-AUDIT.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..243cdfd30e0139d4cc6984e5ed26721d10f99abd
+--- /dev/null
++++ b/engineering/v16/CI53-TEST-AUDIT.md
+@@ -0,0 +1,119 @@
++# CI53 全测试源审计（静态）
++
++唯一源基线 `e84897a946cd258c3df22e55855205618401b930`。逐文件读取并扫描当前 97 个 Kotlin 测试源（含 4 个辅助源），对照完整 CI53 XML 的 93 个测试类。原 660 方法全部保留，新增架构反例 2 方法，最低契约 97/662；清单 digest 只为新增方法上调，不重新生成/降低原验收范围。每个源的 SHA-256、风险行号与远端计数记录于交付目录 `cross-suite-audit.json`。
++
++以下 CI53 数字仅为 e848 的远端既有证据。最终源码的 Kotlin/JUnit/重复稳定性均 UNVERIFIED；不能由静态审阅和旧 651 通过推导新版本全绿。
++
++## 横向结论
++
++- 旧 UI 正向标签与旧四栏目期望仅在两项 Closet 失败；Finance 旧首次按钮仅在失败用例。采用支持的“账户 → ＋ 建立账户”，未发现已确认需求强制账簿空态直接按钮，故不更改产品入口。
++- 唯一过期的当前全库 27 表断言已替换为真实 SQLite 注册表集合与重复/缺失/额外检查。历史迁移库的版本和旧表断言保留。
++- 合法恢复仅两项全快照相等遗漏 epoch；修复首恢复及重试。其余故障回滚/错误备份断言继续完全相等；分字段恢复策略检查不剥离 v16。
++- DATE 正常写入需 capture 证据；Insights 唯一遗漏已补。CivilDate 中故意缺证据/伪造日期的负例保留。测试内合成 epoch/明确时区的生成不等于历史读取回填；切换设备时区的用例 finally 复原。
++- 两项 Compose 失败使用实际入口/范围/当前 lazy 容器。普通记录同时有个人成本与现金两处展示，因此按合并语义中的说明及账户/分类定位现金行；转账只显示一条，源/目标账户显式选择。
++- FinanceSmoke 的 Activity 在 @After 之后才由 Compose rule 结束，因此先清理其真实 ViewModelStore，再关闭 Room 和重置门。既有共享 FinanceRoomTest 清理与其他模型测试的自有 store/main dispatcher 清理保留。
++- 并发测试修复租约释放后的错误竞争判断，以闩锁持有生产租约到真实恢复尝试完成；不使用任意 sleep。两代快照的正向接收用两个实际内容信号。GateAwareFlow 订阅计数使用原子变量；直接竞争 beginRestore，而不是先看 active count 再假定预留；修改过的 collector 在 finally 中取消并 join。
++- 300 ms 的既有负向静默窗口只用于有前后正向控制的“恢复期间不发射”观察，不作为正向完成条件。剩余固定轮数/超时为失败边界，不是 fallback success。跨真实线程/Room tracker 的重复运行仍受本地环境阻塞，不能宣称消除了全部抖动。
++- 无方法删除、skip/ignore/Assume、新增过滤或 catch-and-pass；原金额、历史引用、备份信任和日期拒绝契约不放宽。CI 工作流、生产 Kotlin、Entity/DAO/Migration、官方 schema 均未修改。
++
++## 逐文件范围
++
++| 源文件 | 原→现方法 | CI53 远端原结果 | 风险领域及审阅处理 |
++|---|---:|---|---|
++| [AppearanceRepositoryTest](../../app/src/test/java/com/qq/closie/AppearanceRepositoryTest.kt) | 4→4 | 4 PASS | restore/equality、setup/cleanup；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [AppearanceViewModelTest](../../app/src/test/java/com/qq/closie/AppearanceViewModelTest.kt) | 5→5 | 5 PASS | setup/cleanup；测试专用 ViewModelStore 清理和 Dispatchers.resetMain；保留编辑/取消/持久化断言。 |
++| [ArchitectureBoundaryTest](../../app/src/test/java/com/qq/closie/ArchitectureBoundaryTest.kt) | 9→11 | 8 PASS, 1 FAIL | 规则/结构；修复窄草稿子表 DELETE 规则；新增两项拒绝反例；版本 5 是当前契约。 |
++| [CalendarMathTest](../../app/src/test/java/com/qq/closie/CalendarMathTest.kt) | 6→6 | 6 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [CalendarStateTest](../../app/src/test/java/com/qq/closie/CalendarStateTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [DraftStoreTest](../../app/src/test/java/com/qq/closie/DraftStoreTest.kt) | 8→8 | 8 PASS | setup/cleanup；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FunctionEffectsTest](../../app/src/test/java/com/qq/closie/FunctionEffectsTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [HomeStateTest](../../app/src/test/java/com/qq/closie/HomeStateTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeDrawerStructureTest](../../app/src/test/java/com/qq/closie/LifeDrawerStructureTest.kt) | 4→4 | 4 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeOsNavigationTest](../../app/src/test/java/com/qq/closie/LifeOsNavigationTest.kt) | 5→5 | 5 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeTopLevelNavigationTest](../../app/src/test/java/com/qq/closie/LifeTopLevelNavigationTest.kt) | 5→5 | 5 PASS | setup/cleanup；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [MeasurementParserTest](../../app/src/test/java/com/qq/closie/MeasurementParserTest.kt) | 11→11 | 11 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [MonthGridTest](../../app/src/test/java/com/qq/closie/MonthGridTest.kt) | 4→4 | 4 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [PhotoStackInteractionTest](../../app/src/test/java/com/qq/closie/PhotoStackInteractionTest.kt) | 1→1 | 1 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ProductLinkExtractorTest](../../app/src/test/java/com/qq/closie/ProductLinkExtractorTest.kt) | 13→13 | 13 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ThemeCollectionTest](../../app/src/test/java/com/qq/closie/ThemeCollectionTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ThemeValidationTest](../../app/src/test/java/com/qq/closie/ThemeValidationTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [BackupManagerTest](../../app/src/test/java/com/qq/closie/data/backup/BackupManagerTest.kt) | 15→15 | 15 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [DelegatingRestoreFs](../../app/src/test/java/com/qq/closie/data/backup/DelegatingRestoreFs.kt) | 0→0 | 辅助源 | 规则/结构；共用夹具/故障注入源，无独立 JUnit 方法。 |
++| [EncryptedBackupEnvelopeTest](../../app/src/test/java/com/qq/closie/data/backup/EncryptedBackupEnvelopeTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [EncryptedBackupManagerV16Test](../../app/src/test/java/com/qq/closie/data/backup/EncryptedBackupManagerV16Test.kt) | 3→3 | 3 PASS | restore/equality、setup/cleanup；错误密码/恶意内容必须原样不变；合法恢复单独验证 epoch；不得放宽。 |
++| [FailingRestoreFs](../../app/src/test/java/com/qq/closie/data/backup/FailingRestoreFs.kt) | 0→0 | 辅助源 | date/clock；共用夹具/故障注入源，无独立 JUnit 方法。 |
++| [FinanceBackupRecoveryTest](../../app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt) | 5→5 | 4 PASS, 1 FAIL | date/clock、restore/equality、setup/cleanup；实际 SQLite 表名集合/重复/序列化；保留失败恢复不变断言。 |
++| [FinanceV4BackupRecoveryTest](../../app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt) | 3→3 | 2 PASS, 1 FAIL | date/clock、restore/equality、setup/cleanup；只归一化 controlRows；首恢复/重试 epoch 与旧 token 拒绝；历史 links/expected 全保留。 |
++| [GateAwareFlowTest](../../app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt) | 8→8 | 8 PASS | threads/flows、setup/cleanup；AtomicInteger 订阅计数；beginRestore 原子获取替代先读计数；取消并 join；保留负向静默窗口。 |
++| [LocalWardrobeRepositoryRecoveryTest](../../app/src/test/java/com/qq/closie/data/backup/LocalWardrobeRepositoryRecoveryTest.kt) | 5→5 | 5 PASS | setup/cleanup；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [RestoreCoordinatorTest](../../app/src/test/java/com/qq/closie/data/backup/RestoreCoordinatorTest.kt) | 71→71 | 71 PASS | restore/equality、setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [RestoreGateConcurrencyTest](../../app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt) | 15→15 | 15 PASS | threads/flows、setup/cleanup；租约内闩锁检查替代 sleep/租约外竞争断言；两代快照用实际接收信号。 |
++| [RestoreRecoveryManagerTest](../../app/src/test/java/com/qq/closie/data/backup/RestoreRecoveryManagerTest.kt) | 15→15 | 15 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [RestoreStartupGateLifecycleTest](../../app/src/test/java/com/qq/closie/data/backup/RestoreStartupGateLifecycleTest.kt) | 15→15 | 15 PASS | threads/flows、setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [ExternalIntentRouterTest](../../app/src/test/java/com/qq/closie/life/capture/ExternalIntentRouterTest.kt) | 12→12 | 12 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ShareRouterTest](../../app/src/test/java/com/qq/closie/life/capture/ShareRouterTest.kt) | 12→12 | 12 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeContainerStartupGateTest](../../app/src/test/java/com/qq/closie/life/data/LifeContainerStartupGateTest.kt) | 5→5 | 5 PASS | restore/equality、setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [LifeDatabaseNameTest](../../app/src/test/java/com/qq/closie/life/data/LifeDatabaseNameTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeDatabaseMigrationTest](../../app/src/test/java/com/qq/closie/life/data/database/LifeDatabaseMigrationTest.kt) | 8→8 | 8 PASS | setup/cleanup；逐代升级/表集合及旧字段保留，历史版本断言有意保留。 |
++| [FinanceAssistantProviderTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceAssistantProviderTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceAutomationTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceAutomationTest.kt) | 7→7 | 7 PASS | date/clock、restore/equality；继承真实 Room/门清理；审阅命令及拒绝后快照断言，保留。 |
++| [FinanceBalanceAnchorTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt) | 6→6 | 5 PASS, 1 FAIL | restore/equality、setup/cleanup；只允许恢复控制差异；重试保持原 anchor、现金和完整审计日志。 |
++| [FinanceCalculatorTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceCalculatorTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceCategoryTreeTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceCategoryTreeTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceCivilDateV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceCivilDateV16Test.kt) | 20→20 | 20 PASS | date/clock、restore/equality、setup/cleanup；20 个真实日期/历史证据/恶意备份方法不改；时区 finally 复原；历史假证据仍应拒绝。 |
++| [FinanceDiscoveryHistoryTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceDiscoveryHistoryTest.kt) | 2→2 | 2 PASS | setup/cleanup；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceEconomicDraftV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceEconomicDraftV16Test.kt) | 5→5 | 5 PASS | restore/equality；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
++| [FinanceExpectedTasksV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceExpectedTasksV16Test.kt) | 3→3 | 3 PASS | restore/equality；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
++| [FinanceImportRepositoryTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceImportRepositoryTest.kt) | 8→8 | 8 PASS | restore/equality；继承真实 Room/门清理；审阅命令及拒绝后快照断言，保留。 |
++| [FinanceImportReviewTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceImportReviewTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceInsightsV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceInsightsV16Test.kt) | 7→7 | 6 PASS, 1 FAIL | date/clock、restore/equality、setup/cleanup；DATE 显式 capture 上海 2026-02-28；补真实还款及未知入账断言。 |
++| [FinanceLocalOcrParserTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceLocalOcrParserTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceMediaV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceMediaV16Test.kt) | 5→5 | 5 PASS | restore/equality；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
++| [FinanceMigrationTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceMigrationTest.kt) | 1→1 | 1 PASS | restore/equality、setup/cleanup；显式历史迁移夹具，旧表数/版本为输入契约，不替换为当前版本。 |
++| [FinanceMoneyTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceMoneyTest.kt) | 4→4 | 4 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceNotificationParserTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceNotificationParserTest.kt) | 8→8 | 8 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinancePersonalProjectionTest](../../app/src/test/java/com/qq/closie/life/finance/FinancePersonalProjectionTest.kt) | 12→12 | 12 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinancePortableExportTest](../../app/src/test/java/com/qq/closie/life/finance/FinancePortableExportTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceProposalPrivacyTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceProposalPrivacyTest.kt) | 1→1 | 1 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceProvenanceV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceProvenanceV16Test.kt) | 5→5 | 5 PASS | restore/equality；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
++| [FinancePurchaseAllocationV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinancePurchaseAllocationV16Test.kt) | 2→2 | 2 PASS | restore/equality；继承真实 Room/门清理；审阅命令及拒绝后快照断言，保留。 |
++| [FinancePurposeReadV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinancePurposeReadV16Test.kt) | 4→4 | 4 PASS | restore/equality；继承真实 Room/门清理；审阅命令及拒绝后快照断言，保留。 |
++| [FinanceReconciliationScopeV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceReconciliationScopeV16Test.kt) | 8→8 | 8 PASS | date/clock、restore/equality；合成当前时区日期在同一显式夹具中 capture；不是生产读取历史日期的回退。 |
++| [FinanceRecoveryV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceRecoveryV16Test.kt) | 3→3 | 3 PASS | restore/equality、setup/cleanup；恢复保留/退休策略逐字段检查；不误把故障回滚全量相等当合法恢复。 |
++| [FinanceRelationLifecycleTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceRelationLifecycleTest.kt) | 8→8 | 8 PASS | restore/equality；继承真实 Room/门清理；审阅命令及拒绝后快照断言，保留。 |
++| [FinanceRelationsProjectionTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceRelationsProjectionTest.kt) | 1→1 | 1 PASS | restore/equality；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceRepositoryTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceRepositoryTest.kt) | 18→18 | 18 PASS | restore/equality、setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [FinanceReviewDeliveryTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceReviewDeliveryTest.kt) | 1→1 | 1 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceReviewSessionV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceReviewSessionV16Test.kt) | 8→8 | 8 PASS | date/clock、restore/equality；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
++| [FinanceRoomTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt) | 0→0 | 辅助源 | date/clock、restore/equality、setup/cleanup；共用真实 Room/门初始化清理；恢复助手只剥离控制行后完整比较，拒绝旧命令且快照不变。 |
++| [FinanceShareV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt) | 2→2 | 2 PASS | restore/equality；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
++| [FinanceSyntheticHistoryV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceSyntheticHistoryV16Test.kt) | 1→1 | 1 PASS | restore/equality；真实 Repository 2000 行、摘要/总额/当前 SHA 指标；最终本地未执行。 |
++| [FinanceV16ContractTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceV16ContractTest.kt) | 15→15 | 15 PASS | restore/equality、setup/cleanup；命令回执、恢复失效、回滚/金额等既有强断言保留。 |
++| [FinanceV4MigrationTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceV4MigrationTest.kt) | 2→2 | 2 PASS | restore/equality、setup/cleanup；显式历史版本 3→4 夹具，版本断言不是当前数据库版本错误。 |
++| [FinanceV5MigrationTest](../../app/src/test/java/com/qq/closie/life/finance/FinanceV5MigrationTest.kt) | 2→2 | 2 PASS | date/clock、restore/equality、setup/cleanup；实际迁移及原时间/anchor/ID；新 DATE capture；保留旧库无猜测证据断言。 |
++| [FinanceWorkspaceV16Test](../../app/src/test/java/com/qq/closie/life/finance/FinanceWorkspaceV16Test.kt) | 8→8 | 8 PASS | date/clock、restore/equality、setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [HostDetailAdaptersTest](../../app/src/test/java/com/qq/closie/life/finance/HostDetailAdaptersTest.kt) | 19→19 | 19 PASS | date/clock；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LegacyLedgerReaderTest](../../app/src/test/java/com/qq/closie/life/finance/LegacyLedgerReaderTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [SyntheticLegacyLedger](../../app/src/test/java/com/qq/closie/life/finance/SyntheticLegacyLedger.kt) | 0→0 | 辅助源 | 规则/结构；共用夹具/故障注入源，无独立 JUnit 方法。 |
++| [VisibleEvidenceTest](../../app/src/test/java/com/qq/closie/life/finance/VisibleEvidenceTest.kt) | 5→5 | 5 PASS | date/clock、restore/equality；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [MediaStoreImporterTest](../../app/src/test/java/com/qq/closie/life/media/MediaStoreImporterTest.kt) | 6→6 | 6 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [CaptureRepositoryTest](../../app/src/test/java/com/qq/closie/life/repository/CaptureRepositoryTest.kt) | 12→12 | 12 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [LifeRepositoryTest](../../app/src/test/java/com/qq/closie/life/repository/LifeRepositoryTest.kt) | 11→11 | 11 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [MediaRepositoryTest](../../app/src/test/java/com/qq/closie/life/repository/MediaRepositoryTest.kt) | 6→6 | 6 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [PlanRepositoryTest](../../app/src/test/java/com/qq/closie/life/repository/PlanRepositoryTest.kt) | 34→34 | 34 PASS | date/clock、setup/cleanup；日程夹具与 dueLabel 统一时区/相对今日；不将固定公历日期误当今日。 |
++| [ReferenceRepositoryTest](../../app/src/test/java/com/qq/closie/life/repository/ReferenceRepositoryTest.kt) | 30→30 | 30 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [CaptureGroupingTest](../../app/src/test/java/com/qq/closie/life/ui/capture/CaptureGroupingTest.kt) | 4→4 | 4 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [JournalCoverageTest](../../app/src/test/java/com/qq/closie/life/ui/theme/JournalCoverageTest.kt) | 4→4 | 4 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeDimensionsTest](../../app/src/test/java/com/qq/closie/life/ui/theme/LifeDimensionsTest.kt) | 6→6 | 6 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [LifeFontRulesTest](../../app/src/test/java/com/qq/closie/life/ui/theme/LifeFontRulesTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ExternalCommandStateTest](../../app/src/test/java/com/qq/closie/navigation/ExternalCommandStateTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ExternalIntakeTest](../../app/src/test/java/com/qq/closie/navigation/ExternalIntakeTest.kt) | 5→5 | 5 PASS | setup/cleanup；独立 Room/门夹具与清理、查询断言检查；保留。 |
++| [TopLevelEntriesTest](../../app/src/test/java/com/qq/closie/navigation/TopLevelEntriesTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [ClosetSmokeTest](../../app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt) | 9→9 | 7 PASS, 2 FAIL | UI/lazy；实际 3 导航项/当前账簿/返回 Home/身体手势；移除旧屏幕正向期望。 |
++| [LifeSwipeOwnershipTest](../../app/src/test/java/com/qq/closie/ui/lifeos/LifeSwipeOwnershipTest.kt) | 2→2 | 2 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceCalendarStopsTest](../../app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceCalendarStopsTest.kt) | 1→1 | 1 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceFilterStateV16Test](../../app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceFilterStateV16Test.kt) | 3→3 | 3 PASS | date/clock、restore/equality；继承真实 Room/门清理；审阅命令及拒绝后快照断言，保留。 |
++| [FinancePresentationContractsTest](../../app/src/test/java/com/qq/closie/ui/lifeos/finance/FinancePresentationContractsTest.kt) | 4→4 | 4 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceSmokeTest](../../app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceSmokeTest.kt) | 6→6 | 4 PASS, 2 FAIL | UI/lazy、date/clock、restore/equality、setup/cleanup；首账户实际入口；当前懒列表滚动/合并语义；完整现金双腿/编辑/作废；先清 ViewModel 再关 Room。 |
++| [MonthLedgerTest](../../app/src/test/java/com/qq/closie/ui/lifeos/finance/MonthLedgerTest.kt) | 3→3 | 3 PASS | 规则/结构；审阅纯规则/结构/状态或自有资源夹具；风险扫描未要求修改。 |
++| [FinanceHomeProjectionV16Test](../../app/src/test/java/com/qq/closie/ui/lifeos/home/FinanceHomeProjectionV16Test.kt) | 2→2 | 2 PASS | date/clock、restore/equality、setup/cleanup；审阅合法恢复、历史保留及拒绝后不变断言；未发现额外 epoch 全快照冲突，保留原测试。 |
+diff --git a/engineering/v16/GITHUB-VALIDATION.md b/engineering/v16/GITHUB-VALIDATION.md
+index 0d5daabbd81eec63ecfdb09b505031b9fa4223e1..243bf63b2bc40b89c78b9e19be4fcebc9391bc37 100644
+--- a/engineering/v16/GITHUB-VALIDATION.md
++++ b/engineering/v16/GITHUB-VALIDATION.md
+@@ -1,5 +1,7 @@
+ # V16 严格 CI 与官方 Schema Bootstrap（2026-10-19）
+ 
++CI53 当前状态：唯一基线 e84897a946cd258c3df22e55855205618401b930；9 项失败已作源码修复，原 660 方法全保留，最低 97/662。完整 XML 旧远端为 651 PASS / 9 FAIL / 0 SKIP。当前本地缺 JDK/SDK/Gradle，完整 Android 预检环境 BLOCKED，Kotlin/JUnit/2000 实测/APK 均 UNVERIFIED；不是已验收交付，也不据此请求 Owner 推送。范围、逐项矩阵与 97 文件审计见 [CI53-FIX.md](CI53-FIX.md)、[CI53-TEST-AUDIT.md](CI53-TEST-AUDIT.md)。以下为历史快照。
++
+ 最终固定规则更正：最低97文件/660方法、V16增量33文件/170方法，既有658全部保留；命名固定时区30分钟矛盾区间及实际加密恢复反例新增，当前Android/JUnit均UNVERIFIED。生产Schema/迁移/现金/anchor与CI工作流保持；辅助官方DDL结构检查仍仅本地使用，未接入强制CI。最终补丁/来源及复验证据见CI52-FIX.md与交付manifest；以下为此前快照。
+ 
+ CI52最终Review状态：最低97文件/658方法、增量33文件/168方法，原648及此前新方法均保留；新增标签/真实Compose回归及修正双持久观察点测试，执行仍UNVERIFIED。check-official-schema-migration.py仅为本地辅助结构比对，android.yml未调用；强制CI步骤仍为既有工程/历史/KSP/verify-room-schema.py/完整JUnit及逐方法与2000条指标/APK链，未弱化也未声称该辅助脚本在CI强制执行。最新内容见CI52-FIX.md；下文为首版及更早状态快照。
+diff --git a/engineering/v16/PROGRESS.md b/engineering/v16/PROGRESS.md
+index 6a2a2c9f9cb0f39af57bbde06ec14c593ab79097..ef0c700767e6d6c23281eb53e488cedd5599fca2 100644
+--- a/engineering/v16/PROGRESS.md
++++ b/engineering/v16/PROGRESS.md
+@@ -1,5 +1,7 @@
+ # V16 连续施工 checkpoint（2026-10-19）
+ 
++CI53 当前状态：唯一基线 e84897a946cd258c3df22e55855205618401b930；9 项失败已作源码修复，原 660 方法全保留，最低 97/662。完整 XML 旧远端为 651 PASS / 9 FAIL / 0 SKIP。当前本地缺 JDK/SDK/Gradle，完整 Android 预检环境 BLOCKED，Kotlin/JUnit/2000 实测/APK 均 UNVERIFIED；不是已验收交付，也不据此请求 Owner 推送。范围、逐项矩阵与 97 文件审计见 [CI53-FIX.md](CI53-FIX.md)、[CI53-TEST-AUDIT.md](CI53-TEST-AUDIT.md)。以下为历史快照。
++
+ 最终P1固定规则修复：FinanceCivilDate.assess按ZoneRules.isFixedOffset识别包括UTC/Etc/UTC/UTC+09:00的命名固定时区，矛盾区间拒绝为INVALID；非固定规则仍保留历史待核验。新增2个真实路径方法：原epoch位于整体偏移30分钟区间内的完整性反例、三种命名时区的加密恢复原子拒绝；最低97/660、增量33/170，既有658方法和此前展示/双Observation回归保留。Entity/DAO/Migration/官方5、现金/anchor、compare与CI门禁不变。日期及测试更正收进原第2逻辑提交，工程记录在第3提交。当前Kotlin/JUnit/设备均UNVERIFIED，无下载或远端操作；以下为此前快照。
+ 
+ CI52最终Review更正：日期入账/观察/区间/净额展开统一可信度标签；修正净额页直接格式化epoch的旁路，未保存核对只表示现金推算、不认证入账证据。观察区间回归现用两个不同且同时持久存在的ID，不改compare契约。新增2个Room方法及1个真实Compose显示方法；最低97/658、增量33/168，原648及此前全部方法保留。辅助官方DDL结构比对仅本地执行，不是android.yml强制步骤；既有CI门禁未改。Entity/DAO/Migration/官方5与现金/anchor未改，Kotlin/JUnit/设备仍UNVERIFIED；以下首版CI52状态为历史快照。
+diff --git a/engineering/v16/TEST-AUDIT.md b/engineering/v16/TEST-AUDIT.md
+index 52378194c870abdc34582bc55f7e960de40c928f..a84fe2da67403d0b1190c1b63be300fa72be926a 100644
+--- a/engineering/v16/TEST-AUDIT.md
++++ b/engineering/v16/TEST-AUDIT.md
+@@ -1,5 +1,7 @@
+ # V16 测试源码自审（2026-10-19）
+ 
++CI53 当前状态：唯一基线 e84897a946cd258c3df22e55855205618401b930；9 项失败已作源码修复，原 660 方法全保留，最低 97/662。完整 XML 旧远端为 651 PASS / 9 FAIL / 0 SKIP。当前本地缺 JDK/SDK/Gradle，完整 Android 预检环境 BLOCKED，Kotlin/JUnit/2000 实测/APK 均 UNVERIFIED；不是已验收交付，也不据此请求 Owner 推送。范围、逐项矩阵与 97 文件审计见 [CI53-FIX.md](CI53-FIX.md)、[CI53-TEST-AUDIT.md](CI53-TEST-AUDIT.md)。以下为历史快照。
++
+ 最终固定规则Review：保留已有658方法，新增shiftedFixedNamedZoneEvidenceIsInvalidEvenWithUnchangedEpochInsideTheRange及forgedFixedNamedZoneEncryptedBackupsCannotChangeAnExistingLedger。固定命名别名与字面offset均校验，东京/洛杉矶作非固定规则对照；仅移动区间两端、原epoch不动，分别检验两类Entity的FinanceIntegrity拒绝及实际加密恢复的非空目标全Snapshot不变。最低97/660、增量33/170，pin与inventory同步；两项Android/JUnit执行均UNVERIFIED。既有标签/真实双ID区间/Compose方法保留，未旁路或降低断言。以下为此前快照。
+ 
+ CI52最终Review：新增CivilDate四类精确标签/已保存信心、无已保存核对说明两方法及FinanceSmokeTest真实净额展开标签方法；原unverifiedObservation…方法保留并改用当前快照内两个不同Observation ID，增加现金/账户/anchor/入账行不变断言。最低97/658、增量33/168；原648及首版新增7方法全部保留，pin与inventory同步。实际源码/工程验证与未执行Android边界见CI52-FIX.md；本次Kotlin/Compose/JUnit仍UNVERIFIED。以下审计数值为此前快照。
+diff --git a/engineering/v16/review-fix-evidence/test-inventory.json b/engineering/v16/review-fix-evidence/test-inventory.json
+index 6763250835268e9b9d4f031203ee4e759035d046..a9552f3c726d444eccf3541531da5af91028b78d 100644
+--- a/engineering/v16/review-fix-evidence/test-inventory.json
++++ b/engineering/v16/review-fix-evidence/test-inventory.json
+@@ -4,11 +4,11 @@
+   "comparisonBase": "245e1475cd1d47a4205ab49f75d5e06d22de701c",
+   "minimumBase": "78950821129f522d17359a7ec3bca2232c120601",
+   "minimumContract": "engineering/v16/test-minimum-contract.json",
+-  "minimumContractSha256": "303247088a925db57f864fd154b3279aad3716290eab9ecdc567a8909ad5f9cc",
++  "minimumContractSha256": "e6f340a4fb3caf723cb80d7cd78fc8ca2445130c0d57ed17f3dac0d3fc01116a",
+   "minimumTestFiles": 97,
+-  "minimumTestMethods": 660,
+-  "testFiles": 33,
+-  "testMethods": 170,
++  "minimumTestMethods": 662,
++  "testFiles": 40,
++  "testMethods": 218,
+   "deletedFiles": [],
+   "errors": [],
+   "bypassFindings": [],
+@@ -18,6 +18,8 @@
+       "className": "com.qq.closie.ArchitectureBoundaryTest",
+       "tests": [
+         "financeOwnsTypedFactsInsideTheExistingDatabase",
++        "economicDraftDeleteAllowanceIsLimitedToApprovedAssociationQueries",
++        "permanentCanonicalDeletesAndReplaceRemainRejected",
+         "financeListenerCannotWriteCanonicalTruthOrLaunchAnOverlay",
+         "captureHasNoUserLevelPhysicalDeleteApi",
+         "appearanceLoadingRendersBeforeBusinessStorageIsObtained",
+@@ -27,8 +29,8 @@
+         "galleryCopyBackendIsNotExposedByTheCompositionRoot",
+         "debugIdentityCannotOccupyTheReleaseUpdateChain"
+       ],
+-      "sha256": "c94594b8d7c7be991517e5fe4125ce1de85d3b84e02481093d4cab2fbeb7496b",
+-      "assertionCalls": 48,
++      "sha256": "3dbaad1d021df432443b0c641dc70a6c5905c3b173658604b113f0cee48afe21",
++      "assertionCalls": 53,
+       "realRoom": false,
+       "runtime": "UNVERIFIED",
+       "bypass": []
+@@ -87,6 +89,81 @@
+       "runtime": "UNVERIFIED",
+       "bypass": []
+     },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/FinanceBackupRecoveryTest.kt",
++      "className": "com.qq.closie.data.backup.FinanceBackupRecoveryTest",
++      "tests": [
++        "snapshotAndJsonArchiveCarryEveryFinanceTableExactly",
++        "recoveryReplaysFinanceWhileKeepingRetiredCanonicalRows",
++        "legacyPayloadWithoutFinanceCannotEraseExistingMoneyRecords",
++        "restoringAnIndependentArchiveKeepsBothIdentitiesForSameDescriptiveNames",
++        "corruptTransferArchiveFailsWithoutChangingExistingFinance"
++      ],
++      "sha256": "4c4947ee16896baf0ef794549c51035386cb9aa2bd0860ec545de0eba9065b25",
++      "assertionCalls": 20,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/FinanceV4BackupRecoveryTest.kt",
++      "className": "com.qq.closie.data.backup.FinanceV4BackupRecoveryTest",
++      "tests": [
++        "jsonArchiveRestoresActiveAndHistoricalLinksExpectedRulesProposalsAndStagingExactly",
++        "restoringOlderSnapshotRetiresNewRelationsAndRetainsBothHistoricalIdentities",
++        "preV4FinanceRestoreRetiresRelationsWithoutErasingTheirHistoryOrPendingIntake"
++      ],
++      "sha256": "bb34e228d8b5681ee7806c6f4b649e922e6404459c9d2a750fe096936674c9fe",
++      "assertionCalls": 27,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/GateAwareFlowTest.kt",
++      "className": "com.qq.closie.data.backup.GateAwareFlowTest",
++      "tests": [
++        "lifeRepositoryFlow_suspendsWhileBlockedAndResumesWithFreshData",
++        "referenceAndPlanFlows_areEquallyGated",
++        "whileBlockedTheDurableSourceIsNotSubscribedAtAll",
++        "longLivedCollector_survivesTheBlockAndSeesOnlyCoherentSnapshots",
++        "blockedMutation_leavesDiskStateFlowAndImagesUntouched",
++        "afterTheGateReopens_theHeldInstanceWritesAgain",
++        "aSlowCollectorHoldsTheEmissionLease_andBeginRestoreIsRefusedNotBlocked",
++        "anIdleCollectorHoldsNoLease"
++      ],
++      "sha256": "45e4b26b8e4a7d0e88602c52b9b66a8082e26fb75ef32b38e74539224ffabab3",
++      "assertionCalls": 40,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
++    {
++      "file": "app/src/test/java/com/qq/closie/data/backup/RestoreGateConcurrencyTest.kt",
++      "className": "com.qq.closie.data.backup.RestoreGateConcurrencyTest",
++      "tests": [
++        "nestedLeases_countUpAndBackToZero",
++        "leaseIsReleasedWhenTheBodyThrows",
++        "beginRestore_isRefusedWhileABusinessLeaseIsHeld",
++        "leasesCannotBeAcquiredWhileRestoring",
++        "stickyBlock_refusesBothLeasesAndOwnership",
++        "concurrentBeginRestore_hasExactlyOneWinner",
++        "beginRestore_neverSucceedsWhileAnyLeaseIsHeld",
++        "businessOpCount_returnsToZeroUnderConcurrentContention",
++        "wardrobeWrite_inFlight_blocksBeginRestore",
++        "recoveryReload_neverShowsACrossGenerationWardrobeToALongLivedObserver",
++        "lifeOsWrite_isRefusedWhileRestoring_andSucceedsAfter",
++        "captureAndMediaWrites_areRefusedWhileRestoring",
++        "refusedCaptureWrite_leavesNoPartialRow",
++        "repositoryTransaction_blocksBeginRestoreForItsWholeDuration",
++        "inFlightEmission_racingBeginRestore_isNotDelivered"
++      ],
++      "sha256": "4fa3ce4d30021e87e19c3fc65b58b29f9eaaa752d3565d76c72f6f2f4d12b69b",
++      "assertionCalls": 78,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
+     {
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceAssistantProviderTest.kt",
+       "className": "com.qq.closie.life.finance.FinanceAssistantProviderTest",
+@@ -118,6 +195,23 @@
+       "runtime": "UNVERIFIED",
+       "bypass": []
+     },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceBalanceAnchorTest.kt",
++      "className": "com.qq.closie.life.finance.FinanceBalanceAnchorTest",
++      "tests": [
++        "backfilledExpenseRemainsCanonicalSearchableAndInHistoricalStatistics",
++        "inflowBeforeAnchorIsHistoryWhileAtAndAfterAnchorAffectBalance",
++        "transferUsesEachAccountAnchorWithoutChangingItsAtomicFactOrF1Totals",
++        "correctingOccurredAtAcrossAnchorChangesOnlyTheBalanceProjection",
++        "editingOrArchivingAccountDoesNotMoveItsOpeningBalanceAnchor",
++        "backupRecoveryPreservesAnchorAndBackfilledCanonicalRows"
++      ],
++      "sha256": "b3f042ad477a74bd4084028c653609806bb13a357c7edb270dc04d71e5d10152",
++      "assertionCalls": 61,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
+     {
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceCalculatorTest.kt",
+       "className": "com.qq.closie.life.finance.FinanceCalculatorTest",
+@@ -223,8 +317,8 @@
+         "ordinaryRelinkCannotBypassTypedRefundAndEditingKeepsConfirmedAllocationIdentity",
+         "assigningAlreadyReceivedRefundChangesCostWithoutAddingOrRewritingCash"
+       ],
+-      "sha256": "30cf4d24006c45f66f04fd680f552bef254dbeb55a64bc057ef5ab2577225224",
+-      "assertionCalls": 38,
++      "sha256": "d48b38f54ba456db0c268a734d4369320a723bbb0daea824c9d65d5c077bae54",
++      "assertionCalls": 47,
+       "realRoom": true,
+       "runtime": "UNVERIFIED",
+       "bypass": []
+@@ -394,6 +488,16 @@
+       "runtime": "UNVERIFIED",
+       "bypass": []
+     },
++    {
++      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceRoomTest.kt",
++      "className": "com.qq.closie.life.finance.FinanceRoomTest",
++      "tests": [],
++      "sha256": "e5e3cc5247aa1d89ed676cdc411a255166fbb490edd7a2f09605f69ebc14bd4c",
++      "assertionCalls": 10,
++      "realRoom": true,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
+     {
+       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt",
+       "className": "com.qq.closie.life.finance.FinanceShareV16Test",
+@@ -490,6 +594,26 @@
+       "runtime": "UNVERIFIED",
+       "bypass": []
+     },
++    {
++      "file": "app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt",
++      "className": "com.qq.closie.ui.lifeos.ClosetSmokeTest",
++      "tests": [
++        "drawerHasHeaderSearchModulesAndDirectReorderAffordances",
++        "verticalHomeScrollDoesNotOpenDrawer",
++        "freshInstall_emptyWardrobe_homeToLifeToCloset_rendersEmptyState",
++        "freshInstall_closetIsEmpty_notBlankNotCrash",
++        "homeContentRightSwipeOpensFunctionPageAndBackClosesIt",
++        "functionPageContentLeftSwipeClosesIt",
++        "tappingExposedHomeClosesDrawer",
++        "drawerFinanceOpensRealLedgerAndReturnsToStableHome",
++        "financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance"
++      ],
++      "sha256": "f6079f94d65519af7b89c43ad997b2ed7777e4c05dede48a3195d539d4720287",
++      "assertionCalls": 45,
++      "realRoom": false,
++      "runtime": "UNVERIFIED",
++      "bypass": []
++    },
+     {
+       "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/FinanceCalendarStopsTest.kt",
+       "className": "com.qq.closie.ui.lifeos.finance.FinanceCalendarStopsTest",
+@@ -527,8 +651,8 @@
+         "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
+         "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
+       ],
+-      "sha256": "88197702a891e7e7430c2ebf8b98798b4d969ae408128c8cc61d56daae69b780",
+-      "assertionCalls": 58,
++      "sha256": "05a0ca86d12d8605a277a0c22adcc5c86f68bbce8560a3a1ff9cc9c34a3f48d3",
++      "assertionCalls": 90,
+       "realRoom": true,
+       "runtime": "UNVERIFIED",
+       "bypass": []
+-- 
+2.53.0.windows.3
+
