@@ -1,0 +1,103 @@
+From 9576d5d84b6d55a2ca85d388c55103849e85b6ca Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Tue, 20 Oct 2026 18:09:18 +0800
+Subject: [PATCH] fix(ui): own drawer Back within the NavHost subcomposition
+
+---
+ .../com/qq/closie/ui/lifeos/LifeOsRoot.kt     | 27 +++++++++++++------
+ .../lifeos/components/FunctionPagePolicy.kt   |  1 +
+ 2 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt b/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
+index 10f2fb48955909e6da63a4de7d73b425fbc3c9fb..a0366f2d81af31a77623e6e997d524312c55c4ef 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
+@@ -25,6 +25,8 @@ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.setValue
+ import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalFocusManager
++import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+ import androidx.navigation.compose.currentBackStackEntryAsState
+ import androidx.navigation.compose.rememberNavController
+@@ -69,12 +71,20 @@ fun LifeOsRoot(
+         var drawerOpen by rememberSaveable { mutableStateOf(false) }
+         val reduced = reducedLifeMotion()
+         val gesturePolicy = remember { FunctionPagePolicy() }
++        val focus = LocalFocusManager.current
++        val keyboard = LocalSoftwareKeyboardController.current
+         val scope = rememberCoroutineScope()
+         var captureMenu by rememberSaveable { mutableStateOf(false) }
+         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
+         val intakeError by intake.error.collectAsStateWithLifecycle()
+         suspend fun closeDrawer() { drawerOpen = false }
+-        fun openDrawer() { drawerOpen = true }
++        fun openDrawer() {
++            if (captureMenu || intakeError != null) return
++            // The mounted module retains its query/state, but hidden text input must not own Back.
++            focus.clearFocus(force = true)
++            keyboard?.hide()
++            drawerOpen = true
++        }
+         LaunchedEffect(entry?.destination?.route) {
+             if (entry?.destination?.route != LifeOsRoute.HOME && drawerOpen) closeDrawer()
+         }
+@@ -98,7 +108,7 @@ fun LifeOsRoot(
+             }
+         }
+         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
+-        SideEffect { gesturePolicy.requestDrawer = { drawerOpen = true } }
++        SideEffect { gesturePolicy.requestDrawer = ::openDrawer }
+         CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
+         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
+             Box(Modifier.safeDrawingPadding()
+@@ -112,7 +122,7 @@ fun LifeOsRoot(
+                     horizontalPages = entry?.destination?.route == LifeOsRoute.FINANCE,
+                     home = entry?.destination?.route == LifeOsRoute.HOME,
+                     effects = appearance.functionEffects, style = appearance.functionPageStyle, reducedMotion = reduced,
+-                    onOpenChange = { drawerOpen = it },
++                    onOpenChange = { if (it) openDrawer() else drawerOpen = false },
+                     functionPage = {
+                         LifeOsDrawer(onOpenModule = { module ->
+                             drawerOpen = false
+@@ -125,6 +135,12 @@ fun LifeOsRoot(
+                     LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
+                         shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
+                         onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
++                    // BoxWithConstraints subcomposes this slot during layout. Register after
++                    // NavHost here, not in the earlier parent composition outside LifeFunctionPages.
++                    // Gesture leases cannot veto Back on an already-open drawer.
++                    BackHandler(enabled = drawerOpen && !captureMenu && intakeError == null) {
++                        if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
++                    }
+                 }
+                 if (companionProgress > 0f) Surface(
+                     Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).graphicsLayer {
+@@ -136,11 +152,6 @@ fun LifeOsRoot(
+             }
+         }
+         }
+-        // Keep registration stable after module content. A closed drawer yields to the
+-        // module/NavHost, and leased editors/viewers keep their own modal Back priority.
+-        BackHandler(enabled = drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
+-            if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
+-        }
+         // Dialog/sheet hosts retain modal Back priority over the shell callback.
+         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
+         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt b/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+index c63952480a6b61cc97544a467641fc730a2fb078..c2369239b0826d9b4a63906f0014e74e98984476 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+@@ -15,6 +15,7 @@ class FunctionPagePolicy {
+         cancelReorder = null
+         return cancel()
+     }
++    /** Leases for opening gestures, not Back ownership of an already-open drawer. */
+     var blockers by mutableIntStateOf(0)
+         private set
+     fun acquire() { blockers++ }
+-- 
+2.53.0.windows.3
+
