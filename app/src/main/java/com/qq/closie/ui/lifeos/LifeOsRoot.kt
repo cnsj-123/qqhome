@@ -118,7 +118,7 @@ fun LifeOsRoot(
                             drawerOpen = false
                             if (module.id == "capture") captureMenu = true
                             else nav.navigateLifeTopLevel(module.route)
-                        }, onClose = { drawerOpen = false }, moduleOrder = appearance.moduleOrder,
+                        }, onClose = { drawerOpen = false }, active = drawerOpen, moduleOrder = appearance.moduleOrder,
                             onSaveOrder = appearanceViewModel::saveModuleOrder)
                     }
                 ) {
@@ -136,13 +136,10 @@ fun LifeOsRoot(
             }
         }
         }
-        // Register when opened, after module content. Re-enabling an older callback would
-        // leave it below NavHost callbacks registered later. Leased editors/viewers keep Back.
-        if (drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
-            BackHandler {
-                val cancelReorder = gesturePolicy.cancelReorder
-                if (cancelReorder != null) cancelReorder() else drawerOpen = false
-            }
+        // Keep registration stable after module content. A closed drawer yields to the
+        // module/NavHost, and leased editors/viewers keep their own modal Back priority.
+        BackHandler(enabled = drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
+            if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
         }
         // Dialog/sheet hosts retain modal Back priority over the shell callback.
         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)

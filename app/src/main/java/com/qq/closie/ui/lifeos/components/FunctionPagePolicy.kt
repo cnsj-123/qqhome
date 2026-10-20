@@ -8,7 +8,13 @@ import com.qq.closie.navigation.LifeOsRoute
 class FunctionPagePolicy {
     /** A navigation intent only. Local Finance regions recognize their own gestures. */
     var requestDrawer: (() -> Unit)? = null
-    var cancelReorder: (() -> Unit)? = null
+    /** True only when the visible drawer actually cancelled a live reorder. */
+    var cancelReorder: (() -> Boolean)? = null
+    fun cancelActiveReorder(): Boolean {
+        val cancel = cancelReorder ?: return false
+        cancelReorder = null
+        return cancel()
+    }
     var blockers by mutableIntStateOf(0)
         private set
     fun acquire() { blockers++ }

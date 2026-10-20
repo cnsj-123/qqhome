@@ -9,6 +9,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -65,6 +68,19 @@ class ClosetSmokeTest {
         compose.onNodeWithText("流水").assertDoesNotExist()
     }
 
+    private fun pressBack() {
+        // Wait for composition/effects to publish enabled handlers before dispatching Back.
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+    }
+
+    private fun awaitDrawerClosed() {
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription("收起生活的抽屉")).fetchSemanticsNodes().isEmpty()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+    }
+
     private fun openCloset(physicalClick: Boolean = true) {
         // Bring the row to a stable visible position in the partial-width drawer.
         compose.onNodeWithTag("life-drawer")
@@ -94,6 +110,33 @@ class ClosetSmokeTest {
         compose.onNodeWithText("长按直接移动").assertIsDisplayed()
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
         compose.onNodeWithTag("drawer-restore-order").assertExists().assertIsDisplayed()
+
+        // A real held long-press creates one lifted overlay in addition to the original row.
+        compose.onNodeWithTag("life-drawer").performScrollToNode(hasText("生活的抽屉"))
+        val longPress = android.view.ViewConfiguration.getLongPressTimeout().toLong()
+        compose.onNodeWithTag("drawer-finance").assertIsDisplayed().performTouchInput {
+            down(center)
+            advanceEventTime(longPress + 1L)
+            moveBy(Offset(0f, 2f))
+        }
+        try {
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasTestTag("drawer-finance")).fetchSemanticsNodes().size == 2
+            }
+            pressBack()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasTestTag("drawer-finance")).fetchSemanticsNodes().size == 1
+            }
+            compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
+        } finally { compose.onRoot().performTouchInput { up() } }
+        // The second Back closes the drawer; reopening must not retain a cancellation callback.
+        pressBack()
+        awaitDrawerClosed()
+        compose.onNodeWithText("Life OS").assertIsDisplayed()
+        openDrawer()
+        pressBack()
+        awaitDrawerClosed()
+        compose.onNodeWithText("Life OS").assertIsDisplayed()
     }
 
     @Test
@@ -123,6 +166,13 @@ class ClosetSmokeTest {
         // fresh install lands on the OWNED tab's empty state.
         compose.onNodeWithText("我的衣橱").assertExists()
         compose.onNodeWithText("衣橱还是空的").assertExists()
+        pressBack()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasText("我的衣橱")).fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithText("Life OS").assertIsDisplayed()
+        compose.onNodeWithText("我的衣橱").assertDoesNotExist()
     }
     @Test
     fun homeContentRightSwipeOpensFunctionPageAndBackClosesIt() {
@@ -131,9 +181,8 @@ class ClosetSmokeTest {
             .performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
         compose.mainClock.advanceTimeBy(500)
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.mainClock.advanceTimeBy(500)
-        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+        pressBack()
+        awaitDrawerClosed()
         compose.onNodeWithText("Life OS").assertIsDisplayed()
     }
 
@@ -178,25 +227,24 @@ class ClosetSmokeTest {
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
         compose.onNodeWithTag("drawer-finance").performClick()
         assertFinanceLedger()
-        compose.mainClock.advanceTimeBy(500)
-        compose.waitForIdle()
+        val query = "抽屉返回保留筛选"
+        compose.onNodeWithTag("finance-search").performTextReplacement(query)
         compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
 
-        // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
-        compose.onNodeWithTag("finance-ledger").performTouchInput {
-            swipe(Offset(width * .10f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
+        repeat(2) {
+            // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
+            compose.onNodeWithTag("finance-ledger").performTouchInput {
+                swipe(Offset(width * .10f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
+            }
+            compose.onNodeWithTag("life-drawer").assertIsDisplayed()
+            compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
+            pressBack()
+            awaitDrawerClosed()
+            assertFinanceLedger()
+            compose.onNodeWithTag("finance-search").assertTextContains(query)
+            compose.onNodeWithText("Life OS").assertDoesNotExist()
         }
-        compose.mainClock.advanceTimeBy(500)
-        compose.waitForIdle()
-        compose.onNodeWithTag("life-drawer").assertIsDisplayed()
-        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
-
-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.mainClock.advanceTimeBy(500)
-        compose.waitForIdle()
-        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
-        assertFinanceLedger()
     }
 
 }

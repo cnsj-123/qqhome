@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
+    active: Boolean = true,
     moduleOrder: List<String> = emptyList(),
     onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() }) {
     val colors = LocalLifeOsColors.current
@@ -54,14 +55,18 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     val save by rememberUpdatedState(onSaveOrder)
     LaunchedEffect(moduleOrder) { if (lifted == null && !saving) modules = orderedModules(moduleOrder) }
     val policy = com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
-    fun cancel() {
+    fun cancel(): Boolean {
         policy?.cancelReorder = null
-        if (lifted == null || saving) return
+        if (lifted == null || saving) return false
         modules = baseline; lifted = null; message = "已取消移动"
+        return true
     }
-    DisposableEffect(lifted?.id, policy) {
-        policy?.cancelReorder = if (lifted != null) ({ cancel() }) else null
-        onDispose { policy?.cancelReorder = null }
+    // The function page stays composed while hidden; hidden reorders must not own Back.
+    LaunchedEffect(active) { if (!active) cancel() }
+    DisposableEffect(active, lifted?.id, saving, policy) {
+        val cancellation: (() -> Boolean)? = if (active && lifted != null && !saving) ({ cancel() }) else null
+        policy?.cancelReorder = cancellation
+        onDispose { if (policy?.cancelReorder === cancellation) policy?.cancelReorder = null }
     }
     fun persist(previous: List<LifeModule>, restoreDefault: Boolean = false) {
         policy?.cancelReorder = null
@@ -101,11 +106,12 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
             delay(16)
         }
     }
-    BackHandler(lifted != null) { cancel() }
+    // The shell handles cancellation when hosted there; standalone drawers retain Back.
+    BackHandler(enabled = active && lifted != null && !saving && policy == null) { cancel() }
     Box(modifier.fillMaxHeight()) {
         LazyVerticalGrid(GridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("life-drawer")
-            .pointerInput(saving) {
-                if (saving) return@pointerInput
+            .pointerInput(active, saving) {
+                if (!active || saving) return@pointerInput
                 detectDragGesturesAfterLongPress(onDragStart = { point ->
                     val item = grid.layoutInfo.visibleItemsInfo.firstOrNull {
                         point.x >= it.offset.x && point.x < it.offset.x + it.size.width &&
