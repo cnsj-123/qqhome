@@ -25,6 +25,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -69,12 +71,20 @@ fun LifeOsRoot(
         var drawerOpen by rememberSaveable { mutableStateOf(false) }
         val reduced = reducedLifeMotion()
         val gesturePolicy = remember { FunctionPagePolicy() }
+        val focus = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
         val scope = rememberCoroutineScope()
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
         val intakeError by intake.error.collectAsStateWithLifecycle()
         suspend fun closeDrawer() { drawerOpen = false }
-        fun openDrawer() { drawerOpen = true }
+        fun openDrawer() {
+            if (captureMenu || intakeError != null) return
+            // The mounted module retains its query/state, but hidden text input must not own Back.
+            focus.clearFocus(force = true)
+            keyboard?.hide()
+            drawerOpen = true
+        }
         LaunchedEffect(entry?.destination?.route) {
             if (entry?.destination?.route != LifeOsRoute.HOME && drawerOpen) closeDrawer()
         }
@@ -98,7 +108,7 @@ fun LifeOsRoot(
             }
         }
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
-        SideEffect { gesturePolicy.requestDrawer = { drawerOpen = true } }
+        SideEffect { gesturePolicy.requestDrawer = ::openDrawer }
         CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
             Box(Modifier.safeDrawingPadding()
@@ -112,7 +122,7 @@ fun LifeOsRoot(
                     horizontalPages = entry?.destination?.route == LifeOsRoute.FINANCE,
                     home = entry?.destination?.route == LifeOsRoute.HOME,
                     effects = appearance.functionEffects, style = appearance.functionPageStyle, reducedMotion = reduced,
-                    onOpenChange = { drawerOpen = it },
+                    onOpenChange = { if (it) openDrawer() else drawerOpen = false },
                     functionPage = {
                         LifeOsDrawer(onOpenModule = { module ->
                             drawerOpen = false
@@ -125,6 +135,12 @@ fun LifeOsRoot(
                     LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
                         shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
                         onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                    // BoxWithConstraints subcomposes this slot during layout. Register after
+                    // NavHost here, not in the earlier parent composition outside LifeFunctionPages.
+                    // Gesture leases cannot veto Back on an already-open drawer.
+                    BackHandler(enabled = drawerOpen && !captureMenu && intakeError == null) {
+                        if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
+                    }
                 }
                 if (companionProgress > 0f) Surface(
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).graphicsLayer {
@@ -135,11 +151,6 @@ fun LifeOsRoot(
                 }
             }
         }
-        }
-        // Keep registration stable after module content. A closed drawer yields to the
-        // module/NavHost, and leased editors/viewers keep their own modal Back priority.
-        BackHandler(enabled = drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
-            if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
         }
         // Dialog/sheet hosts retain modal Back priority over the shell callback.
         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)

@@ -15,6 +15,7 @@ class FunctionPagePolicy {
         cancelReorder = null
         return cancel()
     }
+    /** Leases for opening gestures, not Back ownership of an already-open drawer. */
     var blockers by mutableIntStateOf(0)
         private set
     fun acquire() { blockers++ }
