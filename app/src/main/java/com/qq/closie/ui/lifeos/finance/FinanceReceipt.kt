@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.FinanceAccountEntity
 import com.qq.closie.ui.lifeos.theme.*
@@ -26,7 +27,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
         confirmValueChange = { !busy || it != SheetValue.Hidden })
     ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
         containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
-        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
+        Column(Modifier.testTag("finance-receipt").fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
             .imePadding().padding(horizontal = 20.dp).padding(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

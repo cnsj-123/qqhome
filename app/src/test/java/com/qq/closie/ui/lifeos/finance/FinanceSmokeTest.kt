@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.finance
 import android.content.Context
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.room.Room
@@ -30,6 +31,7 @@ class FinanceSmokeTest {
     private lateinit var db: LifeDatabase
     private lateinit var repository: FinanceRepository
     private var models: ViewModelStore? = null
+    private lateinit var model: FinanceViewModel
 
     @Before fun setup() {
         RestoreStartupGate.resetForTesting(); RestoreStartupGate.markReady()
@@ -49,6 +51,9 @@ class FinanceSmokeTest {
         }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("账簿").fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnIdle {
+            model = ViewModelProvider(requireNotNull(models), FinancePresentationFactory(repository))[FinanceViewModel::class.java]
+        }
     }
     private fun input(label: String, text: String) {
         compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
@@ -66,8 +71,26 @@ class FinanceSmokeTest {
         return compose.onNode(matcher).assertIsDisplayed()
     }
     private fun saved() {
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("保存记录").fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithText("保存账户").fetchSemanticsNodes().isEmpty() }
+        // Save labels change while a command is still busy. Wait for the actual receipt
+        // to leave composition, then for the asynchronous projection to include Room's facts.
+        var persisted: FinanceSnapshot? = null
+        compose.waitUntil(10_000) {
+            if (compose.onAllNodesWithTag("finance-receipt").fetchSemanticsNodes().isNotEmpty()) false
+            else {
+                val expected = persisted ?: snapshot().also { persisted = it }
+                model.state.value.let { it.loaded && !it.busy && it.snapshot == expected }
+            }
+        }
+        compose.waitForIdle()
+    }
+    private fun confirmVoid(title: String) {
+        // The impact preview performs repository work before composing a dialog window.
+        val confirm = hasText("确认作废") and hasClickAction() and isEnabled()
+        compose.waitUntil(10_000) {
+            compose.onNodeWithText(title).isDisplayed() && compose.onNode(confirm).isDisplayed()
+        }
+        compose.onNodeWithText(title).assertIsDisplayed()
+        compose.onNode(confirm).assertIsDisplayed().assertIsEnabled().performClick()
     }
     private fun snapshot() = runBlocking { repository.snapshot() }
     private fun openFilters() {
@@ -158,6 +181,10 @@ class FinanceSmokeTest {
         assertEquals(setOf("早餐", "出门"), originalRow.tags.toSet())
         assertTrue(original.occurredAt >= snapshot().accounts.single().createdAt)
         assertEquals(98_766L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
+        compose.onNodeWithText("账簿").assertIsSelected()
+        assertEquals(FinancePeriod.ALL, model.state.value.filter.period)
+        assertEquals(FinanceDateRange(), model.state.value.filter.range)
+        assertEquals(listOf(original.id), model.state.value.ledger.map { it.id })
         val cashRow = hasText("早餐豆浆") and hasText("餐饮 · 工资卡") and hasClickAction()
         ledgerRow(cashRow).performClick()
         input("金额 · CNY", "10.00")
@@ -172,11 +199,16 @@ class FinanceSmokeTest {
         compose.onNodeWithText("账簿").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("finance-search").performTextReplacement("出门")
+        compose.waitUntil(10_000) {
+            model.state.value.let { it.filter.query == "出门" && it.ledger.map { row -> row.id } == listOf(original.id) }
+        }
         compose.waitForIdle()
         ledgerRow(cashRow).performClick()
         click("作废这笔记录")
-        compose.onNodeWithText("确认作废").performClick(); saved()
+        confirmVoid("作废这笔记录？"); saved()
         assertNotNull(snapshot().entries.single().voidedAt)
+        assertEquals(original.id, snapshot().entries.single().id)
+        assertTrue(model.state.value.ledger.isEmpty())
         assertTrue(FinanceProjection.ledger(snapshot()).isEmpty())
         assertEquals(100_000L, FinanceProjection.balance(snapshot().accounts.single(), snapshot().entries))
         FinanceIntegrity.validate(snapshot())
@@ -234,8 +266,7 @@ class FinanceSmokeTest {
         assertEquals(1, FinanceProjection.ledger(snapshot()).size)
         ledgerRow(transferRow).performClick()
         click("作废这笔记录")
-        compose.onNodeWithText("作废整笔转账？").assertIsDisplayed()
-        compose.onNodeWithText("确认作废").performClick(); saved()
+        confirmVoid("作废整笔转账？"); saved()
         assertTrue(snapshot().entries.all { it.voidedAt != null })
         assertNotNull(snapshot().transfers.single().voidedAt)
         assertEquals(1, snapshot().entries.map { it.voidedAt }.distinct().size)
