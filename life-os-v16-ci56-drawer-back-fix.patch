@@ -1,0 +1,251 @@
+From ec3c55decfb74da47219b4db7418fc1e2a8c9c18 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local.invalid>
+Date: Tue, 20 Oct 2026 15:23:30 +0800
+Subject: [PATCH] fix(ui): stabilize drawer Back ownership and reorder cleanup
+
+---
+ .../com/qq/closie/ui/lifeos/LifeOsRoot.kt     | 13 ++-
+ .../lifeos/components/FunctionPagePolicy.kt   |  8 +-
+ .../ui/lifeos/drawer/FunctionModuleGrid.kt    | 22 +++--
+ .../qq/closie/ui/lifeos/ClosetSmokeTest.kt    | 84 +++++++++++++++----
+ 4 files changed, 92 insertions(+), 35 deletions(-)
+
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt b/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
+index 3b89e738219e9f9eb18b68591f73daf9db12ca7f..10f2fb48955909e6da63a4de7d73b425fbc3c9fb 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/LifeOsRoot.kt
+@@ -118,7 +118,7 @@ fun LifeOsRoot(
+                             drawerOpen = false
+                             if (module.id == "capture") captureMenu = true
+                             else nav.navigateLifeTopLevel(module.route)
+-                        }, onClose = { drawerOpen = false }, moduleOrder = appearance.moduleOrder,
++                        }, onClose = { drawerOpen = false }, active = drawerOpen, moduleOrder = appearance.moduleOrder,
+                             onSaveOrder = appearanceViewModel::saveModuleOrder)
+                     }
+                 ) {
+@@ -136,13 +136,10 @@ fun LifeOsRoot(
+             }
+         }
+         }
+-        // Register when opened, after module content. Re-enabling an older callback would
+-        // leave it below NavHost callbacks registered later. Leased editors/viewers keep Back.
+-        if (drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
+-            BackHandler {
+-                val cancelReorder = gesturePolicy.cancelReorder
+-                if (cancelReorder != null) cancelReorder() else drawerOpen = false
+-            }
++        // Keep registration stable after module content. A closed drawer yields to the
++        // module/NavHost, and leased editors/viewers keep their own modal Back priority.
++        BackHandler(enabled = drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null) {
++            if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
+         }
+         // Dialog/sheet hosts retain modal Back priority over the shell callback.
+         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt b/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+index c8f3c41221e85fb7795af85f693e4f9359e2fecc..c63952480a6b61cc97544a467641fc730a2fb078 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/components/FunctionPagePolicy.kt
+@@ -8,7 +8,13 @@ import com.qq.closie.navigation.LifeOsRoute
+ class FunctionPagePolicy {
+     /** A navigation intent only. Local Finance regions recognize their own gestures. */
+     var requestDrawer: (() -> Unit)? = null
+-    var cancelReorder: (() -> Unit)? = null
++    /** True only when the visible drawer actually cancelled a live reorder. */
++    var cancelReorder: (() -> Boolean)? = null
++    fun cancelActiveReorder(): Boolean {
++        val cancel = cancelReorder ?: return false
++        cancelReorder = null
++        return cancel()
++    }
+     var blockers by mutableIntStateOf(0)
+         private set
+     fun acquire() { blockers++ }
+diff --git a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+index a4153cf4db2e6778648ba97124fc3af5c2cfa25e..0e656623de7db9e9d05cd935ac6d562c5490a830 100644
+--- a/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
++++ b/app/src/main/java/com/qq/closie/ui/lifeos/drawer/FunctionModuleGrid.kt
+@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
+ @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+ @Composable
+ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
++    active: Boolean = true,
+     moduleOrder: List<String> = emptyList(),
+     onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() }) {
+     val colors = LocalLifeOsColors.current
+@@ -54,14 +55,18 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
+     val save by rememberUpdatedState(onSaveOrder)
+     LaunchedEffect(moduleOrder) { if (lifted == null && !saving) modules = orderedModules(moduleOrder) }
+     val policy = com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
+-    fun cancel() {
++    fun cancel(): Boolean {
+         policy?.cancelReorder = null
+-        if (lifted == null || saving) return
++        if (lifted == null || saving) return false
+         modules = baseline; lifted = null; message = "已取消移动"
++        return true
+     }
+-    DisposableEffect(lifted?.id, policy) {
+-        policy?.cancelReorder = if (lifted != null) ({ cancel() }) else null
+-        onDispose { policy?.cancelReorder = null }
++    // The function page stays composed while hidden; hidden reorders must not own Back.
++    LaunchedEffect(active) { if (!active) cancel() }
++    DisposableEffect(active, lifted?.id, saving, policy) {
++        val cancellation: (() -> Boolean)? = if (active && lifted != null && !saving) ({ cancel() }) else null
++        policy?.cancelReorder = cancellation
++        onDispose { if (policy?.cancelReorder === cancellation) policy?.cancelReorder = null }
+     }
+     fun persist(previous: List<LifeModule>, restoreDefault: Boolean = false) {
+         policy?.cancelReorder = null
+@@ -101,11 +106,12 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
+             delay(16)
+         }
+     }
+-    BackHandler(lifted != null) { cancel() }
++    // The shell handles cancellation when hosted there; standalone drawers retain Back.
++    BackHandler(enabled = active && lifted != null && !saving && policy == null) { cancel() }
+     Box(modifier.fillMaxHeight()) {
+         LazyVerticalGrid(GridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("life-drawer")
+-            .pointerInput(saving) {
+-                if (saving) return@pointerInput
++            .pointerInput(active, saving) {
++                if (!active || saving) return@pointerInput
+                 detectDragGesturesAfterLongPress(onDragStart = { point ->
+                     val item = grid.layoutInfo.visibleItemsInfo.firstOrNull {
+                         point.x >= it.offset.x && point.x < it.offset.x + it.size.width &&
+diff --git a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+index 23c8df4ba3a7e161ea72ddf6ccb93c5852a6f4f1..c5d30e03679cb72be45abc4a88f47bbee213958e 100644
+--- a/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
++++ b/app/src/test/java/com/qq/closie/ui/lifeos/ClosetSmokeTest.kt
+@@ -9,6 +9,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
+ import androidx.compose.ui.test.onNodeWithTag
+ import androidx.compose.ui.test.onNodeWithText
+ import androidx.compose.ui.test.hasText
++import androidx.compose.ui.test.hasContentDescription
++import androidx.compose.ui.test.performTextReplacement
++import androidx.compose.ui.test.assertTextContains
+ import androidx.compose.ui.test.performScrollToNode
+ import androidx.compose.ui.test.hasTestTag
+ import androidx.compose.ui.semantics.SemanticsActions
+@@ -65,6 +68,19 @@ class ClosetSmokeTest {
+         compose.onNodeWithText("流水").assertDoesNotExist()
+     }
+ 
++    private fun pressBack() {
++        // Wait for composition/effects to publish enabled handlers before dispatching Back.
++        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
++    }
++
++    private fun awaitDrawerClosed() {
++        compose.waitUntil(10_000) {
++            compose.onAllNodes(hasContentDescription("收起生活的抽屉")).fetchSemanticsNodes().isEmpty()
++        }
++        compose.waitForIdle()
++        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
++    }
++
+     private fun openCloset(physicalClick: Boolean = true) {
+         // Bring the row to a stable visible position in the partial-width drawer.
+         compose.onNodeWithTag("life-drawer")
+@@ -94,6 +110,33 @@ class ClosetSmokeTest {
+         compose.onNodeWithText("长按直接移动").assertIsDisplayed()
+         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
+         compose.onNodeWithTag("drawer-restore-order").assertExists().assertIsDisplayed()
++
++        // A real held long-press creates one lifted overlay in addition to the original row.
++        compose.onNodeWithTag("life-drawer").performScrollToNode(hasText("生活的抽屉"))
++        val longPress = android.view.ViewConfiguration.getLongPressTimeout().toLong()
++        compose.onNodeWithTag("drawer-finance").assertIsDisplayed().performTouchInput {
++            down(center)
++            advanceEventTime(longPress + 1L)
++            moveBy(Offset(0f, 2f))
++        }
++        try {
++            compose.waitUntil(10_000) {
++                compose.onAllNodes(hasTestTag("drawer-finance")).fetchSemanticsNodes().size == 2
++            }
++            pressBack()
++            compose.waitUntil(10_000) {
++                compose.onAllNodes(hasTestTag("drawer-finance")).fetchSemanticsNodes().size == 1
++            }
++            compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
++        } finally { compose.onRoot().performTouchInput { up() } }
++        // The second Back closes the drawer; reopening must not retain a cancellation callback.
++        pressBack()
++        awaitDrawerClosed()
++        compose.onNodeWithText("Life OS").assertIsDisplayed()
++        openDrawer()
++        pressBack()
++        awaitDrawerClosed()
++        compose.onNodeWithText("Life OS").assertIsDisplayed()
+     }
+ 
+     @Test
+@@ -123,6 +166,13 @@ class ClosetSmokeTest {
+         // fresh install lands on the OWNED tab's empty state.
+         compose.onNodeWithText("我的衣橱").assertExists()
+         compose.onNodeWithText("衣橱还是空的").assertExists()
++        pressBack()
++        compose.waitUntil(10_000) {
++            compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
++                compose.onAllNodes(hasText("我的衣橱")).fetchSemanticsNodes().isEmpty()
++        }
++        compose.onNodeWithText("Life OS").assertIsDisplayed()
++        compose.onNodeWithText("我的衣橱").assertDoesNotExist()
+     }
+     @Test
+     fun homeContentRightSwipeOpensFunctionPageAndBackClosesIt() {
+@@ -131,9 +181,8 @@ class ClosetSmokeTest {
+             .performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
+         compose.mainClock.advanceTimeBy(500)
+         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
+-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+-        compose.mainClock.advanceTimeBy(500)
+-        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
++        pressBack()
++        awaitDrawerClosed()
+         compose.onNodeWithText("Life OS").assertIsDisplayed()
+     }
+ 
+@@ -178,25 +227,24 @@ class ClosetSmokeTest {
+         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-finance"))
+         compose.onNodeWithTag("drawer-finance").performClick()
+         assertFinanceLedger()
+-        compose.mainClock.advanceTimeBy(500)
+-        compose.waitForIdle()
++        val query = "抽屉返回保留筛选"
++        compose.onNodeWithTag("finance-search").performTextReplacement(query)
+         compose.onNodeWithTag("finance-ledger").assertIsDisplayed()
+         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+ 
+-        // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
+-        compose.onNodeWithTag("finance-ledger").performTouchInput {
+-            swipe(Offset(width * .10f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
++        repeat(2) {
++            // Finance reserves the inner-left shell corridor; body swipes belong to its pager.
++            compose.onNodeWithTag("finance-ledger").performTouchInput {
++                swipe(Offset(width * .10f, height * .12f), Offset(width * .75f, height * .12f), durationMillis = 400)
++            }
++            compose.onNodeWithTag("life-drawer").assertIsDisplayed()
++            compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
++            pressBack()
++            awaitDrawerClosed()
++            assertFinanceLedger()
++            compose.onNodeWithTag("finance-search").assertTextContains(query)
++            compose.onNodeWithText("Life OS").assertDoesNotExist()
+         }
+-        compose.mainClock.advanceTimeBy(500)
+-        compose.waitForIdle()
+-        compose.onNodeWithTag("life-drawer").assertIsDisplayed()
+-        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsDisplayed()
+-
+-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+-        compose.mainClock.advanceTimeBy(500)
+-        compose.waitForIdle()
+-        compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
+-        assertFinanceLedger()
+     }
+ 
+ }
+-- 
+2.53.0.windows.3
+
