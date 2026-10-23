@@ -6,7 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.net.Uri
 import androidx.compose.runtime.*
-import androidx.compose.ui.graphics.asAndroidBitmap
+import android.view.inspector.WindowInspector
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -36,13 +36,20 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
     @get:Rule val compose=createComposeRule()
     private var models:ViewModelStore?=null
     @After fun stopReaders(){compose.runOnIdle {models?.clear()}}
-    private fun capture(name:String,node:SemanticsNodeInteraction=compose.onRoot()) {
+    private fun capture(name:String) {
         compose.waitForIdle()
-        val bitmap=node.captureToImage().asAndroidBitmap()
+        // Robolectric cannot capture a hardware screen. Draw the actual top window on its native Canvas.
+        val bitmap=compose.runOnIdle {
+            val view=WindowInspector.getGlobalWindowViews().last {it.isAttachedToWindow && it.width>100 && it.height>100}
+            Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888).also {view.draw(Canvas(it))}
+        }
+        val colors=mutableSetOf<Int>()
+        for(x in 0 until bitmap.width step 3)for(y in 0 until bitmap.height step 3)colors.add(bitmap.getPixel(x,y))
+        assertTrue("Production window must contain rendered content, not a blank bitmap",colors.size>8)
         assertTrue(bitmap.width>100 && bitmap.height>100)
         val metrics=File(requireNotNull(System.getProperty("lifeos.v16.metricsDir")))
         val output=File(metrics.parentFile,"robolectric-visuals").apply {mkdirs()}
-        File(output,"EVIDENCE-TYPE.txt").writeText("ROBOLECTRIC RENDER / SDK34 shadows / synthetic data / NOT DEVICE VERIFIED")
+        File(output,"EVIDENCE-TYPE.txt").writeText("ROBOLECTRIC VIEW.DRAW NATIVE CANVAS / SDK34 shadows / synthetic data / NOT DEVICE VERIFIED")
         File(output,name+".png").outputStream().use {assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}
     }
     private fun home(state:HomeUiState) {
@@ -87,7 +94,8 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
     }
     private fun financeScene() {
         compose.setContent {models=LocalViewModelStoreOwner.current?.viewModelStore;LifeOsTheme {FinanceRoute(finance,{})}}
-        compose.waitUntil(10_000){compose.onAllNodesWithTag("finance-ledger").fetchSemanticsNodes().isNotEmpty()}
+        compose.waitUntil(10_000){compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithText("账簿").fetchSemanticsNodes().isNotEmpty()}
     }
     @Test fun accountGridRendersProductionCurrencyAndTypeLabels() {
         runBlocking {
@@ -110,7 +118,8 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         capture("finance-ledger")
         compose.onNode(hasText("合成咖啡") and hasClickAction()).performClick()
         compose.onNodeWithText("账单详情").assertIsDisplayed()
-        capture("finance-receipt",compose.onNodeWithTag("finance-receipt"))
+        compose.onNodeWithTag("finance-receipt").assertIsDisplayed()
+        capture("finance-receipt")
         assertEquals(1,runBlocking {finance.snapshot()}.entries.size)
     }
 }
