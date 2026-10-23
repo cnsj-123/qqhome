@@ -27,26 +27,26 @@ object LegacyLedgerReader {
     private const val MAX_XML_BYTES = 48 * 1024 * 1024
     private const val MAX_ROWS = 100_000
 
-    fun digest(file: File): String = file.inputStream().use { input ->
+    fun digest(file: File, checkpoint:()->Unit={}): String = file.inputStream().use { input ->
         val digest = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(8192)
-        while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+        while (true) { checkpoint(); val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
         digest.digest().joinToString("") { "%02x".format(it) }
     }
     fun fingerprint(values: List<String>): String = MessageDigest.getInstance("SHA-256")
         .digest(Gson().toJson(values).toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
-    fun read(file: File, fileName: String): LegacyLedgerTable {
+    fun read(file: File, fileName: String, checkpoint:()->Unit={}): LegacyLedgerTable {
         require(file.length() in 1..MAX_FILE_BYTES.toLong()) { "文件为空或超过 16 MB" }
         return when (fileName.substringAfterLast('.').lowercase()) {
-            "xlsx" -> xlsx(file)
+            "xlsx" -> xlsx(file,checkpoint)
             "csv" -> {
                 val bytes = file.readBytes()
                 val text = try { Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString() }
                     catch (_: java.nio.charset.CharacterCodingException) {
                         java.nio.charset.Charset.forName("GB18030").newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
                     }
-                LegacyLedgerTable("CSV", csv(text.removePrefix("\uFEFF")))
+                LegacyLedgerTable("CSV", csv(text.removePrefix("\uFEFF"),checkpoint))
             }
             else -> throw IllegalArgumentException("请选择 XLSX 或 CSV 账单")
         }.also { table ->
@@ -58,7 +58,7 @@ object LegacyLedgerReader {
         require(!text.contains("<!DOCTYPE", ignoreCase = true)) { "不支持含外部定义的工作簿" }
         return Xml.newPullParser().apply { setInput(StringReader(text)) }
     }
-    private fun xlsx(file: File): LegacyLedgerTable = ZipFile(file).use { zip ->
+    private fun xlsx(file: File, checkpoint:()->Unit): LegacyLedgerTable = ZipFile(file).use { zip ->
         var totalBytes = 0
         fun part(name: String): String {
             require(!name.startsWith("/") && !name.contains("..") && !name.contains("\\")) { "工作簿路径无效" }
@@ -67,6 +67,7 @@ object LegacyLedgerReader {
                 val out = java.io.ByteArrayOutputStream()
                 val buf = ByteArray(8192)
                 while (true) {
+                    checkpoint()
                     val count = input.read(buf); if (count < 0) break
                     totalBytes += count
                     require(totalBytes <= MAX_XML_BYTES) { "工作簿展开后过大" }
@@ -78,7 +79,7 @@ object LegacyLedgerReader {
         val workbook = xml(part("xl/workbook.xml"))
         val sheets = mutableListOf<Pair<String, String>>()
         var date1904 = false
-        while (workbook.next() != XmlPullParser.END_DOCUMENT) if (workbook.eventType == XmlPullParser.START_TAG) {
+        while (workbook.next().also {checkpoint()} != XmlPullParser.END_DOCUMENT) if (workbook.eventType == XmlPullParser.START_TAG) {
             if (workbook.name == "workbookPr") date1904 = workbook.getAttributeValue(null, "date1904") in setOf("1", "true")
             if (workbook.name == "sheet") {
                 val id = (0 until workbook.attributeCount).firstOrNull { workbook.getAttributeName(it).endsWith("id") }
@@ -87,7 +88,7 @@ object LegacyLedgerReader {
         }
         val relations = xml(part("xl/_rels/workbook.xml.rels"))
         val targets = mutableMapOf<String, String>()
-        while (relations.next() != XmlPullParser.END_DOCUMENT) if (relations.eventType == XmlPullParser.START_TAG && relations.name == "Relationship") {
+        while (relations.next().also {checkpoint()} != XmlPullParser.END_DOCUMENT) if (relations.eventType == XmlPullParser.START_TAG && relations.name == "Relationship") {
             if (relations.getAttributeValue(null, "TargetMode") == "External") continue
             val target = relations.getAttributeValue(null, "Target")
             targets[relations.getAttributeValue(null, "Id")] = if (target.startsWith("/xl/")) target.drop(1) else "xl/$target"
@@ -96,7 +97,7 @@ object LegacyLedgerReader {
         if (zip.getEntry("xl/sharedStrings.xml") != null) {
             val parser = xml(part("xl/sharedStrings.xml"))
             var current: StringBuilder? = null
-            while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            while (parser.next().also {checkpoint()} != XmlPullParser.END_DOCUMENT) {
                 if (parser.eventType == XmlPullParser.START_TAG && parser.name == "si") current = StringBuilder()
                 if (parser.eventType == XmlPullParser.START_TAG && parser.name == "t") current?.append(parser.nextText())
                 if (parser.eventType == XmlPullParser.END_TAG && parser.name == "si") {
@@ -114,7 +115,7 @@ object LegacyLedgerReader {
         var column = 0
         var cellType = ""
         var cellValue = ""
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        while (parser.next().also {checkpoint()} != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType == XmlPullParser.START_TAG) when (parser.name) {
                 "row" -> { require(rows.size < MAX_ROWS) { "记录超过 10 万条" }; cells = MutableList(22) { "" } }
                 "c" -> {
@@ -142,7 +143,7 @@ object LegacyLedgerReader {
     }
 
     /** RFC 4180 quoting, embedded newlines and trailing empty cells. */
-    internal fun csv(text: String): List<List<String>> {
+    internal fun csv(text: String, checkpoint:()->Unit={}): List<List<String>> {
         val rows = mutableListOf<List<String>>()
         val row = mutableListOf<String>()
         val field = StringBuilder()
@@ -150,6 +151,7 @@ object LegacyLedgerReader {
         fun endField() { row += field.toString(); field.setLength(0); closedQuote = false }
         fun endRow() { endField(); rows += row.toList(); row.clear(); require(rows.size <= MAX_ROWS) }
         while (i < text.length) {
+            if(i%1024==0)checkpoint()
             val c = text[i++]
             if (quoted) {
                 if (c == '"') {
@@ -170,9 +172,10 @@ object LegacyLedgerReader {
         return rows
     }
 
-    fun stage(table: LegacyLedgerTable, batchId: String): List<FinanceImportRowEntity> {
+    fun stage(table: LegacyLedgerTable, batchId: String, checkpoint:()->Unit={}): List<FinanceImportRowEntity> {
         val seen = hashSetOf<String>()
         return table.rows.drop(1).mapIndexedNotNull { index, values ->
+            checkpoint()
             if (values.all(String::isBlank)) return@mapIndexedNotNull null
             val raw = headers.zip(values + List(22) { "" }).toMap()
             fun v(name: String) = raw[name].orEmpty().trim()

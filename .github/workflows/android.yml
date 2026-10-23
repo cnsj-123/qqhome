@@ -37,6 +37,7 @@ jobs:
           git rev-parse --is-shallow-repository | tee -a engineering/v16/ci-logs/git-history.log
           python3 engineering/v16/test-ci-gates.py 2>&1 | tee engineering/v16/ci-logs/schema-gate-tests.log
           python3 engineering/v16/audit-v16-tests.py 2>&1 | tee engineering/v16/ci-logs/test-inventory.log
+          python3 engineering/v16/verify-product-baseline.py | tee engineering/v16/ci-logs/product-baseline-source.json
           python3 engineering/v16/check-source.py 2>&1 | tee engineering/v16/ci-logs/source.log
           python3 engineering/v16/check-migration.py 2>&1 | tee engineering/v16/ci-logs/sqlite.log
           python3 engineering/v16/verify-room-schema.py --history-only --report engineering/v16/ci-logs/room-history.json
@@ -61,7 +62,10 @@ jobs:
           ./gradlew :app:testDebugUnitTest --stacktrace 2>&1 | tee engineering/v16/ci-logs/unit-tests.log
       - name: Require actual JUnit coverage and 2000-row metrics
         if: ${{ !cancelled() && steps.tests.outcome == 'success' }}
-        run: python3 engineering/v16/verify-ci-tests.py
+        run: |
+          set -euo pipefail
+          python3 engineering/v16/verify-ci-tests.py
+          python3 engineering/v16/verify-product-baseline.py --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/product-baseline-junit.json
       - name: Assemble CI debug APK
         id: assemble
         run: |

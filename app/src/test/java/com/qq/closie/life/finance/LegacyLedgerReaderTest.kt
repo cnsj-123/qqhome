@@ -62,4 +62,32 @@ class LegacyLedgerReaderTest {
         assertTrue(rows[2].requiresIndividualReview)
         assertNull(rows[2].kind)
     }
+
+    @Test fun cancellationIsObservedDuringCsvAndXlsxParsing() {
+        for(extension in listOf("csv","xlsx")) {
+            val file=files.newFile("cancelled."+extension)
+            val rows=(1..512).map {SyntheticLegacyLedger.row("备注" to "合成取消测试"+it)}
+            if(extension=="csv") SyntheticLegacyLedger.csv(file,rows)
+            else SyntheticLegacyLedger.xlsx(file,rows,"A1:V513")
+            var checkpoints=0
+            val error=runCatching {LegacyLedgerReader.read(file,file.name) {
+                if(++checkpoints==6)throw kotlinx.coroutines.CancellationException("synthetic cancellation")
+            }}.exceptionOrNull()
+            assertTrue(error is kotlinx.coroutines.CancellationException)
+            assertEquals(6,checkpoints)
+            // Cancellation leaves the selected original untouched and valid for a later explicit retry.
+            assertEquals(513,LegacyLedgerReader.read(file,file.name).rows.size)
+        }
+    }
+    @Test fun cancellationStopsRowStagingBeforeReturningAnyPreview() {
+        val file=files.newFile("stage-cancel.csv")
+        SyntheticLegacyLedger.csv(file,(1..100).map {SyntheticLegacyLedger.row("备注" to "合成暂存"+it)})
+        val table=LegacyLedgerReader.read(file,file.name)
+        var checkpoints=0
+        assertTrue(runCatching {LegacyLedgerReader.stage(table,"synthetic") {
+            if(++checkpoints==10)throw kotlinx.coroutines.CancellationException("synthetic cancellation")
+        }}.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+        assertEquals(10,checkpoints)
+        assertEquals(100,LegacyLedgerReader.stage(table,"retry").size)
+    }
 }

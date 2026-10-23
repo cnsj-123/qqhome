@@ -106,7 +106,7 @@ class ArchitectureBoundaryTest {
     @Test fun appearanceLoadingRendersBeforeBusinessStorageIsObtained() {
         val composition = File(source, "ui/lifeos/LifeOsApp.kt").readText()
         val loading = composition.indexOf("if (settings == null)")
-        val container = composition.indexOf("val container = app.lifeContainer")
+        val container = composition.indexOf("val container = resources.first")
         assertTrue(loading >= 0 && container > loading)
         assertTrue(composition.indexOf("if (!ready)") < loading)
         val branch = composition.substring(loading, container)
@@ -120,6 +120,10 @@ class ArchitectureBoundaryTest {
         assertTrue(branch.contains("return"))
         assertFalse(composition.substring(0, container).contains("app.wardrobeRepository"))
         assertFalse(composition.contains("selected?.let"))
+        val loader=File(source,"ui/lifeos/LifeShellResources.kt").readText()
+        assertTrue(loader.contains("withContext(Dispatchers.IO)"))
+        assertTrue(loader.contains("app.lifeContainer to app.wardrobeRepository"))
+        assertTrue(composition.indexOf("loadLifeShellResources(app)")>loading)
     }
     @Test fun migrationSchemaFixturesAreDebugOnly() {
         val gradle = File(app, "build.gradle.kts").readText()

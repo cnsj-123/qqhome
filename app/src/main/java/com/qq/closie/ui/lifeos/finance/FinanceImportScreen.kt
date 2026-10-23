@@ -37,6 +37,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
     val step = if (summary || completed) ImportPhase.COMMIT.ordinal else state.diagnostic.phase.ordinal
     val groups = remember(preview?.rows) { FinanceImportGroup.entries.associateWith { group -> preview?.rows.orEmpty().filter { group in FinanceImportReview.groups(it) } } }
     fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv", "application/octet-stream", "application/vnd.ms-excel")) }
+    BackHandler(enabled=state.busy && state.diagnostic.phase!=ImportPhase.COMMIT) {vm.cancelBeforeCommit()}
     BackHandler(enabled = !state.busy) { if (summary && !completed) summary = false else onBack() }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -63,7 +64,13 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                 }
             }, onChoose = ::selectFile, onBrowse = { picker.launch(arrayOf("*/*")) })
         }
-        if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (state.busy) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            if(state.diagnostic.phase!=ImportPhase.COMMIT) TextButton(vm::cancelBeforeCommit,enabled=!state.cancelling) {
+                Text(if(state.cancelling) "正在停止当前阶段…" else "取消当前阶段")
+            } else Text("正在原子写入本批记录，请等待完成后查看结果",style=MaterialTheme.typography.bodySmall)
+        }
+        state.message?.let {Text(it,style=MaterialTheme.typography.bodySmall)}
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (preview == null) {
                 item { FinancePanel {

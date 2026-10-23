@@ -3,6 +3,8 @@ package com.qq.closie.life.finance
 import androidx.room.withTransaction
 import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.life.data.database.LifeDatabase
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,12 +30,15 @@ class FinanceImportRepository(private val database: LifeDatabase, private val fi
                 .map { FinanceAccountMapping(it.importSourceName!!, existingId = it.id, name = it.name, kind = it.kind) })
     }
     suspend fun stage(file: File, name: String): FinanceImportPreview = withContext(Dispatchers.IO) {
-        val digest = LegacyLedgerReader.digest(file)
+        val context=currentCoroutineContext()
+        val checkpoint={context.ensureActive()}
+        checkpoint()
+        val digest = LegacyLedgerReader.digest(file,checkpoint)
         val existing = transaction { dao.batches().find { it.digest == digest } }
         if (existing != null) return@withContext open(existing.id)
-        val table = LegacyLedgerReader.read(file, name)
+        val table = LegacyLedgerReader.read(file, name,checkpoint)
         val batch = FinanceImportBatchEntity("legacy-$digest", digest, name, System.currentTimeMillis())
-        val rows = LegacyLedgerReader.stage(table, batch.id)
+        val rows = LegacyLedgerReader.stage(table, batch.id,checkpoint)
         transaction {
             val again = dao.batches().find { it.digest == digest }
             if (again != null) return@transaction FinanceImportPreview(again, dao.rows(again.id))

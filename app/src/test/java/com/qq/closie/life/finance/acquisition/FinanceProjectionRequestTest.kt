@@ -20,7 +20,7 @@ class FinanceProjectionRequestTest {
         context=ApplicationProvider.getApplicationContext()
         RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady()
         FinanceScreenshotPreference.set(context,true)
-        shadowOf(context.getSystemService(KeyguardManager::class.java)).setIsKeyguardLocked(false)
+        shadowOf(context.getSystemService(KeyguardManager::class.java)).setKeyguardLocked(false)
     }
     @After fun cleanup() {
         FinanceScreenshotPreference.set(context,false);RestoreStartupGate.resetForTesting()
@@ -35,9 +35,9 @@ class FinanceProjectionRequestTest {
     }
     @Test fun lockAndCancellationInvalidateCapture() {
         val old=request()
-        shadowOf(context.getSystemService(KeyguardManager::class.java)).setIsKeyguardLocked(true)
+        shadowOf(context.getSystemService(KeyguardManager::class.java)).setKeyguardLocked(true)
         assertFalse(old.current(context));old.cancel()
-        shadowOf(context.getSystemService(KeyguardManager::class.java)).setIsKeyguardLocked(false)
+        shadowOf(context.getSystemService(KeyguardManager::class.java)).setKeyguardLocked(false)
         assertFalse(old.current(context))
     }
     @Test fun fastRestoreAndRotationCannotAcceptOldRequest() {

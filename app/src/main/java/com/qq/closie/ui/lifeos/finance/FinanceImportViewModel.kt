@@ -34,7 +34,7 @@ internal fun importFailure(phase: ImportPhase, error: Exception): String {
 internal enum class ImportStage { ACCOUNTS, REVIEW, COMPLETED }
 
 internal data class ImportUiState(
-    val busy: Boolean = false, val error: String? = null, val message: String? = null,
+    val busy: Boolean = false, val cancelling:Boolean=false, val error: String? = null, val message: String? = null,
     val history: List<FinanceImportBatchEntity> = emptyList(),
     val preview: FinanceImportPreview? = null,
     val mappings: List<FinanceAccountMapping> = emptyList(),
@@ -47,16 +47,27 @@ internal data class ImportUiState(
 internal class FinanceImportViewModel(private val repository: FinanceImportRepository) : ViewModel() {
     private val mutable = MutableStateFlow(ImportUiState())
     val state = mutable.asStateFlow()
+    private var operation:Job?=null
     private var lastUri: Uri? = null
     init { run { mutable.update { it.copy(history = repository.history()) } } }
     private fun run(block: suspend () -> Unit) {
         if (mutable.value.busy) return
-        mutable.update { it.copy(busy = true, error = null, message = null, diagnostic = it.diagnostic.copy(technical = null)) }
-        viewModelScope.launch {
+        mutable.update { it.copy(busy = true, cancelling=false, error = null, message = null, diagnostic = it.diagnostic.copy(technical = null)) }
+        operation=viewModelScope.launch {
             try { block() }
-            catch (e: CancellationException) { throw e }
+            catch (e: CancellationException) {
+                mutable.update {it.copy(message="已取消当前阶段，未写入正式账目；已暂存批次仍可在导入记录中打开")}
+                throw e
+            }
             catch (e: Exception) { mutable.update { it.copy(error = importFailure(it.diagnostic.phase, e), diagnostic = it.diagnostic.copy(technical = e.javaClass.simpleName)) } }
-            finally { mutable.update { it.copy(busy = false) } }
+            finally { operation=null;mutable.update { it.copy(busy = false,cancelling=false) } }
+        }
+    }
+    fun cancelBeforeCommit() {
+        val state=mutable.value
+        if(state.busy && state.diagnostic.phase!=ImportPhase.COMMIT) {
+            mutable.update {it.copy(cancelling=true)}
+            operation?.cancel(CancellationException("User cancelled import before canonical commit"))
         }
     }
     fun retryFile(context: Context) { lastUri?.let { select(context, it) } }
@@ -76,6 +87,7 @@ internal class FinanceImportViewModel(private val repository: FinanceImportRepos
                         val buffer = ByteArray(8192)
                         var size = 0L
                         while (true) {
+                            currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
                             size += count

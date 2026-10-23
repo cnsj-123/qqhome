@@ -58,7 +58,20 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
             text = { Text(restoreTask.result.orEmpty()) },
             confirmButton = { androidx.compose.material3.TextButton(app.backupTasks::acknowledge) { Text("知道了") } })
     }
-    val container = app.lifeContainer
+    val initialized by androidx.compose.runtime.produceState<Result<Pair<com.qq.closie.life.data.LifeContainer,com.qq.closie.data.repository.WardrobeRepository>>?>(null,app) {
+        value=try {Result.success(loadLifeShellResources(app))}
+        catch(cancelled:kotlinx.coroutines.CancellationException){throw cancelled}
+        catch(error:Exception){Result.failure(error)}
+    }
+    val resources=initialized?.getOrNull()
+    if(resources==null) {
+        LifeOsTheme {
+            if(initialized==null) LifeStartupFeedback("正在打开生活页","正在读取本地衣橱与账本")
+            else LifeEmptyState("本地数据未能打开，请重新打开应用重试。原数据未被替换。")
+        }
+        return
+    }
+    val container = resources.first
     androidx.compose.runtime.SideEffect(onContentReady)
     val intake: ExternalIntakeViewModel = viewModel(factory = PresentationFactory(ExternalIntakeViewModel::class.java) {
         ExternalIntakeViewModel(ExternalIntakeCoordinator(container.captureRepository, container.referenceImporter),
@@ -69,6 +82,6 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
             com.qq.closie.ui.lifeos.home.FinanceHomeStateProvider(container.financeRepository), container.homePhotoRepository))
     })
     val command by external.command.collectAsStateWithLifecycle()
-    LifeOsRoot(app.wardrobeRepository, container, settings, shell, appearance, intake,
+    LifeOsRoot(resources.second, container, settings, shell, appearance, intake,
         command, external::consume, onDarkAppearance)
 }
