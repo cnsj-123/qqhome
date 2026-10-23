@@ -12,7 +12,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class FinanceScreenshotV16Test : FinanceRoomTest() {
     private fun token() = FinanceCommandToken(java.util.UUID.randomUUID().toString(), 0)
-    private val fields = FinanceOcrFields(1234, null, FinanceProposalKind.EXPENSE, null, "交易时间需补充")
+    private val fields = FinanceOcrFields(1234, null, FinanceProposalKind.EXPENSE, null, "交易时间需补充", currencyCode = "CNY")
 
     @Test fun screenshotCreatesOnlyOneTypedCandidateAndNeverKeepsAnImageOrWritesCash() = runTest {
         val operation = token()

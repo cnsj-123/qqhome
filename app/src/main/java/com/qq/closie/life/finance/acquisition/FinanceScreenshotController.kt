@@ -20,6 +20,9 @@ import com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay
 import kotlinx.coroutines.*
 import kotlin.coroutines.resume
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collect
 import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
 
@@ -34,16 +37,30 @@ internal class FinanceScreenshotController(
     private var capture: Job? = null
     private var disposed = false
     @Volatile private var eventSerial = 0L
-    @Volatile private var activeRequestSerial: Long? = null
-    fun hostEvent(packageName: String) { if (packageName != service.packageName) eventSerial++ }
+    @Volatile private var requestGeneration = 0L
+    private var presentedPage: FinanceCapturePage? = null
+    private val restoreObserver = scope.launch {
+        RestoreStartupGate.state.map { it.status to it.restoreGeneration }.distinctUntilChanged().collect {
+            invalidate()
+            update()
+        }
+    }
+    private fun invalidate() {
+        requestGeneration++
+        capture?.cancel()
+        presentedPage = null
+        overlay.close()
+    }
+    fun hostEvent(packageName: String) {
+        if (packageName != service.packageName) { eventSerial++; invalidate() }
+    }
     private var x = 0
     private var y = 280
-    private data class Target(val packageName: String, val windowId: Int, val orientation: Int, val serial: Long)
 
     fun update() {
         if (disposed) return
-        if (!FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
-            capture?.cancel(); removeBubble(); overlay.close(); return
+        if (!RestoreStartupGate.isReady || !FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
+            invalidate(); removeBubble(); return
         }
         if (Build.VERSION.SDK_INT < 30 || FinanceReviewRequests.foreground || capture?.isActive == true) {
             removeBubble(); return
@@ -84,7 +101,7 @@ internal class FinanceScreenshotController(
     }
 
     private fun locked() = service.getSystemService(KeyguardManager::class.java).isKeyguardLocked
-    private fun target(): Target? {
+    private fun target(): FinanceCapturePage? {
         if (locked()) return null
         val root = service.rootInActiveWindow ?: return null
         return try {
@@ -93,64 +110,70 @@ internal class FinanceScreenshotController(
             val window = root.window ?: return null
             try {
                 if (!window.isActive || !window.isFocused || window.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) null
-                else Target(packageName, window.id, service.resources.configuration.orientation, eventSerial)
+                else FinanceCapturePage(packageName, window.id, service.resources.configuration.orientation, eventSerial)
             } finally { @Suppress("DEPRECATION") window.recycle() }
         } finally { @Suppress("DEPRECATION") root.recycle() }
     }
-    private fun valid(expected: Target) = !disposed && FinanceScreenshotPreference.enabled(service) &&
+    private fun valid(expected: FinanceCapturePage) = !disposed && FinanceScreenshotPreference.enabled(service) &&
         RestoreStartupGate.isReady && Settings.canDrawOverlays(service) && target() == expected
 
     private fun request() {
-        if (disposed || capture?.isActive == true || Build.VERSION.SDK_INT < 30 || !FinanceReceiptOverlay.beginCapture()) return
+        if (disposed || capture?.isActive == true || Build.VERSION.SDK_INT < 30) return
+        // Bind host identity at the click, before hiding any surface or suspending.
+        val page = target() ?: return status("请停在需要识别的外部页面，再点击截图")
+        val fence = RestoreStartupGate.state.value
+        if (!fence.canAcquireBusinessLease || !valid(page) || !FinanceReceiptOverlay.beginCapture()) return
+        val generation = ++requestGeneration
         capture = scope.launch {
-            removeBubble(); overlay.close(); hideOtherReceipt()
+            val container = LifeContainer.getInstance(service)
+            val current = { isActive && generation == requestGeneration &&
+                RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration && valid(page) }
+            val storageCurrent = { isActive && !disposed && generation == requestGeneration &&
+                page.pageGeneration == eventSerial && RestoreStartupGate.isReady &&
+                RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration &&
+                FinanceScreenshotPreference.enabled(service) }
             try {
-                delay(180) // Only our surfaces leave; this delay never repeats or samples the host.
-                val target = target() ?: error("请停留在要识别的外部页面，解锁后再试")
-                check(valid(target)) { "当前无法截图，请检查授权和恢复状态" }
-                activeRequestSerial = target.serial
-                var bitmap: Bitmap? = null
-                var handedToOcr = false
-                val fields = try {
-                    val frame = withTimeout(4000) { screenshot(target) }
-                    bitmap = frame
-                    check(valid(target)) { "页面已切换，本次截图已放弃" }
-                    check(!blackFrame(frame)) { "当前画面不可采集或受到保护，请手动录入" }
-                    handedToOcr = true
-                    val raw = withTimeout(12000) { OcrEngine.recognizeText(frame, releaseAfterRecognition = true).getOrThrow() }
-                    withContext(Dispatchers.Default) { FinanceLocalOcrParser.parse(raw) }
-                } finally {
-                    if (!handedToOcr) bitmap?.recycle()
-                }
-                check(valid(target)) { "页面已切换或授权失效，识别结果已放弃" }
-                check(fields.amountMinor != null || fields.occurredAt != null || fields.suggestedKind != null) {
-                    "未读到可核对的账单字段，请展开详情后重试或手动录入"
-                }
-                val container = LifeContainer.getInstance(service)
-                val token = withContext(Dispatchers.IO) { container.financeRepository.economics.token() }
-                val id = withContext(Dispatchers.IO) {
-                    container.financeRepository.media.createScreenshotCandidate(token, fields) {
-                        !disposed && activeRequestSerial == eventSerial && RestoreStartupGate.isReady && FinanceScreenshotPreference.enabled(service)
+                runFinanceCapture(
+                    page, generation, fence.restoreGeneration, current, storageCurrent,
+                    token = { withContext(Dispatchers.IO) { container.financeRepository.economics.token() } },
+                    hide = { removeBubble(); overlay.close(); hideOtherReceipt() },
+                    capture = { request -> withTimeout(4000) { screenshot(request.page) } },
+                    recognize = { frame ->
+                        if (blackFrame(frame)) {
+                            frame.recycle()
+                            error("当前画面不可采集，请手动录入")
+                        }
+                        val raw = withTimeout(12000) { OcrEngine.recognizeText(frame, releaseAfterRecognition = true).getOrThrow() }
+                        withContext(Dispatchers.Default) { FinanceLocalOcrParser.parse(raw) }
+                    },
+                    releaseUnused = { it.recycle() },
+                    store = { request, fields, stillCurrent -> withContext(Dispatchers.IO) {
+                        container.financeRepository.media.createScreenshotCandidate(request.token, fields, stillCurrent)
+                    } },
+                    present = { request, id, canPresent ->
+                        FinanceReceiptOverlay.endCapture()
+                        if (canPresent()) {
+                            presentedPage = request.page
+                            if (!overlay.show(id, userInitiated = true, expectedEpoch = request.token.restoreEpoch,
+                                    canPresent = { presentedPage == request.page && generation == requestGeneration &&
+                                        RestoreStartupGate.state.value.restoreGeneration == request.restoreGeneration && valid(request.page) })) {
+                                val proposal = container.financeAutomationRepository.observe().first().proposals.firstOrNull { it.id == id }
+                                proposal?.let { FinanceReviewNotifications.post(service, it, immediate = true) }
+                                status("小票已保存在待确认中，本次未显示悬浮窗")
+                            }
+                        }
                     }
-                }
-                FinanceReceiptOverlay.endCapture()
-                if (valid(target)) {
-                    if (!overlay.show(id, userInitiated = true)) {
-                        val proposal = container.financeAutomationRepository.observe().first().proposals.firstOrNull { it.id == id }
-                        proposal?.let { FinanceReviewNotifications.post(service, it, immediate = true) }
-                        status("小票已保留在待确认中，本次未能显示悬浮窗口")
-                    }
-                }
+                )
             } catch (e: TimeoutCancellationException) { status("截图或识别超时，未自动记账，请重试") }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { status(e.message ?: "截图识别未完成，未自动记账") }
-            finally { FinanceReceiptOverlay.endCapture(); activeRequestSerial = null; capture = null; update() }
+            finally { FinanceReceiptOverlay.endCapture(); capture = null; update() }
         }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @android.annotation.TargetApi(30)
-    private suspend fun screenshot(target: Target): Bitmap = suspendCancellableCoroutine { continuation ->
+    private suspend fun screenshot(target: FinanceCapturePage): Bitmap = suspendCancellableCoroutine { continuation ->
         val callback = object : AccessibilityService.TakeScreenshotCallback {
             override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                 val buffer = result.hardwareBuffer
@@ -191,7 +214,7 @@ internal class FinanceScreenshotController(
         Toast.makeText(service, message, Toast.LENGTH_LONG).show()
     }
     private fun removeBubble() { bubble?.let { runCatching { windows.removeViewImmediate(it) } }; bubble = null }
-    fun close(permanent: Boolean = true) { disposed = permanent; capture?.cancel(); removeBubble(); overlay.close() }
+    fun close(permanent: Boolean = true) { disposed = permanent; invalidate(); if (permanent) restoreObserver.cancel(); removeBubble() }
 }
 
 object FinanceScreenshotPreference {

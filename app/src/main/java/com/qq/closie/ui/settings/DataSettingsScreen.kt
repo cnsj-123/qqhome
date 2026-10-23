@@ -58,7 +58,10 @@ fun DataSettingsScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var busy by remember { mutableStateOf(false) }
+    val restoreOwner = (context.applicationContext as com.qq.closie.ClosieApplication).backupTasks
+    val restoreTask by restoreOwner.state.collectAsState()
+    var localBusy by remember { mutableStateOf(false) }
+    val busy = localBusy || restoreTask.running
     var message by remember { mutableStateOf<String?>(null) }
     var confirmRestore by remember { mutableStateOf<Uri?>(null) }
     var backupPassword by remember { mutableStateOf("") }
@@ -125,24 +128,24 @@ fun DataSettingsScreen(
         if (uri != null) {
             val password = backupPassword.toCharArray()
             backupPassword = ""; repeatedPassword = ""
-            busy = true; message = null
+            localBusy = true; message = null
             scope.launch {
                 val result = com.qq.closie.data.backup.EncryptedBackupManager.export(context, repo, uri, lifeDatabase, password)
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
                 message = result.fold({ "加密备份已写入并验证可解密，请保管好口令" }, { failureMessage("导出失败", it) })
-                busy = false
+                localBusy = false
             }
         } else { backupPassword = ""; repeatedPassword = "" }
     }
 
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) {
-            busy = true; message = null
+            localBusy = true; message = null
             scope.launch {
                 val result = BackupManager.exportCsv(context, repo, uri)
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
                 message = result.fold({ "CSV 已导出" }, { failureMessage("导出失败", it) })
-                busy = false
+                localBusy = false
             }
         }
     }
@@ -258,10 +261,9 @@ fun DataSettingsScreen(
                 OutlinedTextField(restorePassword, { restorePassword = it }, label = { Text("加密备份口令") },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
                 TextButton(enabled = !busy, onClick = {
-                    confirmRestore = null; restorePassword = ""; busy = true; message = null
-                    scope.launch {
-                        val result = BackupManager.restore(context, repo, uri, lifeDatabase)
-                        message = result.fold({ "旧 ZIP 恢复成功，权限需重新评估" }, { failureMessage("恢复失败", it) }); busy = false
+                    confirmRestore = null; restorePassword = ""; message = null
+                    restoreOwner.start("旧 ZIP 恢复成功，权限需重新评估") {
+                        BackupManager.restore(context.applicationContext, repo, uri, lifeDatabase)
                     }
                 }) { Text("这是未加密的旧 ZIP，确认恢复") }
             } },
@@ -271,12 +273,11 @@ fun DataSettingsScreen(
                     val password = restorePassword.toCharArray()
                     restorePassword = ""
                     confirmRestore = null
-                    busy = true; message = null
-                    scope.launch {
-                        val result = com.qq.closie.data.backup.EncryptedBackupManager.restore(context, repo, u, lifeDatabase, password)
-                        message = result.fold({ "恢复成功" }, { failureMessage("恢复失败", it) })
-                        busy = false
-                    }
+                    message = null
+                    if (!restoreOwner.start("恢复成功") {
+                        try { com.qq.closie.data.backup.EncryptedBackupManager.restore(context.applicationContext, repo, u, lifeDatabase, password) }
+                        finally { password.fill('\u0000') }
+                    }) password.fill('\u0000')
                 }) { Text("确认恢复", color = ClosieColor.Rose) }
             },
             dismissButton = { TextButton(onClick = { confirmRestore = null; restorePassword = "" }) { Text("取消") } }

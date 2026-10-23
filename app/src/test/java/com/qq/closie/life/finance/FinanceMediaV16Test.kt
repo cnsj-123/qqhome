@@ -70,7 +70,7 @@ class FinanceMediaV16Test:FinanceRoomTest() {
         assertTrue(finance.snapshot().entries.isEmpty())
     }
     @Test fun explicitlyRetainedOcrReceiptUsesSameMediaAndRefundCannotBecomeExpense()=runTest {
-        val fields=FinanceLocalOcrParser.parse("退款成功\n退款金额：12.34\n2026-10-09 17:20")
+        val fields=FinanceLocalOcrParser.parse("退款成功\n退款金额：人民币12.34\n2026-10-09 17:20")
         assertEquals(1_234L,fields.amountMinor);assertNotNull(fields.occurredAt)
         assertEquals(FinanceProposalKind.INCOME,fields.suggestedKind)
         assertTrue(runCatching {finance.media.createOcrCandidate(token(),fields,FinanceProposalKind.EXPENSE,document(),true)}.isFailure)

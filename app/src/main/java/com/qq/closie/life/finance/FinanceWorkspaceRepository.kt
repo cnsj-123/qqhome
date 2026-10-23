@@ -196,6 +196,18 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
         dao.putBudget(listOf(FinanceBudgetEntity(result,name.trim(),currency,limit,categoryId,start,endExclusive,now,now)))
         result
     }
+    /** Presentation-only command: never creates or changes a category policy. */
+    suspend fun setCategoryIcon(token:FinanceCommandToken,categoryId:String,iconKey:String,expectedRevision:Long?=null):String =
+        commands.run(token,"CATEGORY_ICON",listOf(categoryId,iconKey,expectedRevision)) {
+            require(db.financeDao().categories().any { it.id==categoryId })
+            require(iconKey in setOf("food","transport","home","health","shopping","gift","other"))
+            val old=dao.categoryIconRows().singleOrNull { it.categoryId==categoryId }
+            require(old?.revision==expectedRevision) {"分类图标已改变，请重新打开"}
+            val now=clock()
+            dao.putCategoryIcon(listOf(FinanceCategoryIconEntity(categoryId,iconKey,old?.createdAt ?: now,now,
+                Math.addExact(old?.revision ?: 0L,1L))))
+            categoryId
+        }
     suspend fun setCategoryPolicy(token:FinanceCommandToken,categoryId:String,burden:FinanceBurden,iconKey:String,expectedRevision:Long?=null):String =
         commands.run(token,"CATEGORY_POLICY",listOf(categoryId,burden,iconKey,expectedRevision)) {
             require(db.financeDao().categories().any { it.id==categoryId })

@@ -40,14 +40,6 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     private val windows=context.getSystemService(WindowManager::class.java)
     private val editScope get()=(context.applicationContext as ClosieApplication).financeReviewEditScope
     private var window:View?=null
-    private var subDialog: android.app.Dialog? = null
-    private fun showSubDialog(dialog: android.app.Dialog) {
-        subDialog?.dismiss(); subDialog = dialog
-        dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        dialog.setOnDismissListener { if (subDialog === dialog) subDialog = null }
-        dialog.show()
-    }
     private var observer:Job?=null
     private var monitor:Job?=null
     private var autosave:Job?=null
@@ -56,7 +48,8 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     private var configuration:ComponentCallbacks?=null
 
     suspend fun show(id:String, userInitiated:Boolean=false, expectedEpoch:Long?=null, canPresent:()->Boolean={true}):Boolean {
-        if(!Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
+        val restoreGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
+        if(!canPresent() || !com.qq.closie.data.backup.RestoreStartupGate.isReady || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
         return try {
             val container=LifeContainer.getInstance(context)
             val automation=container.financeAutomationRepository.observe().first()
@@ -106,17 +99,26 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                             override fun afterTextChanged(s:Editable?){} })
                     }.also {body.addView(it);editable.add(it)}
                 }
+                var openPanel:(String, View)->Unit = { _, _ -> }
+                var closePanel:()->Boolean = { false }
                 fun choice(label:String,options:List<Pair<String,String>>,selected:String):()->String {
-                    text(label)
-                    val spinner=Spinner(context).apply {
-                        minimumHeight=dp(48);adapter=ArrayAdapter(context,android.R.layout.simple_spinner_dropdown_item,options.map {it.second})
-                        setSelection(options.indexOfFirst {it.first==selected}.coerceAtLeast(0))
-                        onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
-                            override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,itemId:Long){if(ready && !busy){updateVisibility();scheduleSave()}}
-                            override fun onNothingSelected(parent:AdapterView<*>?){}
+                    var value = options.firstOrNull { it.first==selected }?.first ?: options.firstOrNull()?.first.orEmpty()
+                    val control = Button(context).apply {minHeight=dp(48);applyLifeTypography(LifeType.Body)}
+                    fun caption() { control.text=label+" · "+options.firstOrNull { it.first==value }?.second.orEmpty() }
+                    caption()
+                    control.setOnClickListener {
+                        val choices=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL}
+                        options.forEach { option ->
+                            choices.addView(Button(context).apply {
+                                text=(if(option.first==value) "✓ " else "")+option.second
+                                minHeight=dp(48);applyLifeTypography(LifeType.Body)
+                                setOnClickListener {value=option.first;caption();closePanel();updateVisibility();scheduleSave()}
+                            })
                         }
-                    };body.addView(spinner);editable.add(spinner)
-                    return {options.getOrNull(spinner.selectedItemPosition)?.first.orEmpty()}
+                        openPanel(label,choices)
+                    }
+                    body.addView(control);editable.add(control)
+                    return {value}
                 }
                 val kind=choice("类型",FinanceEditorKind.entries.map {it.name to it.label},initial.kind.name)
                 val amount=input("金额 · CNY",initial.amount,true)
@@ -130,13 +132,24 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 date.setOnClickListener {
                     val selected = java.util.Calendar.getInstance()
                     runCatching { FinanceTime.parse(date.text.toString()) }.getOrNull()?.let { selected.timeInMillis = it }
-                    android.app.DatePickerDialog(context, { _, year, month, day ->
-                        android.app.TimePickerDialog(context, { _, hour, minute ->
-                            selected.set(year, month, day, hour, minute)
-                            selected.set(java.util.Calendar.SECOND, 0); selected.set(java.util.Calendar.MILLISECOND, 0)
-                            date.setText(FinanceTime.input(selected.timeInMillis)); scheduleSave()
-                        }, selected.get(java.util.Calendar.HOUR_OF_DAY), selected.get(java.util.Calendar.MINUTE), true).also(::showSubDialog)
-                    }, selected.get(java.util.Calendar.YEAR), selected.get(java.util.Calendar.MONTH), selected.get(java.util.Calendar.DAY_OF_MONTH)).also(::showSubDialog)
+                    val panel=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL}
+                    val picker=DatePicker(context).apply {
+                        init(selected.get(java.util.Calendar.YEAR),selected.get(java.util.Calendar.MONTH),
+                            selected.get(java.util.Calendar.DAY_OF_MONTH),null)
+                    }
+                    val time=TimePicker(context).apply {
+                        setIs24HourView(true);hour=selected.get(java.util.Calendar.HOUR_OF_DAY);minute=selected.get(java.util.Calendar.MINUTE)
+                    }
+                    panel.addView(picker);panel.addView(time)
+                    panel.addView(Button(context).apply {
+                        text="使用此时间";minHeight=dp(48)
+                        setOnClickListener {
+                            selected.set(picker.year,picker.month,picker.dayOfMonth,time.hour,time.minute,0)
+                            selected.set(java.util.Calendar.MILLISECOND,0)
+                            date.setText(FinanceTime.input(selected.timeInMillis));closePanel();scheduleSave()
+                        }
+                    })
+                    openPanel("实际发生时间",panel)
                 }
                 val description=input("备注（可留空）",initial.description)
                 val category=choice("分类",listOf("" to "未分类/自定义")+snapshot.categories.map {it.id to (FinanceProjection.categoryPath(snapshot.categories,it.id) ?: it.name)},initial.categoryId.orEmpty())
@@ -203,17 +216,30 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                         }
                     }
                 }
+                val panelBody=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE;setPadding(dp(16),dp(12),dp(16),dp(12))}
+                val pages=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;addView(body);addView(panelBody)}
+                closePanel = {
+                    if(panelBody.visibility!=View.VISIBLE) false
+                    else {panelBody.visibility=View.GONE;panelBody.removeAllViews();body.visibility=View.VISIBLE;true}
+                }
+                openPanel = { title, content ->
+                    context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(body.windowToken,0)
+                    body.clearFocus();panelBody.removeAllViews()
+                    panelBody.addView(Button(context).apply {text="返回小票 · "+title;minHeight=dp(48);setOnClickListener {closePanel()}})
+                    panelBody.addView(content)
+                    body.visibility=View.GONE;panelBody.visibility=View.VISIBLE
+                }
                 val scroll=object:ScrollView(context) {
                     private fun back(event:KeyEvent):Boolean {
                         if(event.keyCode!=KeyEvent.KEYCODE_BACK)return false
                         val ime=rootWindowInsets?.let {androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(it,this).isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())}==true
                         if(ime)return false
-                        if(event.action==KeyEvent.ACTION_UP)later()
+                        if(event.action==KeyEvent.ACTION_UP && !closePanel())later()
                         return true
                     }
                     override fun dispatchKeyEvent(event:KeyEvent)=back(event)||super.dispatchKeyEvent(event)
                     override fun dispatchKeyEventPreIme(event:KeyEvent)=back(event)||super.dispatchKeyEventPreIme(event)
-                }.apply {isFocusableInTouchMode=true;addView(body)}
+                }.apply {isFocusableInTouchMode=true;addView(pages)}
                 body.background = null
                 val frame = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
@@ -227,13 +253,33 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT).apply {
                     gravity=Gravity.BOTTOM;softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 }
-                windows.addView(frame,params);window=frame;owner=this@FinanceReceiptOverlay;scroll.requestFocus();ready=true
+                val attached = com.qq.closie.data.backup.RestoreStartupGate.withBusinessAccess {
+                    if (!canPresent() || captureBusy || !permitted(FinanceAutomationSettings(context).read()) ||
+                        !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked ||
+                        com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration != restoreGeneration)
+                        false
+                    else { windows.addView(frame,params); true }
+                }
+                if (!attached) return@withContext false
+                window=frame;owner=this@FinanceReceiptOverlay;scroll.requestFocus();ready=true
+                androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(frame) { _, insets ->
+                    val bars=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    val ime=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+                    val height=context.resources.displayMetrics.heightPixels
+                    val available=(height-maxOf(bars.bottom,ime.bottom)-bars.top).coerceAtLeast(dp(120))
+                    val targetHeight=minOf((height*.82f).toInt(),available)
+                    if(params.height!=targetHeight || params.y!=bars.bottom) {
+                        params.height=targetHeight;params.y=bars.bottom
+                        runCatching {windows.updateViewLayout(frame,params)}.onFailure {close()}
+                    }
+                    insets
+                }
+                androidx.core.view.ViewCompat.requestApplyInsets(frame)
                 flushLater={later(continueQueue = false)};scheduleSave()
                 configuration=object:ComponentCallbacks {
                     override fun onLowMemory(){}
                     override fun onConfigurationChanged(newConfig:android.content.res.Configuration) {
-                        params.height=(context.resources.displayMetrics.heightPixels*.8f).toInt()
-                        runCatching {windows.updateViewLayout(frame,params)}.onFailure {close()}
+                        close() // A rotated host is a new target; the saved draft remains in the inbox.
                     }
                 }.also(context::registerComponentCallbacks)
                 screenReceiver=object:BroadcastReceiver(){override fun onReceive(c:Context?,intent:Intent?){close()}}.also {receiver->
@@ -242,13 +288,13 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 }
                 observer=scope.launch(Dispatchers.Main.immediate) {
                     combine(container.financeAutomationRepository.observe(),FinanceReviewRequests.visible,FinanceAutomationSettings(context).observe(),container.financeRepository.observeSnapshot(),
-                        com.qq.closie.data.backup.RestoreStartupGate.state.map {it.status}.distinctUntilChanged()) {data,foreground,prefs,finance,gate->
-                        gate!=com.qq.closie.data.backup.RestoreStartupGate.Status.READY || foreground || !permitted(prefs) ||
+                        com.qq.closie.data.backup.RestoreStartupGate.state.map {it.status to it.restoreGeneration}.distinctUntilChanged()) {data,foreground,prefs,finance,gate->
+                        (gate.first!=com.qq.closie.data.backup.RestoreStartupGate.Status.READY || gate.second!=restoreGeneration) || foreground || !permitted(prefs) ||
                             (finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L)!=epoch || data.proposals.none {it.id==id && it.revision==proposal.revision && it.status in setOf(FinanceProposalStatus.ACTIVE,FinanceProposalStatus.SNOOZED)}
                     }.catch {emit(true)}.first {it};close()
                 }
                 monitor=scope.launch(Dispatchers.Main.immediate) {while(isActive){delay(500)
-                    if(!Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
+                    if(!canPresent() || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
                 }}
                 true
             }
@@ -257,7 +303,6 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     }
     /** Never discards a candidate. Application-owned edit work survives listener teardown. */
     fun close(persist:Boolean=true, advance:Boolean=false) {
-        subDialog?.dismiss(); subDialog = null
         if (owner === this) owner = null
         val flush=flushLater;flushLater=null
         observer?.cancel();observer=null;monitor?.cancel();monitor=null;autosave?.cancel();autosave=null

@@ -137,7 +137,9 @@ internal object RestoreStartupGate {
         val status: Status,
         val error: Throwable? = null,
         val stickyUntilRestart: Boolean = false,
-        val activeBusinessOps: Int = 0
+        val activeBusinessOps: Int = 0,
+        /** Process fence, atomically advanced even if RESTORING -> READY is conflated by a collector. */
+        val restoreGeneration: Long = 0
     ) {
         /** True when a new business operation may take a lease. */
         val canAcquireBusinessLease: Boolean get() = status == Status.READY
@@ -601,7 +603,8 @@ internal object RestoreStartupGate {
         while (true) {
             val current = _state.value
             if (!current.canBeginRestore) return false
-            val next = current.copy(status = Status.RESTORING, error = null)
+            val next = current.copy(status = Status.RESTORING, error = null,
+                restoreGeneration = Math.addExact(current.restoreGeneration, 1L))
             if (_state.compareAndSet(current, next)) return true
         }
     }

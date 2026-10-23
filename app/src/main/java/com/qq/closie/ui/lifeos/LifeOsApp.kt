@@ -35,28 +35,28 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
     val selected by appearance.appearance.collectAsStateWithLifecycle()
     val startupStatus = remember { RestoreStartupGate.state.map { it.status }.distinctUntilChanged() }
     val restoreStatus by startupStatus.collectAsStateWithLifecycle(initialValue = RestoreStartupGate.state.value.status)
+    val restoreTask by app.backupTasks.state.collectAsStateWithLifecycle()
     val ready = restoreStatus == RestoreStartupGate.Status.READY
     if (!ready) {
         androidx.compose.runtime.SideEffect(onContentReady)
-        LifeOsTheme { LifeEmptyState("恢复尚未完成，原数据已保留。请在系统设置中停止应用后重新打开，以重试启动恢复。") }
+        LifeOsTheme {
+            if (restoreStatus == RestoreStartupGate.Status.RESTORING)
+                LifeStartupFeedback("正在恢复数据", "正在核对备份并替换本地数据，请保持应用开启")
+            else LifeEmptyState("恢复未完成，业务数据已暂停访问。请停止应用后重新打开，以重试启动恢复。")
+        }
         return
     }
     val settings = selected
     if (settings == null) {
         androidx.compose.runtime.SideEffect(onContentReady)
-        LifeOsTheme {
-            val colors = LocalLifeOsColors.current
-            Surface(Modifier.fillMaxSize(), color = colors.paper) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_launch_cat), null, Modifier.size(72.dp))
-                        Text("Life OS", style = com.qq.closie.life.ui.theme.LifeType.Wordmark, color = colors.ink)
-                        Text("正在准备生活页", style = LifeText.caption, color = colors.inkSecondary)
-                    }
-                }
-            }
-        }
+        LifeOsTheme { LifeStartupFeedback("正在准备生活页", "正在读取外观与本地数据") }
         return
+    }
+    if (restoreTask.result != null) LifeOsTheme {
+        androidx.compose.material3.AlertDialog(onDismissRequest = app.backupTasks::acknowledge,
+            title = { Text(if (restoreTask.failed) "恢复未完成" else "备份恢复") },
+            text = { Text(restoreTask.result.orEmpty()) },
+            confirmButton = { androidx.compose.material3.TextButton(app.backupTasks::acknowledge) { Text("知道了") } })
     }
     val container = app.lifeContainer
     androidx.compose.runtime.SideEffect(onContentReady)

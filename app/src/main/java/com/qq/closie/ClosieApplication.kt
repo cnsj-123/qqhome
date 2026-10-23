@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.first
  * No Hilt, no manual re-instantiation.
  */
 class ClosieApplication : Application() {
+    internal val backupTasks = com.qq.closie.data.backup.BackupTaskOwner(
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Finishes already-entered review edits when a listener is destroyed; not an acquisition scope. */
     internal val financeReviewEditScope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)

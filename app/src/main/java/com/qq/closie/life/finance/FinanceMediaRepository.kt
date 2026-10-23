@@ -31,6 +31,7 @@ class FinanceMediaRepository(private val db:LifeDatabase,private val finance:Fin
     suspend fun createOcrCandidate(token:FinanceCommandToken,fields:FinanceOcrFields,chosenKind:FinanceProposalKind,
         document:FinanceSelectedDocument,retainReceipt:Boolean):String=
         commands.run(token,"OCR_CANDIDATE",listOf(fields,chosenKind,document,retainReceipt)) {
+            require(fields.currencyCode=="CNY") {"币种未明确或含外币，请核实币种后手动录入"}
             validateDocument(document)
             require(document.mimeType.startsWith("image/") && fields.issue.length<=240 && (fields.amountMinor==null || fields.amountMinor>0))
             require(fields.role!=FinanceFlowRole.REFUND || chosenKind==FinanceProposalKind.INCOME) {"退款需按收入方向复核，并关联原事项"}
@@ -56,6 +57,7 @@ class FinanceMediaRepository(private val db:LifeDatabase,private val finance:Fin
         stillCurrent: () -> Boolean): String =
         commands.run(token, "SCREENSHOT_CANDIDATE", listOf(fields)) {
             require(stillCurrent()) { "截图请求已失效，请重新点击截图识别" }
+            require(fields.currencyCode=="CNY") {"币种未明确或含外币，请核实币种后手动录入"}
             require(fields.amountMinor == null || fields.amountMinor > 0)
             require(fields.amountMinor != null || fields.occurredAt != null || fields.suggestedKind != null)
             val now = clock(); val proposalId = id(); val evidenceId = id()
