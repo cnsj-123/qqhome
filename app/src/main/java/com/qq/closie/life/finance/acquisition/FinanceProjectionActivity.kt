@@ -17,6 +17,11 @@ class FinanceProjectionActivity:ComponentActivity() {
     private var ownsRequest=false
     private var handedToService=false
     private var pending:FinanceProjectionRequest?=null
+    private var receiverRegistered=false
+    private var screenWasLocked=false
+    private val screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){
+        screenWasLocked=true;pending?.cancel();FinanceProjectionRequests.pending?.cancel();finish()
+    }}
     private val consent=registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val request=pending;pending=null
         if(result.resultCode==Activity.RESULT_OK && result.data!=null && request!=null && request.current(this)) {
@@ -34,13 +39,16 @@ class FinanceProjectionActivity:ComponentActivity() {
         if(state!=null || FinanceProjectionRequests.inFlight){finish();return}
         if(!com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture()){finish();return}
         ownsRequest=true;FinanceProjectionRequests.inFlight=true
+        if(android.os.Build.VERSION.SDK_INT>=33)registerReceiver(screenReceiver,IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(screenReceiver,IntentFilter(Intent.ACTION_SCREEN_OFF))
+        receiverRegistered=true
         lifecycleScope.launch {
             try {
                 val fence=RestoreStartupGate.state.value
                 check(fence.restoreGeneration==intent.getLongExtra("restoreGeneration",-1) && fence.canAcquireBusinessLease && FinanceScreenshotPreference.enabled(this@FinanceProjectionActivity))
                 val token=withContext(Dispatchers.IO){LifeContainer.getInstance(this@FinanceProjectionActivity).financeRepository.economics.token()}
                 val request=FinanceProjectionRequest(java.util.UUID.randomUUID().toString(),token,fence.restoreGeneration,resources.configuration.orientation)
-                check(request.current(this@FinanceProjectionActivity))
+                check(!screenWasLocked && request.current(this@FinanceProjectionActivity))
                 pending=request
                 consent.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())
             } catch(e:CancellationException){throw e}
@@ -48,6 +56,7 @@ class FinanceProjectionActivity:ComponentActivity() {
         }
     }
     override fun onDestroy(){
+        if(receiverRegistered){runCatching {unregisterReceiver(screenReceiver)};receiverRegistered=false}
         if(ownsRequest && !handedToService){FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture()}
         super.onDestroy()
     }

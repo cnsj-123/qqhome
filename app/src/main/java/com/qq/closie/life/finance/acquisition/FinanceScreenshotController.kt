@@ -161,7 +161,10 @@ internal class FinanceScreenshotController(
                             frame.recycle()
                             error("当前画面不可采集，请手动录入")
                         }
-                        val raw = withTimeout(12000) { OcrEngine.recognizeText(frame, releaseAfterRecognition = true).getOrThrow() }
+                        var handedToEngine=false
+                        val raw = try {withTimeout(12000) {
+                            handedToEngine=true;OcrEngine.recognizeText(frame, releaseAfterRecognition = true).getOrThrow()
+                        }} finally {if(!handedToEngine)frame.recycle()}
                         withContext(Dispatchers.Default) { FinanceLocalOcrParser.parse(raw) }
                     },
                     releaseUnused = { it.recycle() },

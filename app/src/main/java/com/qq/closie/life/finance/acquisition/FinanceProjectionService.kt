@@ -32,18 +32,25 @@ class FinanceProjectionService:Service() {
     override fun onBind(intent:Intent?)=null
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         if(task!=null){stopSelf(startId);return START_NOT_STICKY}
-        val manager=getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("finance_once_capture","财务单次截图",NotificationManager.IMPORTANCE_LOW))
-        val notification=NotificationCompat.Builder(this,"finance_once_capture").setSmallIcon(R.drawable.ic_finance_review)
-            .setContentTitle("正在完成本次截图识别").setContentText("一次采集后立即结束，不会自动记账").setOngoing(true).build()
-        if(Build.VERSION.SDK_INT>=29)startForeground(604,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        else startForeground(604,notification)
         val request=FinanceProjectionRequests.pending
         FinanceProjectionRequests.pending=null
         @Suppress("DEPRECATION") val consent=if(Build.VERSION.SDK_INT>=33)intent?.getParcelableExtra("consent",Intent::class.java)
             else intent?.getParcelableExtra<Intent>("consent")
         if(request==null || consent==null || request.id!=intent?.getStringExtra("request") || !request.current(this)) {
             FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();stopSelf();return START_NOT_STICKY
+        }
+        try {
+        val manager=getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel("finance_once_capture","财务单次截图",NotificationManager.IMPORTANCE_LOW))
+        val notification=NotificationCompat.Builder(this,"finance_once_capture").setSmallIcon(R.drawable.ic_finance_review)
+            .setContentTitle("正在完成本次截图识别").setContentText("一次采集后立即结束，不会自动记账").setOngoing(true).build()
+            if(Build.VERSION.SDK_INT>=29)startForeground(604,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            else startForeground(604,notification)
+        } catch(_:Exception) {
+            request.cancel();FinanceProjectionRequests.inFlight=false
+            com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture()
+            FinanceAutomationSettings(this).status("本次系统截图授权或前台服务权限已失效，请重新授权")
+            stopSelf();return START_NOT_STICKY
         }
         screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){request.cancel();task?.cancel()}}.also {
             if(Build.VERSION.SDK_INT>=33)registerReceiver(it,IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED)
@@ -72,7 +79,8 @@ class FinanceProjectionService:Service() {
                 val id=withContext(Dispatchers.IO){container.financeRepository.media.createScreenshotCandidate(token,fields){request.current(this@FinanceProjectionService)}}
                 // Projection does not disclose package/window identity. Do not guess a host for an overlay.
                 val proposal=container.financeAutomationRepository.observe().first().proposals.single {it.id==id}
-                FinanceReviewNotifications.post(this@FinanceProjectionService,proposal,true)
+                val notified=FinanceReviewNotifications.post(this@FinanceProjectionService,proposal,true)
+                if(!notified)android.widget.Toast.makeText(this@FinanceProjectionService,"小票已放入账目待确认，请打开核对",android.widget.Toast.LENGTH_LONG).show()
                 FinanceAutomationSettings(this@FinanceProjectionService).status("单次截图已结束，小票已在账目待确认中；请核对后保存")
             } catch(e:TimeoutCancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图或识别超时，未自动记账")}
             catch(e:CancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图已失效，未自动记账");throw e}
