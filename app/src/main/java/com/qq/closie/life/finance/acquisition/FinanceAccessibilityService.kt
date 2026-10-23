@@ -26,6 +26,7 @@ class FinanceAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         VisibleDetailRuntime.connected(true)
+        screenshot.onConnected()
         settingsObserver?.cancel()
         settingsObserver = scope.launch {
             settings.observe().collect { value ->
@@ -51,6 +52,7 @@ class FinanceAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) return
+        if(!VisibleDetailRuntime.state.value.connected) {VisibleDetailRuntime.connected(true);screenshot.onConnected()}
         val config = settings.read()
         val packageName = event.packageName?.toString().orEmpty()
         screenshot.hostEvent(packageName); screenshot.update()
@@ -148,7 +150,7 @@ class FinanceAccessibilityService : AccessibilityService() {
     }
 
     private fun cancelReads() { scheduler.cancel(); sessionTarget = null; shown.clear() }
-    override fun onInterrupt() { cancelReads(); delivery.close(); VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.INTERRUPTED) }
+    override fun onInterrupt() { cancelReads(); screenshot.close(permanent=false); delivery.close(); VisibleDetailRuntime.connected(false); VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.INTERRUPTED) }
     override fun onUnbind(intent: Intent?): Boolean {
         cancelReads(); screenshot.close(permanent = false); delivery.close(); VisibleDetailRuntime.connected(false)
         return super.onUnbind(intent)

@@ -53,7 +53,7 @@ class FinanceMediaV16Test:FinanceRoomTest() {
         assertEquals(2,LifeBackupApplier.snapshot(db).mediaResources.size)
     }
     @Test fun ocrCandidateIsDurableAndIncompleteWithoutKeepingImageOrWritingMoney()=runTest {
-        val fields=FinanceLocalOcrParser.parse("订单合成\n余额 ￥99.00\n支付成功\n￥12.34\n另一个金额 ￥5.00")
+        val fields=FinanceLocalOcrParser.parse("订单合成\n币种：人民币\n余额 ￥99.00\n支付成功\n￥12.34\n另一个金额 ￥5.00")
         val operation=token()
         val id=finance.media.createOcrCandidate(operation,fields,FinanceProposalKind.EXPENSE,document(),false)
         assertEquals(id,finance.media.createOcrCandidate(operation,fields,FinanceProposalKind.EXPENSE,document(),false))

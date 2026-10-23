@@ -3,6 +3,10 @@ package com.qq.closie.life.finance.acquisition
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.ComponentCallbacks
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -36,6 +40,18 @@ internal class FinanceScreenshotController(
     private var bubble: View? = null
     private var capture: Job? = null
     private var disposed = false
+    private var connected = false
+    fun onConnected() {if(!disposed){connected=true;update()}}
+    private val screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){invalidate();removeBubble()}}
+    private val configuration=object:ComponentCallbacks {
+        override fun onLowMemory(){}
+        override fun onConfigurationChanged(config:android.content.res.Configuration){invalidate();removeBubble();update()}
+    }
+    init {
+        if(Build.VERSION.SDK_INT>=33)service.registerReceiver(screenReceiver,IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED)
+        else service.registerReceiver(screenReceiver,IntentFilter(Intent.ACTION_SCREEN_OFF))
+        service.registerComponentCallbacks(configuration)
+    }
     @Volatile private var eventSerial = 0L
     @Volatile private var requestGeneration = 0L
     private var presentedPage: FinanceCapturePage? = null
@@ -59,7 +75,7 @@ internal class FinanceScreenshotController(
 
     fun update() {
         if (disposed) return
-        if (!RestoreStartupGate.isReady || !FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
+        if (!connected || !RestoreStartupGate.isReady || !FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
             invalidate(); removeBubble(); return
         }
         if (Build.VERSION.SDK_INT < 30 || FinanceProjectionRequests.inFlight || FinanceReviewRequests.foreground || capture?.isActive == true) {
@@ -114,7 +130,7 @@ internal class FinanceScreenshotController(
             } finally { @Suppress("DEPRECATION") window.recycle() }
         } finally { @Suppress("DEPRECATION") root.recycle() }
     }
-    private fun valid(expected: FinanceCapturePage) = !disposed && FinanceScreenshotPreference.enabled(service) &&
+    private fun valid(expected: FinanceCapturePage) = !disposed && connected && FinanceScreenshotPreference.enabled(service) &&
         RestoreStartupGate.isReady && Settings.canDrawOverlays(service) && target() == expected
 
     private fun request() {
@@ -215,7 +231,14 @@ internal class FinanceScreenshotController(
         Toast.makeText(service, message, Toast.LENGTH_LONG).show()
     }
     private fun removeBubble() { bubble?.let { runCatching { windows.removeViewImmediate(it) } }; bubble = null }
-    fun close(permanent: Boolean = true) { disposed = permanent; invalidate(); if (permanent) restoreObserver.cancel(); removeBubble() }
+    fun close(permanent: Boolean = true) {
+        connected=false;disposed=permanent;invalidate();removeBubble()
+        if(permanent) {
+            restoreObserver.cancel()
+            runCatching {service.unregisterReceiver(screenReceiver)}
+            service.unregisterComponentCallbacks(configuration)
+        }
+    }
 }
 
 object FinanceScreenshotPreference {

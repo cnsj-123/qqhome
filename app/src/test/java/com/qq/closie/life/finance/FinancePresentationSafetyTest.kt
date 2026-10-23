@@ -46,7 +46,7 @@ class FinancePresentationSafetyTest:FinanceRoomTest() {
     }
     @Test fun foreignAndUnknownOcrCannotCreateCnyCandidatesOrExtraction()=runTest {
         val before=finance.snapshot()
-        for(text in listOf("支付成功\n支付金额:12.34","支付成功\n¥12.34","支付成功\nUSD $12.34","支付成功\n￥12.34 JPY","人民币12.34 USD")) {
+        for(text in listOf("支付成功\n支付金额:12.34","支付成功\n¥12.34","支付成功\n￥12.34","人民币12.34 CHF","支付成功\nUSD $12.34","支付成功\n￥12.34 JPY","人民币12.34 USD")) {
             val fields=FinanceLocalOcrParser.parse(text)
             assertNull(fields.currencyCode);assertNull(fields.amountMinor)
             assertTrue(runCatching {finance.media.createScreenshotCandidate(token(),fields){true}}.isFailure)
@@ -57,7 +57,7 @@ class FinancePresentationSafetyTest:FinanceRoomTest() {
     }
     @Test fun originalOcrTokenIsRejectedAfterActualRestore()=runTest {
         val original=finance.economics.token()
-        val fields=FinanceLocalOcrParser.parse("支付成功\n￥12.34")
+        val fields=FinanceLocalOcrParser.parse("支付成功\n人民币\n￥12.34")
         assertEquals("CNY",fields.currencyCode);assertEquals(1234L,fields.amountMinor)
         LifeBackupApplier.restoreSnapshot(db,LifeBackupApplier.snapshot(db))
         val before=finance.snapshot()
@@ -65,7 +65,7 @@ class FinancePresentationSafetyTest:FinanceRoomTest() {
         assertEquals(before,finance.snapshot())
     }
     @Test fun explicitCnyRangeAndAmbiguousAmountsRemainConservative() {
-        for(text in listOf("退款成功\n退款金额:人民币12.34","支付成功\n支付金额:CNY12.34","支付成功\n支付金额:12.34元","支付成功\n￥12.34")) {
+        for(text in listOf("退款成功\n退款金额:人民币12.34","支付成功\n支付金额:CNY12.34","支付成功\n支付金额:12.34元","支付成功\n人民币\n￥12.34")) {
             val fields=FinanceLocalOcrParser.parse(text)
             assertEquals(text,"CNY",fields.currencyCode);assertEquals(text,1234L,fields.amountMinor)
         }
