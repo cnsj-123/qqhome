@@ -32,6 +32,7 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
     var screenshotEnabled by remember { mutableStateOf(com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)) }
     var error by remember { mutableStateOf<String?>(null) }
     fun refresh() {
+        com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)
         val component = ComponentName(context, FinanceAccessibilityService::class.java).flattenToString()
         connected = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             .orEmpty().split(':').any { ComponentName.unflattenFromString(it)?.flattenToString() == component }
@@ -49,11 +50,11 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
             Switch(screenshotEnabled, { enabled ->
                 if (enabled) screenshotDisclosure = true
                 else { screenshotEnabled = false; com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.set(context, false) }
-            }, enabled = android.os.Build.VERSION.SDK_INT >= 30)
+            })
             Text("显示截图识别悬浮入口")
         }
-        if (android.os.Build.VERSION.SDK_INT < 30) Text("此截图入口需要 Android 11 或以上；可使用选图识别或手动录入。", style = MaterialTheme.typography.bodySmall)
-        Text("需要无障碍服务已连接及悬浮显示许可；截图用途与自动详情读取独立开关。", style = MaterialTheme.typography.bodySmall)
+        Text("无障碍未连接或 Android 8–10：每次由系统请求截图授权。也可在系统快捷设置中添加“财务单次截图”。", style = MaterialTheme.typography.bodySmall)
+        Text("Android 11+ 无障碍已连接时直接单次截图。系统授权后备路径将结果交到待确认，点通知继续核对；不会猜测外部宿主并挂窗。", style = MaterialTheme.typography.bodySmall)
         Text("可见交易详情识别", style = MaterialTheme.typography.titleMedium)
         Text("手动打开详情后，在本机生成待确认小票。与通知发现分别开关，共用账目审核流程。", style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -96,6 +97,7 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
             screenshotEnabled = true
             com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.set(context, true)
             screenshotDisclosure = false
+            com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)
             if (!Settings.canDrawOverlays(context)) runCatching {
                 context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + context.packageName)))
             }.onFailure { error = "请在系统设置中允许 Life OS 悬浮显示" }

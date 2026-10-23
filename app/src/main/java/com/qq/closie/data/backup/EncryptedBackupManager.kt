@@ -52,7 +52,7 @@ object EncryptedBackupManager {
     }
 
     suspend fun restore(context: Context, repo: WardrobeRepository, uri: Uri, db: LifeDatabase,
-        password: CharArray): Result<Unit> = withContext(Dispatchers.IO) {
+        password: CharArray, hooks: RestoreHooks = NoOpRestoreHooks): Result<Unit> = withContext(Dispatchers.IO) {
         val scratch = File(context.cacheDir, "secure_restore_" + UUID.randomUUID())
         try { runCatching {
             check(scratch.mkdirs()) { "无法创建恢复暂存目录" }
@@ -61,7 +61,7 @@ object EncryptedBackupManager {
                 plain.outputStream().use { output -> EncryptedBackupEnvelope.decrypt(input, output, password) }
             }
             // Authentication completed before the existing staging/coordinator sees any bytes.
-            BackupManager.restore(context, repo, Uri.fromFile(plain), db).getOrThrow()
+            BackupManager.restore(context, repo, Uri.fromFile(plain), db, hooks).getOrThrow()
         } } finally { password.fill('\u0000'); scratch.deleteRecursively() }
     }
 

@@ -62,7 +62,7 @@ internal class FinanceScreenshotController(
         if (!RestoreStartupGate.isReady || !FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
             invalidate(); removeBubble(); return
         }
-        if (Build.VERSION.SDK_INT < 30 || FinanceReviewRequests.foreground || capture?.isActive == true) {
+        if (Build.VERSION.SDK_INT < 30 || FinanceProjectionRequests.inFlight || FinanceReviewRequests.foreground || capture?.isActive == true) {
             removeBubble(); return
         }
         if (bubble != null) return
@@ -123,12 +123,13 @@ internal class FinanceScreenshotController(
         val page = target() ?: return status("请停在需要识别的外部页面，再点击截图")
         val fence = RestoreStartupGate.state.value
         if (!fence.canAcquireBusinessLease || !valid(page) || !FinanceReceiptOverlay.beginCapture()) return
+        val preferenceGeneration = FinanceScreenshotPreference.generation
         val generation = ++requestGeneration
         capture = scope.launch {
             val container = LifeContainer.getInstance(service)
-            val current = { isActive && generation == requestGeneration &&
+            val current = { isActive && preferenceGeneration == FinanceScreenshotPreference.generation && generation == requestGeneration &&
                 RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration && valid(page) }
-            val storageCurrent = { isActive && !disposed && generation == requestGeneration &&
+            val storageCurrent = { isActive && !disposed && preferenceGeneration == FinanceScreenshotPreference.generation && generation == requestGeneration &&
                 page.pageGeneration == eventSerial && RestoreStartupGate.isReady &&
                 RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration &&
                 FinanceScreenshotPreference.enabled(service) }
@@ -155,7 +156,7 @@ internal class FinanceScreenshotController(
                         if (canPresent()) {
                             presentedPage = request.page
                             if (!overlay.show(id, userInitiated = true, expectedEpoch = request.token.restoreEpoch,
-                                    canPresent = { presentedPage == request.page && generation == requestGeneration &&
+                                    canPresent = { preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
                                         RestoreStartupGate.state.value.restoreGeneration == request.restoreGeneration && valid(request.page) })) {
                                 val proposal = container.financeAutomationRepository.observe().first().proposals.firstOrNull { it.id == id }
                                 proposal?.let { FinanceReviewNotifications.post(service, it, immediate = true) }
@@ -218,9 +219,12 @@ internal class FinanceScreenshotController(
 }
 
 object FinanceScreenshotPreference {
+    private val revisions=java.util.concurrent.atomic.AtomicLong(0)
+    internal val generation:Long get()=revisions.get()
     private const val KEY = "explicit_screenshot_enabled"
     fun enabled(context: Context) = context.getSharedPreferences("finance_discovery_device", Context.MODE_PRIVATE).getBoolean(KEY, false)
     fun set(context: Context, enabled: Boolean) {
+        revisions.incrementAndGet()
         context.getSharedPreferences("finance_discovery_device", Context.MODE_PRIVATE).edit().putBoolean(KEY, enabled).apply()
     }
 }

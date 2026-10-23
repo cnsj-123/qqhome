@@ -108,8 +108,8 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             if (accounts.count { it.archivedAt == null } < 2 && row == null) Text("转账需要两个不同的真实账户。", style = LifeText.caption, color = colors.muted)
         }
         TextButton({ pickingDate = !pickingDate }, enabled = !state.busy && !continuous) { Text("时间 · $occurredAt") }
-        if (pickingDate) OutlinedTextField(occurredAt, { occurredAt = it }, Modifier.fillMaxWidth(),
-            label = { Text("年-月-日 时:分") }, singleLine = true, enabled = !state.busy && !continuous, textStyle = com.qq.closie.life.ui.theme.LifeType.MonoNumber)
+        if (pickingDate) FinanceDateTimePanel(occurredAt, !state.busy && !continuous,
+            onCancel={pickingDate=false},onApply={occurredAt=it;pickingDate=false})
         OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(),
             label = { Text("备注（可留空）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
         if (kind != FinanceEditorKind.TRANSFER) {

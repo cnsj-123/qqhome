@@ -166,7 +166,7 @@ fun DataSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "所有衣橱数据都只保存在本机（JSON + 私有图片）。建议定期导出完整备份，以防卸载、清除数据或换机时丢失。恢复会替换当前本地数据。",
+                "完整备份覆盖衣橱、账本、关系、草稿与应用内管理的媒体。外部附件只保存引用，换机可能需要重新选择原件。系统权限、采集会话与云授权不会恢复。恢复会替换当前本地数据。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = ClosieColor.InkSecondary
             )

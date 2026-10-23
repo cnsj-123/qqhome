@@ -22,6 +22,14 @@
         </activity>
         <activity android:name=".ui.quickcapture.QuickCaptureActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".ui.quickcapture.CapturePreviewActivity" android:exported="false" />
+        <activity android:name=".life.finance.acquisition.FinanceProjectionActivity" android:exported="false"
+            android:excludeFromRecents="true" android:taskAffinity="" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <service android:name=".life.finance.acquisition.FinanceProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection" />
+        <service android:name=".life.finance.acquisition.FinanceProjectionBubbleService" android:exported="false" />
+        <service android:name=".life.finance.acquisition.FinanceCaptureTileService" android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE" android:label="财务单次截图" android:icon="@drawable/ic_finance_review">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <service android:name=".ui.quickcapture.QuickCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <service android:name=".life.finance.FinanceNotificationListener" android:label="Life OS 支付发现"
             android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">

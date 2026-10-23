@@ -253,13 +253,10 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT).apply {
                     gravity=Gravity.BOTTOM;softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 }
-                val attached = com.qq.closie.data.backup.RestoreStartupGate.withBusinessAccess {
-                    if (!canPresent() || captureBusy || !permitted(FinanceAutomationSettings(context).read()) ||
-                        !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked ||
-                        com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration != restoreGeneration)
-                        false
-                    else { windows.addView(frame,params); true }
-                }
+                val attached = attachFinanceReceipt(restoreGeneration,canPresent,authorized={
+                    !captureBusy && permitted(FinanceAutomationSettings(context).read()) &&
+                        Settings.canDrawOverlays(context) && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+                }) {windows.addView(frame,params)}
                 if (!attached) return@withContext false
                 window=frame;owner=this@FinanceReceiptOverlay;scroll.requestFocus();ready=true
                 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(frame) { _, insets ->

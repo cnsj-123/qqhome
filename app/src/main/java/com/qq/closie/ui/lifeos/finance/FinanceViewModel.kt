@@ -60,7 +60,9 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
     private val editorVersions=FinanceEditorVersions()
     private val draftMutex get()=editorVersions.mutex
 
-    val state: StateFlow<FinanceUiState> = combine(snapshot, filter, error, busy) { data, selection, message, saving ->
+    private val projection = combine(snapshot, filter) { data, selection ->
+        val message:String?=null
+        val saving=false
         if (data == null) FinanceUiState(filter = selection, loading = message == null, busy = saving, error = message)
         else {
             val allRows = FinanceProjection.ledger(data)
@@ -119,7 +121,12 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                 calendarRows = baseFor(FinanceDateRange()).filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) && cashAmountMatches(it) },
                 costRows=costRows)
         }
-    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default)
+    // Busy/error are main-thread presentation state. A large financial projection must never delay
+    // disabling command buttons or re-enable them from an old background calculation.
+    val state:StateFlow<FinanceUiState> = combine(projection,error,busy) { projected,message,saving ->
+        projected.copy(busy=saving,error=message,loading=!projected.loaded && message==null)
+    }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5_000),FinanceUiState())
 
     private var reader: kotlinx.coroutines.Job? = null
     init { reload() }
@@ -191,8 +198,10 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             }
         }
     }
-    fun previewVoid(entryId:String?=null,eventId:String?=null,done:(FinanceChangePreview)->Unit) =
-        mutate({}) { val p=repository.recovery.previewVoid(entryId,eventId);done(p) }
+    fun previewVoid(entryId:String?=null,eventId:String?=null,done:(FinanceChangePreview)->Unit) {
+        var result:FinanceChangePreview?=null
+        mutate({result?.let(done)}) {result=repository.recovery.previewVoid(entryId,eventId)}
+    }
     fun confirmVoid(preview:FinanceChangePreview,done:()->Unit)=mutate(done) { repository.recovery.voidConfirmed(preview) }
     fun previewBatch(ids:Set<String>,edit:FinanceBatchCorrection,done:(FinanceChangePreview)->Unit)=
         mutate({}) {done(repository.recovery.previewBatch(ids,edit))}
