@@ -27,7 +27,15 @@ import kotlinx.coroutines.sync.withLock
 internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope) {
     companion object {
         private var owner: FinanceReceiptOverlay? = null
-        val occupied: Boolean get() = owner != null
+        private var captureBusy = false
+        val occupied: Boolean get() = owner != null || captureBusy
+        fun beginCapture(): Boolean {
+            if (captureBusy) return false
+            captureBusy = true
+            owner?.close()
+            return true
+        }
+        fun endCapture() { captureBusy = false }
     }
     private val windows=context.getSystemService(WindowManager::class.java)
     private val editScope get()=(context.applicationContext as ClosieApplication).financeReviewEditScope
@@ -70,7 +78,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     if (userInitiated && proposal.source == FinanceSource.SCREENSHOT)
                         com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)
                     else prefs.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE && prefs.enhancedReceiptOverlay && prefs.permits(proposal)
-                if(!canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
+                if(captureBusy || !canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
                 val density=context.resources.displayMetrics.density
                 fun dp(n:Int)=(n*density).toInt()
                 val body=LinearLayout(context).apply {
@@ -171,11 +179,11 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 scheduleSave={if(!busy){autosave?.cancel();val draft=current();autosave=editScope.launch {
                     delay(250);try{persist(draft)}catch(e:CancellationException){throw e}catch(_:Exception){message.text="草稿状态已改变，请接力到应用内核对"}
                 }}}
-                fun later(openApp:Boolean=false) {
+                fun later(openApp:Boolean=false, continueQueue:Boolean=true) {
                     if(busy)return
                     setBusy(true);autosave?.cancel();val draft=current()
                     editScope.launch {
-                        try {persist(draft,true);if(openApp)context.startActivity(FinanceReviewNotifications.openIntent(context,id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));close(false, advance = !openApp)}
+                        try {persist(draft,true);if(openApp)context.startActivity(FinanceReviewNotifications.openIntent(context,id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));close(false, advance = !openApp && continueQueue)}
                         catch(e:CancellationException){throw e}
                         catch(_:Exception){setBusy(false);message.text="保存未完成；已保存内容仍保留，请在应用内复核"}
                     }
@@ -220,7 +228,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     gravity=Gravity.BOTTOM;softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 }
                 windows.addView(frame,params);window=frame;owner=this@FinanceReceiptOverlay;scroll.requestFocus();ready=true
-                flushLater={later()};scheduleSave()
+                flushLater={later(continueQueue = false)};scheduleSave()
                 configuration=object:ComponentCallbacks {
                     override fun onLowMemory(){}
                     override fun onConfigurationChanged(newConfig:android.content.res.Configuration) {

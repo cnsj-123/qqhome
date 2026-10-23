@@ -1,28 +1,39 @@
-# V16 product convergence — implementation checkpoint
+# V16 产品整改：集成检查点
 
-Base: 75e14ce4f6402f6d8f2e0dbde2e91e9b26f4bb35
+基线：`75e14ce4f6402f6d8f2e0dbde2e91e9b26f4bb35`
+施工分支：`fix/v16-product-convergence-20261023`
 
-Branch: fix/v16-product-convergence-20261023
+**BLOCKED — NOT READY**。这是可编译整改检查点，尚不是完整产品验收候选。只推独立分支；没有合并 main 或创建 PR。
 
-Status: BLOCKED — NOT READY. This is an engineering checkpoint for CI, not an Owner acceptance release.
+## 已通过的实际 CI
 
-Implemented in this checkpoint:
-- Stable asymmetric, bounded photo poses; explicit Home original-URI intake and dated projection over shared media; no default original copy or invented Live indicator.
-- Canonical viewing/editing/creating routes; missing IDs cannot become new records. Read-only receipts across ledger, relationship, diagnostic and shopping entry links.
-- Compact ledger period strip, separate currency net links, account grid, year/month grid, category SVG registry and persistent icon selection using existing keys.
-- Bounded visible-detail retries and dirty replay; actual service connection and overlay outcomes; independent explicit screenshot consent.
-- API30+ one-tap Accessibility screenshot, API34+ window capture, in-memory local OCR, separate SCREENSHOT provenance and review candidate. No automatic canonical write or image retention.
-- Fixed external receipt action bar, torn paper drawable, contextual fields, date/time pickers and global receipt ownership.
-- System splash with the exported Figma cat; preparation UI can render; business restore gate remains enforced.
-- Real mounted content blur behind the drawer on supported devices, compact folded color swatches, bounded notification reconnection.
+[CI62](https://github.com/cnsj-123/qqhome/actions/runs/39932395211) 对应 `3cc4e6c575a8be9ad2e2a1407a5cddaea31bad39`：
+- KSP、严格已提交 Room Schema 门禁通过。
+- JUnit 677 项，失败 0，跳过 0；固定 662 项契约保留。
+- SQLite 迁移、备份/恢复、财务守恒、D1–D5、实际 JUnit 覆盖与 2000 行指标门禁通过。
+- assembleDebug 通过，产物名包含 build300062；APK、commit-sha.txt、SHA256SUMS.txt 均在同次 CI 产物内。
+- 此后的外观预览、队列接续、分阶段诊断、叶影与照片移除改动，需要新的完整 CI；不得套用 CI62 的通过状态或 APK。
 
-Local checks passed before checkpoint: structural source audit, production v4→v5 SQLite migration, published Room history, fixed test-source inventory (662-method floor preserved). These are not Kotlin compilation or JUnit execution.
+## 本轮实现
 
-Open before READY:
-- Run the exact commit through KSP, real JUnit and assembleDebug in GitHub CI; fix any diagnostics.
-- Native/device verification of 360/390/412dp, large fonts, IME, Back, rotation, permissions, protected windows, capture timeout, and actual supported host page families. DEVICE UNVERIFIED.
-- API26–29 MediaProjection financial capture fallback is not implemented; the new direct screenshot control honestly requires Android11+.
-- Automatic continuation of the deferred receipt queue, more precise parser rejection diagnostics, Home date wheel/popup visual convergence, independent richer Home/function previews, and remaining R2/M01–M13 evidence are not complete.
-- Produce final requirement matrix, patch replay proof, APK SHA256 and clean release evidence only after integration and CI pass.
+- 首页真实原图 URI 选择、持久读授权、显式 Home 用途引用；撤销首页引用保留原图和其他用途。显示日期是用户授权加入首页的日期，不冒充 EXIF 拍摄日期。
+- 稳定、不对称、有界的照片堆：不同尺寸/中心/角度/遮挡；可打断翻动，静态倾斜在减少动态效果下保留；大图按原比例浮在当前页面上。普通照片不显示虚假 LIVE。
+- 首页日历浮层、年月双滚轮、历史日期选择与回到今天；只显示已获 Home 用途授权的财务事实和主动选入的照片。
+- 正式账单查看/编辑/新建分态；账簿、关系、诊断、购物入口先进入只读详情，失效 ID 不会变成新建。
+- 期间收支/结余横条、独立账户净额、紧凑账户网格、长按编辑、财务年月网格、统一 SVG 分类图标和持久选择；恢复账簿筛选入口。
+- 可见详情有限补读和 busy 重放；实际服务连接、分阶段拒绝原因及不含原文的内存记录；同页抑制不充当跨交易身份。
+- Android 11+ 用户点击单次截图；Android 14+ 截指定窗口；本地内存 OCR，SCREENSHOT 来源，明确候选审核，无原图/OCR 原文落盘，无自动正式入账。
+- 截图期间统一收起并暂停 Life OS 小票，单窗口所有权；固定底部操作、撕边纸面、日期时间选择器。排队候选接续时重新检查宿主页、权限、恢复代次；生命周期结束撤去对应回调。
+- 首页/功能页独立实时预览与背景控制，自定义五色默认折叠，窄屏及大字换行，细滑轨小圆拇指；保持原保存/取消/恢复行为。
+- 系统启动纸色与 Figma 猫咪，移除人为首帧等待；准备/恢复状态订阅保留业务恢复屏障。Figma 叶影资源用于真实背景，文字不随背景虚化。
+- 支持设备上抽屉后方真实内容模糊；伙伴手势让子级滚动/照片/输入优先，猫咪也可点击进入伙伴。
 
-The Home photo role is an explicit purpose link owned by the registered typed MediaAsset identity. Its createdAt is the actual Home consent date; it does not claim original EXIF capture time. Revoking the link never deletes shared bytes. Backup schema remains v5.
+## 未完成及验证限制
+
+- **Android 8–10 的财务 MediaProjection 后备路径未实现**。明确展示版本限制；商品 Quick Capture 原链路保留，没有伪装为财务截图。
+- **DEVICE UNVERIFIED**：没有安装本机 JDK/SDK/模拟器；按 Owner 决定用 GitHub CI 编译。未声称验证真实宿主兼容性、Overlay/IME、锁屏/撤权/旋转、受保护窗口、360/390/412dp、大字体或动作帧率。
+- 外部小票目前账户/分类仍有系统 Spinner，完整的同窗子面板交互未全部收口；IME 动态可用高度仍需原生实测及后续修正。
+- M01–M13 与 R2 全量视觉/交互证据、启动耗时和导入性能证据未齐。没有以 HTML 预览或合成节点测试冒充真机验证。
+- 尚不能把这一检查点标记为 READY FOR OWNER DEVICE ACCEPTANCE；后续交付需完整逐条矩阵、原生截图/录屏及最终 SHA 对应的 APK 校验。
+
+数据库仍是单 Room；生产结构 v5、备份 v5、加密封装版本不变。原 662 项契约不能删减或降低门禁。

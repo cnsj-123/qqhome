@@ -31,7 +31,7 @@ fun LifeOsHomeScreen(
     onDrawer: () -> Unit, onCalendar: () -> Unit, onMap: () -> Unit,
     onCompanion: () -> Unit, onCapture: () -> Unit,
     modifier: Modifier = Modifier, onToday: () -> Unit = {},
-    onDateSelected: (LocalDate) -> Unit = {}
+    onDateSelected: (LocalDate) -> Unit = {}, onRemovePhoto: (String) -> Unit = {}
 ) {
     var datePopup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val colors = LocalLifeOsColors.current
@@ -131,7 +131,8 @@ fun LifeOsHomeScreen(
             Text(todayText, Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), style = LifeText.body)
         }, confirmButton = { TextButton({ showTodayText = false }) { Text("收好") } })
     val selected = state.eligibleMedia.firstOrNull { it.id == viewerPhotoId }
-    if (selected != null) LifePhotoViewer(state.eligibleMedia, selected.id, onDismiss = { viewerPhotoId = null })
+    if (selected != null) LifePhotoViewer(state.eligibleMedia, selected.id, onDismiss = { viewerPhotoId = null },
+        onRemove = { onRemovePhoto(it.id); viewerPhotoId = null })
 }
 
 @Composable

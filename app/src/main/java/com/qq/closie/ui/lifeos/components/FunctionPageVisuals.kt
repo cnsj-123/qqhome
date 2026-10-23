@@ -50,7 +50,17 @@ internal fun rememberFunctionPageVisuals(effects: FunctionPageEffects, home: Boo
 @Composable
 internal fun LifePaperBackdrop(effects: FunctionPageEffects, modifier: Modifier = Modifier, home: Boolean = false) {
     val visuals = rememberFunctionPageVisuals(effects, home)
+    val colors = LocalLifeOsColors.current
     Box(modifier.graphicsLayer { clip = true }) {
-        Box(Modifier.fillMaxSize().graphicsLayer { renderEffect = visuals.backdropBlur }.background(visuals.surface))
+        Box(Modifier.fillMaxSize().graphicsLayer { renderEffect = visuals.backdropBlur }.background(visuals.surface)) {
+            if (home) {
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_top), null,
+                    Modifier.align(androidx.compose.ui.Alignment.TopEnd).offset(x = 28.dp, y = (-26).dp).size(190.dp),
+                    alpha = .10f, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_bottom), null,
+                    Modifier.align(androidx.compose.ui.Alignment.BottomStart).offset(x = (-70).dp, y = 28.dp).size(190.dp),
+                    alpha = .10f, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
+            }
+        }
     }
 }

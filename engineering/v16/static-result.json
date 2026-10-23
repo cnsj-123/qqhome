@@ -1,7 +1,7 @@
 {
   "check": "static-structure-only",
   "status": "PASS",
-  "kotlinFilesScanned": 408,
+  "kotlinFilesScanned": 432,
   "registeredEntities": 75,
   "errors": [],
   "compilation": "UNVERIFIED"

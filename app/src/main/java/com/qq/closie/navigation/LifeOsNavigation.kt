@@ -32,7 +32,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
     externalCommand: ExternalNavCommand?, onExternalCommandConsumed: (Long) -> Unit,
     nav: NavHostController, home: HomeUiState, onHomeDateSelected: (LocalDate) -> Unit,
     appearanceViewModel: AppearanceViewModel, onDrawer: () -> Unit,
-    onCapture: () -> Unit, onFileToLibrary: (String) -> Unit) {
+    onCapture: () -> Unit, onFileToLibrary: (String) -> Unit, onRemoveHomePhoto: (String) -> Unit = {}) {
     // Avoid stacking a crossfade on module switching; internal routes retain a short transition.
     NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
         enterTransition = {
@@ -54,7 +54,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         composable(LifeOsRoute.HOME) {
             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
-                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) }, onDateSelected = onHomeDateSelected)
+                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) }, onDateSelected = onHomeDateSelected, onRemovePhoto = onRemoveHomePhoto)
         }
         closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed)
         captureRoutes(nav, container, onCapture, onFileToLibrary)

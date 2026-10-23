@@ -101,7 +101,7 @@ internal class FinanceScreenshotController(
         RestoreStartupGate.isReady && Settings.canDrawOverlays(service) && target() == expected
 
     private fun request() {
-        if (capture?.isActive == true || Build.VERSION.SDK_INT < 30) return
+        if (disposed || capture?.isActive == true || Build.VERSION.SDK_INT < 30 || !FinanceReceiptOverlay.beginCapture()) return
         capture = scope.launch {
             removeBubble(); overlay.close(); hideOtherReceipt()
             try {
@@ -133,6 +133,7 @@ internal class FinanceScreenshotController(
                         !disposed && activeRequestSerial == eventSerial && RestoreStartupGate.isReady && FinanceScreenshotPreference.enabled(service)
                     }
                 }
+                FinanceReceiptOverlay.endCapture()
                 if (valid(target)) {
                     if (!overlay.show(id, userInitiated = true)) {
                         val proposal = container.financeAutomationRepository.observe().first().proposals.firstOrNull { it.id == id }
@@ -143,7 +144,7 @@ internal class FinanceScreenshotController(
             } catch (e: TimeoutCancellationException) { status("截图或识别超时，未自动记账，请重试") }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { status(e.message ?: "截图识别未完成，未自动记账") }
-            finally { activeRequestSerial = null; capture = null; update() }
+            finally { FinanceReceiptOverlay.endCapture(); activeRequestSerial = null; capture = null; update() }
         }
     }
 

@@ -7,8 +7,8 @@
   "minimumContractSha256": "e6f340a4fb3caf723cb80d7cd78fc8ca2445130c0d57ed17f3dac0d3fc01116a",
   "minimumTestFiles": 97,
   "minimumTestMethods": 662,
-  "testFiles": 40,
-  "testMethods": 218,
+  "testFiles": 48,
+  "testMethods": 256,
   "deletedFiles": [],
   "errors": [],
   "bypassFindings": [],
@@ -31,6 +31,47 @@
       ],
       "sha256": "3dbaad1d021df432443b0c641dc70a6c5905c3b173658604b113f0cee48afe21",
       "assertionCalls": 53,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/FinanceRecordDestinationTest.kt",
+      "className": "com.qq.closie.FinanceRecordDestinationTest",
+      "tests": [
+        "corruptOrMissingTargetsNeverRestoreAsNewEntries",
+        "viewingEditingAndCreatingRemainDistinctAcrossRestore"
+      ],
+      "sha256": "a6842beebced28e321136cc5614c272753cc96d7fd947efc973461a36024f93a",
+      "assertionCalls": 4,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/PhotoStackLayoutTest.kt",
+      "className": "com.qq.closie.PhotoStackLayoutTest",
+      "tests": [
+        "rotatedPaperStaysInsideTodayAtAllPhoneWidths",
+        "posesDoNotFormACenteredFanOrAnEqualOffsetQueue"
+      ],
+      "sha256": "7bf9a54095a89c6b8c277b2528b18561ea75b9d50e1e4990fc53e2edd985f2ae",
+      "assertionCalls": 7,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/VisibleDetailSchedulerTest.kt",
+      "className": "com.qq.closie.VisibleDetailSchedulerTest",
+      "tests": [
+        "earlyEmptyRootGetsBoundedTrailingReadsWithoutMoreEvents",
+        "eventDuringBusyReadReplaysOnceAfterCompletion",
+        "latestWindowCancelsPendingOldWindowAndCancellationStopsAllRetries",
+        "successDoesNotPollAndAnotherExplicitEventCanReadAgain"
+      ],
+      "sha256": "b21797c8953416ef3f0bb9d6263a529d0cc9accc0d4bf0ef45dcbdf9ad4237a7",
+      "assertionCalls": 8,
       "realRoom": false,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -69,7 +110,7 @@
         "malformedHeaderIsRejectedBeforeAnUnboundedKdfCanRun",
         "authenticatedSegmentsRejectTruncationDuplicationOrderAndTrailingBytes"
       ],
-      "sha256": "5f543589fe0fd143e76bd1575209020848ffa319d17bd72e3a68662f8b2b66eb",
+      "sha256": "1167287383625475b3d0a2046c4b884b246575e7d4ff3106dc8d7da8fbebb5fd",
       "assertionCalls": 13,
       "realRoom": false,
       "runtime": "UNVERIFIED",
@@ -83,7 +124,7 @@
         "verifiedManagerArchiveRestoresTypedUnknownToAnotherDatabaseAndRevokesGrant",
         "inaccessibleOutputReportsFailureWithoutChangingFactsAndErasesPassword"
       ],
-      "sha256": "cc72cc16f22b2cc95291a28dc5fce979ab11b08feffa730c8e6d19fb29d4f62d",
+      "sha256": "f03bbb90c800310cffc7e81a8f3fae095545a76288bf95c8b740a4c79f2f1d00",
       "assertionCalls": 26,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -158,7 +199,7 @@
         "repositoryTransaction_blocksBeginRestoreForItsWholeDuration",
         "inFlightEmission_racingBeginRestore_isNotDelivered"
       ],
-      "sha256": "4fa3ce4d30021e87e19c3fc65b58b29f9eaaa752d3565d76c72f6f2f4d12b69b",
+      "sha256": "e1263d7cdcbe02cb84b6a43d2e67b98bdfd76eb21bde45fc42ae101cd670d681",
       "assertionCalls": 78,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -171,7 +212,7 @@
         "T09_defaultOffAndSeparatePurposeScopeStopProviderBeforeData",
         "T10_inFlightRevocationAndHostileResultCannotWriteOrExpandScope"
       ],
-      "sha256": "67cb3dc38542c81e248e5b6c2f3a1726f706722bbf14de651423b07c8103e493",
+      "sha256": "a7c8893e5b440ca34a7417543b329f8a1333f5fffb49101b0d2f2327c73f847b",
       "assertionCalls": 9,
       "realRoom": false,
       "runtime": "UNVERIFIED",
@@ -219,7 +260,7 @@
         "exactArithmeticAndPrecedence",
         "rejectsRoundingOverflowBadInputAndExecutableText"
       ],
-      "sha256": "b86259a3e82092b00c2ed1bb6daf88679bbdea30ab680006eeb03285096c525e",
+      "sha256": "c0a305dfa68dafd9084f130fb3e04d20c215b5f23ae2717321c6beb14e15fa20",
       "assertionCalls": 6,
       "realRoom": false,
       "runtime": "UNVERIFIED",
@@ -266,7 +307,7 @@
         "explicitReimbursementTemplateKeeps500Cash50CostAnd450ReceivableThroughTwoReceipts",
         "reimbursementSplitsAcrossFundingAndRejectsTooManySharesBeforeReplacingDraft"
       ],
-      "sha256": "9561662e76c4fb8baa90d164f9a3d0e388d2c629b403bc681e7eff443a85430a",
+      "sha256": "4013107b7484571fcde23207d88e972c16a33b7dfc30e001ba6630f3e7bf3e74",
       "assertionCalls": 32,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -280,7 +321,7 @@
         "duplicateTargetAndStalePlanEditAreRejectedAtomically",
         "closedCumulativeTargetsWithEqualClockArePresentedSeparatelyAndNeverAdded"
       ],
-      "sha256": "7ebf9fd65a581d14520fec9c610ec5e26511ba7d0bfb0e286bb1effcc2622a8b",
+      "sha256": "90469fa6a6aa9ee7fe622a1563fdbe7a81bbf0a0f3dd8076384015b08b350153",
       "assertionCalls": 23,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -317,7 +358,7 @@
         "ordinaryRelinkCannotBypassTypedRefundAndEditingKeepsConfirmedAllocationIdentity",
         "assigningAlreadyReceivedRefundChangesCostWithoutAddingOrRewritingCash"
       ],
-      "sha256": "d48b38f54ba456db0c268a734d4369320a723bbb0daea824c9d65d5c077bae54",
+      "sha256": "efc48bc0da904b83e0ba8c8b96fe0a996f2e0041887eab24a5319dd2890e5adb",
       "assertionCalls": 47,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -330,7 +371,7 @@
         "balanceAndIdentifierAreNotTransactionAmounts",
         "ambiguousFactsAndDateWithoutTimeRemainUnknown"
       ],
-      "sha256": "a8642d789014c6ab3cc63434a3e9fe20e663bfe5d85713e29995d111f144f4b6",
+      "sha256": "b484e6f44553d3178d925a657e91452519e9a9da32fc630a4a004b838b4af01c",
       "assertionCalls": 7,
       "realRoom": false,
       "runtime": "UNVERIFIED",
@@ -346,7 +387,7 @@
         "ocrCandidateIsDurableAndIncompleteWithoutKeepingImageOrWritingMoney",
         "explicitlyRetainedOcrReceiptUsesSameMediaAndRefundCannotBecomeExpense"
       ],
-      "sha256": "00870bbc0c565828d69a36c8fae53949af1029b67e0f3dd48916348a12087057",
+      "sha256": "fe891e16372799d3fce85e5ecc79285e53eedb30080e15d5ef47d959e80b80b9",
       "assertionCalls": 35,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -386,7 +427,7 @@
         "csvProtectsTextFormulasAndKeepsNumericNegativeAdjustmentsNumeric",
         "emptyPortableArchiveContainsTypedFactsAndSeparateReadableTables"
       ],
-      "sha256": "22807f30432ed65ce34da0bc83841cbe7a71c8e5bc3a7b15be911aa0b4b6ff4b",
+      "sha256": "6d93259cbad765e72c13837b74945a224c4c5776c502763eb6ab96b58d6a63d0",
       "assertionCalls": 5,
       "realRoom": false,
       "runtime": "UNVERIFIED",
@@ -402,7 +443,7 @@
         "olderRestoreRetiresEvidenceWithNewerIdentityAndBindingProofVersions",
         "finalEditedDateMustBelongToCapturedBindingAndExplicitAdoptionUpdatesSession"
       ],
-      "sha256": "10a81d254cfd6c18060bf87cd5c03798b2c3524d14d45d331fb75c86eae1a0fd",
+      "sha256": "37be1d11400a42675ec44076c0c79aabccb6fb121684782dcaef0e6463d93bb6",
       "assertionCalls": 21,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -415,7 +456,7 @@
         "removingPurchaseAttributionRequiresExplicitReleaseOfRefundsAndNeverChangesCashOrEventCost",
         "anotherEventOnSameLineCannotCoverThisEventsRefundAfterCorrection"
       ],
-      "sha256": "abad78c3f03bab75021b78257ea8af2f2389f5cbc03ed7388297de5fd0fc434c",
+      "sha256": "ab5799047ec134bd5d22c3b3ebccd57e797308ce3bec68b5e1c800c7fe327c6b",
       "assertionCalls": 18,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -430,7 +471,7 @@
         "eventGrantDoesNotDiscloseWholeSharedCashEntry",
         "unknownLegacyShareNeverBecomesConfirmedZeroOnHome"
       ],
-      "sha256": "4ef53ee12a7e0e5a9cbb7d639455acd6cc760c7b9a56d7de5a96fd46c05e38a0",
+      "sha256": "8521ead7c9ce463dd234b7fe25dcf5dbe4966ac0a019391630ce44975c05c734",
       "assertionCalls": 18,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -449,7 +490,7 @@
         "datePostingOverlappingAnchorIsUnknownAndOnlyWholeOutsideDaysCanBeExcluded",
         "dateObservationOverlappingAnchorRemainsIncompleteEvenWithoutEntries"
       ],
-      "sha256": "30bcccec89e8d03c15156489b0b523f88efc4272e8447d9108ab2857b7fd75ce",
+      "sha256": "cb65f33896b40d2834eb7ca3db351414e8aa8516d06fd7378558cf6876f8d384",
       "assertionCalls": 53,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -463,7 +504,7 @@
         "batchPreviewBindsPayloadAndConflictHasNoPartialCommit",
         "successfulBatchCanRecoverBeforeAnUnrelatedNewEntry"
       ],
-      "sha256": "d03a47392fcc81a362d42eec67b605c1ac990ee81ddb7a7728f6e234cff8e8f0",
+      "sha256": "35025a920166f9d56ebf4cca8bb234e2717ed7a3b9096049a2a18ad1f0498e18",
       "assertionCalls": 13,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -482,7 +523,7 @@
         "visibleRefundCannotBeLinkedAsTransferOrAsUnrelatedOrdinaryIncome",
         "cnyCandidateCannotBeLinkedToAnotherCurrency"
       ],
-      "sha256": "b3f4eea46b10644576b7e82e361305639ab64da231be11dabc6453d16a0432fe",
+      "sha256": "5477ea3285525fb55d572b392a49a2c5b8c1e8076c23192f123e7b16b37b5292",
       "assertionCalls": 36,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -499,13 +540,27 @@
       "bypass": []
     },
     {
+      "file": "app/src/test/java/com/qq/closie/life/finance/FinanceScreenshotV16Test.kt",
+      "className": "com.qq.closie.life.finance.FinanceScreenshotV16Test",
+      "tests": [
+        "screenshotCreatesOnlyOneTypedCandidateAndNeverKeepsAnImageOrWritesCash",
+        "cancelledOrEmptyCaptureDoesNotChangeDatabase",
+        "screenshotSourceAndIncompleteReviewSurviveBackupWithoutInventingTime"
+      ],
+      "sha256": "a657e42ba8a41942db7444673948d01ab9d665c7fadb7a3c9219de16d755e9c9",
+      "assertionCalls": 17,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
       "file": "app/src/test/java/com/qq/closie/life/finance/FinanceShareV16Test.kt",
       "className": "com.qq.closie.life.finance.FinanceShareV16Test",
       "tests": [
         "shareGrantDoesNotInheritFieldsOrScopeFromHomeOrOtherShareGrants",
         "changedFactRevocationExpiryAndRestoreAllRejectStaleSharePreview"
       ],
-      "sha256": "3a4c96280e747c411878d4172efbc98a89e55dfee5e8771966bb41fa1628bf52",
+      "sha256": "5d155427b0a12836e14d3fead6d4150e300115d2a798d35bb652bec260584f89",
       "assertionCalls": 12,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -517,7 +572,7 @@
       "tests": [
         "committedTwoThousandRowsImportBalancesCostsNetFiltersAndRepeatAreConsistent"
       ],
-      "sha256": "0e6e76a071e030f7fef3b2a6b21fc98849fa669059fc76c3402dfdd44db07659",
+      "sha256": "6cd7801181318606fd0bf8c684f458b45853d43d37f8d358b181cbfaded3e35c",
       "assertionCalls": 28,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -543,7 +598,7 @@
         "restorationRetiresPolicyAndSelfCanBeUsedAgain",
         "T11_encryptedTypedPayloadRestoresOnAnotherDatabaseWithGrantsRevoked"
       ],
-      "sha256": "7c3efd58983e5b2127b9193a7cbf41cf1dd224ead2263ab2609c3f5ad73817d6",
+      "sha256": "027ed9050de1b9e4a84c204373aae2d3d83f9039cfe0827f603020ebb7cc097f",
       "assertionCalls": 83,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -569,7 +624,7 @@
         "allPublishedVersionsUpgradePopulatedFactsWithoutChangingAnchorOrIdentity",
         "populatedV4UpgradeStoresCivilDatesWithoutRewritingOldTimesAnchorMoneyOrIds"
       ],
-      "sha256": "6a0c16940a8f388028c8621d5f9308bb62b75fb1dbe56f7f38fa5cf840eb2977",
+      "sha256": "6ddcce71adda8aaebee65314717f2968563746e181010f71b7ea976dc55bdaba",
       "assertionCalls": 24,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -588,9 +643,53 @@
         "reconfirmationUsesMonotonicOrderEvenWithIdenticalWallClock",
         "cancellationAfterCommitCannotStrandAutosaveAtOldExpectedRevision"
       ],
-      "sha256": "5994945f5c8d40333462c77808369e0eeac2d46048146b1099f0123daea72192",
+      "sha256": "de908b889634323ff851a9b48dba3d0b395f0bd7d2407264514089afb6b49057",
       "assertionCalls": 51,
       "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/HomePhotoReferenceV16Test.kt",
+      "className": "com.qq.closie.life.finance.HomePhotoReferenceV16Test",
+      "tests": [
+        "explicitlySharedOriginalIsReusedAndDailyGrantDoesNotCopyBytes",
+        "removingHomeGrantPreservesSharedAssetAndBackupRoundTripKeepsRemainingGrant"
+      ],
+      "sha256": "4af2cb8ff56d4b903f4227c2e329a99b37d9af551dec91d00c7fc9c0cb386e98",
+      "assertionCalls": 14,
+      "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/life/finance/HostDetailAdaptersTest.kt",
+      "className": "com.qq.closie.life.finance.HostDetailAdaptersTest",
+      "tests": [
+        "diagnosticsSeparateMissingFingerprintDuplicateFieldAndTreeLimitWithoutRawText",
+        "sevenHostAdaptersRouteOnlyAfterExplicitOptIn",
+        "hostBusinessChannelAndCanonicalAccountAreFourDifferentThings",
+        "finalHeaderIgnoresDiscountsAndOriginalOrderAmount",
+        "unsignedFamilyCardPaymentIsExpenseNotIncome",
+        "taobaoFinalOrderTotalWinsOverItemPriceAndDiscount",
+        "jdBillingBaitiaoIsExplicitChannelAndRepaymentIsNotIncome",
+        "jdBaitiaoAcceptsSeparateStatusAndChannelChildren",
+        "jdBaitiaoAcceptsOnlyAllowlistedMergedValuesWithWhitespaceNormalization",
+        "jdBaitiaoTerminologyInUnrelatedTextDoesNotBecomeChannel",
+        "jdChannelSubtreeWithMultipleChannelsOrPrivateLabelsFailsClosed",
+        "embeddedServicesDoNotBecomeNewHosts",
+        "unsignedYieldNeedsExplicitYieldSemanticsAndStrongReference",
+        "meituanWrappedReferenceAndMonthlyChannelRemainMinimized",
+        "pinduoduoOnlyUsesOrderTimeAndExcludesLogistics",
+        "refundGetsRefundRoleAndSeparateIdentityFromOriginalPayment",
+        "missingReferenceMissingTimeAndSummaryRefundFailClosed",
+        "ambiguousRowsHeadersAndFlatWholePagesFailClosed",
+        "invisibleEditableAndOverflowTreesAreNeverEvidence",
+        "wechatFamiliesUseStatusTimeReferenceAndSignedFinalAmount"
+      ],
+      "sha256": "d4113dcdbff571d86dd16576c110af30febdb77c18bd9fdd70a55166a67c7e37",
+      "assertionCalls": 67,
+      "realRoom": false,
       "runtime": "UNVERIFIED",
       "bypass": []
     },
@@ -608,8 +707,22 @@
         "drawerFinanceOpensRealLedgerAndReturnsToStableHome",
         "financeRootRightSwipeOpensShellFunctionPageAndBackKeepsFinance"
       ],
-      "sha256": "f6079f94d65519af7b89c43ad997b2ed7777e4c05dede48a3195d539d4720287",
-      "assertionCalls": 45,
+      "sha256": "8861472e2fe61eec7a61aa6ab997a641659ce67fa2d6843299cf5925591becd6",
+      "assertionCalls": 52,
+      "realRoom": false,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/finance/DeferredReceiptQueueTest.kt",
+      "className": "com.qq.closie.ui.lifeos.finance.DeferredReceiptQueueTest",
+      "tests": [
+        "duplicateCandidateDoesNotReplaceCurrentEditingAndOnlyOneNextSurfaceOpens",
+        "staleHostAndRevokedSourceCannotSummonQueuedSurface",
+        "teardownRemovesOnlyThatAcquisitionOwnersCallbacks"
+      ],
+      "sha256": "e8b6024496511d7a25a151c0ab8082030f79eed351b8e77703e9ceca847bc2f5",
+      "assertionCalls": 5,
       "realRoom": false,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -620,7 +733,7 @@
       "tests": [
         "releaseDocksAtOneStopAndVelocityMovesOnlyToNextAvailableStop"
       ],
-      "sha256": "ba4133263844ec3f1b0fc07aec92d80298cebd275ffe713eddf84d6cb4b805fd",
+      "sha256": "6675053cbb075ad9b76bf552a95724879c8cdf6b3521d035d0c73b39d1e668cc",
       "assertionCalls": 6,
       "realRoom": false,
       "runtime": "UNVERIFIED",
@@ -634,7 +747,7 @@
         "intervalDrilldownUsesExactOpenClosedBoundsAndKeepsPostingSeparateFromCash",
         "actualAccountFilterKeepsEveryVisibleRunningBalanceIdenticalToCompleteRegister"
       ],
-      "sha256": "214f33a854a30b6a2ba1966f19923b9208b00e9c044bd3e40c394027f7d8951f",
+      "sha256": "8b01cde7af914090add253ca563b06f00b630aaa511184a6b8837879e10b7f1f",
       "assertionCalls": 12,
       "realRoom": true,
       "runtime": "UNVERIFIED",
@@ -651,8 +764,8 @@
         "creditRepaymentEntryUsesCorrectAccountLegsAndDoesNotCreateAnotherConsumption",
         "historicalMonthAndSingleDayCountSurviveRetapAndInsightsRangeChange"
       ],
-      "sha256": "05a0ca86d12d8605a277a0c22adcc5c86f68bbce8560a3a1ff9cc9c34a3f48d3",
-      "assertionCalls": 90,
+      "sha256": "c64d60e305a7fe82f865c9db4c07d46a1c016ea37b6c421634c21fd645c1e4a8",
+      "assertionCalls": 107,
       "realRoom": true,
       "runtime": "UNVERIFIED",
       "bypass": []
@@ -664,9 +777,22 @@
         "ticksAndJournalNotificationsDoNotRecomputeWhileFinancialEditsAndRevocationDo",
         "restoreGateClearsHomeAndNewCollectorReadsRevokedRestoredGrants"
       ],
-      "sha256": "2cc7c2eca08855e35dfaf52998516fb533d1cf34326c659b32bad126b4f71f50",
+      "sha256": "0ea31d8b7623b2b3522f5f299f0ca9f7dcacb8a1d5634a8970ff997920559a04",
       "assertionCalls": 17,
       "realRoom": true,
+      "runtime": "UNVERIFIED",
+      "bypass": []
+    },
+    {
+      "file": "app/src/test/java/com/qq/closie/ui/lifeos/home/HomeDatePopupTest.kt",
+      "className": "com.qq.closie.ui.lifeos.home.HomeDatePopupTest",
+      "tests": [
+        "selectingHistoricalDayClosesPopupAndRequestsThatExactHomeDate",
+        "cancellingYearMonthWheelDoesNotChangeHomeSelection"
+      ],
+      "sha256": "5a466e0a915bc87ab5aaa95b6db22b2f920d18ddfe87436beb099d77faa65ed5",
+      "assertionCalls": 6,
+      "realRoom": false,
       "runtime": "UNVERIFIED",
       "bypass": []
     }

@@ -149,7 +149,14 @@ fun LifeOsRoot(
                 ) {
                     LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,
                         shellViewModel::selectDate, appearanceViewModel, ::openDrawer,
-                        onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary)
+                        onCapture = { captureMenu = true }, onFileToLibrary = intake::fileToLibrary,
+                        onRemoveHomePhoto = { id -> scope.launch {
+                            try {
+                                lifeContainer.homePhotoRepository.remove(id)
+                                android.widget.Toast.makeText(photoContext, "已从首页移除，原图保留", android.widget.Toast.LENGTH_SHORT).show()
+                            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (_: Exception) { android.widget.Toast.makeText(photoContext, "未能移除，请刷新后重试", android.widget.Toast.LENGTH_LONG).show() }
+                        } })
                     // BoxWithConstraints subcomposes this slot during layout. Register after
                     // NavHost here, not in the earlier parent composition outside LifeFunctionPages.
                     // Gesture leases cannot veto Back on an already-open drawer.

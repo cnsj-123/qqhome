@@ -25,7 +25,7 @@ import com.qq.closie.ui.lifeos.theme.*
 
 /** A native dialog window over Home. Back dismisses this window before the root/navigation stack. */
 @Composable
-fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss: () -> Unit) {
+fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss: () -> Unit, onRemove: ((LifeMediaUi) -> Unit)? = null) {
     if (photos.isEmpty()) return
     var index by rememberSaveable(initialPhotoId) { mutableIntStateOf(photos.indexOfFirst { it.id == initialPhotoId }.coerceAtLeast(0)) }
     val current = PhotoStackInteraction.nextIndex(index, 0, photos.size)
@@ -57,6 +57,7 @@ fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss
                 if (photo.motionAvailable) Text("动态组件已关联 · 播放将在后续接入", style = LifeText.caption, color = colors.muted)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton(onClick = { index = PhotoStackInteraction.nextIndex(current, -1, photos.size) }, enabled = photos.size > 1) { Text("上一张") }
+                    if (onRemove != null) TextButton(onClick = { onRemove(photo) }) { Text("从首页移除") }
                     TextButton(onClick = { index = PhotoStackInteraction.nextIndex(current, 1, photos.size) }, enabled = photos.size > 1) { Text("下一张") }
                 }
             }
