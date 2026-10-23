@@ -88,12 +88,24 @@ class FinanceAccessibilityService : AccessibilityService() {
                     VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.WINDOW_CHANGED); return null
                 }
             } finally { @Suppress("DEPRECATION") window.recycle() }
-            val fields = VisibleDetailReader.read(root, provider.adapter)
-            val result = fields?.let { provider.adapter.parse(it, System.currentTimeMillis()) }
-            return result?.takeIf { it.recognition == DetailRecognition.RECOGNIZED }?.evidence
-                ?.takeIf { it.providerKey == provider.key }.also {
-                    if (it == null) VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.PAGE_UNSUPPORTED)
-                }
+            val inspected = VisibleDetailReader.inspect(root, provider.adapter)
+            if (inspected.fields == null) {
+                VisibleDetailRuntime.report(when (inspected.rejection) {
+                    DetailReadRejection.TREE_LIMIT -> VisibleDetailRuntime.Phase.TREE_LIMIT
+                    DetailReadRejection.AMBIGUOUS_ROWS -> VisibleDetailRuntime.Phase.AMBIGUOUS_ROWS
+                    else -> VisibleDetailRuntime.Phase.NOT_DETAIL
+                })
+                return null
+            }
+            val result = provider.adapter.parse(inspected.fields, System.currentTimeMillis())
+            val found = result.takeIf { it.recognition == DetailRecognition.RECOGNIZED }?.evidence
+                ?.takeIf { it.providerKey == provider.key }
+            if (found == null) VisibleDetailRuntime.report(when (result.recognition) {
+                DetailRecognition.LOW_CONFIDENCE -> VisibleDetailRuntime.Phase.LOW_CONFIDENCE
+                DetailRecognition.NOT_A_DETAIL_PAGE -> VisibleDetailRuntime.Phase.NOT_DETAIL
+                else -> VisibleDetailRuntime.Phase.PAGE_UNSUPPORTED
+            })
+            return found
         } catch (_: Exception) {
             VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_NOT_READY); return null
         } finally { @Suppress("DEPRECATION") root.recycle() }
@@ -119,7 +131,12 @@ class FinanceAccessibilityService : AccessibilityService() {
                 val live = evidence(target, provider)
                 if (live != null && live.referenceDigest == recognized.referenceDigest &&
                     live.amountMinor == recognized.amountMinor && live.occurredAt == recognized.occurredAt &&
-                    live.kind == recognized.kind && live.role == recognized.role) delivery.proposalAvailable(proposal.id)
+                    live.kind == recognized.kind && live.role == recognized.role) delivery.proposalAvailable(proposal.id) {
+                        allowed(target) && evidence(target, provider)?.let { fresh ->
+                            fresh.referenceDigest == recognized.referenceDigest && fresh.amountMinor == recognized.amountMinor &&
+                                fresh.occurredAt == recognized.occurredAt && fresh.kind == recognized.kind && fresh.role == recognized.role
+                        } == true
+                    }
             }
             true
         } catch (cancelled: CancellationException) { throw cancelled }

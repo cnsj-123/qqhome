@@ -26,33 +26,29 @@ import com.qq.closie.ui.lifeos.theme.*
 
 @Composable
 internal fun FunctionEffectControls(effects: FunctionPageEffects, onChange: (FunctionPageEffects) -> Unit,
-    enabled: Boolean = true) {
+    enabled: Boolean = true, home: Boolean = false) {
     val colors = LocalLifeOsColors.current
-    Text("功能页效果", Modifier.padding(top = 12.dp), style = LifeText.title)
-    Text("此处仅调整草稿，点击顶部“保存主题”后生效。", style = LifeText.caption, color = colors.muted)
-    listOf("色彩氛围" to effects.atmosphere, "不透明度" to effects.opacity, "功能页背景虚化" to effects.blur, "首页背景虚化" to effects.homeBlur,
-        "功能页渐变强度" to effects.gradient, "首页渐变强度" to effects.homeGradient).forEachIndexed { index, (label, value) ->
+    val fields: List<Triple<String, Int, (Int) -> FunctionPageEffects>> = if (home) listOf(
+        Triple("首页背景虚化", effects.homeBlur, { effects.copy(homeBlur = it) }),
+        Triple("首页渐变强度", effects.homeGradient, { effects.copy(homeGradient = it) })
+    ) else listOf(
+        Triple("色彩氛围", effects.atmosphere, { effects.copy(atmosphere = it) }),
+        Triple("不透明度", effects.opacity, { effects.copy(opacity = it) }),
+        Triple("功能页背景虚化", effects.blur, { effects.copy(blur = it) }),
+        Triple("功能页渐变强度", effects.gradient, { effects.copy(gradient = it) })
+    )
+    fields.forEach { (label, value, update) ->
         Row { Text(label, Modifier.weight(1f)); Text(value.toString(), style = LifeText.caption) }
-        ThinAppearanceSlider(value.toFloat(), { next -> onChange(when (index) {
-            0 -> effects.copy(atmosphere = next.toInt())
-            1 -> effects.copy(opacity = next.toInt())
-            2 -> effects.copy(blur = next.toInt())
-            3 -> effects.copy(homeBlur = next.toInt())
-            4 -> effects.copy(gradient = next.toInt())
-            else -> effects.copy(homeGradient = next.toInt())
-        }) }, valueRange = 0f..100f, enabled = enabled)
+        ThinAppearanceSlider(value.toFloat(), { onChange(update(it.toInt())) },
+            valueRange = 0f..100f, enabled = enabled)
     }
-    listOf(false, true).forEach { home ->
-        Box(Modifier.fillMaxWidth().height(64.dp).background(colors.paper)) {
-            com.qq.closie.ui.lifeos.components.LifePaperBackdrop(effects, Modifier.fillMaxSize(), home)
-            Column(Modifier.padding(12.dp)) {
-                Text(if (home) "首页 · 即时预览" else "功能页 · 即时预览", style = LifeText.caption, color = colors.ink)
-                Text("背景调整，文字保持清晰", style = LifeText.caption, color = colors.inkSecondary)
-            }
-        }
-    }
-    Text("柔化作用于背景；设备不支持模糊时使用轻量色调柔化。", style = LifeText.caption, color = colors.muted)
-    TextButton({ onChange(FunctionPageEffects()) }, enabled = enabled) { Text("恢复推荐值") }
+    Text("仅改变背景，文字保持清晰。预览尚未保存。", style = LifeText.caption, color = colors.muted)
+    TextButton({
+        val defaults = FunctionPageEffects()
+        onChange(if (home) effects.copy(homeBlur = defaults.homeBlur, homeGradient = defaults.homeGradient)
+            else effects.copy(atmosphere = defaults.atmosphere, opacity = defaults.opacity,
+                blur = defaults.blur, gradient = defaults.gradient))
+    }, enabled = enabled) { Text("恢复推荐值") }
 }
 
 /** Local HSV editor. The plane and sliders are equivalent inputs; HEX is optional precision. */
@@ -116,6 +112,9 @@ private fun ThinAppearanceSlider(value: Float, onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f, enabled: Boolean = true) {
     val colors = LocalLifeOsColors.current
     Slider(value, onValueChange, valueRange = valueRange, enabled = enabled,
+        thumb = {
+            Canvas(Modifier.size(20.dp)) { drawCircle(if (enabled) colors.accent else colors.muted, radius = 6.dp.toPx()) }
+        },
         track = { state ->
             Canvas(Modifier.fillMaxWidth().height(4.dp)) {
                 val fraction = ((state.value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)

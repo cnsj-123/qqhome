@@ -73,6 +73,11 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
         Text("系统无障碍：${if (connected) "已允许" else "未允许"}", style = MaterialTheme.typography.bodySmall)
         Text("详情服务：" + if (runtime.connected) "已连接" else "未连接", style = MaterialTheme.typography.bodySmall)
         Text("最近读取：" + runtime.phase.label, style = MaterialTheme.typography.bodySmall)
+        var stagesOpen by remember { mutableStateOf(false) }
+        TextButton({ stagesOpen = !stagesOpen }) { Text(if (stagesOpen) "收起读取过程" else "查看读取过程") }
+        if (stagesOpen) runtime.recent.takeLast(8).forEach { stage ->
+            Text(java.time.Instant.ofEpochMilli(stage.timestamp).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withNano(0).toString() + " · " + stage.phase.label, style = MaterialTheme.typography.bodySmall)
+        }
         TextButton({
             try { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             catch (_: Exception) { error = "请在系统设置中搜索“无障碍”，选择 Life OS 可见交易详情" }

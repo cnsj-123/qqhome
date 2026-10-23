@@ -25,7 +25,10 @@ import kotlinx.coroutines.sync.withLock
 
 /** One editable surface at a time. New proposals remain in the durable inbox and notifications. */
 internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope) {
-    private companion object { var owner: FinanceReceiptOverlay? = null }
+    companion object {
+        private var owner: FinanceReceiptOverlay? = null
+        val occupied: Boolean get() = owner != null
+    }
     private val windows=context.getSystemService(WindowManager::class.java)
     private val editScope get()=(context.applicationContext as ClosieApplication).financeReviewEditScope
     private var window:View?=null
@@ -44,7 +47,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     private var screenReceiver:BroadcastReceiver?=null
     private var configuration:ComponentCallbacks?=null
 
-    suspend fun show(id:String, userInitiated:Boolean=false):Boolean {
+    suspend fun show(id:String, userInitiated:Boolean=false, expectedEpoch:Long?=null, canPresent:()->Boolean={true}):Boolean {
         if(!Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
         return try {
             val container=LifeContainer.getInstance(context)
@@ -52,6 +55,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
             val proposal=automation.proposals.singleOrNull {it.id==id && it.status in setOf(FinanceProposalStatus.ACTIVE,FinanceProposalStatus.SNOOZED)} ?: return false
             val snapshot=container.financeRepository.snapshot()
             val epoch=snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L
+            if (expectedEpoch != null && epoch != expectedEpoch) return false
             val saved=snapshot.v16?.reviewSessionRows.orEmpty().singleOrNull {it.proposalId==id && it.voidedAt==null && it.state!=FinanceReviewState.COMPLETED}
             val safe=FinanceProposalPrivacy.sanitize(proposal,FinanceProposalPrivacy.userDescriptions(automation.rules.flatMap {it.actions}))
             val initial=saved?.toEntryDraft(snapshot) ?: FinanceEntryDraft(FinanceEditorKind.valueOf(proposal.kind.name),
@@ -66,7 +70,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     if (userInitiated && proposal.source == FinanceSource.SCREENSHOT)
                         com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)
                     else prefs.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE && prefs.enhancedReceiptOverlay && prefs.permits(proposal)
-                if(window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
+                if(!canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
                 val density=context.resources.displayMetrics.density
                 fun dp(n:Int)=(n*density).toInt()
                 val body=LinearLayout(context).apply {
@@ -171,7 +175,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     if(busy)return
                     setBusy(true);autosave?.cancel();val draft=current()
                     editScope.launch {
-                        try {persist(draft,true);if(openApp)context.startActivity(FinanceReviewNotifications.openIntent(context,id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));close(false)}
+                        try {persist(draft,true);if(openApp)context.startActivity(FinanceReviewNotifications.openIntent(context,id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));close(false, advance = !openApp)}
                         catch(e:CancellationException){throw e}
                         catch(_:Exception){setBusy(false);message.text="保存未完成；已保存内容仍保留，请在应用内复核"}
                     }
@@ -185,7 +189,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                             try {persist(draft);mutex.withLock {
                                 container.financeRepository.reviews.confirm(FinanceCommandToken(java.util.UUID.randomUUID().toString(),epoch),id,
                                     requireNotNull(revision),FinanceTime.resolve(draft.occurredAt,draft.preservedOccurredAt))
-                            };FinanceReviewNotifications.cancel(context,id);close(false)}
+                            };FinanceReviewNotifications.cancel(context,id);close(false, advance = true)}
                             catch(e:CancellationException){throw e}
                             catch(e:Exception){setBusy(false);message.text=e.message ?: "确认未完成，请接力到应用内核对"}
                         }
@@ -244,7 +248,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
         catch(_:Exception){withContext(Dispatchers.Main.immediate){close()};false}
     }
     /** Never discards a candidate. Application-owned edit work survives listener teardown. */
-    fun close(persist:Boolean=true) {
+    fun close(persist:Boolean=true, advance:Boolean=false) {
         subDialog?.dismiss(); subDialog = null
         if (owner === this) owner = null
         val flush=flushLater;flushLater=null
@@ -253,5 +257,6 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
         configuration?.let {context.unregisterComponentCallbacks(it)};configuration=null
         window?.let {view->context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
         if(persist)flush?.invoke()
+        if(advance && !occupied) editScope.launch { FinanceReceiptQueue.pending.advance() }
     }
 }

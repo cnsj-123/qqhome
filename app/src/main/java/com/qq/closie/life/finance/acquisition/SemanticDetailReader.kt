@@ -13,6 +13,9 @@ internal interface DetailNode : AutoCloseable {
 
 /** Two passes: allowlisted fingerprint first, then bounded label/value rows and header relationships.
  * No view IDs, coordinates, actions, contentDescription, raw tree copy or whole-page string. */
+internal enum class DetailReadRejection { TREE_LIMIT, NOT_DETAIL, AMBIGUOUS_ROWS }
+internal data class DetailReadInspection(val fields: VisibleDetailFields? = null, val rejection: DetailReadRejection? = null)
+
 internal object SemanticDetailReader {
     private const val MAX_NODES = 400
     private const val MAX_DEPTH = 30
@@ -37,7 +40,9 @@ internal object SemanticDetailReader {
             }
         }
     }
-    fun read(root: DetailNode, adapter: TransactionDetailAdapter): VisibleDetailFields? {
+    fun read(root: DetailNode, adapter: TransactionDetailAdapter): VisibleDetailFields? = inspect(root, adapter).fields
+
+    fun inspect(root: DetailNode, adapter: TransactionDetailAdapter): DetailReadInspection {
         var visited = 0
         var overflow = false
         fun walk(node: DetailNode, depth: Int, action: (DetailNode) -> Unit) {
@@ -57,7 +62,8 @@ internal object SemanticDetailReader {
             if (value in adapter.pageMarkers) markers += value
             if (DetailSemantics.refundSummary(value)) markers += "REFUND_SUMMARY"
         } }
-        if (overflow || !adapter.hasFingerprint(labels, markers)) return null
+        if (overflow) return DetailReadInspection(rejection = DetailReadRejection.TREE_LIMIT)
+        if (!adapter.hasFingerprint(labels, markers)) return DetailReadInspection(rejection = DetailReadRejection.NOT_DETAIL)
 
         // A row cannot contain another allowlisted label; a flat/merged page therefore fails closed.
         fun local(node: DetailNode): List<String>? {
@@ -116,8 +122,9 @@ internal object SemanticDetailReader {
                 } }
             }
         }
-        if (overflow || rows.values.any { it.size != 1 }) return null
-        return VisibleDetailFields(rows.mapValues { it.value.single() },
-            headerAmounts.singleOrNull()?.let(::setOf).orEmpty(), markers, headerSources.singleOrNull())
+        if (overflow) return DetailReadInspection(rejection = DetailReadRejection.TREE_LIMIT)
+        if (rows.values.any { it.size != 1 }) return DetailReadInspection(rejection = DetailReadRejection.AMBIGUOUS_ROWS)
+        return DetailReadInspection(fields = VisibleDetailFields(rows.mapValues { it.value.single() },
+            headerAmounts.singleOrNull()?.let(::setOf).orEmpty(), markers, headerSources.singleOrNull()))
     }
 }

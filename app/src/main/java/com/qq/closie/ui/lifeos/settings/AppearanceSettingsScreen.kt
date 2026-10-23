@@ -63,6 +63,11 @@ fun AppearanceSettingsScreen(
             Text(if (state.isSaving) "正在保存…" else "保存主题")
         }
     }) {
+        Text("当前主题 · " + (ThemePreset.fromId(state.selectedId)?.displayName ?: state.themeName), style = LifeText.body)
+        AppearanceLivePreviews(state.preview)
+        AppearanceGroup("首页背景", initiallyOpen = false) {
+            FunctionEffectControls(state.preview.functionEffects, onEffects, enabled = !state.isSaving && !state.extracting, home = true)
+        }
         AppearanceGroup("功能页风格与背景", initiallyOpen = false) {
             FunctionPageStyle.entries.chunked(2).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -103,7 +108,7 @@ fun AppearanceSettingsScreen(
             }
         }
         }
-        AppearanceGroup("自定义主题色", initiallyOpen = true) {
+        AppearanceGroup("自定义主题色", initiallyOpen = false) {
         if (namedThemes.any { it.id == state.selectedId }) {
             TextButton(onDuplicate, enabled = !state.isSaving && !state.extracting) { Text("另存为新主题") }
         }
@@ -139,14 +144,6 @@ fun AppearanceSettingsScreen(
             Text(if (state.extracting) "正在本机取色…" else "从照片或截图取色")
         }
         Text("只保存配色；照片不保存。所有调整通过顶部保存主题生效。", style = LifeText.caption)
-        }
-        Surface(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = colors.paperSecondary, shape = RoundedCornerShape(12.dp)) {
-            Column(Modifier.padding(18.dp)) {
-                Text("实时试色", style = LifeText.caption, color = colors.muted)
-                Text("今天，也值得收好。", Modifier.padding(vertical = 10.dp), style = LifeText.title)
-                Text("给自己留一句很轻的话。", style = LifeText.body, color = colors.inkSecondary)
-                Text("正文与边线会随配色调整。", Modifier.padding(top = 10.dp), style = LifeText.caption, color = colors.muted)
-            }
         }
         Text(state.validationError ?: "文字和按钮会自动调整，以保持可读。", style = LifeText.caption, color = colors.inkSecondary)
         state.message?.let { Text(it, Modifier.padding(top = 10.dp), style = LifeText.body) }

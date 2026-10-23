@@ -34,6 +34,18 @@ class HostDetailAdaptersTest {
         row(if (refund) "退款时间" else "订单时间", "2026年1月2日 10:20:30"),
         row("订单编号", "ORDER-123456"), row("商户订单号", "MERCHANT-123456"))
 
+    @Test fun diagnosticsSeparateMissingFingerprintDuplicateFieldAndTreeLimitWithoutRawText() {
+        assertEquals(DetailReadRejection.NOT_DETAIL,
+            SemanticDetailReader.inspect(page(N("普通首页")), AlipayDetailAdapter).rejection)
+        assertEquals(DetailReadRejection.AMBIGUOUS_ROWS,
+            SemanticDetailReader.inspect(alipay(row("订单号", "ORDER-999999")), AlipayDetailAdapter).rejection)
+        assertEquals(DetailReadRejection.TREE_LIMIT,
+            SemanticDetailReader.inspect(N(nodes = List(401) { N("irrelevant") }), AlipayDetailAdapter).rejection)
+        val accepted = SemanticDetailReader.inspect(alipay(), AlipayDetailAdapter)
+        assertNull(accepted.rejection)
+        assertNotNull(accepted.fields)
+    }
+
     @Test fun sevenHostAdaptersRouteOnlyAfterExplicitOptIn() {
         assertEquals(7, ProviderRegistry.providers.size)
         assertEquals(7, ProviderRegistry.providers.map { it.adapter }.distinct().size)

@@ -6,6 +6,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 internal object VisibleDetailReader {
     fun read(root: AccessibilityNodeInfo, adapter: TransactionDetailAdapter): VisibleDetailFields? =
         SemanticDetailReader.read(AndroidDetailNode(root), adapter)
+    fun inspect(root: AccessibilityNodeInfo, adapter: TransactionDetailAdapter): DetailReadInspection =
+        SemanticDetailReader.inspect(AndroidDetailNode(root), adapter)
     private class AndroidDetailNode(private val node: AccessibilityNodeInfo) : DetailNode {
         override val visible get() = node.isVisibleToUser
         override val sensitive get() = node.isPassword || node.isEditable
