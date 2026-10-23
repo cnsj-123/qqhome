@@ -92,6 +92,14 @@ class FinanceSmokeTest {
         compose.onNodeWithText(title).assertIsDisplayed()
         compose.onNode(confirm).assertIsDisplayed().assertIsEnabled().performClick()
     }
+    private fun assertReadOnlyThenEdit() {
+        compose.onNodeWithText("账单详情").assertIsDisplayed()
+        compose.onAllNodes(hasSetTextAction() and hasAnyAncestor(hasTestTag("finance-receipt"))).assertCountEquals(0)
+        val before = snapshot()
+        click("编辑账单")
+        assertEquals(before.entries, snapshot().entries)
+        assertEquals(before.transfers, snapshot().transfers)
+    }
     private fun snapshot() = runBlocking { repository.snapshot() }
     private fun openFilters() {
         compose.waitForIdle()
@@ -187,6 +195,7 @@ class FinanceSmokeTest {
         assertEquals(listOf(original.id), model.state.value.ledger.map { it.id })
         val cashRow = hasText("早餐豆浆") and hasText("餐饮 · 工资卡") and hasClickAction()
         ledgerRow(cashRow).performClick()
+        assertReadOnlyThenEdit()
         input("金额 · CNY", "10.00")
         click("保存记录"); saved()
         assertEquals(1_000L, snapshot().entries.single().amountMinor)
@@ -204,6 +213,7 @@ class FinanceSmokeTest {
         }
         compose.waitForIdle()
         ledgerRow(cashRow).performClick()
+        assertReadOnlyThenEdit()
         click("作废这笔记录")
         confirmVoid("作废这笔记录？"); saved()
         assertNotNull(snapshot().entries.single().voidedAt)
@@ -250,6 +260,7 @@ class FinanceSmokeTest {
         assertEquals(transfer.id, FinanceProjection.ledger(original).single().id)
         val transferRow = hasText("银行卡 → 微信") and hasClickAction()
         ledgerRow(transferRow).performClick()
+        assertReadOnlyThenEdit()
         input("金额 · CNY", "250.00")
         click("保存记录"); saved()
         assertTrue(snapshot().entries.all { it.amountMinor == 25_000L })
@@ -265,6 +276,7 @@ class FinanceSmokeTest {
         FinanceIntegrity.validate(snapshot())
         assertEquals(1, FinanceProjection.ledger(snapshot()).size)
         ledgerRow(transferRow).performClick()
+        assertReadOnlyThenEdit()
         click("作废这笔记录")
         confirmVoid("作废整笔转账？"); saved()
         assertTrue(snapshot().entries.all { it.voidedAt != null })
@@ -322,7 +334,7 @@ class FinanceSmokeTest {
         click("账簿")
         compose.waitForIdle()
         compose.onNodeWithTag("finance-date-control").performClick()
-        if (month.year != current.year) compose.onNodeWithText("上一年").performClick()
+        if (month.year != current.year) compose.onNodeWithText(month.year.toString()).performClick()
         compose.onNodeWithText("${month.monthValue} 月").performClick()
         assertViewedMonth(month)
         fun awaitHistoricalRows() {

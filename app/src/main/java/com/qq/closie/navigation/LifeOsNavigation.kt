@@ -54,7 +54,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         composable(LifeOsRoute.HOME) {
             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
-                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) })
+                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) }, onDateSelected = onHomeDateSelected)
         }
         closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed)
         captureRoutes(nav, container, onCapture, onFileToLibrary)
@@ -64,7 +64,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
             FinanceRoute(container.financeRepository, container.financeImportRepository, container.financeAutomationRepository) { nav.returnToLifeHome() }
         }
         composable(LifeOsRoute.CALENDAR) {
-            LifeCalendarScreen(initialDate = home.date, onBack = { nav.returnToLifeHome() }, onOpenHomeDate = {
+            LifeCalendarScreen(initialDate = home.date, state = com.qq.closie.ui.lifeos.calendar.CalendarUiState(java.time.YearMonth.from(home.date), home.calendarDays), onBack = { nav.returnToLifeHome() }, onOpenHomeDate = {
                 onHomeDateSelected(it)
                 nav.returnToLifeHome()
             })

@@ -32,7 +32,12 @@ class FinanceHomeStateProvider(private val finance:FinanceRepository,private val
                 .joinToString(" · ").ifBlank {"已授权的财务事项"}
             val dated=facts.mapNotNull {fact->fact.occurredAt?.let {Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() to fact}}
             HomeUiState(date,todayFacts=dated.filter {it.first==date}.map {HomeFactUi(it.second.eventId,title(it.second),"财务")},
-                historyItems=dated.filter {it.first.isBefore(date)}.sortedByDescending {it.first}.take(20).map {HistoryItemUi(it.second.eventId,it.first,title(it.second))})
+                historyItems=dated.filter {it.first.isBefore(date)}.sortedByDescending {it.first}.take(20).map {HistoryItemUi(it.second.eventId,it.first,title(it.second))},
+                calendarDays=dated.groupBy {it.first}.mapValues {(day,rows)->
+                    com.qq.closie.ui.lifeos.calendar.CalendarDayUi(day,events=rows.map {
+                        com.qq.closie.ui.lifeos.calendar.CalendarEventUi(it.second.eventId,title(it.second),"财务")
+                    })
+                })
         }.onStart {emit(HomeUiState(date))}.catch {emit(HomeUiState(date))}
     }.distinctUntilChanged()
 }

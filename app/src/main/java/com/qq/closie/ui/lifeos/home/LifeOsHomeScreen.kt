@@ -2,6 +2,7 @@ package com.qq.closie.ui.lifeos.home
 
 import com.qq.closie.life.ui.theme.BundledText as Text
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -29,14 +30,16 @@ fun LifeOsHomeScreen(
     state: HomeUiState,
     onDrawer: () -> Unit, onCalendar: () -> Unit, onMap: () -> Unit,
     onCompanion: () -> Unit, onCapture: () -> Unit,
-    modifier: Modifier = Modifier, onToday: () -> Unit = {}
+    modifier: Modifier = Modifier, onToday: () -> Unit = {},
+    onDateSelected: (LocalDate) -> Unit = {}
 ) {
+    var datePopup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val colors = LocalLifeOsColors.current
     var showTodayText by androidx.compose.runtime.saveable.rememberSaveable(state.date) { mutableStateOf(false) }
     var truncatedToday by remember(state.date) { mutableStateOf(false) }
     val todayText = state.todayFacts.joinToString("\n") { it.title }
     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
-    SuspendFunctionPageSwipe(viewerPhotoId != null || showTodayText)
+    SuspendFunctionPageSwipe(viewerPhotoId != null || showTodayText || datePopup)
     Column(modifier.fillMaxSize().semantics {
         customActions = listOf(CustomAccessibilityAction("打开生活的抽屉") { onDrawer(); true },
             CustomAccessibilityAction("找伙伴") { onCompanion(); true })
@@ -52,11 +55,11 @@ fun LifeOsHomeScreen(
                         Text("收好自己的日子", style = LifeType.JournalTagline, color = colors.muted)
                     }
                     IconButton(onCapture) { Icon(Icons.Outlined.Add, "记一下", Modifier.size(20.dp), tint = colors.accentDeep) }
-                    IconButton(onCalendar) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(20.dp)) }
+                    IconButton({ datePopup = true }) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(20.dp)) }
                     IconButton(onMap) { Icon(Icons.Outlined.Map, "生活地图", Modifier.size(20.dp)) }
                 }
                 Spacer(Modifier.height(16.dp))
-                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)), style = LifeType.DateHero, color = colors.ink)
+                Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)) + " ⌄", Modifier.clickable(onClickLabel = "选择首页日期") { datePopup = true }.padding(vertical = 4.dp), style = LifeType.DateHero, color = colors.ink)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(state.date.format(DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)), style = if (state.eligibleMedia.isEmpty()) LifeType.JournalEmptyYear else LifeType.JournalMeta, color = colors.muted)
                     Text("把今天轻轻收好", style = LifeType.JournalMeta, color = colors.muted)
@@ -115,13 +118,14 @@ fun LifeOsHomeScreen(
                     Text(it.domainLabel, style = LifeType.JournalFactMeta, color = colors.muted)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_launch_cat), "生活伙伴", Modifier.size(width = 71.dp, height = 77.dp))
+                    androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_launch_cat), "生活伙伴", Modifier.size(width = 71.dp, height = 77.dp).clickable(onClickLabel = "找伙伴", onClick = onCompanion))
                 }
                 Spacer(Modifier.height(24.dp))
             }
         }
 
     }
+    if (datePopup) HomeDatePopup(state.date, state.calendarDays, onDateSelected) { datePopup = false }
     if (showTodayText) AlertDialog(onDismissRequest = { showTodayText = false }, title = { Text("今天的记录") },
         text = {
             Text(todayText, Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), style = LifeText.body)

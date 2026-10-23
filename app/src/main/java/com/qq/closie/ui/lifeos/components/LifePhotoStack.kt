@@ -12,12 +12,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,7 +44,6 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
     val threshold = with(density) { 48.dp.toPx() }
     val lift = with(density) { 8.dp.toPx() }
     var index by rememberSaveable(photos.map { it.id }) { mutableIntStateOf(0) }
-    var vertical by rememberSaveable { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -76,17 +71,17 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
 
     Column(modifier) {
         BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f / .84f).clipToBounds()) {
-            val extent = with(density) { (if (vertical) maxHeight else maxWidth).toPx() }
+            val extent = with(density) { maxWidth.toPx() }
             val offset = if (dragging) drag else settling.value
-            val dragModifier = Modifier.pointerInput(photos.map { it.id }, vertical, reduced, busy) {
-                if (busy || photos.size < 2) return@pointerInput
+            val dragModifier = Modifier.pointerInput(photos.map { it.id }, current, reduced) {
+                if (photos.size < 2) return@pointerInput
                 val start: (androidx.compose.ui.geometry.Offset) -> Unit = {
-                    animationJob?.cancel(); drag = 0f; dragging = true
+                    drag = if (busy) settling.value else 0f
+                    animationJob?.cancel(); busy = false; dragging = true
                 }
                 val end: () -> Unit = { settle(PhotoStackInteraction.releaseStep(drag, threshold, photos.size), drag, extent) }
                 val cancel: () -> Unit = { settle(0, drag, extent) }
-                if (vertical) detectVerticalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
-                else detectHorizontalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
+                detectHorizontalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
             }
             (minOf(4, photos.size) - 1 downTo 0).forEach { depth ->
                 val photo = photos[PhotoStackInteraction.nextIndex(current, depth, photos.size)]
@@ -98,13 +93,18 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
                         .zIndex((4 - depth).toFloat())
                         .graphicsLayer {
                             val progress = (abs(offset) / extent.coerceAtLeast(1f)).coerceIn(0f, 1f)
-                            translationX = if (top && !vertical) offset else 0f
-                            translationY = if (top && vertical) offset else if (top && dragging && !reduced) -lift else 0f
+                            translationX = if (top) offset else 0f
+                            translationY = if (top && dragging && !reduced) -lift else 0f
                             rotationZ = pose.rotation + if (top && !reduced) (offset / extent.coerceAtLeast(1f)).coerceIn(-1f, 1f) * 4f else 0f
                             scaleX = 1f + if (top && dragging && !reduced) .012f else if (depth == 1 && !reduced) progress * .015f else 0f
                             scaleY = scaleX
                             shadowElevation = if (reduced) 0f else (if (top && dragging) 16.dp else 6.dp).toPx()
-                        }.then(if (top) dragModifier.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) onPhotoClick(photo) }) else Modifier.clearAndSetSemantics {}),
+                        }.then(if (top) dragModifier.semantics {
+                            customActions = listOf(
+                                CustomAccessibilityAction("上一张照片") { if (photos.size > 1) settle(-1, 0f, extent); true },
+                                CustomAccessibilityAction("下一张照片") { if (photos.size > 1) settle(1, 0f, extent); true }
+                            )
+                        }.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) onPhotoClick(photo) }) else Modifier.clearAndSetSemantics {}),
                     shape = RoundedCornerShape(1.dp), color = Color(0xFFFFFDFA)
                 ) {
                     Column(Modifier.padding(7.dp)) {
@@ -115,13 +115,8 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
             }
         }
         val selected = photos[current]
-        Text(selected.caption ?: selected.title ?: "", Modifier.fillMaxWidth().padding(top = 8.dp)
-            .semantics {
-                customActions = listOf(
-                    CustomAccessibilityAction("上一张照片") { if (photos.size > 1 && !busy) settle(-1, 0f, 0f); true },
-                    CustomAccessibilityAction("下一张照片") { if (photos.size > 1 && !busy) settle(1, 0f, 0f); true }
-                )
-            }, style = LifeText.caption, color = colors.inkSecondary, maxLines = 2)
+        Text(selected.caption ?: selected.title ?: "", Modifier.fillMaxWidth().padding(top = 8.dp),
+            style = LifeText.caption, color = colors.inkSecondary, maxLines = 2)
     }
 }
 

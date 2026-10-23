@@ -153,7 +153,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             if (view == FinanceView.ACCOUNTS) "搜索账户" else "搜索账目",
             ::back, { monthPicker = true }, { if (view == FinanceView.ACCOUNTS) accountQuery = it else vm.search(it) },
             { recordDestination = FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString()) }, !state.busy && state.snapshot.accounts.any { it.archivedAt == null }) {
-            if (view == FinanceView.INSIGHTS) Box {
+            if (view != FinanceView.ACCOUNTS) Box {
                 val active = state.filter.accountId != null || state.filter.categoryId != null || state.filter.tagId != null || state.filter.nature != null || state.filter.minimumMinor!=null || state.filter.maximumMinor!=null || state.filter.currencyCode!=null
                 IconButton({ queryMenu = true }) { Icon(Icons.Outlined.FilterList, if (active) "筛选与日期，已筛选" else "筛选与日期",
                     tint = if (active) colors.accentDeep else colors.ink) }

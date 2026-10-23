@@ -15,7 +15,8 @@ data class HomeUiState(
     val todayFacts: List<HomeFactUi> = emptyList(),
     val historyItems: List<HistoryItemUi> = emptyList(),
     val futureIntents: List<FutureIntentUi> = emptyList(),
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val calendarDays: Map<LocalDate, com.qq.closie.ui.lifeos.calendar.CalendarDayUi> = emptyMap()
 )
 
 interface HomeStateProvider { fun stateFor(date: LocalDate): Flow<HomeUiState> }

@@ -16,6 +16,12 @@ class MediaHomeStateProvider(private val base: HomeStateProvider, private val ph
         state.copy(eligibleMedia = selected.filter { it.date == date }.map(::image),
             historyItems = (state.historyItems + selected.filter { it.date.isBefore(date) }
                 .take(6).map { HistoryItemUi(it.id, it.date, it.name ?: "收好的一张照片", image(it)) })
-                .sortedByDescending { it.date })
+                .sortedByDescending { it.date },
+            calendarDays = state.calendarDays.toMutableMap().apply {
+                selected.groupBy { it.date }.forEach { (date, rows) ->
+                    val day = get(date) ?: com.qq.closie.ui.lifeos.calendar.CalendarDayUi(date)
+                    put(date, day.copy(photos = day.photos + rows.map(::image)))
+                }
+            })
     }
 }
