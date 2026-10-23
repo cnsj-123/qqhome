@@ -10,6 +10,7 @@ import java.security.MessageDigest
 
 /** Android adapter only: allowlist -> conservative parser -> proposal. No canonical commands here. */
 class FinanceNotificationListener : NotificationListenerService() {
+    private val settings by lazy { FinanceAutomationSettings(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val reviewDelivery: FinanceReviewDelivery by lazy { (application as ClosieApplication).createFinanceReviewDelivery(scope) }
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -22,7 +23,6 @@ class FinanceNotificationListener : NotificationListenerService() {
     }
     private fun handleNotification(sbn: StatusBarNotification, source: FinanceSource, trace: Long) {
         fun report(result: DiscoveryResult) = FinanceDiscoveryDiagnostics.result(source, trace, result)
-        val settings = FinanceAutomationSettings(this)
         val current = settings.read()
         if (!current.enabled) { report(DiscoveryResult.MASTER_OFF); return }
         if ((source == FinanceSource.WECHAT && !current.wechat) || (source == FinanceSource.ALIPAY && !current.alipay)) {
