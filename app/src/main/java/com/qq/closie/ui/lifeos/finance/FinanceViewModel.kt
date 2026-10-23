@@ -55,6 +55,7 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
     private var activeSpace=runCatching {FinanceView.valueOf(savedState.get<String>("finance_space") ?: "TRANSACTIONS")}.getOrDefault(FinanceView.TRANSACTIONS)
     private val spaceFilters=FinanceView.entries.associateWith {FinanceFilterState.decode(savedState.get<android.os.Bundle>("finance_filter_"+it.name))}.toMutableMap()
     private val filter = MutableStateFlow(spaceFilters.getValue(activeSpace))
+    internal val filterInput:StateFlow<FinanceFilter> = filter.asStateFlow()
     private val error = MutableStateFlow<String?>(null)
     private val busy = MutableStateFlow(false)
     private val editorVersions=FinanceEditorVersions()
@@ -198,9 +199,15 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             }
         }
     }
+    private var previewRequest:kotlinx.coroutines.Job?=null
     fun previewVoid(entryId:String?=null,eventId:String?=null,done:(FinanceChangePreview)->Unit) {
-        var result:FinanceChangePreview?=null
-        mutate({result?.let(done)}) {result=repository.recovery.previewVoid(entryId,eventId)}
+        previewRequest?.cancel()
+        previewRequest=viewModelScope.launch {
+            // An enabled frame can lag the synchronous busy owner. Do not silently lose a read-only preview.
+            busy.first {!it}
+            var result:FinanceChangePreview?=null
+            mutate({result?.let(done)}) {result=repository.recovery.previewVoid(entryId,eventId)}
+        }
     }
     fun confirmVoid(preview:FinanceChangePreview,done:()->Unit)=mutate(done) { repository.recovery.voidConfirmed(preview) }
     fun previewBatch(ids:Set<String>,edit:FinanceBatchCorrection,done:(FinanceChangePreview)->Unit)=

@@ -361,4 +361,43 @@ class FinanceSmokeTest {
         awaitHistoricalRows()
         assertSelectedRows()
     }
+
+    @Test fun voidPreviewRequestedBeforeBusyPresentationCatchesUpIsNotLost() {
+        val entry=runBlocking {
+            val account=repository.saveAccount(name="合成预览账户",kind=FinanceAccountKind.CASH)
+            repository.saveEntry(accountId=account.id,direction=FinanceDirection.OUTFLOW,amountMinor=100,
+                description="合成作废预览",occurredAt=System.currentTimeMillis())
+        }
+        launch()
+        val before=snapshot()
+        val release=kotlinx.coroutines.CompletableDeferred<Unit>()
+        var preview:FinanceChangePreview?=null
+        compose.runOnIdle {
+            model.workspaceAction(0) {_,_->release.await()}
+            // busy.value is already true, but the asynchronous presentation may still be enabled.
+            model.previewVoid(entryId=entry.id) {preview=it}
+        }
+        compose.runOnIdle {assertNull(preview);release.complete(Unit)}
+        compose.waitUntil(10_000){preview!=null && !model.state.value.busy}
+        assertTrue(requireNotNull(preview).entryIds.contains(entry.id))
+        assertEquals(before.entries,snapshot().entries)
+        assertEquals(before.transfers,snapshot().transfers)
+    }
+
+    @Test fun rapidSearchEditsKeepLatestInputAndAppliedRows() {
+        val entries=runBlocking {
+            val account=repository.saveAccount(name="合成搜索账户",kind=FinanceAccountKind.CASH)
+            listOf("早餐甲","午餐乙","晚餐丙").map {label->repository.saveEntry(accountId=account.id,
+                direction=FinanceDirection.OUTFLOW,amountMinor=100,description=label,occurredAt=System.currentTimeMillis())}
+        }
+        launch();selectPeriod("全部")
+        compose.onNodeWithTag("finance-search").performTextReplacement("餐")
+        compose.onNodeWithTag("finance-search").performTextReplacement("午餐乙")
+        compose.waitUntil(10_000){model.state.value.let {
+            it.filter.query=="午餐乙" && it.ledger.map {row->row.id}==listOf(entries[1].id)
+        }}
+        compose.onNodeWithTag("finance-search").assertTextContains("午餐乙")
+        compose.onNodeWithTag("finance-search").performTextReplacement("")
+        compose.waitUntil(10_000){model.state.value.filter.query.isEmpty() && model.state.value.ledger.size==3}
+    }
 }

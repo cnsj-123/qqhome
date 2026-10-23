@@ -259,6 +259,10 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 }) {windows.addView(frame,params)}
                 if (!attached) return@withContext false
                 window=frame;owner=this@FinanceReceiptOverlay;scroll.requestFocus();ready=true
+                if(android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                    frame.translationY=dp(20).toFloat();frame.scaleX=.98f;frame.scaleY=.98f;frame.alpha=0f
+                    frame.animate().translationY(0f).scaleX(1f).scaleY(1f).alpha(1f).setDuration(260).start()
+                }
                 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(frame) { _, insets ->
                     val bars=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                     val ime=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
@@ -305,7 +309,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
         observer?.cancel();observer=null;monitor?.cancel();monitor=null;autosave?.cancel();autosave=null
         screenReceiver?.let {runCatching {context.unregisterReceiver(it)}};screenReceiver=null
         configuration?.let {context.unregisterComponentCallbacks(it)};configuration=null
-        window?.let {view->context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
+        window?.let {view->view.animate().cancel();context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
         if(persist)flush?.invoke()
         if(advance && !occupied) editScope.launch { FinanceReceiptQueue.pending.advance() }
     }

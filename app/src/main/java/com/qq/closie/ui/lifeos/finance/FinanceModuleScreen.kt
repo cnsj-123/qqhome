@@ -44,6 +44,7 @@ enum class FinanceView(val label: String) { TRANSACTIONS("账簿"), ACCOUNTS("�
 internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, onBack: () -> Unit, onRelations: () -> Unit = {},
     secondaryActions: @Composable () -> Unit = {}) {
     val colors = LocalLifeOsColors.current
+    val requestedFilter by vm.filterInput.collectAsState()
     val gesturePolicy=com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
     val pager = rememberPagerState { FinanceView.entries.size }
     // Pager pages are lazy. Their scrolling state belongs to the module, not a mounted page.
@@ -149,7 +150,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     BackHandler((detailAccount != null || chartLabel != null) && !editing && !viewing && !accountEditing) { back() }
     Scaffold(containerColor = colors.paper, topBar = {
         if (detailAccount == null && chartLabel == null) FinanceToolbar(
-            monthLabel, if (view == FinanceView.ACCOUNTS) accountQuery else state.filter.query,
+            monthLabel, if (view == FinanceView.ACCOUNTS) accountQuery else requestedFilter.query,
             if (view == FinanceView.ACCOUNTS) "搜索账户" else "搜索账目",
             ::back, { monthPicker = true }, { if (view == FinanceView.ACCOUNTS) accountQuery = it else vm.search(it) },
             { recordDestination = FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString()) }, !state.busy && state.snapshot.accounts.any { it.archivedAt == null }) {
@@ -246,6 +247,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             }
         } }
         Column(Modifier.fillMaxSize().nestedScroll(nested)) {
+            Box(Modifier.fillMaxWidth().height(2.dp)) {
+                if(requestedFilter!=state.filter) LinearProgressIndicator(Modifier.fillMaxWidth(),color=colors.accent)
+            }
             if(view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null) {
                 Column(Modifier.padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                     FinancePeriodStrip(state.selected)

@@ -45,7 +45,8 @@ class ClosetSmokeTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     private fun openDrawer() {
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(timeoutMillis = 10_000) { (compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasContentDescription("生活日历")).fetchSemanticsNodes().isNotEmpty()) }
         compose.onNodeWithText("生活").assertDoesNotExist()
         compose.onRoot().performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
         compose.mainClock.advanceTimeBy(500)
@@ -141,7 +142,8 @@ class ClosetSmokeTest {
 
     @Test
     fun verticalHomeScrollDoesNotOpenDrawer() {
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(timeoutMillis = 10_000) { (compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasContentDescription("生活日历")).fetchSemanticsNodes().isNotEmpty()) }
         compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("Life OS")))
             .performTouchInput { swipeUp() }
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
@@ -168,7 +170,8 @@ class ClosetSmokeTest {
         compose.onNodeWithText("衣橱还是空的").assertExists()
         pressBack()
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+            (compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasContentDescription("生活日历")).fetchSemanticsNodes().isNotEmpty()) &&
                 compose.onAllNodes(hasText("我的衣橱")).fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithText("Life OS").assertIsDisplayed()
@@ -176,7 +179,8 @@ class ClosetSmokeTest {
     }
     @Test
     fun homeContentRightSwipeOpensFunctionPageAndBackClosesIt() {
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(timeoutMillis = 10_000) { (compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasContentDescription("生活日历")).fetchSemanticsNodes().isNotEmpty()) }
         compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("Life OS")))
             .performTouchInput { swipeRight(startX = width * .25f, endX = width * .75f) }
         compose.mainClock.advanceTimeBy(500)
@@ -213,7 +217,8 @@ class ClosetSmokeTest {
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
         compose.onNodeWithContentDescription("返回").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+            (compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodes(hasContentDescription("生活日历")).fetchSemanticsNodes().isNotEmpty()) &&
                 compose.onAllNodes(hasTestTag("finance-ledger")).fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithText("Life OS").assertIsDisplayed()

@@ -43,7 +43,7 @@ class FinanceProjectionService:Service() {
         @Suppress("DEPRECATION") val consent=if(Build.VERSION.SDK_INT>=33)intent?.getParcelableExtra("consent",Intent::class.java)
             else intent?.getParcelableExtra<Intent>("consent")
         if(request==null || consent==null || request.id!=intent?.getStringExtra("request") || !request.current(this)) {
-            FinanceProjectionRequests.inFlight=false;stopSelf();return START_NOT_STICKY
+            FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();stopSelf();return START_NOT_STICKY
         }
         screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){request.cancel();task?.cancel()}}.also {
             if(Build.VERSION.SDK_INT>=33)registerReceiver(it,IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED)
@@ -77,7 +77,7 @@ class FinanceProjectionService:Service() {
             } catch(e:TimeoutCancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图或识别超时，未自动记账")}
             catch(e:CancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图已失效，未自动记账");throw e}
             catch(e:Exception){FinanceAutomationSettings(this@FinanceProjectionService).status(e.message ?: "本次系统截图未完成")}
-            finally {FinanceProjectionRequests.inFlight=false;releaseProjection();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf()}
+            finally {FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();releaseProjection();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf()}
         }
         return START_NOT_STICKY
     }
@@ -124,5 +124,5 @@ class FinanceProjectionService:Service() {
         val previous=projection;projection=null;previous?.stop()
     }
     override fun onConfigurationChanged(config:android.content.res.Configuration){super.onConfigurationChanged(config);task?.cancel()}
-    override fun onDestroy(){screenReceiver?.let {runCatching {unregisterReceiver(it)}};screenReceiver=null;FinanceProjectionRequests.inFlight=false;scope.cancel();releaseProjection();super.onDestroy()}
+    override fun onDestroy(){com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();screenReceiver?.let {runCatching {unregisterReceiver(it)}};screenReceiver=null;FinanceProjectionRequests.inFlight=false;scope.cancel();releaseProjection();super.onDestroy()}
 }

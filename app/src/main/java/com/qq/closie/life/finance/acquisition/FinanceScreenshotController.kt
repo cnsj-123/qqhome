@@ -38,6 +38,7 @@ internal class FinanceScreenshotController(
     private val windows = service.getSystemService(WindowManager::class.java)
     private val overlay = FinanceReceiptOverlay(service, scope)
     private var bubble: View? = null
+    private var recognition: View? = null
     private var capture: Job? = null
     private var disposed = false
     private var connected = false
@@ -65,7 +66,7 @@ internal class FinanceScreenshotController(
         requestGeneration++
         capture?.cancel()
         presentedPage = null
-        overlay.close()
+        overlay.close();removeRecognition()
     }
     fun hostEvent(packageName: String) {
         if (packageName != service.packageName) { eventSerial++; invalidate() }
@@ -153,8 +154,8 @@ internal class FinanceScreenshotController(
                 runFinanceCapture(
                     page, generation, fence.restoreGeneration, current, storageCurrent,
                     token = { withContext(Dispatchers.IO) { container.financeRepository.economics.token() } },
-                    hide = { removeBubble(); overlay.close(); hideOtherReceipt() },
-                    capture = { request -> withTimeout(4000) { screenshot(request.page) } },
+                    hide = { removeBubble(); overlay.close(); hideOtherReceipt();FinanceAutomationSettings(service).status("正在完成本次截图") },
+                    capture = { request -> withTimeout(4000) { screenshot(request.page) }.also {if(current())showRecognition()} },
                     recognize = { frame ->
                         if (blackFrame(frame)) {
                             frame.recycle()
@@ -168,7 +169,7 @@ internal class FinanceScreenshotController(
                         container.financeRepository.media.createScreenshotCandidate(request.token, fields, stillCurrent)
                     } },
                     present = { request, id, canPresent ->
-                        FinanceReceiptOverlay.endCapture()
+                        removeRecognition();FinanceReceiptOverlay.endCapture()
                         if (canPresent()) {
                             presentedPage = request.page
                             if (!overlay.show(id, userInitiated = true, expectedEpoch = request.token.restoreEpoch,
@@ -184,7 +185,7 @@ internal class FinanceScreenshotController(
             } catch (e: TimeoutCancellationException) { status("截图或识别超时，未自动记账，请重试") }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { status(e.message ?: "截图识别未完成，未自动记账") }
-            finally { FinanceReceiptOverlay.endCapture(); capture = null; update() }
+            finally { removeRecognition();FinanceReceiptOverlay.endCapture(); capture = null; update() }
         }
     }
 
@@ -226,6 +227,22 @@ internal class FinanceScreenshotController(
         }
         return nonBlack < 3
     }
+    private fun showRecognition() {
+        removeRecognition()
+        FinanceAutomationSettings(service).status("正在本地识别本次截图")
+        val density=service.resources.displayMetrics.density
+        val view=TextView(service).apply {
+            text="正在本地识别…";contentDescription=text;gravity=Gravity.CENTER;textSize=13f
+            setTextColor(Color.parseColor("#534C91"))
+            background=GradientDrawable().apply {setColor(Color.parseColor("#F6F5F9"));cornerRadius=12*density}
+        }
+        val params=WindowManager.LayoutParams((150*density).toInt(),(48*density).toInt(),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT).apply {gravity=Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL;y=(48*density).toInt()}
+        runCatching {windows.addView(view,params);recognition=view}
+    }
+    private fun removeRecognition(){recognition?.let {runCatching {windows.removeViewImmediate(it)}};recognition=null}
     private fun status(message: String) {
         FinanceAutomationSettings(service).status(message)
         Toast.makeText(service, message, Toast.LENGTH_LONG).show()

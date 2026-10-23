@@ -32,6 +32,7 @@ class FinanceProjectionActivity:ComponentActivity() {
     override fun onCreate(state:Bundle?) {
         super.onCreate(state)
         if(state!=null || FinanceProjectionRequests.inFlight){finish();return}
+        if(!com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture()){finish();return}
         ownsRequest=true;FinanceProjectionRequests.inFlight=true
         lifecycleScope.launch {
             try {
@@ -46,7 +47,10 @@ class FinanceProjectionActivity:ComponentActivity() {
             catch(_:Exception){FinanceAutomationSettings(this@FinanceProjectionActivity).status("恢复、锁屏或权限状态不允许截图");finish()}
         }
     }
-    override fun onDestroy(){if(ownsRequest && !handedToService)FinanceProjectionRequests.inFlight=false;super.onDestroy()}
+    override fun onDestroy(){
+        if(ownsRequest && !handedToService){FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture()}
+        super.onDestroy()
+    }
 }
 internal data class FinanceProjectionRequest(val id:String,val token:FinanceCommandToken,val restoreGeneration:Long,val orientation:Int) {
     private val preferenceGeneration=FinanceScreenshotPreference.generation
