@@ -118,6 +118,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             }
             if (pickingCategory) FinanceCategoryFields(state.snapshot, selectedCategoryId,
                 { selectedCategoryId = it; pickingCategory = false }, state.busy, vm::createCategory)
+            selectedCategoryId?.let { FinanceCategoryIconEditor(state, vm, it) }
             TextButton({ moreFields = !moreFields }, enabled = !state.busy) { Text(if (moreFields) "收起标签与新分类" else "标签与新分类") }
             if (moreFields) {
                 OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), label = { Text("标签 · 逗号分隔") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(tags))

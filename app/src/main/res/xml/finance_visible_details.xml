@@ -4,6 +4,7 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="350"
     android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
     android:canPerformGestures="false"
     android:canRequestFilterKeyEvents="false"
     android:description="@string/finance_visible_detail_disclosure" />

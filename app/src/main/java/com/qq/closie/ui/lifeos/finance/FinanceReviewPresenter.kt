@@ -1,5 +1,6 @@
 package com.qq.closie.ui.lifeos.finance
 
+import com.qq.closie.life.finance.acquisition.VisibleDetailRuntime
 import android.content.Context
 import android.provider.Settings
 import com.qq.closie.life.finance.*
@@ -29,7 +30,12 @@ internal class FinanceReviewPresenter(private val context: Context, scope: Corou
                 plan
             } ?: return
             // Success, timeout, replacement and permission failure never remove the notification.
-            if (plan.enhancedOverlay) overlay.value.show(id)
+            if (plan.enhancedOverlay) {
+                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.DELIVERY_REQUESTED)
+                val shown = overlay.value.show(id)
+                VisibleDetailRuntime.report(if (shown) VisibleDetailRuntime.Phase.OVERLAY_ATTACHED else VisibleDetailRuntime.Phase.DELIVERY_DEFERRED)
+                if (!shown) settings.status("小票未能显示，待确认已保留，请在账目中查看")
+            }
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { settings.status("待确认已保存，但复核提醒未完成；可在账目中查看") }
     }

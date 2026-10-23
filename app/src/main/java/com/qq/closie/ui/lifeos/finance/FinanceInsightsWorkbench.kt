@@ -58,7 +58,7 @@ internal fun FinanceInsightsWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
     var icon by rememberSaveable {mutableStateOf("other")}
     FinanceChoice("设置分类",policyCategory,s.categories.map {it.id to (FinanceProjection.categoryPath(s.categories,it.id) ?: it.name)}){policyCategory=it}
     FinanceBurden.entries.forEach {b->FilterChip(burden==b.name,{burden=b.name},label={Text(if(b==FinanceBurden.FIXED) "固定负担" else "弹性消费")})}
-    FinanceChoice("分类图标",icon,listOf("food" to "餐饮","transport" to "交通","home" to "居家","health" to "健康","shopping" to "购物","gift" to "礼物","other" to "其他")){icon=it}
+    FinanceCategoryIconPicker(icon, !state.busy, v?.categoryIconRows.orEmpty().filter { it.voidedAt == null }.sortedByDescending { it.updatedAt }.map { it.iconKey }) { icon = it }
     TextButton({vm.workspaceAction(epoch) {repo,token->repo.setCategoryPolicy(token,policyCategory,FinanceBurden.valueOf(burden),icon,
         v?.categoryPolicyRows.orEmpty().singleOrNull {it.categoryId==policyCategory}?.revision)}},enabled=!state.busy && policyCategory.isNotEmpty()){Text("保存可选分类政策")}
     Text("可检查线索",style=LifeText.title)

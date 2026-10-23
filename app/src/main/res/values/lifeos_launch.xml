@@ -1,0 +1,7 @@
+<resources>
+<style name="Theme.LifeOs.Starting" parent="Theme.SplashScreen">
+<item name="windowSplashScreenBackground">#F6F5F9</item>
+<item name="windowSplashScreenAnimatedIcon">@drawable/lifeos_launch_cat</item>
+<item name="postSplashScreenTheme">@style/Theme.Closie</item>
+</style>
+</resources>

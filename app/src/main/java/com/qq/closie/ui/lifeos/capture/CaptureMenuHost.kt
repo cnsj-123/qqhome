@@ -12,11 +12,12 @@ import com.qq.closie.ui.quickcapture.QuickCaptureActivity
 
 /** Android input adapters only; repositories and intake writes belong to the controller. */
 @Composable
-fun CaptureMenuHost(intake: ExternalIntakeViewModel, onDismiss: () -> Unit, onManual: () -> Unit) {
+fun CaptureMenuHost(intake: ExternalIntakeViewModel, onDismiss: () -> Unit, onManual: () -> Unit, onPhotos: () -> Unit = {}) {
     val context = LocalContext.current
     CaptureBottomSheet(onDismiss = onDismiss, onAction = { action ->
         onDismiss()
         when (action) {
+            CaptureAction.HomePhotos -> onPhotos()
             CaptureAction.QuickCapture -> context.startActivity(Intent(context, QuickCaptureActivity::class.java))
             CaptureAction.ManualRecord -> onManual()
             CaptureAction.PasteText, CaptureAction.Link -> {

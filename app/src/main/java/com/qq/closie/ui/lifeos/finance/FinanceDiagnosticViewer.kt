@@ -33,6 +33,6 @@ internal fun FinanceDiagnosticViewer(state:FinanceUiState,vm:FinanceViewModel,di
             Text(account.name);FinanceAccountWorkbench(state,account,vm)
         }}
     }
-    entry?.let {id->FinanceProjection.ledger(s).singleOrNull {it.id==id}?.let {row->FinanceEntrySheet(state,row,vm){entry=null}}}
+    entry?.let {id->FinanceCanonicalRecordSheet(state,vm,id){entry=null}}
     economic?.let {id->key(id) {FinanceEconomicEditor(state,vm,id){economic=null}}}
 }

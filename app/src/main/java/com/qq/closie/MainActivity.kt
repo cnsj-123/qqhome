@@ -9,6 +9,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ViewModelProvider
 import com.qq.closie.navigation.ExternalCommandViewModel
 import com.qq.closie.ui.lifeos.LifeOsApp
@@ -21,28 +22,14 @@ class MainActivity : ComponentActivity() {
     }
     private val external by lazy { ViewModelProvider(this)[ExternalCommandViewModel::class.java] }
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         receiveIntent(intent, initial = true)
-        // Hold the launch window until saved appearance is available, bounded for IO failure.
-        // Avoid rendering an original-palette screen and immediately replacing it with the saved one.
-        val startedAt = android.os.SystemClock.uptimeMillis()
-        var compositionReady = false
-        val decor = window.decorView
-        val appearanceReady = object : android.view.ViewTreeObserver.OnPreDrawListener {
-            override fun onPreDraw(): Boolean {
-                val ready = compositionReady ||
-                    android.os.SystemClock.uptimeMillis() - startedAt >= 1500L
-                if (ready) decor.viewTreeObserver.removeOnPreDrawListener(this)
-                return ready
-            }
-        }
-        decor.viewTreeObserver.addOnPreDrawListener(appearanceReady)
-        decor.postDelayed({ decor.invalidate() }, 1500L)
         setContent {
-            LifeOsApp(application as ClosieApplication, external, onContentReady = { compositionReady = true }) { dark ->
+            LifeOsApp(application as ClosieApplication, external, onContentReady = {}) { dark ->
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = !dark
                     isAppearanceLightNavigationBars = !dark

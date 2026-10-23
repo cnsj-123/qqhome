@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
 data class HomeFactUi(val sourceId: String, val title: String, val domainLabel: String)
-data class HistoryItemUi(val sourceId: String, val date: LocalDate, val title: String)
+data class HistoryItemUi(val sourceId: String, val date: LocalDate, val title: String, val photo: LifeMediaUi? = null)
 data class FutureIntentUi(val sourceId: String, val expectedDate: LocalDate?, val title: String)
 
 data class HomeUiState(

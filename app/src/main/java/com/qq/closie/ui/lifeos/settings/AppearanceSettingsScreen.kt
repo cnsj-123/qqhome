@@ -112,10 +112,23 @@ fun AppearanceSettingsScreen(
         var editingColor by remember { mutableStateOf<ThemeField?>(null) }
         val fields = listOf(ThemeField.ACCENT to state.accent, ThemeField.PAPER to state.paper,
             ThemeField.SECONDARY to state.secondary, ThemeField.SOFT to state.soft, ThemeField.WARM to state.warm)
-        fields.forEach { (field, value) ->
-            TextButton({ editingColor = field }, enabled = !state.isSaving && !state.extracting,
-                modifier = Modifier.fillMaxWidth()) {
-                ColorSwatch(value); Text(field.label, Modifier.weight(1f).padding(start = 12.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = if (maxWidth >= 340.dp && androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.2f) 5 else 3
+            Column {
+                fields.chunked(columns).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        row.forEach { (field, value) ->
+                            TextButton({ editingColor = field }, enabled = !state.isSaving && !state.extracting, modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp)) {
+                                Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                    ColorSwatch(value)
+                                    Text(field.label, style = LifeText.caption, modifier = Modifier.padding(top = 6.dp))
+                                }
+                            }
+                        }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
         editingColor?.let { field ->

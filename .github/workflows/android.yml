@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [main, 'feature/life-os-v16-*']
+    branches: [main, 'feature/life-os-v16-*', 'fix/v16-product-convergence-20261023']
   pull_request:
   workflow_dispatch:
 

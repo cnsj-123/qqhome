@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.finance
 import com.qq.closie.life.ui.theme.BundledText as Text
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -98,13 +99,21 @@ internal fun FinanceAccountStrip(state: FinanceUiState, open: (String) -> Unit) 
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, index: Int,
-    modifier: Modifier = Modifier, flat: Boolean = false, netMinor:Long?=null, signPending:Boolean=false,onClick: () -> Unit) {
+    modifier: Modifier = Modifier, flat: Boolean = false, netMinor:Long?=null, signPending:Boolean=false, compact:Boolean=false,onLongClick: (() -> Unit)? = null,onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
     val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
-    Surface(onClick = onClick, modifier = modifier, color = if (flat) Color.Transparent else colors.card,
+    Surface(modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick), color = if (flat) Color.Transparent else colors.card,
         shape = if (flat) RectangleShape else RoundedCornerShape(18.dp)) {
+        if (compact) Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(account.kind.label + if (account.archivedAt != null) " · 已归档" else "", style = LifeText.caption, color = colors.inkSecondary)
+            Text(account.name, style = LifeText.body, color = colors.ink)
+            Text(FinanceMoney.display(balance, account.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink)
+            netMinor?.let { Text("净额贡献 " + FinanceMoney.display(it, account.currencyCode), style = LifeText.caption) }
+            if (signPending) Text("期初符号待确认", style = LifeText.caption, color = colors.inkSecondary)
+        } else
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(3.dp).height(30.dp).background(swatch, RoundedCornerShape(2.dp)))
             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

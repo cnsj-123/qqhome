@@ -51,6 +51,34 @@ class FinanceMediaRepository(private val db:LifeDatabase,private val finance:Fin
             if(retainReceipt) attachInTransaction(FinanceMediaTarget(proposalId=proposalId),document,"所选识别凭据")
             proposalId
         }
+    /** Explicit capture: no image URI or OCR prose is persisted, and confirmation remains separate. */
+    suspend fun createScreenshotCandidate(token: FinanceCommandToken, fields: FinanceOcrFields,
+        stillCurrent: () -> Boolean): String =
+        commands.run(token, "SCREENSHOT_CANDIDATE", listOf(fields)) {
+            require(stillCurrent()) { "截图请求已失效，请重新点击截图识别" }
+            require(fields.amountMinor == null || fields.amountMinor > 0)
+            require(fields.amountMinor != null || fields.occurredAt != null || fields.suggestedKind != null)
+            val now = clock(); val proposalId = id(); val evidenceId = id()
+            val kind = if (fields.role == FinanceFlowRole.REFUND) FinanceProposalKind.INCOME else fields.suggestedKind ?: FinanceProposalKind.EXPENSE
+            val proposal = FinanceProposalPrivacy.sanitize(FinanceProposalEntity(proposalId, FinanceSource.SCREENSHOT,
+                "screenshot:v1:${id()}", "", now, fields.occurredAt ?: now, kind, fields.amountMinor, "",
+                role = fields.role ?: if (kind == FinanceProposalKind.EXPENSE) FinanceFlowRole.PAYMENT else FinanceFlowRole.OTHER))
+            db.financeIntakeDao().insertProposal(proposal)
+            dao.putEvidence(listOf(FinanceEvidenceEntity(evidenceId, "local-ocr", "user-screenshot",
+                referenceKind = FinanceReferenceKind.NONE, digestNamespace = "user-screenshot:unscoped:NONE",
+                capturedAt = now, summary = fields.issue.take(240), createdAt = now, updatedAt = now)))
+            dao.putExtraction(listOf(FinanceExtractionEntity(id(), evidenceId, 1, fields.amountMinor, "CNY", fields.occurredAt,
+                when (fields.suggestedKind) { FinanceProposalKind.EXPENSE -> FinanceDirection.OUTFLOW
+                    FinanceProposalKind.INCOME -> FinanceDirection.INFLOW; else -> null }, fields.issue.take(240), now, now)))
+            dao.putEvidenceProposal(listOf(FinanceEvidenceProposalEntity(evidenceId, proposalId)))
+            dao.putReviewSession(listOf(FinanceReviewSessionEntity(proposalId, 0, token.restoreEpoch,
+                fields.amountMinor?.let { FinanceMoney.input(it) }.orEmpty(), null, "", "", "", FinanceReviewState.EDITING,
+                kind = FinanceDraftKind.valueOf(kind.name), occurredAt = proposal.occurredAt,
+                occurredText = fields.occurredAt?.let(FinanceTime::input).orEmpty(), role = proposal.role, createdAt = now, updatedAt = now)))
+            require(stillCurrent()) { "截图请求已失效，本次候选已撤回" }
+            proposalId
+        }
+
     private fun validateDocument(document:FinanceSelectedDocument) {
         require(Uri.parse(document.uri).scheme=="content" && document.sha256.matches(Regex("[a-f0-9]{64}")))
         require(document.mimeType.startsWith("image/") || document.mimeType=="application/pdf")

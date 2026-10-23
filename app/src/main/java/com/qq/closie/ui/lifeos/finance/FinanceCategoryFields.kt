@@ -18,22 +18,19 @@ import com.qq.closie.ui.lifeos.theme.LifeText
 
 /** User icon keys are typed configuration; names supply a presentation default. */
 internal object FinanceCategoryGlyph {
-    private val defaults = listOf(
-        setOf("三餐", "早餐", "午餐", "晚餐", "餐饮", "零食", "买菜") to Icons.Outlined.Restaurant,
-        setOf("交通", "交通住宿", "旅行", "高铁", "公交") to Icons.Outlined.DirectionsBus,
-        setOf("医疗", "健康", "药品") to Icons.Outlined.LocalHospital,
-        setOf("学习", "书籍", "教育") to Icons.Outlined.MenuBook,
-        setOf("日用品", "超市", "购物") to Icons.Outlined.ShoppingBag,
-        setOf("衣服", "美妆", "美甲") to Icons.Outlined.Checkroom,
-        setOf("园艺", "植物") to Icons.Outlined.LocalFlorist,
-        setOf("宠物") to Icons.Outlined.Pets,
-        setOf("人情", "礼物") to Icons.Outlined.CardGiftcard)
-    fun forName(name: String): ImageVector = defaults.firstOrNull { name.trim() in it.first }?.second ?: Icons.Outlined.Category
-    fun forCategory(s:FinanceSnapshot,id:String,name:String):ImageVector = when(s.v16?.categoryIconRows.orEmpty().singleOrNull {it.categoryId==id && it.voidedAt==null}?.iconKey) {
-        "food"->Icons.Outlined.Restaurant;"transport"->Icons.Outlined.DirectionsBus;"home"->Icons.Outlined.Home
-        "health"->Icons.Outlined.LocalHospital;"shopping"->Icons.Outlined.ShoppingBag;"gift"->Icons.Outlined.CardGiftcard
-        "other"->Icons.Outlined.Category;else->forName(name)
+    private fun defaultKey(name: String): String = when (name.trim()) {
+        "餐饮", "外卖", "美食", "水果", "饮料", "零食", "早餐" -> "food"
+        "交通", "交通住宿", "出行", "打车", "公交" -> "transport"
+        "医疗", "健康", "药品" -> "health"
+        "日用品", "购物", "杂物", "衣服", "美妆", "服饰" -> "shopping"
+        "礼物", "礼金" -> "gift"
+        "居家", "家居", "房租", "园艺", "植物" -> "home"
+        else -> "other"
     }
+    fun forName(name: String): ImageVector = FinanceCategoryVectors.get(defaultKey(name))
+    fun forCategory(s: FinanceSnapshot, id: String, name: String): ImageVector =
+        FinanceCategoryVectors.get(s.v16?.categoryIconRows.orEmpty()
+            .singleOrNull { it.categoryId == id && it.voidedAt == null }?.iconKey ?: defaultKey(name))
 }
 
 @Composable

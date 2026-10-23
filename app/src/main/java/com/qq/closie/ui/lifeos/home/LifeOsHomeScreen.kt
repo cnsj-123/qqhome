@@ -3,6 +3,8 @@ package com.qq.closie.ui.lifeos.home
 import com.qq.closie.life.ui.theme.BundledText as Text
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -27,11 +29,14 @@ fun LifeOsHomeScreen(
     state: HomeUiState,
     onDrawer: () -> Unit, onCalendar: () -> Unit, onMap: () -> Unit,
     onCompanion: () -> Unit, onCapture: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier, onToday: () -> Unit = {}
 ) {
     val colors = LocalLifeOsColors.current
+    var showTodayText by androidx.compose.runtime.saveable.rememberSaveable(state.date) { mutableStateOf(false) }
+    var truncatedToday by remember(state.date) { mutableStateOf(false) }
+    val todayText = state.todayFacts.joinToString("\n") { it.title }
     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
-    SuspendFunctionPageSwipe(viewerPhotoId != null)
+    SuspendFunctionPageSwipe(viewerPhotoId != null || showTodayText)
     Column(modifier.fillMaxSize().semantics {
         customActions = listOf(CustomAccessibilityAction("打开生活的抽屉") { onDrawer(); true },
             CustomAccessibilityAction("找伙伴") { onCompanion(); true })
@@ -58,14 +63,20 @@ fun LifeOsHomeScreen(
                 }
             }
             item {
+                if (state.date != LocalDate.now()) TextButton(onToday) { Text("回到今天") }
                 HomeSectionLabel("today")
                 if (state.isLoading) Spacer(Modifier.fillMaxWidth().height(140.dp))
-                else if (state.eligibleMedia.isEmpty()) {
+                else if (state.eligibleMedia.isEmpty() && state.todayFacts.isNotEmpty()) {
+                    Text(todayText, style = LifeType.journalFor(todayText), color = colors.ink, maxLines = 8,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        onTextLayout = { truncatedToday = it.hasVisualOverflow })
+                    if (truncatedToday) TextButton({ showTodayText = true }) { Text("查看全文") }
+                } else if (state.eligibleMedia.isEmpty()) {
                     Column(Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(top = 28.dp), horizontalAlignment = Alignment.End) {
                         Text("好像没有随手一拍", Modifier.align(Alignment.CenterHorizontally), style = LifeType.journalEmptyFor("好像没有随手一拍"), color = colors.muted)
                         Text("今天还没有照片", Modifier.padding(top = 30.dp), style = LifeType.JournalMeta, color = colors.muted)
                     }
-                } else Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                } else Box(Modifier.fillMaxWidth()) {
                     LifePhotoStack(state.eligibleMedia, onPhotoClick = { viewerPhotoId = it.id })
                 }
             }
@@ -77,7 +88,10 @@ fun LifeOsHomeScreen(
                 }
                 else state.historyItems.forEach {
                     Text(it.date.format(DateTimeFormatter.ofPattern("MM.dd")), style = LifeType.JournalStamp, color = colors.muted)
-                    Text(it.title, style = LifeType.journalFor(it.title), color = colors.ink)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        it.photo?.let { photo -> LifeMediaImage(photo, Modifier.size(76.dp)) }
+                        Text(it.title, Modifier.weight(1f), style = LifeType.journalFor(it.title), color = colors.ink)
+                    }
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -100,11 +114,18 @@ fun LifeOsHomeScreen(
                     Text(it.title, style = LifeType.journalAheadFor(it.title), color = colors.ink)
                     Text(it.domainLabel, style = LifeType.JournalFactMeta, color = colors.muted)
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_launch_cat), "生活伙伴", Modifier.size(width = 71.dp, height = 77.dp))
+                }
                 Spacer(Modifier.height(24.dp))
             }
         }
 
     }
+    if (showTodayText) AlertDialog(onDismissRequest = { showTodayText = false }, title = { Text("今天的记录") },
+        text = {
+            Text(todayText, Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), style = LifeText.body)
+        }, confirmButton = { TextButton({ showTodayText = false }) { Text("收好") } })
     val selected = state.eligibleMedia.firstOrNull { it.id == viewerPhotoId }
     if (selected != null) LifePhotoViewer(state.eligibleMedia, selected.id, onDismiss = { viewerPhotoId = null })
 }

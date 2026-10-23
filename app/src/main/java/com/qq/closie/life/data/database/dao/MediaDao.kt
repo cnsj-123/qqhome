@@ -51,6 +51,15 @@ interface MediaDao {
     @Query("SELECT * FROM media_resources ORDER BY createdAt ASC, id ASC")
     suspend fun getAllResources(): List<MediaResourceEntity>
 
+    @Query("SELECT * FROM media_resources WHERE contentUri = :uri ORDER BY createdAt ASC LIMIT 1")
+    suspend fun findResourceByContentUri(uri: String): MediaResourceEntity?
+
+    @Query("SELECT media_links.* FROM media_links JOIN life_entities ON life_entities.id = media_links.ownerEntityId LEFT JOIN media_resources ON media_resources.mediaAssetId = media_links.mediaAssetId WHERE media_links.role = 'home-photo' AND life_entities.deletedAt IS NULL GROUP BY media_links.id ORDER BY media_links.createdAt DESC, media_links.id")
+    fun observeHomePhotoLinks(): Flow<List<MediaLinkEntity>>
+
+    @Query("SELECT media_links.* FROM media_links JOIN life_entities ON life_entities.id = media_links.ownerEntityId WHERE media_links.role = 'home-photo' AND life_entities.deletedAt IS NULL ORDER BY media_links.createdAt DESC, media_links.id")
+    suspend fun getHomePhotoLinks(): List<MediaLinkEntity>
+
     // --- MediaLink ---
 
     @Insert(onConflict = OnConflictStrategy.ABORT)

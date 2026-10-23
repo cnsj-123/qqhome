@@ -109,7 +109,7 @@ internal fun FinanceShoppingWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
     viewingEntry?.let {id->
         val row=remember(s,id) {FinanceProjection.ledger(s).firstOrNull {it.entry.id==id || it.transfer?.inflowEntryId==id}}
         if(row==null) FinanceReceipt("原流水已改变",onClose={viewingEntry=null}) {Text("请返回时间线重新核对有效记录。")}
-        else key(id) {FinanceEntrySheet(state,row,vm){viewingEntry=null}}
+        else key(id) {FinanceCanonicalRecordSheet(state,vm,id){viewingEntry=null}}
     }
     viewingEvent?.let {id->key(id) {FinanceEconomicEditor(state,vm,id){viewingEvent=null}}}
 }

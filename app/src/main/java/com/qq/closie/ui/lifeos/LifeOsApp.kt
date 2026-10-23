@@ -2,6 +2,10 @@ package com.qq.closie.ui.lifeos
 
 import com.qq.closie.life.ui.theme.BundledText as Text
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -29,7 +33,9 @@ import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onContentReady: () -> Unit = {}, onDarkAppearance: (Boolean) -> Unit) {
     val appearance: AppearanceViewModel = viewModel(factory = AppearanceViewModel.Factory(app.appearanceRepository))
     val selected by appearance.appearance.collectAsStateWithLifecycle()
-    val ready = remember { runCatching { RestoreStartupGate.requireReady() }.isSuccess }
+    val startupStatus = remember { RestoreStartupGate.state.map { it.status }.distinctUntilChanged() }
+    val restoreStatus by startupStatus.collectAsStateWithLifecycle(initialValue = RestoreStartupGate.state.value.status)
+    val ready = restoreStatus == RestoreStartupGate.Status.READY
     if (!ready) {
         androidx.compose.runtime.SideEffect(onContentReady)
         LifeOsTheme { LifeEmptyState("恢复尚未完成，原数据已保留。请在系统设置中停止应用后重新打开，以重试启动恢复。") }
@@ -37,11 +43,16 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
     }
     val settings = selected
     if (settings == null) {
+        androidx.compose.runtime.SideEffect(onContentReady)
         LifeOsTheme {
             val colors = LocalLifeOsColors.current
             Surface(Modifier.fillMaxSize(), color = colors.paper) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("正在准备生活页", style = LifeText.caption, color = colors.inkSecondary)
+                    androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_launch_cat), null, Modifier.size(72.dp))
+                        Text("Life OS", style = com.qq.closie.life.ui.theme.LifeType.Wordmark, color = colors.ink)
+                        Text("正在准备生活页", style = LifeText.caption, color = colors.inkSecondary)
+                    }
                 }
             }
         }
@@ -54,7 +65,8 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
             container.captureRepository)
     })
     val shell: LifeOsShellViewModel = viewModel(factory=PresentationFactory(LifeOsShellViewModel::class.java) {
-        LifeOsShellViewModel(com.qq.closie.ui.lifeos.home.FinanceHomeStateProvider(container.financeRepository))
+        LifeOsShellViewModel(com.qq.closie.ui.lifeos.home.MediaHomeStateProvider(
+            com.qq.closie.ui.lifeos.home.FinanceHomeStateProvider(container.financeRepository), container.homePhotoRepository))
     })
     val command by external.command.collectAsStateWithLifecycle()
     LifeOsRoot(app.wardrobeRepository, container, settings, shell, appearance, intake,

@@ -86,9 +86,7 @@ internal fun FinanceRelationsScreen(state: FinanceUiState, vm: FinanceViewModel,
             }
         }
     }
-    editId?.let { id -> state.allRows.find { it.id == id }?.let { row ->
-        FinanceEntrySheet(state, row, vm) { editId = null }
-    } }
+    editId?.let { id -> FinanceCanonicalRecordSheet(state, vm, id) { editId = null } }
     returnEvent?.let { id -> matters.find { it.event.id == id }?.let { matter ->
         FinanceEntrySheet(state, null, vm, initialRelationship = FinanceRelationshipDraft(
             nature = matter.event.nature, role = if (matter.event.nature == FinanceNature.REIMBURSABLE)

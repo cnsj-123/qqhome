@@ -74,6 +74,21 @@ fun LifeOsRoot(
         val focus = LocalFocusManager.current
         val keyboard = LocalSoftwareKeyboardController.current
         val scope = rememberCoroutineScope()
+        val photoContext = androidx.compose.ui.platform.LocalContext.current
+        val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris ->
+            if (uris.isNotEmpty()) scope.launch {
+                try {
+                    lifeContainer.homePhotoRepository.addReferences(photoContext, uris)
+                    shellViewModel.selectDate(java.time.LocalDate.now())
+                    nav.navigateLifeTopLevel(LifeOsRoute.HOME)
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) {
+                    android.widget.Toast.makeText(photoContext, e.message ?: "照片引用未完成，请重新选择", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         var captureMenu by rememberSaveable { mutableStateOf(false) }
         val intakeNavigation by intake.navigation.collectAsStateWithLifecycle()
         val intakeError by intake.error.collectAsStateWithLifecycle()
@@ -155,6 +170,7 @@ fun LifeOsRoot(
         // Dialog/sheet hosts retain modal Back priority over the shell callback.
         com.qq.closie.ui.lifeos.finance.FinanceGlobalReviewHost(lifeContainer)
         if (captureMenu) CaptureMenuHost(intake, onDismiss = { captureMenu = false },
+            onPhotos = { photoPicker.launch(arrayOf("image/*")) },
             onManual = { nav.navigateLifeTopLevel(LifeOsRoute.capture(LifeOsRoute.NEW_ID)) })
         intakeError?.let { message ->
             AlertDialog(onDismissRequest = intake::clearError, title = { Text("采集未完成") },

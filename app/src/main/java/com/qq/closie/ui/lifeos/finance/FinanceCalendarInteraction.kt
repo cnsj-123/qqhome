@@ -9,6 +9,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,29 +58,34 @@ internal fun Modifier.calendarMonthSwipe(onMonth: (Int) -> Unit): Modifier {
 }
 
 @Composable
-internal fun FinanceMonthPicker(current: YearMonth, onSelect: (YearMonth) -> Unit, onClose: () -> Unit) {
+internal fun FinanceMonthPicker(current: YearMonth, onSelect: (YearMonth) -> Unit, onClose: () -> Unit,
+    onRange: (() -> Unit)? = null) {
     SuspendFunctionPageSwipe()
-    var year by remember { mutableIntStateOf(current.year) }
-    var chooseYear by remember { mutableStateOf(false) }
+    var year by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(current.year) }
+    var chooseYear by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var pageStart by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf((current.year / 12) * 12) }
+    fun shift(step: Int) { pageStart = (pageStart + step * 12).coerceIn(1, 9987) }
     AlertDialog(onDismissRequest = onClose, title = { Text("选择年月") }, text = {
         Column {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton({ year-- }, enabled = year > 1) { Text("上一年") }
-                TextButton({ chooseYear = !chooseYear }) { Text("$year 年 ▾") }
-                TextButton({ year++ }, enabled = year < 9998) { Text("下一年") }
+            TextButton({ chooseYear = !chooseYear }) {
+                Text(if (chooseYear) "${pageStart}–${minOf(9998, pageStart + 11)}" else "$year 年")
             }
-            if (chooseYear) {
-                val years = (minOf(1900, current.year)..maxOf(YearMonth.now().year + 10, current.year)).toList()
-                val position = years.indexOf(year).coerceAtLeast(0)
-                val list = androidx.compose.foundation.lazy.rememberLazyListState(position)
-                LazyColumn(Modifier.height(220.dp), state = list) {
-                    items(years) { value -> TextButton({ year = value; chooseYear = false }, Modifier.fillMaxWidth()) { Text("$value 年") } }
+            if (chooseYear) Column(Modifier.calendarMonthSwipe(::shift).semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("更早的年份") { shift(-1); true },
+                    CustomAccessibilityAction("更晚的年份") { shift(1); true })
+            }) {
+                (pageStart..minOf(9998, pageStart + 11)).toList().chunked(3).forEach { years ->
+                    Row(Modifier.fillMaxWidth()) { years.forEach { value ->
+                        TextButton({ year = value; chooseYear = false }, Modifier.weight(1f)) { Text("$value") }
+                    } }
                 }
             } else (1..12).chunked(3).forEach { months ->
                 Row(Modifier.fillMaxWidth()) { months.forEach { month ->
                     TextButton({ onSelect(YearMonth.of(year, month)) }, Modifier.weight(1f)) { Text("$month 月") }
                 } }
             }
+            onRange?.let { TextButton(it) { Text("选择日期范围") } }
         }
     }, confirmButton = { TextButton({ onSelect(YearMonth.now()) }) { Text("本月") } },
         dismissButton = { TextButton(onClose) { Text("取消") } })

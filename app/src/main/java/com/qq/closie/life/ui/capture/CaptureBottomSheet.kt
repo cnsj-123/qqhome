@@ -25,6 +25,7 @@ import com.qq.closie.life.ui.theme.LifeType
 
 sealed interface CaptureAction {
 
+    data object HomePhotos : CaptureAction
     data object QuickCapture : CaptureAction
 
 
@@ -43,6 +44,7 @@ private data class CaptureOption(
 )
 
 private val CAPTURE_OPTIONS = listOf(
+    CaptureOption(CaptureAction.HomePhotos, "照片加入今天", "由你选择原图，引用到首页，不复制原图"),
     CaptureOption(
         action = CaptureAction.QuickCapture,
         title = "快速采集",

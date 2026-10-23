@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.pointerInput
@@ -32,6 +33,8 @@ fun LifeFunctionPages(
     onOpenChange: (Boolean) -> Unit, functionPage: @Composable () -> Unit, content: @Composable () -> Unit
 ) {
     val colors = LocalLifeOsColors.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val lowRam = remember(context) { (context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice }
     var progress by remember { mutableFloatStateOf(if (open) 1f else 0f) }
     var dragging by remember { mutableStateOf(false) }
     val currentOpen by rememberUpdatedState(open)
@@ -122,6 +125,11 @@ fun LifeFunctionPages(
                 transformOrigin = TransformOrigin(0f, .5f)
                 rotationY = if (mode == FunctionPageStyle.DECK) -24f * progress else 0f
                 rotationZ = if (mode == FunctionPageStyle.DECK) -2f * progress else 0f
+                // This is the mounted content layer, so text/photos really diffuse behind the drawer.
+                renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && !lowRam && !reducedMotion && progress > 0f) {
+                    val radius = (effects.blurDp * progress).dp.toPx().coerceAtLeast(.01f)
+                    android.graphics.RenderEffect.createBlurEffect(radius, radius, android.graphics.Shader.TileMode.CLAMP).asComposeRenderEffect()
+                } else null
                 cameraDistance = 18.dp.toPx()
                 shape = RoundedCornerShape((22f * progress).dp)
                 clip = progress > 0f

@@ -31,7 +31,7 @@ data class NormalizedTransactionEvidence(
 }
 
 object FinanceEvidenceOrigin {
-    fun requiresManualAccount(proposal:FinanceProposalEntity)=isVisible(proposal) || proposal.source==FinanceSource.SELECTED_IMAGE
+    fun requiresManualAccount(proposal:FinanceProposalEntity)=isVisible(proposal) || proposal.source in setOf(FinanceSource.SELECTED_IMAGE, FinanceSource.SCREENSHOT)
     fun isVisible(proposal: FinanceProposalEntity) = proposal.sourceKey.startsWith("visible:v1:") || proposal.sourceKey.startsWith("visible:v2:") || proposal.sourceKey.startsWith("visible:v3:")
     /** sourceKey is the existing typed evidence identity field, not user-visible prose. */
     fun strongReference(proposal: FinanceProposalEntity): String? {
@@ -66,7 +66,7 @@ object FinanceEvidenceOrigin {
         return all.filter { it.id != proposal.id && strongReference(it) == identity &&
             it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED, FinanceProposalStatus.CONFIRMED) }
     }
-    fun label(proposal: FinanceProposalEntity) = if(proposal.source==FinanceSource.SELECTED_IMAGE) "用户所选图片 · 本地识别，字段需核对"
+    fun label(proposal: FinanceProposalEntity) = if (proposal.source == FinanceSource.SCREENSHOT) "用户主动截图 · 本地识别，字段需核对" else if(proposal.source==FinanceSource.SELECTED_IMAGE) "用户所选图片 · 本地识别，字段需核对"
         else if (isVisible(proposal)) "当前可见交易详情 · 多字段一致"
         else "通知自动发现"
 }

@@ -76,6 +76,7 @@ class LifeContainer private constructor(private val database: LifeDatabase) {
     val financeAutomationRepository: FinanceAutomationRepository by lazy { gate(); FinanceAutomationRepository(database, financeRepository) }
 
     val lifeRepository: LifeRepository by lazy { gate(); LifeRepository(database) }
+    val homePhotoRepository by lazy { gate(); com.qq.closie.life.repository.HomePhotoRepository(database) }
     val mediaRepository: MediaRepository by lazy { gate(); MediaRepository(database) }
     val captureRepository: CaptureRepository by lazy { gate(); CaptureRepository(database) }
 

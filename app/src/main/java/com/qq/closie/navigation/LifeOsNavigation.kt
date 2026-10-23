@@ -54,7 +54,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         composable(LifeOsRoute.HOME) {
             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
-                onCapture = onCapture)
+                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) })
         }
         closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed)
         captureRoutes(nav, container, onCapture, onFileToLibrary)

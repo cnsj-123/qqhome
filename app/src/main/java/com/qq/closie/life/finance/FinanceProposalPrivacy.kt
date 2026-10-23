@@ -8,6 +8,7 @@ object FinanceProposalPrivacy {
             FinanceSource.WECHAT -> "微信"
             FinanceSource.ALIPAY -> "支付宝"
             FinanceSource.VISIBLE_DETAIL -> "交易"
+            FinanceSource.SCREENSHOT -> "主动截图"
             FinanceSource.SELECTED_IMAGE -> "所选图片"
             FinanceSource.LEGACY_IMPORT -> return row
         }

@@ -15,15 +15,15 @@ import kotlinx.coroutines.CancellationException
 object OcrEngine {
 
     /** Recognizes text locally; coroutine cancellation remains cancellation. */
-    suspend fun recognizeText(bitmap: Bitmap): Result<String> =
+    suspend fun recognizeText(bitmap: Bitmap, releaseAfterRecognition: Boolean = false): Result<String> =
         try {
-            Result.success(recognizeInternal(bitmap))
+            Result.success(recognizeInternal(bitmap, releaseAfterRecognition))
         } catch (e: CancellationException) {throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
 
-    private suspend fun recognizeInternal(bitmap: Bitmap): String = suspendCancellableCoroutine { cont ->
+    private suspend fun recognizeInternal(bitmap: Bitmap, releaseAfterRecognition: Boolean): String = suspendCancellableCoroutine { cont ->
         val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
         try {
             val image = InputImage.fromBitmap(bitmap, 0)
@@ -34,9 +34,10 @@ object OcrEngine {
                 .addOnFailureListener { e ->
                     if (cont.isActive) cont.resumeWith(Result.failure(e))
                 }
-                .addOnCompleteListener { runCatching { recognizer.close() } }
+                .addOnCompleteListener { runCatching { recognizer.close() }; if (releaseAfterRecognition) bitmap.recycle() }
         } catch (e: Exception) {
             runCatching { recognizer.close() }
+            if (releaseAfterRecognition) bitmap.recycle()
             if (cont.isActive) cont.resumeWith(Result.failure(e))
         }
     }

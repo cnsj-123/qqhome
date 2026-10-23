@@ -84,7 +84,7 @@ fun Modifier.lifeCompanionSwipe(enabled: Boolean, onProgress: (Float) -> Unit = 
     val updateProgress = rememberUpdatedState(onProgress)
     val open = rememberUpdatedState(onOpen)
     val density = LocalDensity.current
-    val zone = with(density) { 40.dp.toPx() }
+    val zone = with(density) { 88.dp.toPx() }
     val threshold = with(density) { 56.dp.toPx() }
     val edge = systemBackEdgePx()
     return if (!enabled) this else pointerInput(zone, threshold, edge) {

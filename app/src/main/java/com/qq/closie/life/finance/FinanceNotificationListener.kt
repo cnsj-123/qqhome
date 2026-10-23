@@ -63,7 +63,21 @@ class FinanceNotificationListener : NotificationListenerService() {
             catch (_: Exception) { report(DiscoveryResult.SAVE_FAILED); settings.status("最近一次发现未保存，请打开应用检查恢复状态后重试") }
         }
     }
-    override fun onListenerConnected() { super.onListenerConnected(); FinanceDiscoveryDiagnostics.connection(true) }
-    override fun onListenerDisconnected() { reviewDelivery.close(); super.onListenerDisconnected(); FinanceDiscoveryDiagnostics.connection(false) }
-    override fun onDestroy() { reviewDelivery.close(); FinanceDiscoveryDiagnostics.connection(false); scope.cancel(); super.onDestroy() }
+    private var rebind: kotlinx.coroutines.Job? = null
+    private fun canReconnect() = settings.read().enabled && androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+    override fun onListenerConnected() { rebind?.cancel(); rebind = null; super.onListenerConnected(); FinanceDiscoveryDiagnostics.connection(true) }
+    override fun onListenerDisconnected() {
+        reviewDelivery.close(); super.onListenerDisconnected(); FinanceDiscoveryDiagnostics.connection(false)
+        if (!canReconnect() || rebind?.isActive == true) return
+        val component = android.content.ComponentName(this, FinanceNotificationListener::class.java)
+        runCatching { requestRebind(component) }
+        rebind = scope.launch {
+            for (wait in listOf(1000L, 3000L)) {
+                kotlinx.coroutines.delay(wait)
+                if (!canReconnect()) break
+                runCatching { requestRebind(component) }
+            }
+        }
+    }
+    override fun onDestroy() { rebind?.cancel(); reviewDelivery.close(); FinanceDiscoveryDiagnostics.connection(false); scope.cancel(); super.onDestroy() }
 }

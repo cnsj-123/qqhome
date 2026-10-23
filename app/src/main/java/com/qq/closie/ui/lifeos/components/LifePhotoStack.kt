@@ -5,7 +5,11 @@ import com.qq.closie.life.ui.theme.BundledText as Text
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -43,7 +47,7 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
     val density = LocalDensity.current
     val threshold = with(density) { 48.dp.toPx() }
     val lift = with(density) { 8.dp.toPx() }
-    var index by rememberSaveable { mutableIntStateOf(0) }
+    var index by rememberSaveable(photos.map { it.id }) { mutableIntStateOf(0) }
     var vertical by rememberSaveable { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
@@ -71,7 +75,7 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
     }
 
     Column(modifier) {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(272.dp).padding(horizontal = 8.dp, vertical = 12.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f / .84f).clipToBounds()) {
             val extent = with(density) { (if (vertical) maxHeight else maxWidth).toPx() }
             val offset = if (dragging) drag else settling.value
             val dragModifier = Modifier.pointerInput(photos.map { it.id }, vertical, reduced, busy) {
@@ -84,41 +88,40 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
                 if (vertical) detectVerticalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
                 else detectHorizontalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
             }
-            (minOf(3, photos.size) - 1 downTo 0).forEach { depth ->
+            (minOf(4, photos.size) - 1 downTo 0).forEach { depth ->
                 val photo = photos[PhotoStackInteraction.nextIndex(current, depth, photos.size)]
                 val top = depth == 0
+                val pose = PhotoStackLayout.pose(photo.id, depth, maxWidth.value, maxHeight.value)
                 Surface(
-                    Modifier.fillMaxWidth().height(238.dp).zIndex((3 - depth).toFloat())
+                    Modifier.width(pose.width.dp).height(pose.height.dp)
+                        .offset((pose.centerX - pose.width / 2).dp, (pose.centerY - pose.height / 2).dp)
+                        .zIndex((4 - depth).toFloat())
                         .graphicsLayer {
                             val progress = (abs(offset) / extent.coerceAtLeast(1f)).coerceIn(0f, 1f)
-                            translationX = if (top && !vertical) offset else if (depth == 1) lift * .75f else -lift * .4f
-                            translationY = if (top && vertical) offset else depth * lift * (1 - progress * .5f)
-                            rotationZ = if (reduced) 0f else if (top) -1.4f + offset / 45f else if (depth == 1) 3.2f else -3f
-                            scaleX = 1f - depth * .03f + if (top && dragging && !reduced) .012f else 0f
+                            translationX = if (top && !vertical) offset else 0f
+                            translationY = if (top && vertical) offset else if (top && dragging && !reduced) -lift else 0f
+                            rotationZ = pose.rotation + if (top && !reduced) (offset / extent.coerceAtLeast(1f)).coerceIn(-1f, 1f) * 4f else 0f
+                            scaleX = 1f + if (top && dragging && !reduced) .012f else if (depth == 1 && !reduced) progress * .015f else 0f
                             scaleY = scaleX
                             shadowElevation = if (reduced) 0f else (if (top && dragging) 16.dp else 6.dp).toPx()
                         }.then(if (top) dragModifier.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) onPhotoClick(photo) }) else Modifier.clearAndSetSemantics {}),
-                    shape = RoundedCornerShape(5.dp), color = colors.card,
-                    border = BorderStroke(1.dp, colors.line)
+                    shape = RoundedCornerShape(1.dp), color = Color(0xFFFFFDFA)
                 ) {
-                    Column(Modifier.padding(9.dp)) {
+                    Column(Modifier.padding(7.dp)) {
                         LifeMediaImage(photo, Modifier.weight(1f).fillMaxWidth())
-                        Text(photo.caption ?: photo.title ?: "生活的一页", Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp),
-                            style = LifeText.caption, color = colors.inkSecondary, maxLines = 2)
+
                     }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { settle(-1, 0f, 0f) }, enabled = photos.size > 1 && !busy) {
-                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "上一张照片")
-            }
-            Text("${current + 1} / ${photos.size}", style = LifeText.caption, color = colors.muted)
-            IconButton(onClick = { settle(1, 0f, 0f) }, enabled = photos.size > 1 && !busy) {
-                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "下一张照片")
-            }
-            TextButton(onClick = { vertical = !vertical }, enabled = !busy) { Text(if (vertical) "左右翻" else "上下翻", style = LifeText.caption) }
-        }
+        val selected = photos[current]
+        Text(selected.caption ?: selected.title ?: "", Modifier.fillMaxWidth().padding(top = 8.dp)
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("上一张照片") { if (photos.size > 1 && !busy) settle(-1, 0f, 0f); true },
+                    CustomAccessibilityAction("下一张照片") { if (photos.size > 1 && !busy) settle(1, 0f, 0f); true }
+                )
+            }, style = LifeText.caption, color = colors.inkSecondary, maxLines = 2)
     }
 }
 

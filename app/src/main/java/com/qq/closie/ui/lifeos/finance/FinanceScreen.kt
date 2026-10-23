@@ -71,13 +71,13 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
 }
 
 @Composable
-internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: () -> Unit) {
+internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: FinanceSnapshot? = null, balanceAfter: Long? = null, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
     Surface(color = androidx.compose.ui.graphics.Color.Transparent) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(color = if (row.transfer != null) colors.paperSecondary else colors.warmSurface, shape = RoundedCornerShape(11.dp)) {
+        Surface(color = androidx.compose.ui.graphics.Color.Transparent, shape = RoundedCornerShape(11.dp)) {
             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-                Text(if (row.transfer != null) "⇄" else if (row.entry.direction == FinanceDirection.INFLOW) "↓" else "↑", color = colors.accentDeep)
+                Icon(if (snapshot != null && row.entry.categoryId != null) FinanceCategoryGlyph.forCategory(snapshot, row.entry.categoryId, row.category.orEmpty()) else FinanceCategoryGlyph.forName(row.category.orEmpty()), null, Modifier.size(20.dp), tint = colors.accentDeep)
             }
         }
         Spacer(Modifier.width(10.dp))
@@ -94,6 +94,7 @@ internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, onClick: ()
         Column(Modifier.widthIn(max = 136.dp).padding(start = 8.dp), horizontalAlignment = Alignment.End) {
             Text(prefix + FinanceMoney.display(row.entry.amountMinor, row.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink,
                 textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            if (snapshot != null) Text(balanceAfter?.let { "余额 " + FinanceMoney.display(it, row.currencyCode) } ?: "余额未确定", style = LifeText.caption, color = colors.inkSecondary)
         }
     }
     }
