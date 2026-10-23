@@ -45,6 +45,8 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     secondaryActions: @Composable () -> Unit = {}) {
     val colors = LocalLifeOsColors.current
     val requestedFilter by vm.filterInput.collectAsState()
+    val rowOrigins=remember {mutableMapOf<String,com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin>()}
+    var recordOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
     val gesturePolicy=com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
     val pager = rememberPagerState { FinanceView.entries.size }
     // Pager pages are lazy. Their scrolling state belongs to the module, not a mounted page.
@@ -300,7 +302,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     Column {
                         Text(adjustment.role.label + " · " + FinanceMoney.display(adjustment.amountMinor, adjustment.row.currencyCode))
                         Text(adjustment.issue.label + " · " + adjustment.row.entry.description, style = LifeText.caption)
-                        TextButton({ recordDestination = FinanceRecordDestination.Viewing(adjustment.row.id) }) { Text("查看并整理流水") }
+                        TextButton({ recordOrigin=null;recordDestination = FinanceRecordDestination.Viewing(adjustment.row.id) }) { Text("查看并整理流水") }
                     }
                 }
             }
@@ -313,7 +315,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     if(!FinanceCostProjection.total(matching).complete) Text("另有承担待确认，未按零计算。")
                 } }
                 items(matching,key={it.id}) { cost ->
-                    FinanceCostLine(cost,state.snapshot) { id -> recordDestination = FinanceRecordDestination.Viewing(id) }
+                    FinanceCostLine(cost,state.snapshot) { id -> recordOrigin=null;recordDestination = FinanceRecordDestination.Viewing(id) }
                 }
             } else if (detailAccount != null) {
                 val account = state.snapshot.accounts.find { it.id == detailAccount }
@@ -330,7 +332,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         Column {
                             Text(register.entry.description.ifBlank { "资金流水" }+" · "+FinanceMoney.display(register.entry.amountMinor,account.currencyCode))
                             Text(register.balanceMinor?.let { "逐笔余额 "+FinanceMoney.display(it,account.currencyCode) } ?: "起点以前历史，无可信逐笔余额",style=LifeText.caption)
-                            TextButton({ recordDestination = FinanceRecordDestination.Viewing(state.snapshot.transfers.firstOrNull { it.outflowEntryId==register.entry.id || it.inflowEntryId==register.entry.id }?.id ?: register.entry.id) }) { Text("查看记录") }
+                            TextButton({ recordOrigin=null;recordDestination = FinanceRecordDestination.Viewing(state.snapshot.transfers.firstOrNull { it.outflowEntryId==register.entry.id || it.inflowEntryId==register.entry.id }?.id ?: register.entry.id) }) { Text("查看记录") }
                         }
                     }
                 }
@@ -387,13 +389,25 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         item { Text("经济事项与个人成本",style=LifeText.title) }
                         val visibleCosts=state.costRows.filter { !calendarMode || selectedDay==null ||
                             Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate().toString()==selectedDay }
-                        items(visibleCosts,key={it.id}) { cost -> FinanceCostLine(cost,state.snapshot) { id -> recordDestination = FinanceRecordDestination.Viewing(id) } }
+                        items(visibleCosts,key={it.id}) { cost -> FinanceCostLine(cost,state.snapshot) { id -> recordOrigin=null;recordDestination = FinanceRecordDestination.Viewing(id) } }
                         val shownDays = groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
                         val heading = if (calendarMode && selectedDay != null) "$selectedDay 真实资金流水" else "真实资金流水"
                         item { Text("$heading · ${shownDays.values.sumOf { it.size }} 笔", style = LifeText.title) }
                         shownDays.forEach { (date, rows) ->
                                 item(key = "date-$date") { Text(date.toString(), style = LifeText.caption, color = colors.muted) }
-                                items(rows, key = { it.id }) { LedgerLine(it, roles[it.entry.id], state.snapshot, balancesAfter[it.entry.id]) { recordDestination = FinanceRecordDestination.Viewing(it.id) } }
+                                items(rows, key = { it.id }) { row ->
+                                    DisposableEffect(row.id){onDispose {
+                                        rowOrigins.remove(row.id)
+                                        if(entryId==row.id)recordOrigin=recordOrigin?.copy(rect=androidx.compose.ui.geometry.Rect.Zero)
+                                    }}
+                                    LedgerLine(row,roles[row.entry.id],state.snapshot,balancesAfter[row.entry.id],
+                                        hidden=viewing && entryId==row.id && recordOrigin!=null,onPosition={origin->
+                                            rowOrigins[row.id]=origin
+                                            if(viewing && entryId==row.id && recordOrigin!=null)recordOrigin=origin
+                                        }) {
+                                        recordOrigin=rowOrigins[row.id];recordDestination=FinanceRecordDestination.Viewing(row.id)
+                                    }
+                                }
                             }
                         if (shownDays.isEmpty()) item { Text("这一天或范围还没有流水。", style = LifeText.body) }
                     }
@@ -404,6 +418,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
     }
     if (viewing && state.loaded) FinanceRecordDetails(allRows.find { it.id == entryId }, state.snapshot,
+        origin=recordOrigin,
         onEdit = { recordDestination = FinanceRecordDestination.Editing(it.id, it.entry.revision) },
         onClose = { recordDestination = FinanceRecordDestination.Closed })
     if (editing && state.loaded) {

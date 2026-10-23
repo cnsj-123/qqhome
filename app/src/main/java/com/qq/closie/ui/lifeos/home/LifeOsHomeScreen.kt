@@ -38,6 +38,7 @@ fun LifeOsHomeScreen(
     var showTodayText by androidx.compose.runtime.saveable.rememberSaveable(state.date) { mutableStateOf(false) }
     var truncatedToday by remember(state.date) { mutableStateOf(false) }
     val todayText = state.todayFacts.joinToString("\n") { it.title }
+    var viewerOrigin by remember {mutableStateOf<LifeSurfaceOrigin?>(null)}
     var viewerPhotoId by remember { mutableStateOf<String?>(null) }
     SuspendFunctionPageSwipe(viewerPhotoId != null || showTodayText || datePopup)
     Column(modifier.fillMaxSize().semantics {
@@ -80,7 +81,8 @@ fun LifeOsHomeScreen(
                         Text("今天还没有照片", Modifier.padding(top = 30.dp), style = LifeType.JournalMeta, color = colors.muted)
                     }
                 } else Box(Modifier.fillMaxWidth()) {
-                    LifePhotoStack(state.eligibleMedia, onPhotoClick = { viewerPhotoId = it.id })
+                    LifePhotoStack(state.eligibleMedia, onPhotoClick = {viewerOrigin=null;viewerPhotoId=it.id},
+                        hiddenPhotoId=viewerPhotoId,onPhotoOrigin={photo,origin->viewerOrigin=origin;viewerPhotoId=photo.id})
                 }
             }
             item {
@@ -132,7 +134,7 @@ fun LifeOsHomeScreen(
         }, confirmButton = { TextButton({ showTodayText = false }) { Text("收好") } })
     val selected = state.eligibleMedia.firstOrNull { it.id == viewerPhotoId }
     if (selected != null) LifePhotoViewer(state.eligibleMedia, selected.id, onDismiss = { viewerPhotoId = null },
-        onRemove = { onRemovePhoto(it.id); viewerPhotoId = null })
+        onRemove = { onRemovePhoto(it.id); viewerPhotoId = null },origin=viewerOrigin)
 }
 
 @Composable

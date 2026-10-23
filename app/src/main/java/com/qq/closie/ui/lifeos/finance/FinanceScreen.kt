@@ -15,6 +15,8 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.graphicsLayer
+import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -71,10 +73,14 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
 }
 
 @Composable
-internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: FinanceSnapshot? = null, balanceAfter: Long? = null, onClick: () -> Unit) {
+internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: FinanceSnapshot? = null, balanceAfter: Long? = null, hidden:Boolean=false,
+    onPosition:(com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin)->Unit={}, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
     Surface(color = androidx.compose.ui.graphics.Color.Transparent) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth()
+        .lifeSurfaceOrigin(androidx.compose.ui.platform.LocalConfiguration.current.orientation,onPosition=onPosition)
+        .graphicsLayer {alpha=if(hidden)0f else 1f}
+        .clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(color = androidx.compose.ui.graphics.Color.Transparent, shape = RoundedCornerShape(11.dp)) {
             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
                 Icon(if (snapshot != null && row.entry.categoryId != null) FinanceCategoryGlyph.forCategory(snapshot, row.entry.categoryId, row.category.orEmpty()) else FinanceCategoryGlyph.forName(row.category.orEmpty()), null, Modifier.size(20.dp), tint = colors.accentDeep)

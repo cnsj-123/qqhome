@@ -13,9 +13,9 @@ import com.qq.closie.ui.lifeos.theme.*
 /** Read-only canonical projection. This composable has no repository or command reference. */
 @Composable
 internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnapshot,
-    onEdit: (FinanceLedgerRow) -> Unit, onClose: () -> Unit) {
+    onEdit: (FinanceLedgerRow) -> Unit, origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?=null, onClose: () -> Unit) {
     val colors = LocalLifeOsColors.current
-    FinanceReceipt("账单详情", onClose = onClose, actions = {
+    FinanceReceipt("账单详情", onClose = onClose, origin=origin, actions = {
         if (row != null) Button({ onEdit(row) }, Modifier.fillMaxWidth()) { Text("编辑账单") }
     }) {
         if (row == null) {

@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,6 +75,24 @@ fun LifeOsRoot(
         val focus = LocalFocusManager.current
         val keyboard = LocalSoftwareKeyboardController.current
         val scope = rememberCoroutineScope()
+        var companionAnimation by remember {mutableStateOf<kotlinx.coroutines.Job?>(null)}
+        val imeVisible=WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)>0
+        fun updateCompanionProgress(value:Float) {
+            companionAnimation?.cancel()
+            if(value==0f && companionProgress>0f && !reduced) {
+                companionAnimation=scope.launch {androidx.compose.animation.core.animate(companionProgress,0f,
+                    animationSpec=androidx.compose.animation.core.tween(180)) {p,_->companionProgress=p}}
+            } else companionProgress=value
+        }
+        fun openCompanion() {
+            companionAnimation?.cancel()
+            companionAnimation=scope.launch {
+                if(!reduced)androidx.compose.animation.core.animate(companionProgress,1f,
+                    animationSpec=androidx.compose.animation.core.tween(240)) {p,_->companionProgress=p}
+                nav.navigateLifeTopLevel(LifeOsRoute.COMPANION);companionProgress=0f
+            }
+        }
+        LaunchedEffect(entry?.destination?.route) {companionAnimation?.cancel();companionProgress=0f}
         val photoContext = androidx.compose.ui.platform.LocalContext.current
         val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
@@ -124,13 +143,13 @@ fun LifeOsRoot(
         }
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
         SideEffect { gesturePolicy.requestDrawer = ::openDrawer }
-        CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy) {
+        CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy,LocalShellCompanionGesture provides true) {
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
-            Box(Modifier.safeDrawingPadding()
+            Box(Modifier.safeDrawingPadding().clipToBounds()
                 .lifeCompanionSwipe(enabled = supportsFunctionPage(entry?.destination?.route) &&
-                    !drawerOpen && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
-                    onProgress = { companionProgress = it },
-                    onOpen = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) })) {
+                    !drawerOpen && !imeVisible && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
+                    onProgress = ::updateCompanionProgress,
+                    onOpen = ::openCompanion)) {
                 com.qq.closie.ui.lifeos.components.LifeFunctionPages(
                     open = drawerOpen,
                     enabled = supportsFunctionPage(entry?.destination?.route) && gesturePolicy.blockers == 0 && !captureMenu && intakeError == null,
@@ -164,13 +183,12 @@ fun LifeOsRoot(
                         if (!gesturePolicy.cancelActiveReorder()) drawerOpen = false
                     }
                 }
-                if (companionProgress > 0f) Surface(
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).graphicsLayer {
-                        translationY = -32.dp.toPx() * companionProgress
-                    }, shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = colors.paperTertiary) {
-                    Text(if (companionProgress >= 1f) "松开找伙伴" else "上滑找伙伴", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        style = com.qq.closie.ui.lifeos.theme.LifeText.caption)
+                if(companionProgress>0f) Box(Modifier.fillMaxSize().graphicsLayer {
+                    translationY=size.height*(1f-companionProgress)
+                }) {
+                    com.qq.closie.ui.lifeos.chat.CompanionShellScreen {updateCompanionProgress(0f)}
                 }
+                BackHandler(enabled=companionProgress>0f) {updateCompanionProgress(0f)}
             }
         }
         }

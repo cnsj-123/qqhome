@@ -31,6 +31,7 @@ import com.qq.closie.ui.lifeos.settings.AppearanceViewModel
 /** Android composition root. Preferences can load independently of the business restore barrier. */
 @Composable
 fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onContentReady: () -> Unit = {}, onDarkAppearance: (Boolean) -> Unit) {
+    val startupMotion=remember {LifeStartupMotion()}
     val appearance: AppearanceViewModel = viewModel(factory = AppearanceViewModel.Factory(app.appearanceRepository))
     val selected by appearance.appearance.collectAsStateWithLifecycle()
     val startupStatus = remember { RestoreStartupGate.state.map { it.status }.distinctUntilChanged() }
@@ -41,7 +42,7 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
         androidx.compose.runtime.SideEffect(onContentReady)
         LifeOsTheme {
             if (restoreStatus == RestoreStartupGate.Status.RESTORING)
-                LifeStartupFeedback("正在恢复数据", "正在核对备份并替换本地数据，请保持应用开启")
+                LifeStartupFeedback("正在恢复数据", "正在核对备份并替换本地数据，请保持应用开启",startupMotion)
             else LifeEmptyState("恢复未完成，业务数据已暂停访问。请停止应用后重新打开，以重试启动恢复。")
         }
         return
@@ -49,7 +50,7 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
     val settings = selected
     if (settings == null) {
         androidx.compose.runtime.SideEffect(onContentReady)
-        LifeOsTheme { LifeStartupFeedback("正在准备生活页", "正在读取外观与本地数据") }
+        LifeOsTheme { LifeStartupFeedback("正在准备生活页", "正在读取外观与本地数据",startupMotion) }
         return
     }
     if (restoreTask.result != null) LifeOsTheme {
@@ -66,7 +67,7 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
     val resources=initialized?.getOrNull()
     if(resources==null) {
         LifeOsTheme {
-            if(initialized==null) LifeStartupFeedback("正在打开生活页","正在读取本地衣橱与账本")
+            if(initialized==null) LifeStartupFeedback("正在打开生活页","正在读取本地衣橱与账本",startupMotion)
             else LifeEmptyState("本地数据未能打开，请重新打开应用重试。原数据未被替换。")
         }
         return

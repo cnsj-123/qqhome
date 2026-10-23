@@ -94,6 +94,7 @@ fun Modifier.lifeCompanionSwipe(enabled: Boolean, onProgress: (Float) -> Unit = 
             val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
             if (down.position.y < size.height - zone || down.position.x <= edge ||
                 down.position.x >= size.width - edge) return@awaitEachGesture
+            var committed=false
             try {
             var owned = false
             while (true) {
@@ -109,14 +110,14 @@ fun Modifier.lifeCompanionSwipe(enabled: Boolean, onProgress: (Float) -> Unit = 
                         else -> return@awaitEachGesture
                     }
                 }
-                updateProgress.value((-delta.y / threshold).coerceIn(0f, 1f))
+                updateProgress.value((-delta.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f))
                 change.consume()
                 if (!change.pressed) {
-                    if (-delta.y >= threshold) open.value()
+                    if (-delta.y >= threshold) {committed=true;open.value()}
                     break
                 }
             }
-            } finally { updateProgress.value(0f) }
+            } finally {if(!committed)updateProgress.value(0f)}
         }
     }
 }

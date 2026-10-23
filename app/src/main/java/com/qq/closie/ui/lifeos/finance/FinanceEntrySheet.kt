@@ -8,6 +8,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.*
@@ -34,6 +39,13 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         (row==null && restoredGenerationMismatch)) {
         FinanceReceipt("此编辑器已结束",onClose=onTerminalClose ?: onClose) {Text("上一笔已提交、草稿已完成或恢复代际已改变。收起后可重新打开，不会以旧内容再次记账。")};return
     }
+    var savedFeedback by remember {mutableStateOf(false)}
+    var feedbackGeneration by remember {mutableIntStateOf(0)}
+    LaunchedEffect(feedbackGeneration) {if(savedFeedback){kotlinx.coroutines.delay(150);savedFeedback=false}}
+    val saveInteraction=remember {MutableInteractionSource()}
+    val savePressed by saveInteraction.collectIsPressedAsState()
+    val reducedSaveMotion=com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    val saveScale by animateFloatAsState(if(savePressed && !reducedSaveMotion)0.98f else 1f,tween(80),label="receipt-save-press")
     var continuous by rememberSaveable(editorId) { mutableStateOf(savedDraft?.continuous ?: false) }
     var kindName by rememberSaveable(row?.id) { mutableStateOf(when {
         row?.transfer != null -> FinanceEditorKind.TRANSFER.name
@@ -81,15 +93,17 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, ::leave, actions = {
         Button(onClick = {
             if(row==null) vm.saveDraftRecord(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) {
-                if(continuous) { editGeneration=Math.addExact(editGeneration,1L);amount="";description="";selectedCategoryId=null;category="";subcategory="";tags=""
+                if(continuous) {savedFeedback=true;feedbackGeneration++
+                    editGeneration=Math.addExact(editGeneration,1L);amount="";description="";selectedCategoryId=null;category="";subcategory="";tags=""
                     relationship=FinanceRelationshipDraft(role=if(kind==FinanceEditorKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
                 } else (onSaved ?: onClose)()
             } else vm.saveRecord(row,currentDraft(),onSaved ?: onClose,editorEpoch)
         },
-            enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.busy) "正在保存……" else "保存记录") }
+            enabled = !state.busy, interactionSource=saveInteraction,
+            modifier = Modifier.fillMaxWidth().graphicsLayer {scaleX=saveScale;scaleY=saveScale}) { Text(if (state.busy) "正在保存……" else "保存记录") }
     }) {
         if(row==null) {
-            Text(if(savedDraft!=null) "已恢复未完成草稿；保存前核对账户与关系。" else "未完成内容自动保存为草稿，不计余额。",style=LifeText.caption)
+            Text(if(savedFeedback) "已保存，可继续记录" else if(savedDraft!=null) "已恢复未完成草稿；保存前核对账户与关系。" else "未完成内容自动保存为草稿，不计余额。",style=LifeText.caption)
             Row { Checkbox(continuous,{continuous=it},enabled=!state.busy);Text("连续记账 · 锁定账户与日期") }
             if(continuous) Text("本轮锁定：${accounts.firstOrNull { it.id==accountId }?.name ?: "待选择账户"} · $occurredAt",style=LifeText.caption)
         }

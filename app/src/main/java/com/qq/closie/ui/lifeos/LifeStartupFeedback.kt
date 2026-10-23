@@ -18,14 +18,22 @@ import com.qq.closie.life.ui.theme.BundledText as Text
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
 import com.qq.closie.ui.lifeos.theme.*
 
+internal class LifeStartupMotion {
+    val blink=Animatable(0f)
+    var started=false
+}
+
 /** Visible while real startup/restore work runs; never holds ready content for an artificial timer. */
 @Composable
-internal fun LifeStartupFeedback(title:String, detail:String) {
+internal fun LifeStartupFeedback(title:String, detail:String,motion:LifeStartupMotion?=null) {
     val reduced = reducedLifeMotion()
-    val breath = remember { Animatable(0f) }
-    LaunchedEffect(reduced) {
-        if (reduced) breath.snapTo(0f)
+    val localMotion=remember {LifeStartupMotion()}
+    val owner=motion ?: localMotion
+    val breath=owner.blink
+    LaunchedEffect(reduced,owner) {
+        if (reduced || owner.started) breath.snapTo(0f)
         else {
+            owner.started=true
             breath.animateTo(1f,tween(90))
             breath.animateTo(0f,tween(100))
         }

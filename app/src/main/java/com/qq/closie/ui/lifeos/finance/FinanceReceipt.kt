@@ -20,19 +20,19 @@ import com.qq.closie.ui.lifeos.theme.*
 @Composable
 internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String? = null,
     onClose: () -> Unit, actions: (@Composable ColumnScope.() -> Unit)? = null,
+    origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?=null,
     content: @Composable ColumnScope.() -> Unit) {
     com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe()
     val colors = LocalLifeOsColors.current
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
         confirmValueChange = { !busy || it != SheetValue.Hidden })
-    ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
-        containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
+    val contents:@Composable (()->Unit)->Unit = { close ->
         Column(Modifier.testTag("finance-receipt").fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
             .imePadding().padding(horizontal = 20.dp).padding(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))
-                TextButton(onClick = onClose, enabled = !busy) { Text("收起") }
+                TextButton(onClick = close, enabled = !busy) { Text("收起") }
             }
             HorizontalDivider(color = colors.line)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -44,6 +44,9 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
             }
         }
     }
+    if(origin!=null) com.qq.closie.ui.lifeos.components.LifeOriginDialog(origin,onClose) {close->contents(close)}
+    else ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
+        containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {contents(onClose)}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -35,9 +35,12 @@ import kotlin.math.abs
 
 /** UI interaction only. No storage knowledge and no production sample images. */
 @Composable
-fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Unit, modifier: Modifier = Modifier) {
+fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Unit, modifier: Modifier = Modifier, hiddenPhotoId:String?=null,
+    onPhotoOrigin:((LifeMediaUi,LifeSurfaceOrigin)->Unit)?=null) {
     if (photos.isEmpty()) { LifeEmptyState("今天还没有照片。", modifier); return }
     val colors = LocalLifeOsColors.current
+    val orientation=androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val origins=remember {mutableMapOf<String,LifeSurfaceOrigin>()}
     val reduced = reducedLifeMotion()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -91,7 +94,9 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
                     Modifier.width(pose.width.dp).height(pose.height.dp)
                         .offset((pose.centerX - pose.width / 2).dp, (pose.centerY - pose.height / 2).dp)
                         .zIndex((4 - depth).toFloat())
+                        .lifeSurfaceOrigin(orientation,pose.rotation) {origins[photo.id]=it}
                         .graphicsLayer {
+                            alpha=if(photo.id==hiddenPhotoId)0f else 1f
                             val progress = (abs(offset) / extent.coerceAtLeast(1f)).coerceIn(0f, 1f)
                             translationX = if (top) offset else 0f
                             translationY = if (top && dragging && !reduced) -lift else 0f
@@ -104,7 +109,10 @@ fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Uni
                                 CustomAccessibilityAction("上一张照片") { if (photos.size > 1) settle(-1, 0f, extent); true },
                                 CustomAccessibilityAction("下一张照片") { if (photos.size > 1) settle(1, 0f, extent); true }
                             )
-                        }.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) onPhotoClick(photo) }) else Modifier.clearAndSetSemantics {}),
+                        }.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) {
+                            val origin=origins[photo.id]
+                            if(origin!=null && onPhotoOrigin!=null)onPhotoOrigin(photo,origin) else onPhotoClick(photo)
+                        } }) else Modifier.clearAndSetSemantics {}),
                     shape = RoundedCornerShape(1.dp), color = Color(0xFFFFFDFA)
                 ) {
                     Column(Modifier.padding(7.dp)) {

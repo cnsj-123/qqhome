@@ -25,28 +25,17 @@ import com.qq.closie.ui.lifeos.theme.*
 
 /** A native dialog window over Home. Back dismisses this window before the root/navigation stack. */
 @Composable
-fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss: () -> Unit, onRemove: ((LifeMediaUi) -> Unit)? = null) {
+fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss: () -> Unit, onRemove: ((LifeMediaUi) -> Unit)? = null, origin:LifeSurfaceOrigin?=null) {
     if (photos.isEmpty()) return
     var index by rememberSaveable(initialPhotoId) { mutableIntStateOf(photos.indexOfFirst { it.id == initialPhotoId }.coerceAtLeast(0)) }
     val current = PhotoStackInteraction.nextIndex(index, 0, photos.size)
     val photo = photos[current]
     val colors = LocalLifeOsColors.current
-    val config = LocalConfiguration.current
-    val reduced = reducedLifeMotion()
-    val reveal = remember { Animatable(if (reduced) 1f else 0f) }
-    LaunchedEffect(reduced) {
-        if (reduced) reveal.snapTo(1f) else reveal.animateTo(1f, spring(dampingRatio = 1f, stiffness = 500f))
-    }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            Modifier.width((config.screenWidthDp * .90f).dp).height((config.screenHeightDp * .78f).dp)
-                .graphicsLayer { alpha = reveal.value; scaleX = .97f + .03f * reveal.value; scaleY = scaleX },
-            shape = RoundedCornerShape(16.dp), color = colors.card, border = BorderStroke(1.dp, colors.line)
-        ) {
+    LifeOriginDialog(origin?.takeIf {photo.id==initialPhotoId},onDismiss,widthFraction=.90f,heightFraction=.78f,corner=16.dp) { close ->
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${current + 1} / ${photos.size}", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
-                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭照片浮层") }
+                    IconButton(onClick = close) { Icon(Icons.Outlined.Close, "关闭照片浮层") }
                 }
                 LifeMediaImage(photo, Modifier.weight(1f).fillMaxWidth().lifeHorizontalSwipe(
                     onLeft = { index = PhotoStackInteraction.nextIndex(current, 1, photos.size) },
@@ -61,6 +50,5 @@ fun LifePhotoViewer(photos: List<LifeMediaUi>, initialPhotoId: String, onDismiss
                     TextButton(onClick = { index = PhotoStackInteraction.nextIndex(current, 1, photos.size) }, enabled = photos.size > 1) { Text("下一张") }
                 }
             }
-        }
     }
 }
