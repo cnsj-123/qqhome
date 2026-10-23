@@ -72,8 +72,8 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         compose.onNodeWithText("原件暂不可用").assertDoesNotExist()
         capture("home-photos")
     }
-    @Test @Config(qualifiers="w320dp-h640dp")
-    fun narrowHomeWithLongTextAndLargeFontRemainsScrollable() {
+    @Config(qualifiers="w320dp-h640dp")
+    @Test fun narrowHomeWithLongTextAndLargeFontRemainsScrollable() {
         val state=HomeUiState(LocalDate.of(2026,10,12),todayFacts=listOf(HomeFactUi("synthetic-long",
             "这是合成长文，用于检查窄屏大字时的行距与阅读边界。".repeat(30),"合成")))
         compose.setContent {
