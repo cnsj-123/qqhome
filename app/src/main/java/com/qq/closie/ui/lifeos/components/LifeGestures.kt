@@ -89,7 +89,8 @@ fun Modifier.lifeCompanionSwipe(enabled: Boolean, onProgress: (Float) -> Unit = 
     val edge = systemBackEdgePx()
     return if (!enabled) this else pointerInput(zone, threshold, edge) {
         awaitEachGesture {
-            val pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial
+            // Child scrolling, photo dragging and text selection retain priority.
+            val pass = androidx.compose.ui.input.pointer.PointerEventPass.Main
             val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
             if (down.position.y < size.height - zone || down.position.x <= edge ||
                 down.position.x >= size.width - edge) return@awaitEachGesture

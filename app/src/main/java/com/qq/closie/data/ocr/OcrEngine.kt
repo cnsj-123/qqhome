@@ -24,19 +24,21 @@ object OcrEngine {
         }
 
     private suspend fun recognizeInternal(bitmap: Bitmap, releaseAfterRecognition: Boolean): String = suspendCancellableCoroutine { cont ->
-        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        var recognizer: com.google.mlkit.vision.text.TextRecognizer? = null
         try {
+            val activeRecognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+            recognizer = activeRecognizer
             val image = InputImage.fromBitmap(bitmap, 0)
-            recognizer.process(image)
+            activeRecognizer.process(image)
                 .addOnSuccessListener { visionText ->
                     if (cont.isActive) cont.resumeWith(Result.success(visionText.text))
                 }
                 .addOnFailureListener { e ->
                     if (cont.isActive) cont.resumeWith(Result.failure(e))
                 }
-                .addOnCompleteListener { runCatching { recognizer.close() }; if (releaseAfterRecognition) bitmap.recycle() }
+                .addOnCompleteListener { runCatching { activeRecognizer.close() }; if (releaseAfterRecognition) bitmap.recycle() }
         } catch (e: Exception) {
-            runCatching { recognizer.close() }
+            runCatching { recognizer?.close() }
             if (releaseAfterRecognition) bitmap.recycle()
             if (cont.isActive) cont.resumeWith(Result.failure(e))
         }

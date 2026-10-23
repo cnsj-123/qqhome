@@ -49,7 +49,8 @@ class FinanceAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,\n            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) return
+        if (event == null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) return
         val config = settings.read()
         val packageName = event.packageName?.toString().orEmpty()
         screenshot.hostEvent(packageName); screenshot.update()
