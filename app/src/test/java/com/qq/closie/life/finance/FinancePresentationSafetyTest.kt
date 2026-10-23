@@ -69,6 +69,6 @@ class FinancePresentationSafetyTest:FinanceRoomTest() {
             val fields=FinanceLocalOcrParser.parse(text)
             assertEquals(text,"CNY",fields.currencyCode);assertEquals(text,1234L,fields.amountMinor)
         }
-        assertNull(FinanceLocalOcrParser.parse("支付成功\n￥12.34\n￥56.78").amountMinor)
+        assertNull(FinanceLocalOcrParser.parse("人民币\n支付成功\n￥12.34\n￥56.78").amountMinor)
     }
 }

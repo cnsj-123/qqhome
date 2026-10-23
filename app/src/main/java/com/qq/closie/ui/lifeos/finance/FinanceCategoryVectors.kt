@@ -27,5 +27,6 @@ internal object FinanceCategoryVectors {
                 strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round)
         }.build()
     }
+    internal fun path(key:String)=paths[key] ?: paths.getValue("other")
     fun get(key: String) = vectors[key] ?: vectors.getValue("other")
 }

@@ -32,6 +32,16 @@ class FinanceSmokeTest {
     private lateinit var repository: FinanceRepository
     private var models: ViewModelStore? = null
     private lateinit var model: FinanceViewModel
+    @get:Rule val failureState=object:org.junit.rules.TestWatcher() {
+        override fun failed(error:Throwable,description:org.junit.runner.Description) {
+            if(this@FinanceSmokeTest::model.isInitialized) {
+                val state=model.state.value
+                println("FINANCE_UI_FAILURE "+description.methodName+" loaded="+state.loaded+" busy="+state.busy+
+                    " error="+state.error+" projectedQuery="+state.filter.query+" requestedQuery="+model.filterInput.value.query+
+                    " rows="+state.ledger.map {it.id}+" period="+state.filter.period)
+            }
+        }
+    }
 
     @Before fun setup() {
         RestoreStartupGate.resetForTesting(); RestoreStartupGate.markReady()

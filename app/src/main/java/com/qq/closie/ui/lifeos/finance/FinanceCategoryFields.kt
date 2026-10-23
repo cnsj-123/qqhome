@@ -28,9 +28,10 @@ internal object FinanceCategoryGlyph {
         else -> "other"
     }
     fun forName(name: String): ImageVector = FinanceCategoryVectors.get(defaultKey(name))
+    fun keyForCategory(s:FinanceSnapshot,id:String,name:String)=s.v16?.categoryIconRows.orEmpty()
+        .singleOrNull {it.categoryId==id && it.voidedAt==null}?.iconKey ?: defaultKey(name)
     fun forCategory(s: FinanceSnapshot, id: String, name: String): ImageVector =
-        FinanceCategoryVectors.get(s.v16?.categoryIconRows.orEmpty()
-            .singleOrNull { it.categoryId == id && it.voidedAt == null }?.iconKey ?: defaultKey(name))
+        FinanceCategoryVectors.get(keyForCategory(s,id,name))
 }
 
 @Composable

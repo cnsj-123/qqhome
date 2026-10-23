@@ -101,16 +101,26 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 }
                 var openPanel:(String, View)->Unit = { _, _ -> }
                 var closePanel:()->Boolean = { false }
-                fun choice(label:String,options:List<Pair<String,String>>,selected:String):()->String {
+                fun choice(label:String,options:List<Pair<String,String>>,selected:String,categoryIcons:Boolean=false):()->String {
                     var value = options.firstOrNull { it.first==selected }?.first ?: options.firstOrNull()?.first.orEmpty()
+                    fun icon(id:String):android.graphics.drawable.Drawable? {
+                        if(!categoryIcons || id.isBlank())return null
+                        val name=snapshot.categories.firstOrNull {it.id==id}?.name.orEmpty()
+                        return FinanceCategorySvgDrawable(FinanceCategoryGlyph.keyForCategory(snapshot,id,name),Color.parseColor(tokens.ink))
+                            .apply {setBounds(0,0,dp(20),dp(20))}
+                    }
                     val control = Button(context).apply {minHeight=dp(48);applyLifeTypography(LifeType.Body)}
-                    fun caption() { control.text=label+" · "+options.firstOrNull { it.first==value }?.second.orEmpty() }
+                    fun caption() {
+                        control.text=label+" · "+options.firstOrNull { it.first==value }?.second.orEmpty()
+                        control.setCompoundDrawablesRelative(icon(value),null,null,null);control.compoundDrawablePadding=dp(8)
+                    }
                     caption()
                     control.setOnClickListener {
                         val choices=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL}
                         options.forEach { option ->
                             choices.addView(Button(context).apply {
                                 text=(if(option.first==value) "✓ " else "")+option.second
+                                setCompoundDrawablesRelative(icon(option.first),null,null,null);compoundDrawablePadding=dp(8)
                                 minHeight=dp(48);applyLifeTypography(LifeType.Body)
                                 setOnClickListener {value=option.first;caption();closePanel();updateVisibility();scheduleSave()}
                             })
@@ -152,7 +162,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     openPanel("实际发生时间",panel)
                 }
                 val description=input("备注（可留空）",initial.description)
-                val category=choice("分类",listOf("" to "未分类/自定义")+snapshot.categories.map {it.id to (FinanceProjection.categoryPath(snapshot.categories,it.id) ?: it.name)},initial.categoryId.orEmpty())
+                val category=choice("分类",listOf("" to "未分类/自定义")+snapshot.categories.map {it.id to (FinanceProjection.categoryPath(snapshot.categories,it.id) ?: it.name)},initial.categoryId.orEmpty(),categoryIcons=true)
                 var moreOpen = initial.relationship.role !in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.OTHER) ||
                     initial.relationship.nature != FinanceNature.PERSONAL
                 val moreButton = Button(context).apply { text = "业务关联与更多信息"; minHeight = dp(48) }.also(body::addView)

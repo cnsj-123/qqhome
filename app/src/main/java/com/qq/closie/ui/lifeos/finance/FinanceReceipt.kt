@@ -46,6 +46,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, selected: String,
     enabled: Boolean, recentIds: List<String> = emptyList(), onSelect: (String) -> Unit) {
@@ -55,7 +56,13 @@ internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, 
         TextButton({ expanded = !expanded }, enabled = enabled) {
             Text(label + " · " + (accounts.find { it.id == selected }?.let { "${it.name} · ${it.currencyCode}" } ?: "选择账户"))
         }
-        if (expanded) {
+        if (expanded) ModalBottomSheet(onDismissRequest={expanded=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
+            Column(Modifier.fillMaxWidth().heightIn(max=(LocalConfiguration.current.screenHeightDp*.72f).dp)
+                .verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text("选择"+label,Modifier.weight(1f),style=LifeText.title)
+                TextButton({expanded=false}) {Text("返回账单")}
+            }
             val recent = recentIds.mapNotNull { id -> accounts.find { it.id == id } }
             if (recent.isNotEmpty() && query.isBlank()) {
                 Text("最近使用", style = LifeText.caption)
@@ -78,6 +85,7 @@ internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, 
                         if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
+            }
             }
         }
     }
