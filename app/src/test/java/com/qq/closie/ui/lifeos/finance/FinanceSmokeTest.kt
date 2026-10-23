@@ -93,6 +93,11 @@ class FinanceSmokeTest {
         }
         compose.waitForIdle()
     }
+    private fun awaitPresentation(predicate:()->Boolean) {
+        // VM continuations use Dispatchers.Main. Pure StateFlow polling does not drain the
+        // Robolectric main queue; synchronizing with UI idle preserves the real callback order.
+        compose.waitUntil(10_000) {compose.runOnIdle {predicate()}}
+    }
     private fun confirmVoid(title: String) {
         // The impact preview performs repository work before composing a dialog window.
         val confirm = hasText("确认作废") and hasClickAction() and isEnabled()
@@ -218,7 +223,7 @@ class FinanceSmokeTest {
         compose.onNodeWithText("账簿").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("finance-search").performTextReplacement("出门")
-        compose.waitUntil(10_000) {
+        awaitPresentation {
             model.state.value.let { it.filter.query == "出门" && it.ledger.map { row -> row.id } == listOf(original.id) }
         }
         compose.waitForIdle()
@@ -388,7 +393,7 @@ class FinanceSmokeTest {
             model.previewVoid(entryId=entry.id) {preview=it}
         }
         compose.runOnIdle {assertNull(preview);release.complete(Unit)}
-        compose.waitUntil(10_000){preview!=null && !model.state.value.busy}
+        awaitPresentation {preview!=null && !model.state.value.busy}
         assertTrue(requireNotNull(preview).entryIds.contains(entry.id))
         assertEquals(before.entries,snapshot().entries)
         assertEquals(before.transfers,snapshot().transfers)
@@ -403,11 +408,11 @@ class FinanceSmokeTest {
         launch();selectPeriod("全部")
         compose.onNodeWithTag("finance-search").performTextReplacement("餐")
         compose.onNodeWithTag("finance-search").performTextReplacement("午餐乙")
-        compose.waitUntil(10_000){model.state.value.let {
+        awaitPresentation {model.state.value.let {
             it.filter.query=="午餐乙" && it.ledger.map {row->row.id}==listOf(entries[1].id)
         }}
         compose.onNodeWithTag("finance-search").assertTextContains("午餐乙")
         compose.onNodeWithTag("finance-search").performTextReplacement("")
-        compose.waitUntil(10_000){model.state.value.filter.query.isEmpty() && model.state.value.ledger.size==3}
+        awaitPresentation {model.state.value.filter.query.isEmpty() && model.state.value.ledger.size==3}
     }
 }
