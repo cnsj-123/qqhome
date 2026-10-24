@@ -14,13 +14,16 @@ def missing_methods(required, actual):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--junit",type=pathlib.Path)
+    parser.add_argument("--review-round2",action="store_true")
     args=parser.parse_args()
     root=pathlib.Path(__file__).resolve().parents[2]
-    rows=baseline_rows(root,BASELINE)
+    baseline="e4d079ae72a209775b859dbb021c1b685aff7ff5" if args.review_round2 else BASELINE
+    minimum=717 if args.review_round2 else 681
+    rows=baseline_rows(root,baseline)
     required={(row["className"],method) for row in rows for method in row["tests"]}
     errors=[]
-    if len(required)!=681:
-        errors.append("Reviewed baseline must contain exactly 681 named invocations")
+    if len(required)!=minimum:
+        errors.append("Reviewed baseline invocation count changed")
     current=set()
     for row in rows:
         if not row["tests"]:
@@ -48,8 +51,8 @@ def main():
                     executed.add(key)
         for cls,method in missing_methods(required,executed):
             errors.append("Not executed: "+cls+"#"+method)
-    result={"check":"a86841a-product-baseline","status":"FAIL" if errors else "PASS",
-        "baseline":BASELINE,"commit":git(root,"rev-parse","HEAD").strip(),
+    result={"check":"review-round2-baseline" if args.review_round2 else "a86841a-product-baseline","status":"FAIL" if errors else "PASS",
+        "baseline":baseline,"commit":git(root,"rev-parse","HEAD").strip(),
         "requiredInvocations":len(required),"preservedSourceInvocations":len(required & current),
         "executedRequiredInvocations":len(required & executed) if args.junit else None,
         "execution":"ACTUAL JUNIT" if args.junit else "SOURCE ONLY","errors":errors}

@@ -28,14 +28,17 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     companion object {
         private var owner: FinanceReceiptOverlay? = null
         private var captureBusy = false
+        private val occupancy=MutableStateFlow(false)
+        val occupancyChanges:StateFlow<Boolean> = occupancy.asStateFlow()
         val occupied: Boolean get() = owner != null || captureBusy
+        private fun publish(){occupancy.value=occupied}
         fun beginCapture(): Boolean {
-            if (captureBusy) return false
+            if (occupied) return false
             captureBusy = true
-            owner?.close()
+            publish()
             return true
         }
-        fun endCapture() { captureBusy = false }
+        fun endCapture() { captureBusy = false; publish() }
     }
     private val windows=context.getSystemService(WindowManager::class.java)
     private val editScope get()=(context.applicationContext as ClosieApplication).financeReviewEditScope
@@ -47,7 +50,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     private var screenReceiver:BroadcastReceiver?=null
     private var configuration:ComponentCallbacks?=null
 
-    suspend fun show(id:String, userInitiated:Boolean=false, expectedEpoch:Long?=null, canPresent:()->Boolean={true}):Boolean {
+    suspend fun show(id:String, userInitiated:Boolean=false, expectedEpoch:Long?=null, canContinue:()->Boolean={true}, canPresent:()->Boolean={true}):Boolean {
         val restoreGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
         if(!canPresent() || !com.qq.closie.data.backup.RestoreStartupGate.isReady || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
         return try {
@@ -71,7 +74,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     if (userInitiated && proposal.source == FinanceSource.SCREENSHOT)
                         com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)
                     else prefs.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE && prefs.enhancedReceiptOverlay && prefs.permits(proposal)
-                if(captureBusy || !canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
+                if((captureBusy && !userInitiated) || !canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
                 val density=context.resources.displayMetrics.density
                 fun dp(n:Int)=(n*density).toInt()
                 val body=LinearLayout(context).apply {
@@ -264,11 +267,11 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     gravity=Gravity.BOTTOM;softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 }
                 val attached = attachFinanceReceipt(restoreGeneration,canPresent,authorized={
-                    !captureBusy && permitted(FinanceAutomationSettings(context).read()) &&
+                    (!captureBusy || userInitiated) && permitted(FinanceAutomationSettings(context).read()) &&
                         Settings.canDrawOverlays(context) && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
                 }) {windows.addView(frame,params)}
                 if (!attached) return@withContext false
-                window=frame;owner=this@FinanceReceiptOverlay;scroll.requestFocus();ready=true
+                window=frame;owner=this@FinanceReceiptOverlay;captureBusy=false;publish();scroll.requestFocus();ready=true
                 if(android.animation.ValueAnimator.areAnimatorsEnabled()) {
                     frame.translationY=dp(20).toFloat();frame.scaleX=.98f;frame.scaleY=.98f;frame.alpha=0f
                     frame.animate().translationY(0f).scaleX(1f).scaleY(1f).alpha(1f).setDuration(260).start()
@@ -305,7 +308,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     }.catch {emit(true)}.first {it};close()
                 }
                 monitor=scope.launch(Dispatchers.Main.immediate) {while(isActive){delay(500)
-                    if(!canPresent() || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
+                    if(!canContinue() || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
                 }}
                 true
             }
@@ -314,12 +317,13 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     }
     /** Never discards a candidate. Application-owned edit work survives listener teardown. */
     fun close(persist:Boolean=true, advance:Boolean=false) {
-        if (owner === this) owner = null
+        if (owner === this) {owner = null;publish()}
         val flush=flushLater;flushLater=null
         observer?.cancel();observer=null;monitor?.cancel();monitor=null;autosave?.cancel();autosave=null
         screenReceiver?.let {runCatching {context.unregisterReceiver(it)}};screenReceiver=null
         configuration?.let {context.unregisterComponentCallbacks(it)};configuration=null
         window?.let {view->view.animate().cancel();context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
+        com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)
         if(persist)flush?.invoke()
         if(advance && !occupied) editScope.launch { FinanceReceiptQueue.pending.advance() }
     }

@@ -29,10 +29,14 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
     val runtime by VisibleDetailRuntime.state.collectAsStateWithLifecycle()
     var disclosure by remember { mutableStateOf(false) }
     var screenshotDisclosure by remember { mutableStateOf(false) }
-    var screenshotEnabled by remember { mutableStateOf(com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)) }
+    val screenshotEnabled by remember(context) {com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.observe(context)}
+        .collectAsStateWithLifecycle(initialValue=com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context))
+    val nativeEntry by com.qq.closie.life.finance.acquisition.FinanceCaptureEntryState.nativeVisible.collectAsStateWithLifecycle()
+    var notificationEntry by remember {mutableStateOf(false)}
     var error by remember { mutableStateOf<String?>(null) }
     fun refresh() {
         com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)
+        notificationEntry=com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.available(context)
         val component = ComponentName(context, FinanceAccessibilityService::class.java).flattenToString()
         connected = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             .orEmpty().split(':').any { ComponentName.unflattenFromString(it)?.flattenToString() == component }
@@ -45,16 +49,20 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
     }
     Column {
         Text("主动截图识别", style = MaterialTheme.typography.titleMedium)
-        Text("点击悬浮入口后仅采集一次，隐藏 Life OS 浮层，在本机识别并打开待确认小票。默认不保留原图。", style = MaterialTheme.typography.bodySmall)
+        Text("点击入口后仅采集一次，隐藏 Life OS 浮层，在本机识别后复核。默认不保留原图。", style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Switch(screenshotEnabled, { enabled ->
                 if (enabled) screenshotDisclosure = true
-                else { screenshotEnabled = false; com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.set(context, false) }
+                else { com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.set(context, false) }
             })
-            Text("显示截图识别悬浮入口")
+            Text("开启主动截图入口")
         }
-        Text("无障碍未连接或 Android 8–10：每次由系统请求截图授权。也可在系统快捷设置中添加“财务单次截图”。", style = MaterialTheme.typography.bodySmall)
+        Text("无障碍未连接或 Android 8–10：使用通知中的“财务单次截图”，每次由系统请求授权；也可添加同名快捷设置。入口不依赖后台服务长驻。", style = MaterialTheme.typography.bodySmall)
         Text("Android 11+ 无障碍已连接时直接单次截图。系统授权后备路径将结果交到待确认，点通知继续核对；不会猜测外部宿主并挂窗。", style = MaterialTheme.typography.bodySmall)
+        if(screenshotEnabled) {
+            Text("截图入口：" + if(nativeEntry)"原生悬浮按钮" else if(notificationEntry)"通知 / 快捷设置" else "快捷设置（通知权限或渠道未允许）",style=MaterialTheme.typography.bodySmall)
+            if(!notificationEntry)TextButton({context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))}) {Text("管理截图入口通知")}
+        }
         Text("可见交易详情识别", style = MaterialTheme.typography.titleMedium)
         Text("手动打开详情后，在本机生成待确认小票。与通知发现分别开关，共用账目审核流程。", style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -94,7 +102,6 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
         title = { Text("开启单次截图识别？") },
         text = { Text("只有你点击悬浮入口才会截图；截图和 OCR 原文不落盘、不上传。当前页面受保护、锁屏、切换或识别失败时，不会自动记账。") },
         confirmButton = { TextButton({
-            screenshotEnabled = true
             com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.set(context, true)
             screenshotDisclosure = false
             com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)

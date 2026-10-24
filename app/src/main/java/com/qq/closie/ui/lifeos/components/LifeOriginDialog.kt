@@ -3,6 +3,11 @@ package com.qq.closie.ui.lifeos.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -69,6 +74,8 @@ internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
     }
     Dialog(onDismissRequest=::close,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().testTag("life-origin-scrim").clickable(
+                interactionSource=remember {MutableInteractionSource()},indication=null,onClick=::close))
             val width=constraints.maxWidth.toFloat();val height=constraints.maxHeight.toFloat()
             val maxHeight=height*heightFraction
             val targetHeight=if(compactHeight && contentHeight>0)contentHeight.toFloat().coerceAtMost(maxHeight) else maxHeight
@@ -81,6 +88,7 @@ internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
             val sizing=if(compactHeight)Modifier.heightIn(max=with(density){maxHeight.toDp()})
                 else Modifier.height(with(density){maxHeight.toDp()})
             Surface(Modifier.align(Alignment.Center).width(with(density){target.width.toDp()}).then(sizing)
+                .testTag("life-origin-paper").pointerInput(Unit) {detectTapGestures(onTap={})}
                 .onSizeChanged {if(compactHeight)contentHeight=it.height}
                 .graphicsLayer {
                     translationX=bounds.center.x-target.center.x

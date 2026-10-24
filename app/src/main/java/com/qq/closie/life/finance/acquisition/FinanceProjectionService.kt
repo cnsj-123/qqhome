@@ -85,7 +85,7 @@ class FinanceProjectionService:Service() {
             } catch(e:TimeoutCancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图或识别超时，未自动记账")}
             catch(e:CancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图已失效，未自动记账");throw e}
             catch(e:Exception){FinanceAutomationSettings(this@FinanceProjectionService).status(e.message ?: "本次系统截图未完成")}
-            finally {FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();releaseProjection();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf()}
+            finally {FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();FinanceProjectionBubbleService.ensure(this@FinanceProjectionService);releaseProjection();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf()}
         }
         return START_NOT_STICKY
     }

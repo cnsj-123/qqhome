@@ -15,7 +15,7 @@ internal class FinanceReviewPresenter(private val context: Context, private val 
     private val settings = FinanceAutomationSettings(context)
     private val overlay = lazy { FinanceReceiptOverlay(context, scope) }
 
-    override suspend fun proposalAvailable(id: String, canPresent: () -> Boolean) {
+    override suspend fun proposalAvailable(id: String, canContinue: () -> Boolean, canPresent: () -> Boolean) {
         try {
             val proposal = repository().observe().first().proposals.find { it.id == id &&
                 it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) } ?: return
@@ -38,11 +38,11 @@ internal class FinanceReviewPresenter(private val context: Context, private val 
                 withContext(Dispatchers.Main.immediate) {
                     VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.DELIVERY_REQUESTED)
                     val eligible = { scope.isActive && RestoreStartupGate.isReady && canPresent() }
-                    val shown = eligible() && overlay.value.show(id, expectedEpoch = epoch, canPresent = eligible)
+                    val shown = eligible() && overlay.value.show(id, expectedEpoch = epoch, canContinue = {scope.isActive && RestoreStartupGate.isReady && canContinue()}, canPresent = eligible)
                     VisibleDetailRuntime.report(if (shown) VisibleDetailRuntime.Phase.OVERLAY_ATTACHED else VisibleDetailRuntime.Phase.DELIVERY_DEFERRED)
                     if (!shown && FinanceReceiptOverlay.occupied && eligible()) {
                         FinanceReceiptQueue.pending.defer(id, this@FinanceReviewPresenter, eligible) {
-                            overlay.value.show(id, expectedEpoch = epoch, canPresent = eligible)
+                            overlay.value.show(id, expectedEpoch = epoch, canContinue = {scope.isActive && RestoreStartupGate.isReady && canContinue()}, canPresent = eligible)
                         }
                         settings.status("新的小票已排队，当前编辑完成后继续")
                     } else if (!shown) settings.status("小票未能显示，待确认已保留，可在账目中查看")

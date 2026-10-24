@@ -22,6 +22,7 @@ import com.qq.closie.life.data.LifeContainer
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.awaitClose
 import kotlin.coroutines.resume
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -42,6 +43,8 @@ internal class FinanceScreenshotController(
     private var capture: Job? = null
     private var disposed = false
     private var connected = false
+    private val hostWindows=FinanceHostWindows(service)
+    private var hostSession:FinanceHostSession?=null
     fun onConnected() {if(!disposed){connected=true;update()}}
     private val screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){invalidate();removeBubble()}}
     private val configuration=object:ComponentCallbacks {
@@ -63,14 +66,22 @@ internal class FinanceScreenshotController(
         }
     }
     private fun invalidate() {
+        hostSession?.cancel();hostSession=null
         requestGeneration++
         capture?.cancel()
         presentedPage = null
         overlay.close();removeRecognition()
     }
-    fun hostEvent(packageName: String) {
-        if (packageName != service.packageName) { eventSerial++; invalidate() }
+    fun hostEvent(event:android.view.accessibility.AccessibilityEvent,snapshot:FinanceHostSnapshot) {
+        val session=hostSession ?: return
+        val editing=presentedPage!=null
+        session.observe(event,snapshot,editing)
+        if(!(if(editing)session.editorCurrent(snapshot) else session.captureCurrent(snapshot))) {
+            eventSerial++;invalidate()
+        }
     }
+    private val occupancyObserver=scope.launch {FinanceReceiptOverlay.occupancyChanges.collect {update()}}
+
     private var x = 0
     private var y = 280
 
@@ -79,7 +90,7 @@ internal class FinanceScreenshotController(
         if (!connected || !RestoreStartupGate.isReady || !FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
             invalidate(); removeBubble(); return
         }
-        if (Build.VERSION.SDK_INT < 30 || FinanceProjectionRequests.inFlight || FinanceReviewRequests.foreground || capture?.isActive == true) {
+        if (Build.VERSION.SDK_INT < 30 || FinanceProjectionRequests.inFlight || FinanceReviewRequests.foreground || capture?.isActive == true || FinanceReceiptOverlay.occupied) {
             removeBubble(); return
         }
         if (bubble != null) return
@@ -113,26 +124,24 @@ internal class FinanceScreenshotController(
                 else -> false
             }
         }
-        try { windows.addView(view, params); bubble = view }
+        try { windows.addView(view, params); bubble = view;FinanceCaptureEntryState.nativeVisible.value=true;FinanceProjectionBubbleService.ensure(service) }
         catch (_: Exception) { status("悬浮截图入口未能显示，请检查悬浮权限") }
     }
 
     private fun locked() = service.getSystemService(KeyguardManager::class.java).isKeyguardLocked
     private fun target(): FinanceCapturePage? {
-        if (locked()) return null
-        val root = service.rootInActiveWindow ?: return null
-        return try {
-            val packageName = root.packageName?.toString() ?: return null
-            if (packageName == service.packageName || !root.isVisibleToUser) return null
-            val window = root.window ?: return null
-            try {
-                if (!window.isActive || !window.isFocused || window.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) null
-                else FinanceCapturePage(packageName, window.id, service.resources.configuration.orientation, eventSerial)
-            } finally { @Suppress("DEPRECATION") window.recycle() }
-        } finally { @Suppress("DEPRECATION") root.recycle() }
+        if(locked())return null
+        val session=hostWindows.bindActive() ?: return null
+        hostSession=session
+        return FinanceCapturePage(session.host.packageName,session.host.id,session.orientation,eventSerial)
     }
-    private fun valid(expected: FinanceCapturePage) = !disposed && connected && FinanceScreenshotPreference.enabled(service) &&
-        RestoreStartupGate.isReady && Settings.canDrawOverlays(service) && target() == expected
+    private fun valid(expected:FinanceCapturePage,editing:Boolean=false):Boolean {
+        val session=hostSession ?: return false
+        if(disposed || !connected || locked() || !FinanceScreenshotPreference.enabled(service) ||
+            !RestoreStartupGate.isReady || !Settings.canDrawOverlays(service) || expected.pageGeneration!=eventSerial)return false
+        val snapshot=hostWindows.snapshot()
+        return if(editing)session.editorCurrent(snapshot) else session.captureCurrent(snapshot)
+    }
 
     private fun request() {
         if (disposed || capture?.isActive == true || Build.VERSION.SDK_INT < 30) return
@@ -172,11 +181,13 @@ internal class FinanceScreenshotController(
                         container.financeRepository.media.createScreenshotCandidate(request.token, fields, stillCurrent)
                     } },
                     present = { request, id, canPresent ->
-                        removeRecognition();FinanceReceiptOverlay.endCapture()
+                        removeRecognition()
                         if (canPresent()) {
                             presentedPage = request.page
                             if (!overlay.show(id, userInitiated = true, expectedEpoch = request.token.restoreEpoch,
-                                    canPresent = { preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
+                                    canContinue = { preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
+                                        RestoreStartupGate.state.value.restoreGeneration == request.restoreGeneration && valid(request.page,editing=true) },
+                                    canPresent = { hostSession?.host?.identity!=null && preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
                                         RestoreStartupGate.state.value.restoreGeneration == request.restoreGeneration && valid(request.page) })) {
                                 val proposal = container.financeAutomationRepository.observe().first().proposals.firstOrNull { it.id == id }
                                 proposal?.let { FinanceReviewNotifications.post(service, it, immediate = true) }
@@ -250,11 +261,11 @@ internal class FinanceScreenshotController(
         FinanceAutomationSettings(service).status(message)
         Toast.makeText(service, message, Toast.LENGTH_LONG).show()
     }
-    private fun removeBubble() { bubble?.let { runCatching { windows.removeViewImmediate(it) } }; bubble = null }
+    private fun removeBubble() { bubble?.let { runCatching { windows.removeViewImmediate(it) } }; bubble = null;FinanceCaptureEntryState.nativeVisible.value=false;FinanceProjectionBubbleService.ensure(service) }
     fun close(permanent: Boolean = true) {
         connected=false;disposed=permanent;invalidate();removeBubble()
         if(permanent) {
-            restoreObserver.cancel()
+            restoreObserver.cancel();occupancyObserver.cancel()
             runCatching {service.unregisterReceiver(screenReceiver)}
             service.unregisterComponentCallbacks(configuration)
         }
@@ -265,9 +276,16 @@ object FinanceScreenshotPreference {
     private val revisions=java.util.concurrent.atomic.AtomicLong(0)
     internal val generation:Long get()=revisions.get()
     private const val KEY = "explicit_screenshot_enabled"
+    fun observe(context:Context)=kotlinx.coroutines.flow.callbackFlow {
+        val prefs=context.applicationContext.getSharedPreferences("finance_discovery_device",Context.MODE_PRIVATE)
+        val listener=android.content.SharedPreferences.OnSharedPreferenceChangeListener {_,key->if(key==null || key==KEY)trySend(enabled(context))}
+        prefs.registerOnSharedPreferenceChangeListener(listener);trySend(enabled(context))
+        awaitClose {prefs.unregisterOnSharedPreferenceChangeListener(listener)}
+    }.distinctUntilChanged()
     fun enabled(context: Context) = context.getSharedPreferences("finance_discovery_device", Context.MODE_PRIVATE).getBoolean(KEY, false)
     fun set(context: Context, enabled: Boolean) {
         revisions.incrementAndGet()
         context.getSharedPreferences("finance_discovery_device", Context.MODE_PRIVATE).edit().putBoolean(KEY, enabled).apply()
+        FinanceProjectionBubbleService.ensure(context)
     }
 }

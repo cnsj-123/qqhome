@@ -38,15 +38,18 @@ class FinanceProjectionActivity:ComponentActivity() {
         super.onCreate(state)
         if(state!=null || FinanceProjectionRequests.inFlight){finish();return}
         if(!com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture()){finish();return}
-        ownsRequest=true;FinanceProjectionRequests.inFlight=true
+        ownsRequest=true;FinanceProjectionRequests.inFlight=true;FinanceProjectionBubbleService.ensure(this)
         if(android.os.Build.VERSION.SDK_INT>=33)registerReceiver(screenReceiver,IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED)
         else registerReceiver(screenReceiver,IntentFilter(Intent.ACTION_SCREEN_OFF))
         receiverRegistered=true
         lifecycleScope.launch {
             try {
                 val fence=RestoreStartupGate.state.value
+                if(intent.getBooleanExtra("freshEntry",false))intent.putExtra("restoreGeneration",fence.restoreGeneration)
                 check(fence.restoreGeneration==intent.getLongExtra("restoreGeneration",-1) && fence.canAcquireBusinessLease && FinanceScreenshotPreference.enabled(this@FinanceProjectionActivity))
+                val preferenceGeneration=FinanceScreenshotPreference.generation
                 val token=withContext(Dispatchers.IO){LifeContainer.getInstance(this@FinanceProjectionActivity).financeRepository.economics.token()}
+                check(preferenceGeneration==FinanceScreenshotPreference.generation)
                 val request=FinanceProjectionRequest(java.util.UUID.randomUUID().toString(),token,fence.restoreGeneration,resources.configuration.orientation)
                 check(!screenWasLocked && request.current(this@FinanceProjectionActivity))
                 pending=request
@@ -58,6 +61,7 @@ class FinanceProjectionActivity:ComponentActivity() {
     override fun onDestroy(){
         if(receiverRegistered){runCatching {unregisterReceiver(screenReceiver)};receiverRegistered=false}
         if(ownsRequest && !handedToService){FinanceProjectionRequests.inFlight=false;com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture()}
+        FinanceProjectionBubbleService.ensure(this)
         super.onDestroy()
     }
 }

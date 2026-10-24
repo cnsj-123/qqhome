@@ -9,10 +9,28 @@ object FinanceLocalOcrParser {
         val text=raw.take(24_000)
         // Only explicitly denominated RMB/CNY receipts enter the CNY review pipeline.
         // A bare yen symbol or a Chinese amount label is not proof of currency.
-        val foreign = Regex("(?i)(?:USD|EUR|JPY|HKD|TWD|GBP|AUD|CAD|SGD|KRW|美元|美金|欧元|日元|日圓|港币|港幣|台币|新台币|英镑|韩元|澳元|加元|新加坡元|[$€£₩₹฿₽₫₱₺₪])").containsMatchIn(text)
-        val cny = Regex("(?i)(?:人民币|人民幣|(?<![A-Z])(?:CNY|RMB)(?![A-Z])|(?:[0-9]\\s*元))").containsMatchIn(text)
-        val otherCode=Regex("(?i)(?<![A-Z])(?!CNY(?![A-Z])|RMB(?![A-Z]))[A-Z]{3}(?![A-Z])").containsMatchIn(text)
-        val currency = if (cny && !foreign && !otherCode) "CNY" else null
+        val foreignCodes=setOf("USD","EUR","JPY","HKD","TWD","GBP","AUD","CAD","SGD","KRW","CHF","NZD",
+            "SEK","NOK","DKK","PLN","CZK","HUF","INR","THB","MYR","IDR","PHP","VND","RUB","BRL","MXN","AED","SAR","ZAR","TRY","ILS")
+        val code="(?<![A-Z])("+ (foreignCodes+setOf("CNY","RMB")).joinToString("|") +")(?![A-Z])"
+        val number="[0-9]{1,12}(?:\\.[0-9]{1,2})?"
+        val fields=Regex("(?im)(?:币种|货币|currency)\\s*[:：]\\s*([^\\r\\n]+)").findAll(text).map {it.groupValues[1]}.toList()
+        val namedCodes=fields.flatMap {value->
+            val first=Regex("(?i)^\\s*([A-Z]{3})(?![A-Z])").find(value)?.groupValues?.get(1)
+            listOfNotNull(first?.uppercase())+Regex("(?i)"+code).findAll(value).map {it.value.uppercase()}.toList()+
+                Regex("(?i)[/,、+]\\s*([A-Z]{3})(?![A-Z])").findAll(value).map {it.groupValues[1].uppercase()}.toList()
+        }
+        val nearby=Regex("(?i)(?:"+code+"\\s*[¥￥$€£]?\\s*"+number+"|"+number+"\\s*"+code+")")
+            .findAll(text).flatMap {m->Regex("(?i)"+code).findAll(m.value).map {it.value.uppercase()}}.toSet()
+        val standalone=text.lineSequence().map {it.trim().uppercase()}.filter {it in foreignCodes || it in setOf("CNY","RMB")}.toSet()
+        val foreignNames=Regex("美元|美金|欧元|日元|日圓|港币|港幣|台币|新台币|英镑|韩元|澳元|加元|新加坡元|[$€£₩₹฿₽₫₱₺₪]").containsMatchIn(text)
+        val foreign=foreignNames || (namedCodes+nearby+standalone).any {it!="CNY" && it!="RMB"}
+        val chineseCny=fields.any {it.contains("人民币") || it.contains("人民幣")} ||
+            text.lineSequence().any {it.trim() in setOf("人民币","人民幣")} ||
+            Regex("(?:人民币|人民幣)\\s*"+number+"|"+number+"\\s*元").containsMatchIn(text)
+        val cny=chineseCny || (namedCodes+nearby+standalone).any {it=="CNY" || it=="RMB"}
+        val unknownField=fields.any {value->!value.contains("人民币") && !value.contains("人民幣") &&
+            Regex("(?i)(?<![A-Z])(?:CNY|RMB)(?![A-Z])").find(value)==null}
+        val currency=if(cny && !foreign && !unknownField)"CNY" else null
         val amounts=mutableSetOf<Long>()
         text.lineSequence().take(200).filterNot {it.contains("余额")}.forEach {line->
             val pattern=Regex("(?:[¥￥]|(?:实付|付款金额|交易金额|退款金额|收款金额|支付金额)[:：\\s]*)(?:人民币|人民幣|CNY|RMB)?\\s*([0-9]{1,12}(?:\\.[0-9]{1,2})?)(?![0-9.])")

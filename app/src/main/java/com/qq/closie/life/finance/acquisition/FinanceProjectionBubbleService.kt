@@ -1,57 +1,38 @@
 package com.qq.closie.life.finance.acquisition
 
-import android.app.*
-import android.content.*
-import android.graphics.Color
-import android.graphics.PixelFormat
-import android.os.*
-import android.provider.Settings
-import android.view.*
-import android.widget.TextView
-import com.qq.closie.data.backup.RestoreStartupGate
-import kotlinx.coroutines.*
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import com.qq.closie.R
+import com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay
 
-/** Visible entry only, owns no projection. Android may stop it; reopening settings recreates it. */
-class FinanceProjectionBubbleService:Service() {
-    private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
-    private val windows by lazy {getSystemService(WindowManager::class.java)}
-    private var bubble:View?=null
-    override fun onBind(intent:Intent?)=null
-    override fun onCreate() {
-        super.onCreate()
-        scope.launch {while(isActive){
-            val native=Build.VERSION.SDK_INT>=30 && VisibleDetailRuntime.state.value.connected
-            val permitted=!FinanceProjectionRequests.inFlight && Settings.canDrawOverlays(this@FinanceProjectionBubbleService) &&
-                !getSystemService(KeyguardManager::class.java).isKeyguardLocked && RestoreStartupGate.isReady
-            if(!FinanceScreenshotPreference.enabled(this@FinanceProjectionBubbleService)){stopSelf();break}
-            if(native || !permitted)removeBubble() else showBubble()
-            delay(500)
-        }}
+/** Historical name retained at call sites. This is a notification entry, NOT a background Service.
+ * PendingIntent survives the app leaving foreground; no unrelated foreground-service type is claimed.
+ * Quick Settings is always the explicit fallback when notification permission/channel is disabled. */
+object FinanceProjectionBubbleService {
+    private const val CHANNEL="finance_capture_entry"
+    private const val ID=606
+    fun ensure(context:Context) {
+        val manager=context.getSystemService(NotificationManager::class.java)
+        if(!FinanceScreenshotPreference.enabled(context) || FinanceReceiptOverlay.occupied ||
+            FinanceCaptureEntryState.nativeVisible.value) {manager.cancel(ID);return}
+        manager.createNotificationChannel(NotificationChannel(CHANNEL,"财务截图入口",NotificationManager.IMPORTANCE_LOW))
+        val intent=FinanceProjectionRequests.intent(context).putExtra("freshEntry",true)
+        val action=PendingIntent.getActivity(context,ID,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification=NotificationCompat.Builder(context,CHANNEL).setSmallIcon(R.drawable.ic_finance_review)
+            .setContentTitle("财务单次截图").setContentText("点此逐次授权；也可使用快捷设置“财务单次截图”")
+            .setOngoing(true).setContentIntent(action).addAction(0,"截图并授权",action).build()
+        if(NotificationManagerCompat.from(context).areNotificationsEnabled())runCatching {manager.notify(ID,notification)}
     }
-    private fun showBubble() {
-        if(bubble!=null)return
-        val density=resources.displayMetrics.density
-        val view=TextView(this).apply {
-            text="截图\n授权";contentDescription="单次财务截图，打开系统授权"
-            gravity=Gravity.CENTER;setTextColor(Color.parseColor("#534C91"));textSize=12f
-            background=android.graphics.drawable.GradientDrawable().apply {setColor(Color.parseColor("#F6F5F9"));cornerRadius=20*density}
-            setOnClickListener {
-                removeBubble()
-                runCatching {startActivity(FinanceProjectionRequests.intent(this@FinanceProjectionBubbleService))}
-            }
-        }
-        val params=WindowManager.LayoutParams((52*density).toInt(),(52*density).toInt(),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
-            .apply {gravity=Gravity.END or Gravity.CENTER_VERTICAL}
-        runCatching {windows.addView(view,params);bubble=view}.onFailure {stopSelf()}
+    fun available(context:Context):Boolean {
+        val manager=context.getSystemService(NotificationManager::class.java)
+        return NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            manager.getNotificationChannel(CHANNEL)?.importance!=NotificationManager.IMPORTANCE_NONE
     }
-    private fun removeBubble(){bubble?.let {runCatching {windows.removeViewImmediate(it)}};bubble=null}
-    override fun onStartCommand(intent:Intent?,flags:Int,startId:Int)=START_NOT_STICKY
-    override fun onDestroy(){scope.cancel();removeBubble();super.onDestroy()}
-    companion object {
-        fun ensure(context:Context) {
-            if(FinanceScreenshotPreference.enabled(context) && Settings.canDrawOverlays(context))
-                runCatching {context.startService(Intent(context,FinanceProjectionBubbleService::class.java))}
-        }
-    }
+}
+internal object FinanceCaptureEntryState {
+    val nativeVisible=kotlinx.coroutines.flow.MutableStateFlow(false)
 }

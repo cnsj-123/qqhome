@@ -25,7 +25,7 @@ object FinanceReviewDeliveryPolicy {
 
 /** Acquisition reports an available ID; this port knows no concrete review surface or confirmation. */
 interface FinanceReviewDelivery {
-    suspend fun proposalAvailable(id: String, canPresent: () -> Boolean = { true })
+    suspend fun proposalAvailable(id: String, canContinue: () -> Boolean = { true }, canPresent: () -> Boolean = { true })
     /** Called by the acquisition adapter's main-thread lifecycle callbacks. */
     fun close()
 }
