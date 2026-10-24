@@ -56,7 +56,8 @@ class FinanceAccessibilityService : AccessibilityService() {
         if(event==null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,AccessibilityEvent.TYPE_WINDOWS_CHANGED))return
         if(!VisibleDetailRuntime.state.value.connected){VisibleDetailRuntime.connected(true);screenshot.onConnected()}
-        val snapshot=hostWindows.snapshot(readFacts=screenshot.hasHostSession || deliverySession!=null)
+        val snapshot=hostWindows.snapshot(readFacts=screenshot.hasHostSession || deliverySession!=null,
+            editingHost=if(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)screenshot.editingHost ?: deliverySession?.host else null)
         screenshot.hostEvent(event,snapshot);screenshot.update()
         deliverySession?.let {session->
             session.observe(event,snapshot,editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
@@ -151,7 +152,7 @@ class FinanceAccessibilityService : AccessibilityService() {
                 if (live != null && live.referenceDigest == recognized.referenceDigest &&
                     live.amountMinor == recognized.amountMinor && live.occurredAt == recognized.occurredAt &&
                     live.kind == recognized.kind && live.role == recognized.role) delivery.proposalAvailable(proposal.id,
-                    canContinue={allowed(target) && binding.editorCurrent(hostWindows.snapshot())},
+                    canContinue={allowed(target) && binding.editorCurrent(hostWindows.snapshot(editingHost=binding.host))},
                     canPresent={allowed(target) && binding.captureCurrent(hostWindows.snapshot()) &&
                         evidence(target,provider)?.let {fresh->
                             fresh.referenceDigest==recognized.referenceDigest && fresh.amountMinor==recognized.amountMinor &&

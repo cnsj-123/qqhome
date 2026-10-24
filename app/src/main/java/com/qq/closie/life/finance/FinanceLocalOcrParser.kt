@@ -23,7 +23,9 @@ object FinanceLocalOcrParser {
             .findAll(text).flatMap {m->Regex("(?i)"+code).findAll(m.value).map {it.value.uppercase()}}.toSet()
         val standalone=text.lineSequence().map {it.trim().uppercase()}.filter {it in foreignCodes || it in setOf("CNY","RMB")}.toSet()
         val foreignNames=Regex("美元|美金|欧元|日元|日圓|港币|港幣|台币|新台币|英镑|韩元|澳元|加元|新加坡元|[$€£₩₹฿₽₫₱₺₪]").containsMatchIn(text)
-        val foreign=foreignNames || (namedCodes+nearby+standalone).any {it!="CNY" && it!="RMB"}
+        val financialCodes=text.lineSequence().filter {Regex("实付|付款金额|交易金额|退款金额|收款金额|支付金额|支付成功|付款成功").containsMatchIn(it)}
+            .flatMap {Regex("(?i)"+code).findAll(it).map {it.value.uppercase()}}.toSet()
+        val foreign=foreignNames || (namedCodes+nearby+standalone+financialCodes).any {it!="CNY" && it!="RMB"}
         val chineseCny=fields.any {it.contains("人民币") || it.contains("人民幣")} ||
             text.lineSequence().any {it.trim() in setOf("人民币","人民幣")} ||
             Regex("(?:人民币|人民幣)\\s*"+number+"|"+number+"\\s*元").containsMatchIn(text)

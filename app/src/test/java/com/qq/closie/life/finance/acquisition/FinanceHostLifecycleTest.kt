@@ -25,10 +25,11 @@ class FinanceHostLifecycleTest {
     private val controller=Robolectric.buildService(HostService::class.java)
     private lateinit var service:HostService
     private lateinit var reader:FinanceHostWindows
+    private var exposed=true
     @Before fun setup(){RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady();service=controller.create().get();reader=FinanceHostWindows(service)}
     @After fun cleanup(){controller.destroy();RestoreStartupGate.resetForTesting()}
     private fun node(text:String?=null,vararg children:AccessibilityNodeInfo):AccessibilityNodeInfo =
-        AccessibilityNodeInfo.obtain().apply {this.text=text;isVisibleToUser=true;children.forEach {shadowOf(this).addChild(it)}}
+        AccessibilityNodeInfo.obtain().apply {this.text=text;isVisibleToUser=exposed;children.forEach {shadowOf(this).addChild(it)}}
     private fun host(order:String="ORDER-123456",focused:Boolean=true,extra:String="普通刷新"):AccessibilityWindowInfo {
         val root=node(null,node("账单详情"),node(null,node("滴滴出行"),node("-¥12.34"),node("交易成功")),
             node(null,node("支付时间"),node("2026-01-02 10:20:30")),node(null,node("付款方式"),node("花呗")),
@@ -75,6 +76,19 @@ class FinanceHostLifecycleTest {
         windows(window(4,"unknown.host",AccessibilityWindowInfo.TYPE_APPLICATION,true))
         val opaque=requireNotNull(reader.bindActive());assertTrue(opaque.captureCurrent(reader.snapshot()))
         assertFalse(opaque.editorCurrent(reader.snapshot()))
+    }
+    @Test fun onlyBoundEditorMayValidateFactsOccludedByItsOwnPaperAndStillDetectsAnotherOrder() {
+        windows(host());val lease=requireNotNull(reader.bindActive())
+        exposed=false
+        windows(host(focused=false),window(2,service.packageName,AccessibilityWindowInfo.TYPE_SYSTEM,true))
+        assertFalse(lease.editorCurrent(reader.snapshot())) // the visible-only capture path must stay strict
+        val editing=reader.snapshot(editingHost=lease.host)
+        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,2,service.packageName),editing,true)
+        assertTrue(lease.editorCurrent(editing))
+        windows(host(order="ORDER-999999",focused=false),window(2,service.packageName,AccessibilityWindowInfo.TYPE_SYSTEM,true))
+        val changed=reader.snapshot(editingHost=lease.host)
+        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,1,lease.host.packageName),changed,true)
+        assertFalse(lease.editorCurrent(changed))
     }
     @Test fun restoreAndRotationCannotResurrectOriginalLease() {
         windows(host());val lease=requireNotNull(reader.bindActive())

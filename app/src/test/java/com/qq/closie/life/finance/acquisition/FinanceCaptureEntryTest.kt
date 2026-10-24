@@ -73,4 +73,20 @@ class FinanceCaptureEntryTest {
         } finally {controller.destroy()}
     }
 
+    @Test fun losingActualNativeWindowRestoresNotificationInsteadOfTrustingConnectedFlag() {
+        val controller=Robolectric.buildService(FinanceAccessibilityService::class.java).create()
+        try {
+            val service=controller.get()
+            ReflectionHelpers.callInstanceMethod<Void>(service,"onServiceConnected")
+            FinanceScreenshotPreference.set(context,true);shadowOf(Looper.getMainLooper()).idle()
+            val manager=service.getSystemService(WindowManager::class.java)
+            val wm=org.robolectric.shadow.api.Shadow.extract<org.robolectric.shadows.ShadowWindowManagerImpl>(manager)
+            val button=wm.views.filterIsInstance<TextView>().single {it.contentDescription?.toString()?.startsWith("单次截图识别账单")==true}
+            assertTrue(FinanceCaptureEntryState.nativeVisible.value)
+            manager.removeViewImmediate(button)
+            assertFalse(FinanceCaptureEntryState.nativeVisible.value)
+            assertNotNull(shadowOf(context.getSystemService(NotificationManager::class.java)).getNotification(606))
+        } finally {controller.destroy()}
+    }
+
 }

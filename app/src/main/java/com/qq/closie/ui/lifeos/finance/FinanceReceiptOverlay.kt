@@ -24,7 +24,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** One editable surface at a time. New proposals remain in the durable inbox and notifications. */
-internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope) {
+internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope,
+    private val containerProvider:()->LifeContainer={LifeContainer.getInstance(context)},
+    private val editOwner:CoroutineScope?=null) {
     companion object {
         private var owner: FinanceReceiptOverlay? = null
         private var captureBusy = false
@@ -41,7 +43,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
         fun endCapture() { captureBusy = false; publish() }
     }
     private val windows=context.getSystemService(WindowManager::class.java)
-    private val editScope get()=(context.applicationContext as ClosieApplication).financeReviewEditScope
+    private val editScope get()=editOwner ?: (context.applicationContext as ClosieApplication).financeReviewEditScope
     private var window:View?=null
     private var observer:Job?=null
     private var monitor:Job?=null
@@ -54,7 +56,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
         val restoreGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
         if(!canPresent() || !com.qq.closie.data.backup.RestoreStartupGate.isReady || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
         return try {
-            val container=LifeContainer.getInstance(context)
+            val container=containerProvider()
             val automation=container.financeAutomationRepository.observe().first()
             val proposal=automation.proposals.singleOrNull {it.id==id && it.status in setOf(FinanceProposalStatus.ACTIVE,FinanceProposalStatus.SNOOZED)} ?: return false
             val snapshot=container.financeRepository.snapshot()

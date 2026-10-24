@@ -25,6 +25,7 @@ import org.robolectric.shadows.ShadowSettings
 class FinanceReceiptSessionTest {
     private val context:Context=ApplicationProvider.getApplicationContext()
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+    private val edits=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private lateinit var overlay:FinanceReceiptOverlay
     private lateinit var container:LifeContainer
     private val host=FinanceHostWindow(1,"synthetic.host",android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION,true,true,"original-transaction")
@@ -33,12 +34,14 @@ class FinanceReceiptSessionTest {
     @Before fun setup() {
         RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady();ShadowSettings.setCanDrawOverlays(true)
         FinanceReviewRequests.foreground=false;FinanceScreenshotPreference.set(context,true)
-        container=LifeContainer.getInstance(context);overlay=FinanceReceiptOverlay(context,scope)
+        container=LifeContainer.createForTesting(context,androidx.room.Room.inMemoryDatabaseBuilder(context,
+            com.qq.closie.life.data.database.LifeDatabase::class.java).allowMainThreadQueries().build())
+        overlay=FinanceReceiptOverlay(context,scope,containerProvider={container},editOwner=edits)
         lease=FinanceHostSession(host,1,context.packageName)
     }
     @After fun cleanup() {
         overlay.close(false);FinanceReceiptOverlay.endCapture();scope.cancel()
-        (context.applicationContext as ClosieApplication).financeReviewEditScope.cancel()
+        edits.cancel()
         FinanceScreenshotPreference.set(context,false);container.lifeDatabase.close();RestoreStartupGate.resetForTesting()
     }
     private suspend fun attach() {

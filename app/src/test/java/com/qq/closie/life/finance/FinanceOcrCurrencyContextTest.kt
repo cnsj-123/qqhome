@@ -23,7 +23,7 @@ class FinanceOcrCurrencyContextTest:FinanceRoomTest() {
     @Test fun knownForeignMixedAndUnknownCurrencyFieldsCannotCreateCnyCandidates()=runTest {
         for(raw in listOf("币种：USD\n实付：12.34","币种：JPY\n实付：12.34","币种：CHF\n实付：12.34",
             "币种：XYZ\n人民币12.34","币种：未知\n人民币12.34","币种：CNY/USD\n实付：12.34","人民币12.34 CHF",
-            "支付成功\n实付：12.34\nKFC VIP POS","支付成功\n¥12.34")) {
+            "人民币\nUSD 支付金额:12.34","支付成功\n实付：12.34\nKFC VIP POS","支付成功\n¥12.34")) {
             val fields=FinanceLocalOcrParser.parse(raw);assertNull(raw,fields.currencyCode)
             assertTrue(runCatching {finance.media.createScreenshotCandidate(finance.economics.token(),fields){true}}.isFailure)
         }

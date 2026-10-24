@@ -46,6 +46,7 @@ internal class FinanceScreenshotController(
     private val hostWindows=FinanceHostWindows(service)
     private var hostSession:FinanceHostSession?=null
     val hasHostSession:Boolean get()=hostSession!=null
+    val editingHost:FinanceHostWindow? get()=if(presentedPage!=null)hostSession?.host else null
     fun onConnected() {if(!disposed){connected=true;update()}}
     private val screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){invalidate();removeBubble()}}
     private val configuration=object:ComponentCallbacks {
@@ -107,6 +108,10 @@ internal class FinanceScreenshotController(
             gravity = Gravity.CENTER; textSize = 12f; setTextColor(Color.parseColor("#534C91"))
             background = GradientDrawable().apply { setColor(Color.parseColor("#F6F5F9")); cornerRadius = 20 * density }
         }
+        view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v:View){FinanceCaptureEntryState.nativeVisible.value=true;FinanceProjectionBubbleService.ensure(service)}
+            override fun onViewDetachedFromWindow(v:View){if(bubble===v){bubble=null;FinanceCaptureEntryState.nativeVisible.value=false;FinanceProjectionBubbleService.ensure(service)}}
+        })
         view.setOnClickListener { request() }
         var downX = 0f; var downY = 0f; var originX = 0; var originY = 0; var moved = false
         view.setOnTouchListener { _, event ->
@@ -143,7 +148,7 @@ internal class FinanceScreenshotController(
         val session=hostSession ?: return false
         if(disposed || !connected || locked() || !FinanceScreenshotPreference.enabled(service) ||
             !RestoreStartupGate.isReady || !Settings.canDrawOverlays(service) || expected.pageGeneration!=eventSerial)return false
-        val snapshot=hostWindows.snapshot()
+        val snapshot=hostWindows.snapshot(editingHost=if(editing)session.host else null)
         return if(editing)session.editorCurrent(snapshot) else session.captureCurrent(snapshot)
     }
 
