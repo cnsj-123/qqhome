@@ -24,7 +24,7 @@ class FinanceAccessibilityService : AccessibilityService() {
     private val hostWindows=FinanceHostWindows(this)
     @Volatile private var deliverySession:FinanceHostSession?=null
     private val settings by lazy { FinanceAutomationSettings(this) }
-    private val screenshot by lazy { FinanceScreenshotController(this, scope) { delivery.close() } }
+    private val screenshot by lazy { FinanceScreenshotController(this, scope,hideOtherReceipt={delivery.close()}) }
     private val delivery by lazy { (application as ClosieApplication).createFinanceReviewDelivery(scope) }
 
     override fun onServiceConnected() {

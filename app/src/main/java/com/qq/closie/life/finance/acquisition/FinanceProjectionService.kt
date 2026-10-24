@@ -39,7 +39,7 @@ class FinanceProjectionService:Service() {
         @Suppress("DEPRECATION") val consent=if(Build.VERSION.SDK_INT>=33)intent?.getParcelableExtra("consent",Intent::class.java)
             else intent?.getParcelableExtra<Intent>("consent")
         if(request==null || consent==null || request.id!=intent?.getStringExtra("request") || !request.current(this)) {
-            owned?.let {it.host?.close();com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture(it.reservation)}
+            owned?.let {it.host?.close();it.review?.close();com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture(it.reservation)}
             owned?.let {FinanceProjectionRequests.finish(it.reservation)};stopSelf();return START_NOT_STICKY
         }
         try {
@@ -63,6 +63,7 @@ class FinanceProjectionService:Service() {
             try {
                 val token=request.token // Never obtain a new token after consent, frame or OCR.
                 request.host?.awaitReturn()
+                request.review?.awaitReady()
                 check(request.current(this@FinanceProjectionService))
                 val mp=getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK,consent)
                 projection=mp
@@ -75,27 +76,32 @@ class FinanceProjectionService:Service() {
                 var handedToOcr=false
                 val raw=try {
                     check(request.current(this@FinanceProjectionService))
-                    captured=true;releaseProjection()
+                    captured=true;releaseProjection();request.review?.recognizing()
                     withTimeout(12000){handedToOcr=true;OcrEngine.recognizeText(frame,releaseAfterRecognition=true).getOrThrow()}
                 } finally {if(!handedToOcr)frame.recycle()}
                 val fields=withContext(Dispatchers.Default){FinanceLocalOcrParser.parse(raw)}
                 check(request.current(this@FinanceProjectionService))
                 check(request.host?.captureCurrent()!=false)
+                check(request.review?.captureCurrent()!=false)
                 val container=LifeContainer.getInstance(this@FinanceProjectionService)
-                val id=withContext(Dispatchers.IO){container.financeRepository.media.createScreenshotCandidate(token,fields){request.current(this@FinanceProjectionService)}}
+                val id=withContext(Dispatchers.IO){container.financeRepository.media.createScreenshotCandidate(token,fields){
+                    request.current(this@FinanceProjectionService) && request.host?.captureCurrent()!=false && request.review?.captureCurrent()!=false
+                }}
                 val appContext=applicationContext
-                handedToEditor=request.host?.present(id,token.restoreEpoch){request.current(appContext)}==true
+                handedToEditor=if(request.host!=null)request.host.present(id,token.restoreEpoch){request.current(appContext)}
+                    else request.review?.present(id,token.restoreEpoch){request.current(appContext)}==true
                 if(!handedToEditor) {
                     val proposal=container.financeAutomationRepository.observe().first().proposals.single {it.id==id}
                     val notified=FinanceReviewNotifications.post(this@FinanceProjectionService,proposal,true)
                     if(!notified)android.widget.Toast.makeText(this@FinanceProjectionService,"小票已放入账目待确认，请打开核对",android.widget.Toast.LENGTH_LONG).show()
                 }
-                FinanceAutomationSettings(this@FinanceProjectionService).status(if(handedToEditor)"单次截图已结束，请在原位小票核对后保存" else "小票已在待确认中；原位核对需要连接无障碍并停在可绑定的详情页")
+                FinanceAutomationSettings(this@FinanceProjectionService).status(if(handedToEditor)"单次截图已结束，请在小票核对后保存" else "小票已在待确认中，本次复核页面已关闭")
             } catch(e:TimeoutCancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图或识别超时，未自动记账")}
             catch(e:CancellationException){FinanceAutomationSettings(this@FinanceProjectionService).status("本次截图已失效，未自动记账");throw e}
             catch(e:Exception){FinanceAutomationSettings(this@FinanceProjectionService).status(e.message ?: "本次系统截图未完成")}
-            finally {if(!handedToEditor)request.host?.close();FinanceProjectionRequests.finish(request.reservation);com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture(request.reservation);FinanceProjectionBubbleService.ensure(this@FinanceProjectionService);releaseProjection();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf()}
+            finally {request.onCancel=null;if(!handedToEditor){request.host?.close();request.review?.close()};FinanceProjectionRequests.finish(request.reservation);com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture(request.reservation);FinanceProjectionBubbleService.ensure(this@FinanceProjectionService);releaseProjection();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf()}
         }
+        request.onCancel={task?.cancel()}
         return START_NOT_STICKY
     }
     private suspend fun frame(mp:MediaProjection,request:FinanceProjectionRequest):Bitmap=suspendCancellableCoroutine { continuation ->
@@ -113,6 +119,7 @@ class FinanceProjectionService:Service() {
                 var padded:Bitmap?=null;var cropped:Bitmap?=null
                 try {
                     check(request.current(this))
+                    check(request.host?.captureCurrent()!=false && request.review?.captureCurrent()!=false)
                     val plane=image.planes[0];val paddedWidth=plane.rowStride/plane.pixelStride
                     padded=Bitmap.createBitmap(paddedWidth,height,Bitmap.Config.ARGB_8888)
                     padded!!.copyPixelsFromBuffer(plane.buffer)
@@ -141,5 +148,5 @@ class FinanceProjectionService:Service() {
         val previous=projection;projection=null;previous?.stop()
     }
     override fun onConfigurationChanged(config:android.content.res.Configuration){super.onConfigurationChanged(config);task?.cancel()}
-    override fun onDestroy(){owned?.let {if(!handedToEditor)it.host?.close();com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture(it.reservation);FinanceProjectionRequests.finish(it.reservation)};FinanceProjectionBubbleService.ensure(this);screenReceiver?.let {runCatching {unregisterReceiver(it)}};screenReceiver=null;scope.cancel();releaseProjection();super.onDestroy()}
+    override fun onDestroy(){owned?.let {it.onCancel=null;if(!handedToEditor){it.host?.close();it.review?.close()};com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture(it.reservation);FinanceProjectionRequests.finish(it.reservation)};FinanceProjectionBubbleService.ensure(this);screenReceiver?.let {runCatching {unregisterReceiver(it)}};screenReceiver=null;scope.cancel();releaseProjection();super.onDestroy()}
 }

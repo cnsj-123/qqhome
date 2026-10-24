@@ -43,7 +43,7 @@ internal class FinanceScreenshotController(
     private val hostWindows:FinanceHostWindows=FinanceHostWindows(service)
 ) {
     private val windows = service.getSystemService(WindowManager::class.java)
-    private val overlay = FinanceReceiptOverlay(service, scope,containerProvider,editOwner)
+    private val overlay = FinanceReceiptOverlay(service, scope,containerProvider,editOwner,onClosed={editorClosed()})
     private var bubble: View? = null
     private var recognition: View? = null
     private var capture: Job? = null
@@ -82,6 +82,10 @@ internal class FinanceScreenshotController(
         capture?.cancel()
         presentedPage = null
         overlay.close();removeRecognition()
+    }
+    private fun editorClosed() {
+        if(phase==Phase.EDITING){hostSession?.cancel();hostSession=null;presentedPage=null;phase=Phase.IDLE}
+        update()
     }
     fun hostEvent(event:android.view.accessibility.AccessibilityEvent) {
         val session=hostSession ?: return
@@ -172,7 +176,7 @@ internal class FinanceScreenshotController(
             val origin=if(session.host.identity!=null)FinanceProjectionHost(service,hostWindows,session) else null
             if(origin!=null)FinanceProjectionHosts.offer(origin) else session.cancel()
             removeBubble()
-            status(if(origin!=null)"请授权本次截图，返回原详情后原位核对" else "当前页无法绑定交易身份，本次结果进入待确认")
+            status(if(origin!=null)"请授权本次截图，返回原详情后原位核对" else "请授权本次截图，识别后直接打开小票核对")
             runCatching {service.startActivity(FinanceProjectionRequests.intent(service).putExtra("originId",origin?.id))}
                 .onFailure {origin?.close();update();status("请使用快捷设置“财务单次截图”")}
             return

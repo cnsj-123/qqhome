@@ -58,7 +58,7 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
             Text("开启主动截图入口")
         }
         Text("无障碍已连接时可点悬浮球截图：Android 8–10 每次请求系统授权，返回原详情后原位核对；Android 11+ 优先使用单次系统截图。", style = MaterialTheme.typography.bodySmall)
-        Text("原位小票需要可验证的原交易页。无障碍未连接或页面无法绑定时，通知 / 快捷设置仍可逐次授权截图，结果进入待确认。入口不依赖后台服务长驻。", style = MaterialTheme.typography.bodySmall)
+        Text("交易页可验证时原位悬浮核对。其他情况下，可从通知 / 快捷设置逐次授权截图，直接打开同款可编辑小票；离开复核页后，已生成的候选保留在待确认。", style = MaterialTheme.typography.bodySmall)
         if(screenshotEnabled) {
             Text("截图入口：" + if(nativeEntry)"原生悬浮按钮" else if(notificationEntry)"通知 / 快捷设置" else "快捷设置（通知权限或渠道未允许）",style=MaterialTheme.typography.bodySmall)
             if(!notificationEntry)TextButton({context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))}) {Text("管理截图入口通知")}

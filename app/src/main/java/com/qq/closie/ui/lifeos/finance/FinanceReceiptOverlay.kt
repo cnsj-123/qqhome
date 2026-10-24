@@ -26,7 +26,8 @@ import kotlinx.coroutines.sync.withLock
 /** One editable surface at a time. New proposals remain in the durable inbox and notifications. */
 internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope,
     private val containerProvider:()->LifeContainer={LifeContainer.getInstance(context)},
-    private val editOwner:CoroutineScope?=null,private val onClosed:()->Unit={}) {
+    private val editOwner:CoroutineScope?=null,private val onClosed:()->Unit={},
+    private val embeddedHost:FrameLayout?=null) {
     companion object {
         private var owner: FinanceReceiptOverlay? = null
         private val legacyCapture=Any()
@@ -54,10 +55,13 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     private var flushLater:(()->Unit)?=null
     private var screenReceiver:BroadcastReceiver?=null
     private var configuration:ComponentCallbacks?=null
+    private var backAction:(()->Unit)?=null
+    fun back(){backAction?.invoke() ?: close()}
+    private fun canAttach()=embeddedHost!=null || Settings.canDrawOverlays(context)
 
     suspend fun show(id:String, userInitiated:Boolean=false, expectedEpoch:Long?=null, canContinue:()->Boolean={true}, canPresent:()->Boolean={true}):Boolean {
         val restoreGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
-        if(!canPresent() || !com.qq.closie.data.backup.RestoreStartupGate.isReady || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
+        if(!canPresent() || !com.qq.closie.data.backup.RestoreStartupGate.isReady || !canAttach() || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return false
         return try {
             val container=containerProvider()
             val automation=container.financeAutomationRepository.observe().first()
@@ -79,7 +83,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     if (userInitiated && proposal.source == FinanceSource.SCREENSHOT)
                         com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)
                     else prefs.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE && prefs.enhancedReceiptOverlay && prefs.permits(proposal)
-                if((captureBusy && !userInitiated) || !canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !Settings.canDrawOverlays(context)) return@withContext false
+                if((captureBusy && !userInitiated) || !canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !canAttach()) return@withContext false
                 val density=context.resources.displayMetrics.density
                 fun dp(n:Int)=(n*density).toInt()
                 val body=LinearLayout(context).apply {
@@ -240,6 +244,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     if(panelBody.visibility!=View.VISIBLE) false
                     else {panelBody.visibility=View.GONE;panelBody.removeAllViews();body.visibility=View.VISIBLE;true}
                 }
+                backAction={if(!closePanel())later()}
                 openPanel = { title, content ->
                     context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(body.windowToken,0)
                     body.clearFocus();panelBody.removeAllViews()
@@ -260,6 +265,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 }.apply {isFocusableInTouchMode=true;addView(pages)}
                 body.background = null
                 val frame = LinearLayout(context).apply {
+                    if(embeddedHost!=null)setOnClickListener {} // Paper blank space never reaches the outside scrim.
                     orientation = LinearLayout.VERTICAL
                     background = FinanceReceiptPaper(Color.parseColor(tokens.card), Color.parseColor(tokens.line), density)
                     elevation = dp(8).toFloat()
@@ -273,8 +279,11 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 }
                 val attached = attachFinanceReceipt(restoreGeneration,canPresent,authorized={
                     (!captureBusy || userInitiated) && permitted(FinanceAutomationSettings(context).read()) &&
-                        Settings.canDrawOverlays(context) && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
-                }) {windows.addView(frame,params)}
+                        canAttach() && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+                }) {
+                    if(embeddedHost!=null)embeddedHost.addView(frame,FrameLayout.LayoutParams(params.width,params.height,Gravity.BOTTOM))
+                    else windows.addView(frame,params)
+                }
                 if (!attached) return@withContext false
                 window=frame;owner=this@FinanceReceiptOverlay;captureOwner=null;publish();scroll.requestFocus();ready=true
                 if(android.animation.ValueAnimator.areAnimatorsEnabled()) {
@@ -289,7 +298,10 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     val targetHeight=minOf((height*.82f).toInt(),available)
                     if(params.height!=targetHeight || params.y!=bars.bottom) {
                         params.height=targetHeight;params.y=bars.bottom
-                        runCatching {windows.updateViewLayout(frame,params)}.onFailure {close()}
+                        runCatching {
+                            if(embeddedHost!=null)frame.layoutParams=FrameLayout.LayoutParams(params.width,params.height,Gravity.BOTTOM).apply {bottomMargin=params.y}
+                            else windows.updateViewLayout(frame,params)
+                        }.onFailure {close()}
                     }
                     insets
                 }
@@ -313,7 +325,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     }.catch {emit(true)}.first {it};close()
                 }
                 monitor=scope.launch(Dispatchers.Main.immediate) {while(isActive){delay(500)
-                    if(!canContinue() || !Settings.canDrawOverlays(context) || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
+                    if(!canContinue() || !canAttach() || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked){close();break}
                 }}
                 true
             }
@@ -328,7 +340,9 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
         observer?.cancel();observer=null;monitor?.cancel();monitor=null;autosave?.cancel();autosave=null
         screenReceiver?.let {runCatching {context.unregisterReceiver(it)}};screenReceiver=null
         configuration?.let {context.unregisterComponentCallbacks(it)};configuration=null
-        window?.let {view->view.animate().cancel();context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
+        window?.let {view->view.animate().cancel();context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {
+            if(embeddedHost!=null)embeddedHost.removeView(view) else windows.removeViewImmediate(view)
+        }};window=null;backAction=null
         if(wasShowing)onClosed()
         com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)
         if(persist)flush?.invoke()
