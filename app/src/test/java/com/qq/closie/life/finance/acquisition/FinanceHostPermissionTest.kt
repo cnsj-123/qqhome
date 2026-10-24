@@ -10,7 +10,7 @@ import org.robolectric.annotation.Config
 import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[34])
+@Config(sdk=[34],shadows=[FinanceWindowShadow::class])
 class FinanceHostPermissionTest:FinanceRoomTest() {
     private val controller=Robolectric.buildService(FinanceFixtureService::class.java)
     private lateinit var service:FinanceFixtureService
@@ -18,6 +18,7 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
     private lateinit var reader:FinanceHostWindows
     @Before fun setup() {
         service=controller.create().get()
+        FinanceWindowShadow.rootReads.clear()
         reader=FinanceHostWindows(service){root,adapter,occluded->
             val pkg=root.packageName.toString();reads[pkg]=(reads[pkg] ?: 0)+1
             VisibleDetailReader.inspect(root,adapter,occluded)
@@ -32,7 +33,7 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
     }
     private suspend fun verifySource(allowed:String,denied:String) {
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,allowed),FinanceHostFixtures.window(2,denied,false))
-        assertTrue(reader.snapshot().windows.all {it.identity==null});assertTrue(reads.isEmpty())
+        assertTrue(reader.snapshot().windows.all {it.identity==null});assertTrue(reads.isEmpty());assertTrue(FinanceWindowShadow.rootReads.isEmpty())
         val target=VisibleDetailScheduler.Target(allowed,1)
         val recognized=FinanceHostFixtures.evidence(allowed)
         val config=FinanceDiscoverySettings(visibleDetailEnabled=true,enabledVisibleProviders=setOf(recognized.providerKey))
@@ -42,6 +43,7 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
         val result=repo.discoverVisible(recognized){permitted() && lease.captureCurrent(reader.current(lease,::permitted))}
         assertNotNull(result.proposal);assertEquals(1,db.financeIntakeDao().proposals().size)
         assertTrue((reads[allowed] ?: 0)>0);assertEquals(0,reads[denied] ?: 0)
+        assertEquals(0,FinanceWindowShadow.rootReads[2] ?: 0)
         assertTrue(finance.snapshot().entries.isEmpty())
     }
     @Test fun explicitClickAndMountedEditorReadOnlyTheirOriginalHostAndRevokedGrantReadsNothing() {
@@ -52,6 +54,7 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
             FinanceHostFixtures.window(3,service.packageName,type=android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM))
         assertTrue(lease.editorCurrent(reader.current(lease,{true},true)))
         assertEquals(0,reads[other] ?: 0)
+        assertEquals(0,FinanceWindowShadow.rootReads[2] ?: 0)
         val before=reads.toMap();reader.current(lease,{false},true);assertEquals(before,reads)
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(2,other))
         assertFalse(lease.editorCurrent(reader.current(lease,{true},true)));assertEquals(before,reads)

@@ -19,7 +19,7 @@ import org.robolectric.util.ReflectionHelpers
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[34])
+@Config(sdk=[34],shadows=[FinanceWindowShadow::class])
 class FinanceCaptureTerminationTest:FinanceRoomTest() {
     private fun terminal(reason:String)=runTest {
         val serviceController=Robolectric.buildService(FinanceFixtureService::class.java).create()
@@ -28,6 +28,7 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
         val scope=CoroutineScope(SupervisorJob()+dispatcher)
         val container=LifeContainer.createForTesting(service,db)
         var reads=0;var shots=0
+        var recognitionStarted=CompletableDeferred<Unit>()
         val windows=FinanceHostWindows(service){node,adapter,occluded->reads++;VisibleDetailReader.inspect(node,adapter,occluded)}
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,FinanceHostFixtures.ALIPAY))
         ShadowSettings.setCanDrawOverlays(true);FinanceScreenshotPreference.set(service,true)
@@ -35,7 +36,7 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
         val controller=FinanceScreenshotController(service,scope,{},
             captureFrame={shots++;if(reason=="capture")error("synthetic platform failure")
                 Bitmap.createBitmap(8,8,Bitmap.Config.ARGB_8888).apply {eraseColor(Color.WHITE)}},
-            recognizeFrame={frame->frame.recycle();if(reason in setOf("timeout","cancel"))awaitCancellation()
+            recognizeFrame={frame->frame.recycle();recognitionStarted.complete(Unit);if(reason in setOf("timeout","cancel"))awaitCancellation()
                 FinanceLocalOcrParser.parse(if(reason=="success")"支付成功\n人民币12.34" else "支付成功\nUSD 12.34")},
             containerProvider={container},io=dispatcher,editOwner=scope,hostWindows=windows)
         try {
@@ -45,7 +46,7 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
                 return requireNotNull(ReflectionHelpers.getField<Job?>(controller,"capture"))
             }
             val task=start();advanceTimeBy(181);runCurrent()
-            if(reason=="cancel")task.cancel()
+            if(reason=="cancel"){recognitionStarted.await();task.cancel()}
             task.join();runCurrent()
             if(reason=="success") {
                 assertTrue(controller.hasHostSession);assertTrue(FinanceReceiptOverlay.occupied)
@@ -57,8 +58,8 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
             repeat(3){controller.hostEvent(FinanceHostFixtures.event())}
             assertEquals(endedReads,reads)
             assertTrue(db.financeIntakeDao().proposals().isEmpty());assertTrue(finance.snapshot().entries.isEmpty())
-            val previousShots=shots;val retry=start();advanceTimeBy(181);runCurrent()
-            if(reason=="cancel")retry.cancel()
+            val previousShots=shots;recognitionStarted=CompletableDeferred();val retry=start();advanceTimeBy(181);runCurrent()
+            if(reason=="cancel"){recognitionStarted.await();retry.cancel()}
             retry.join();assertTrue(shots>previousShots);assertFalse(controller.hasHostSession)
             }
         } finally {controller.close();scope.cancel();FinanceReceiptOverlay.endCapture();FinanceScreenshotPreference.set(service,false);serviceController.destroy()}

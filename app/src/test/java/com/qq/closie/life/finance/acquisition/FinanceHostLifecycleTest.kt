@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
 
 /** Actual Android events/windows/nodes -> shipping reader -> page lease. No manually toggled valid Boolean. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[34])
+@Config(sdk=[34],shadows=[FinanceWindowShadow::class])
 class FinanceHostLifecycleTest {
     class HostService:AccessibilityService() {
         override fun onAccessibilityEvent(event:AccessibilityEvent?){}
@@ -28,7 +28,7 @@ class FinanceHostLifecycleTest {
     private var exposed=true
     private var granted:FinanceHostSession?=null
     private fun bind()=reader.bindActive().also {granted=it}
-    private fun facts()=reader.snapshot(granted?.host,{true})
+    private fun facts(editing:Boolean=false)=granted?.let {reader.current(it,{true},editing)} ?: reader.snapshot()
     @Before fun setup(){RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady();service=controller.create().get();reader=FinanceHostWindows(service)}
     @After fun cleanup(){controller.destroy();RestoreStartupGate.resetForTesting()}
     private fun node(text:String?=null,vararg children:AccessibilityNodeInfo):AccessibilityNodeInfo =
@@ -58,18 +58,18 @@ class FinanceHostLifecycleTest {
     @Test fun receiptFocusImeAndSubpanelsKeepEditorForMoreThanTwoSecondsThenOtherApplicationInvalidates() {
         windows(host());val lease=requireNotNull(bind())
         windows(host(focused=false),window(2,service.packageName,AccessibilityWindowInfo.TYPE_SYSTEM,true))
-        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,2,service.packageName),facts(),true)
-        assertFalse(lease.captureCurrent(facts()));assertTrue(lease.editorCurrent(facts()))
+        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,2,service.packageName),facts(true),true)
+        assertFalse(lease.captureCurrent(facts(true)));assertTrue(lease.editorCurrent(facts(true)))
         windows(host(focused=false),window(2,service.packageName,AccessibilityWindowInfo.TYPE_SYSTEM,true),
             window(3,"synthetic.ime",AccessibilityWindowInfo.TYPE_INPUT_METHOD,true))
-        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,3,"synthetic.ime"),facts(),true)
+        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,3,"synthetic.ime"),facts(true),true)
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2500))
-        assertTrue(lease.editorCurrent(facts()))
-        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,2,service.packageName),facts(),true)
-        assertTrue(lease.editorCurrent(facts()))
+        assertTrue(lease.editorCurrent(facts(true)))
+        lease.observe(event(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,2,service.packageName),facts(true),true)
+        assertTrue(lease.editorCurrent(facts(true)))
         windows(window(8,"other.app",AccessibilityWindowInfo.TYPE_APPLICATION,true))
-        lease.observe(event(AccessibilityEvent.TYPE_WINDOWS_CHANGED,8,"other.app"),facts(),true)
-        assertFalse(lease.editorCurrent(facts()))
+        lease.observe(event(AccessibilityEvent.TYPE_WINDOWS_CHANGED,8,"other.app"),facts(true),true)
+        assertFalse(lease.editorCurrent(facts(true)))
     }
     @Test fun ownApplicationNavigationIsNotConfusedWithOwnReceiptAndUnknownPagesCannotOwnAnEditor() {
         windows(host());val lease=requireNotNull(bind())

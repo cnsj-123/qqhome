@@ -19,7 +19,7 @@ import org.robolectric.shadows.ShadowSettings
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[34])
+@Config(sdk=[34],shadows=[FinanceWindowShadow::class])
 class FinanceProjectionHostTest:FinanceRoomTest() {
     private val serviceController=Robolectric.buildService(FinanceFixtureService::class.java)
     private lateinit var service:FinanceFixtureService

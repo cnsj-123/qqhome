@@ -57,6 +57,7 @@ class FinanceAccessibilityService : AccessibilityService() {
         if(event==null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,AccessibilityEvent.TYPE_WINDOWS_CHANGED))return
         if(!VisibleDetailRuntime.state.value.connected){VisibleDetailRuntime.connected(true);screenshot.onConnected()}
+        hostWindows.record(event)
         val snapshot=hostWindows.snapshot() // Window metadata never grants transaction access.
         FinanceProjectionHosts.current?.observe(event)
         screenshot.hostEvent(event);screenshot.update()
@@ -73,12 +74,12 @@ class FinanceAccessibilityService : AccessibilityService() {
         val provider=if(config.visibleDetailEnabled)VisibleTransactionEvidenceRouter.provider(pkg,config.enabledVisibleProviders) else null
         if(provider==null) {
             if(snapshot.windows.any {it.type==AccessibilityWindowInfo.TYPE_APPLICATION && (it.active || it.focused) &&
-                    it.packageName!=sessionTarget?.packageName}){cancelReads();delivery.close()}
+                    it.id!=sessionTarget?.windowId}){cancelReads();delivery.close()}
             return
         }
         if(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)return
-        val active=snapshot.windows.singleOrNull {it.packageName==pkg && it.id==event.windowId && it.active && it.focused && it.type==AccessibilityWindowInfo.TYPE_APPLICATION} ?: return
-        val target=VisibleDetailScheduler.Target(active.packageName,active.id)
+        val active=snapshot.windows.singleOrNull {it.id==event.windowId && it.active && it.focused && it.type==AccessibilityWindowInfo.TYPE_APPLICATION} ?: return
+        val target=VisibleDetailScheduler.Target(pkg,active.id)
         if(sessionTarget!=target){sessionTarget=target;shown.clear()}
         VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.SETTLING)
         scheduler.submit(target)
@@ -96,20 +97,19 @@ class FinanceAccessibilityService : AccessibilityService() {
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) {
             VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.LOCKED); return null
         }
-        val root = rootInActiveWindow ?: run {
+        val handles=runCatching {windows}.getOrDefault(emptyList())
+        val root=try {
+            val window=handles.singleOrNull {it.id==target.windowId && it.isActive && it.isFocused && it.type==AccessibilityWindowInfo.TYPE_APPLICATION}
+            if(window==null || !allowed(target))null
+            else if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0) else window.root
+        } catch(_:Exception){null} finally {handles.forEach {@Suppress("DEPRECATION") it.recycle()}}
+        if(root==null) {
             VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_NOT_READY); return null
         }
         try {
             if (root.packageName?.toString() != target.packageName || !root.isVisibleToUser) {
                 VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.WINDOW_CHANGED); return null
             }
-            val window = root.window ?: return null
-            try {
-                if (!window.isActive || !window.isFocused || window.type != AccessibilityWindowInfo.TYPE_APPLICATION ||
-                    (target.windowId >= 0 && window.id != target.windowId)) {
-                    VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.WINDOW_CHANGED); return null
-                }
-            } finally { @Suppress("DEPRECATION") window.recycle() }
             if(!allowed(target))return null
             val inspected = VisibleDetailReader.inspect(root, provider.adapter)
             if (inspected.fields == null) {

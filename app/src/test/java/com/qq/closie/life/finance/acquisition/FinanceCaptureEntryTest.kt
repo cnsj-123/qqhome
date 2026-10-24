@@ -21,7 +21,7 @@ import org.robolectric.shadows.ShadowSettings
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[34])
+@Config(sdk=[34],shadows=[FinanceWindowShadow::class])
 class FinanceCaptureEntryTest {
     private val context:Context=ApplicationProvider.getApplicationContext()
     @Before fun setup(){RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady();ShadowSettings.setCanDrawOverlays(true);FinanceScreenshotPreference.set(context,false)}

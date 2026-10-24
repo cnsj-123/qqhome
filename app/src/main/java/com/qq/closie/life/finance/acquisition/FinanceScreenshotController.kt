@@ -88,6 +88,7 @@ internal class FinanceScreenshotController(
         update()
     }
     fun hostEvent(event:android.view.accessibility.AccessibilityEvent) {
+        hostWindows.record(event)
         val session=hostSession ?: return
         val editing=phase==Phase.EDITING
         val snapshot=hostWindows.current(session,{FinanceScreenshotPreference.enabled(service) && !locked()},editing)

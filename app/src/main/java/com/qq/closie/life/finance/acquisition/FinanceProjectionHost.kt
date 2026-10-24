@@ -25,6 +25,7 @@ internal class FinanceProjectionHost(private val service:AccessibilityService,pr
     fun captureCurrent()=live && session.captureCurrent(snapshot())
     fun editorCurrent()=live && session.editorCurrent(snapshot(true))
     fun observe(event:AccessibilityEvent) {
+        windows.record(event)
         if(!live){close();return}
         if(phase==Phase.CONSENT) {
             // Consent may cover the original host. Do not read its facts until it returns.
@@ -32,7 +33,7 @@ internal class FinanceProjectionHost(private val service:AccessibilityService,pr
             val allowed=setOf(service.packageName,session.host.packageName,"com.android.systemui",
                 "com.android.permissioncontroller","com.google.android.permissioncontroller")
             if(metadata.orientation!=session.orientation || metadata.windows.any {
-                it.type==AccessibilityWindowInfo.TYPE_APPLICATION && (it.active || it.focused) && it.packageName !in allowed
+                it.type==AccessibilityWindowInfo.TYPE_APPLICATION && (it.active || it.focused) && it.packageName.isNotBlank() && it.packageName !in allowed
             })close()
         } else {
             val state=snapshot(phase==Phase.EDITING)
