@@ -91,13 +91,17 @@ class FinanceCaptureEntryTest {
 
     @Test fun failedProjectionStartupRestoresNotificationEntryAfterCaptureReservationIsReleased() {
         FinanceScreenshotPreference.set(context,true)
-        assertTrue(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture())
+        val reservation=Any()
+        assertTrue(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture(reservation))
         FinanceProjectionBubbleService.ensure(context)
         val notifications=context.getSystemService(NotificationManager::class.java)
         assertNull(shadowOf(notifications).getNotification(606))
         val controller=Robolectric.buildService(FinanceProjectionService::class.java).create()
         try {
-            controller.get().onStartCommand(android.content.Intent(),0,1)
+            val request=FinanceProjectionRequest("failed-start",com.qq.closie.life.finance.FinanceCommandToken("synthetic",0),
+                RestoreStartupGate.state.value.restoreGeneration,context.resources.configuration.orientation,reservation=reservation)
+            FinanceProjectionRequests.pending=request
+            controller.get().onStartCommand(android.content.Intent().putExtra("request",request.id),0,1)
             assertFalse(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
         } finally {controller.destroy()}
         assertNotNull(shadowOf(notifications).getNotification(606))

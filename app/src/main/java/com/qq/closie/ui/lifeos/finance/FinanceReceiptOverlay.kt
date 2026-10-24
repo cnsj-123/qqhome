@@ -26,25 +26,28 @@ import kotlinx.coroutines.sync.withLock
 /** One editable surface at a time. New proposals remain in the durable inbox and notifications. */
 internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope,
     private val containerProvider:()->LifeContainer={LifeContainer.getInstance(context)},
-    private val editOwner:CoroutineScope?=null) {
+    private val editOwner:CoroutineScope?=null,private val onClosed:()->Unit={}) {
     companion object {
         private var owner: FinanceReceiptOverlay? = null
-        private var captureBusy = false
+        private val legacyCapture=Any()
+        private var captureOwner:Any?=null
+        private val captureBusy get()=captureOwner!=null
         private val occupancy=MutableStateFlow(false)
         val occupancyChanges:StateFlow<Boolean> = occupancy.asStateFlow()
         val occupied: Boolean get() = owner != null || captureBusy
         private fun publish(){occupancy.value=occupied}
-        fun beginCapture(): Boolean {
+        fun beginCapture(requestOwner:Any=legacyCapture): Boolean {
             if (occupied) return false
-            captureBusy = true
+            captureOwner = requestOwner
             publish()
             return true
         }
-        fun endCapture() { captureBusy = false; publish() }
+        fun endCapture(requestOwner:Any?=null) { if(requestOwner==null || captureOwner===requestOwner){captureOwner=null;publish()} }
     }
     private val windows=context.getSystemService(WindowManager::class.java)
     private val editScope get()=editOwner ?: (context.applicationContext as ClosieApplication).financeReviewEditScope
     private var window:View?=null
+    val isShowing:Boolean get()=window!=null && owner===this
     private var observer:Job?=null
     private var monitor:Job?=null
     private var autosave:Job?=null
@@ -273,7 +276,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                         Settings.canDrawOverlays(context) && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
                 }) {windows.addView(frame,params)}
                 if (!attached) return@withContext false
-                window=frame;owner=this@FinanceReceiptOverlay;captureBusy=false;publish();scroll.requestFocus();ready=true
+                window=frame;owner=this@FinanceReceiptOverlay;captureOwner=null;publish();scroll.requestFocus();ready=true
                 if(android.animation.ValueAnimator.areAnimatorsEnabled()) {
                     frame.translationY=dp(20).toFloat();frame.scaleX=.98f;frame.scaleY=.98f;frame.alpha=0f
                     frame.animate().translationY(0f).scaleX(1f).scaleY(1f).alpha(1f).setDuration(260).start()
@@ -319,12 +322,14 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     }
     /** Never discards a candidate. Application-owned edit work survives listener teardown. */
     fun close(persist:Boolean=true, advance:Boolean=false) {
+        val wasShowing=isShowing
         if (owner === this) {owner = null;publish()}
         val flush=flushLater;flushLater=null
         observer?.cancel();observer=null;monitor?.cancel();monitor=null;autosave?.cancel();autosave=null
         screenReceiver?.let {runCatching {context.unregisterReceiver(it)}};screenReceiver=null
         configuration?.let {context.unregisterComponentCallbacks(it)};configuration=null
         window?.let {view->view.animate().cancel();context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);runCatching {windows.removeViewImmediate(view)}};window=null
+        if(wasShowing)onClosed()
         com.qq.closie.life.finance.acquisition.FinanceProjectionBubbleService.ensure(context)
         if(persist)flush?.invoke()
         if(advance && !occupied) editScope.launch { FinanceReceiptQueue.pending.advance() }

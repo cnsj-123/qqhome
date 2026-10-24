@@ -17,7 +17,7 @@ object FinanceProjectionBubbleService {
     private const val ID=606
     fun ensure(context:Context) {
         val manager=context.getSystemService(NotificationManager::class.java)
-        if(!FinanceScreenshotPreference.enabled(context) || FinanceReceiptOverlay.occupied ||
+        if(!FinanceScreenshotPreference.enabled(context) || FinanceReceiptOverlay.occupied || FinanceProjectionHosts.current!=null ||
             FinanceCaptureEntryState.nativeVisible.value) {manager.cancel(ID);return}
         manager.createNotificationChannel(NotificationChannel(CHANNEL,"财务截图入口",NotificationManager.IMPORTANCE_LOW))
         val intent=FinanceProjectionRequests.intent(context).putExtra("freshEntry",true)

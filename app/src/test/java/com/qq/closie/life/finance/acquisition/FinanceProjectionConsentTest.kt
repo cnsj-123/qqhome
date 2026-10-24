@@ -20,19 +20,22 @@ import org.robolectric.annotation.Config
 @Config(sdk=[34])
 class FinanceProjectionConsentTest {
     private lateinit var context:Context
+    private val reservation=Any()
     @Before fun setup() {
         context=ApplicationProvider.getApplicationContext()
         RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady()
         FinanceScreenshotPreference.set(context,true)
-        FinanceProjectionRequests.pending=null;FinanceProjectionRequests.inFlight=true
+        FinanceProjectionRequests.pending=null;FinanceProjectionRequests.start(reservation)
         shadowOf(context.getSystemService(KeyguardManager::class.java)).setKeyguardLocked(false)
-        assertTrue(FinanceReceiptOverlay.beginCapture())
+        assertTrue(FinanceReceiptOverlay.beginCapture(reservation))
     }
     @After fun cleanup() {
         FinanceReceiptOverlay.endCapture();FinanceProjectionRequests.pending=null;FinanceProjectionRequests.inFlight=false
         FinanceScreenshotPreference.set(context,false);RestoreStartupGate.resetForTesting()
     }
     private fun assertRejected(intent:Intent) {
+        val request=requireNotNull(FinanceProjectionRequests.pending)
+        intent.putExtra("request",request.id)
         val controller=Robolectric.buildService(FinanceProjectionService::class.java).create()
         try {
             val service=controller.get()
@@ -44,11 +47,13 @@ class FinanceProjectionConsentTest {
         } finally {controller.destroy()}
     }
     @Test fun missingConsentCannotStartProjectionForegroundService() {
+        FinanceProjectionRequests.pending=FinanceProjectionRequest("missing",FinanceCommandToken("synthetic",0),
+            RestoreStartupGate.state.value.restoreGeneration,context.resources.configuration.orientation,reservation=reservation)
         assertRejected(Intent(context,FinanceProjectionService::class.java))
     }
     @Test fun revokedRequestCannotReuseReturnedConsent() {
         val request=FinanceProjectionRequest("original",FinanceCommandToken("synthetic",0),
-            RestoreStartupGate.state.value.restoreGeneration,context.resources.configuration.orientation)
+            RestoreStartupGate.state.value.restoreGeneration,context.resources.configuration.orientation,reservation=reservation)
         request.cancel();FinanceProjectionRequests.pending=request
         assertRejected(Intent(context,FinanceProjectionService::class.java).putExtra("consent",Intent("synthetic-only"))
             .putExtra("request",request.id))

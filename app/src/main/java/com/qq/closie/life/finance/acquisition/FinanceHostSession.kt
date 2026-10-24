@@ -42,35 +42,61 @@ internal class FinanceHostSession(val host:FinanceHostWindow,val orientation:Int
     fun cancel(){invalid=true}
 }
 
-/** Every read is synchronous/bounded. Behind an editor use getWindows(), never rootInActiveWindow. */
-internal class FinanceHostWindows(private val service:AccessibilityService) {
-    fun snapshot(readFacts:Boolean=true,editingHost:FinanceHostWindow?=null):FinanceHostSnapshot {
+internal fun com.qq.closie.life.finance.NormalizedTransactionEvidence.hostIdentity() =
+    DetailSemantics.digest("${referenceDigest}:${amountMinor}:${occurredAt}:${kind}:${role}")
+
+/** Metadata never traverses transaction nodes. Facts require an exact target and a live grant. */
+internal class FinanceHostWindows(private val service:AccessibilityService,
+    private val inspect:(android.view.accessibility.AccessibilityNodeInfo,TransactionDetailAdapter,Boolean)->DetailReadInspection=
+        {root,adapter,occluded->VisibleDetailReader.inspect(root,adapter,occluded)}) {
+    fun snapshot(target:FinanceHostWindow?=null,canRead:()->Boolean={false},includeOccluded:Boolean=false):FinanceHostSnapshot {
         val list=runCatching {service.windows}.getOrDefault(emptyList())
         val windows=list.mapNotNull { window ->
             try {
                 val root=window.root ?: return@mapNotNull null
                 try {
                     val pkg=root.packageName?.toString() ?: return@mapNotNull null
-                    val provider=ProviderRegistry.providers.firstOrNull {pkg in it.packageNames}
-                    val identity=if(readFacts && window.type==AccessibilityWindowInfo.TYPE_APPLICATION && provider!=null &&
-                        (editingHost==null || (editingHost.id==window.id && editingHost.packageName==pkg)))
-                        VisibleDetailReader.inspect(root,provider.adapter,includeOccluded=editingHost?.let {it.id==window.id && it.packageName==pkg}==true).fields?.let { fields ->
-                            // Includes status, amount, time, channel and reference; an order number alone is insufficient.
-                            provider.adapter.parse(fields,System.currentTimeMillis()).evidence?.let { e->
-                                DetailSemantics.digest("${e.referenceDigest}:${e.amountMinor}:${e.occurredAt}:${e.kind}:${e.role}")
-                            }
-                        } else null
-                    FinanceHostWindow(window.id,pkg,window.type,window.isActive,window.isFocused,identity)
+                    FinanceHostWindow(window.id,pkg,window.type,window.isActive,window.isFocused,null)
                 } finally {@Suppress("DEPRECATION") root.recycle()}
             } catch(_:Exception){null}
             finally {@Suppress("DEPRECATION") window.recycle()}
         }
-        return FinanceHostSnapshot(service.resources.configuration.orientation,windows)
+        val metadata=FinanceHostSnapshot(service.resources.configuration.orientation,windows)
+        if(target==null || !canRead())return metadata
+        val live=windows.singleOrNull {it.id==target.id && it.packageName==target.packageName && it.type==AccessibilityWindowInfo.TYPE_APPLICATION}
+            ?: return metadata
+        if(windows.any {it.type==AccessibilityWindowInfo.TYPE_APPLICATION && (it.active || it.focused) && it.id!=target.id})return metadata
+        if(!includeOccluded && (!live.active || !live.focused))return metadata
+        val provider=ProviderRegistry.providers.firstOrNull {target.packageName in it.packageNames} ?: return metadata
+        // Reacquire only the selected root; no adapter/text access occurs for any other window.
+        val roots=runCatching {service.windows}.getOrDefault(emptyList())
+        var identity:String?=null
+        for(window in roots)try {
+            if(window.id!=target.id || window.type!=AccessibilityWindowInfo.TYPE_APPLICATION || !canRead())continue
+            val root=window.root ?: continue
+            try {
+                if(root.packageName?.toString()!=target.packageName || !canRead())continue
+                identity=inspect(root,provider.adapter,includeOccluded).fields?.let {
+                    if(canRead())provider.adapter.parse(it,System.currentTimeMillis()).evidence?.hostIdentity() else null
+                }
+            } finally {@Suppress("DEPRECATION") root.recycle()}
+        } finally {@Suppress("DEPRECATION") window.recycle()}
+        return metadata.copy(windows=windows.map {if(it.id==target.id && it.packageName==target.packageName)it.copy(identity=identity) else it})
     }
-    fun bindActive():FinanceHostSession? {
-        val snapshot=snapshot()
-        val host=snapshot.windows.singleOrNull {it.type==AccessibilityWindowInfo.TYPE_APPLICATION &&
+    /** Called by an explicit click; automatic discovery must supply its source/target grant. */
+    fun bindActive(permit:(FinanceHostWindow)->Boolean={true}):FinanceHostSession? {
+        val metadata=snapshot()
+        val host=metadata.windows.singleOrNull {it.type==AccessibilityWindowInfo.TYPE_APPLICATION &&
             it.active && it.focused && it.packageName!=service.packageName} ?: return null
-        return FinanceHostSession(host,snapshot.orientation,service.packageName)
+        if(!permit(host))return null
+        val facts=snapshot(host,{permit(host)})
+        val bound=facts.windows.singleOrNull {it.id==host.id && it.packageName==host.packageName} ?: return null
+        return FinanceHostSession(bound,metadata.orientation,service.packageName)
     }
-}
+    fun bindVisible(target:VisibleDetailScheduler.Target,evidence:com.qq.closie.life.finance.NormalizedTransactionEvidence,
+        permitted:()->Boolean):FinanceHostSession? = bindActive { host ->
+        permitted() && host.packageName==target.packageName && host.id==target.windowId
+    }?.takeIf {it.host.identity==evidence.hostIdentity()}
+    fun current(session:FinanceHostSession,permitted:()->Boolean,editing:Boolean=false)=
+        snapshot(session.host,{session.notCancelled && permitted()},editing)
+    }

@@ -15,10 +15,14 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--junit",type=pathlib.Path)
     parser.add_argument("--review-round2",action="store_true")
+    parser.add_argument("--review-round3",action="store_true")
     args=parser.parse_args()
     root=pathlib.Path(__file__).resolve().parents[2]
     baseline="e4d079ae72a209775b859dbb021c1b685aff7ff5" if args.review_round2 else BASELINE
     minimum=717 if args.review_round2 else 681
+    if args.review_round3:
+        baseline="9575acfb3c52371dd7347f8020a2500ff4ba6095"
+        minimum=735
     rows=baseline_rows(root,baseline)
     required={(row["className"],method) for row in rows for method in row["tests"]}
     errors=[]
@@ -51,7 +55,7 @@ def main():
                     executed.add(key)
         for cls,method in missing_methods(required,executed):
             errors.append("Not executed: "+cls+"#"+method)
-    result={"check":"review-round2-baseline" if args.review_round2 else "a86841a-product-baseline","status":"FAIL" if errors else "PASS",
+    result={"check":"review-round3-baseline" if args.review_round3 else "review-round2-baseline" if args.review_round2 else "a86841a-product-baseline","status":"FAIL" if errors else "PASS",
         "baseline":baseline,"commit":git(root,"rev-parse","HEAD").strip(),
         "requiredInvocations":len(required),"preservedSourceInvocations":len(required & current),
         "executedRequiredInvocations":len(required & executed) if args.junit else None,

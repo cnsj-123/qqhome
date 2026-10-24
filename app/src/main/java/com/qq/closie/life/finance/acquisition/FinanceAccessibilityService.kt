@@ -22,7 +22,7 @@ class FinanceAccessibilityService : AccessibilityService() {
     private var sessionTarget: VisibleDetailScheduler.Target? = null
     private val shown = linkedSetOf<String>()
     private val hostWindows=FinanceHostWindows(this)
-    private var deliverySession:FinanceHostSession?=null
+    @Volatile private var deliverySession:FinanceHostSession?=null
     private val settings by lazy { FinanceAutomationSettings(this) }
     private val screenshot by lazy { FinanceScreenshotController(this, scope) { delivery.close() } }
     private val delivery by lazy { (application as ClosieApplication).createFinanceReviewDelivery(scope) }
@@ -47,6 +47,7 @@ class FinanceAccessibilityService : AccessibilityService() {
                     feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
                 }
                 if (enabled.isEmpty()) { cancelReads(); delivery.close() }
+                if(!screenshotEnabled)FinanceProjectionHosts.current?.close()
                 screenshot.update()
             }
         }
@@ -56,12 +57,14 @@ class FinanceAccessibilityService : AccessibilityService() {
         if(event==null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,AccessibilityEvent.TYPE_WINDOWS_CHANGED))return
         if(!VisibleDetailRuntime.state.value.connected){VisibleDetailRuntime.connected(true);screenshot.onConnected()}
-        val snapshot=hostWindows.snapshot(readFacts=screenshot.hasHostSession || deliverySession!=null,
-            editingHost=if(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)screenshot.editingHost ?: deliverySession?.host else null)
-        screenshot.hostEvent(event,snapshot);screenshot.update()
+        val snapshot=hostWindows.snapshot() // Window metadata never grants transaction access.
+        FinanceProjectionHosts.current?.observe(event)
+        screenshot.hostEvent(event);screenshot.update()
         deliverySession?.let {session->
-            session.observe(event,snapshot,editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
-            if(!session.editorCurrent(snapshot)){cancelReads();delivery.close()}
+            val facts=hostWindows.current(session,{visiblePermitted(session.host.packageName)},
+                editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
+            session.observe(event,facts,editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
+            if(!session.editorCurrent(facts)){cancelReads();delivery.close()}
         }
         val pkg=event.packageName?.toString().orEmpty()
         val eventWindow=snapshot.windows.firstOrNull {it.id==event.windowId}
@@ -74,20 +77,22 @@ class FinanceAccessibilityService : AccessibilityService() {
             return
         }
         if(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)return
-        val target=VisibleDetailScheduler.Target(pkg,event.windowId)
+        val active=snapshot.windows.singleOrNull {it.packageName==pkg && it.id==event.windowId && it.active && it.focused && it.type==AccessibilityWindowInfo.TYPE_APPLICATION} ?: return
+        val target=VisibleDetailScheduler.Target(active.packageName,active.id)
         if(sessionTarget!=target){sessionTarget=target;shown.clear()}
         VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.SETTLING)
         scheduler.submit(target)
     }
 
-    private fun allowed(target: VisibleDetailScheduler.Target) =
-        scheduler.isCurrent(target) && settings.read().let {
+    private fun visiblePermitted(pkg:String)=settings.read().let {
             it.visibleDetailEnabled &&
-                VisibleTransactionEvidenceRouter.provider(target.packageName, it.enabledVisibleProviders) != null
+                VisibleTransactionEvidenceRouter.provider(pkg, it.enabledVisibleProviders) != null
         }
+    private fun allowed(target: VisibleDetailScheduler.Target) = scheduler.isCurrent(target) && visiblePermitted(target.packageName)
 
     /** Each call reacquires and releases its own root synchronously before any suspension. */
     private fun evidence(target: VisibleDetailScheduler.Target, provider: ProviderDefinition): NormalizedTransactionEvidence? {
+        if(!allowed(target))return null
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) {
             VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.LOCKED); return null
         }
@@ -105,6 +110,7 @@ class FinanceAccessibilityService : AccessibilityService() {
                     VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.WINDOW_CHANGED); return null
                 }
             } finally { @Suppress("DEPRECATION") window.recycle() }
+            if(!allowed(target))return null
             val inspected = VisibleDetailReader.inspect(root, provider.adapter)
             if (inspected.fields == null) {
                 VisibleDetailRuntime.report(when (inspected.rejection) {
@@ -114,6 +120,7 @@ class FinanceAccessibilityService : AccessibilityService() {
                 })
                 return null
             }
+            if(!allowed(target))return null
             val result = provider.adapter.parse(inspected.fields, System.currentTimeMillis())
             val found = result.takeIf { it.recognition == DetailRecognition.RECOGNIZED }?.evidence
                 ?.takeIf { it.providerKey == provider.key }
@@ -130,17 +137,24 @@ class FinanceAccessibilityService : AccessibilityService() {
 
     private suspend fun read(target: VisibleDetailScheduler.Target): Boolean {
         if (!allowed(target)) return true
+        val restoreGeneration=com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
         val provider = VisibleTransactionEvidenceRouter.provider(target.packageName, settings.read().enabledVisibleProviders) ?: return true
         val recognized = evidence(target, provider) ?: return false
-        val binding=hostWindows.bindActive() ?: return false
-        if(binding.host.identity==null)return false
+        val binding=hostWindows.bindVisible(target,recognized){allowed(target)} ?: return false
+        fun current()=allowed(target) && com.qq.closie.data.backup.RestoreStartupGate.isReady &&
+            com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration==restoreGeneration &&
+            binding.captureCurrent(hostWindows.current(binding,{allowed(target)}))
+        if(!current())return false
+        deliverySession?.cancel()
         deliverySession=binding
         // Session-only suppression, with full facts: an order number alone is never transaction identity.
         val key = "${recognized.referenceDigest}:${recognized.amountMinor}:${recognized.occurredAt}:${recognized.kind}:${recognized.role}"
         if (key in shown) return true
         return try {
             val result = withContext(Dispatchers.IO) {
-                LifeContainer.getInstance(applicationContext).financeAutomationRepository.discoverVisible(recognized) { allowed(target) && binding.notCancelled }
+                LifeContainer.getInstance(applicationContext).financeAutomationRepository.discoverVisible(recognized) {
+                    deliverySession===binding && current()
+                }
             }
             val proposal = result.proposal ?: return true
             if (shown.size >= 32) shown.remove(shown.first())
@@ -152,8 +166,8 @@ class FinanceAccessibilityService : AccessibilityService() {
                 if (live != null && live.referenceDigest == recognized.referenceDigest &&
                     live.amountMinor == recognized.amountMinor && live.occurredAt == recognized.occurredAt &&
                     live.kind == recognized.kind && live.role == recognized.role) delivery.proposalAvailable(proposal.id,
-                    canContinue={allowed(target) && binding.editorCurrent(hostWindows.snapshot(editingHost=binding.host))},
-                    canPresent={allowed(target) && binding.captureCurrent(hostWindows.snapshot()) &&
+                    canContinue={allowed(target) && binding.editorCurrent(hostWindows.current(binding,{allowed(target)},editing=true))},
+                    canPresent={allowed(target) && binding.captureCurrent(hostWindows.current(binding,{allowed(target)})) &&
                         evidence(target,provider)?.let {fresh->
                             fresh.referenceDigest==recognized.referenceDigest && fresh.amountMinor==recognized.amountMinor &&
                                 fresh.occurredAt==recognized.occurredAt && fresh.kind==recognized.kind && fresh.role==recognized.role
@@ -169,12 +183,14 @@ class FinanceAccessibilityService : AccessibilityService() {
     }
 
     private fun cancelReads() { deliverySession?.cancel();deliverySession=null;scheduler.cancel(); sessionTarget = null; shown.clear() }
-    override fun onInterrupt() { cancelReads(); screenshot.close(permanent=false); delivery.close(); VisibleDetailRuntime.connected(false); VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.INTERRUPTED) }
+    override fun onInterrupt() { FinanceProjectionHosts.current?.close();cancelReads(); screenshot.close(permanent=false); delivery.close(); VisibleDetailRuntime.connected(false); VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.INTERRUPTED) }
     override fun onUnbind(intent: Intent?): Boolean {
+        FinanceProjectionHosts.current?.close()
         cancelReads(); screenshot.close(permanent = false); delivery.close(); VisibleDetailRuntime.connected(false)
         return super.onUnbind(intent)
     }
     override fun onDestroy() {
+        FinanceProjectionHosts.current?.close()
         cancelReads(); screenshot.close(); scope.cancel(); delivery.close(); VisibleDetailRuntime.connected(false); super.onDestroy()
     }
 }

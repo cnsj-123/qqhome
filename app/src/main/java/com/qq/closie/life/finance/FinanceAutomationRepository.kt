@@ -54,8 +54,10 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
         // Unknown source identities are not silently merged. Similarity and scoped reference checks
         // keep repeated captures reviewable; an order reference can represent multiple actual payments.
         val result=saveDiscovered(proposal, "")
+        check(enabled()) { "详情采集会话已失效" } // Roll back, including an insert across an async boundary.
         result.proposal?.let {finance.provenance.recordVisible(it,evidence)}
         FinanceIntegrity.validate(readFinanceSnapshot(database,true))
+        check(enabled()) { "详情采集会话已失效" }
         result
     }
 
