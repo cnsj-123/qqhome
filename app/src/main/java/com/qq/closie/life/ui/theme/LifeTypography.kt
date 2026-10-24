@@ -8,16 +8,16 @@ import androidx.compose.ui.unit.TextUnit
 /** App-wide hierarchy derived from Figma Home A. Dense tools share the same roles at the
  * compact scale in LifeText. Money/input retain Noto for unambiguous numeric editing. */
 object LifeType {
-    // Measured through local Figwright, frames 3:6 / 3:37. AUTO line height stays unspecified.
-    // Functional controls use a compact derived scale; the journal roles preserve exact metrics.
+    // Figma font roles are retained; explicit multiline leading prevents tight font metrics
+    // from overlapping journal text at narrow widths and accessibility font scales.
     val Wordmark = TextStyle(fontFamily = LifeFonts.Wordmark, fontSize = 32.sp, lineHeight = TextUnit.Unspecified, letterSpacing = 2.24.sp)
     val DateHero = TextStyle(fontFamily = LifeFonts.Journal, fontSize = 23.sp, lineHeight = TextUnit.Unspecified)
-    val JournalHand = TextStyle(fontFamily = LifeFonts.JournalHand, fontSize = 20.sp, lineHeight = TextUnit.Unspecified, letterSpacing = 4.sp)
-    val JournalMeta = TextStyle(fontFamily = LifeFonts.JournalMeta, fontSize = 13.sp, lineHeight = TextUnit.Unspecified, letterSpacing = 2.6.sp)
+    val JournalHand = TextStyle(fontFamily = LifeFonts.JournalHand, fontSize = 20.sp, lineHeight = 30.sp, letterSpacing = 4.sp)
+    val JournalMeta = TextStyle(fontFamily = LifeFonts.JournalMeta, fontSize = 13.sp, lineHeight = 20.sp, letterSpacing = 2.6.sp)
     val JournalTagline = DateHero.copy(fontSize = 11.sp)
     // Owner override: preserve the original P1 patch for “好像没有随手一拍”.
     val JournalEmpty = TextStyle(fontFamily = LifeFonts.JournalEmpty, fontSize = 30.sp, lineHeight = 40.sp, letterSpacing = 2.1.sp)
-    val JournalAhead = TextStyle(fontFamily = LifeFonts.JournalAhead, fontSize = 18.sp, lineHeight = TextUnit.Unspecified, letterSpacing = 2.34.sp)
+    val JournalAhead = TextStyle(fontFamily = LifeFonts.JournalAhead, fontSize = 18.sp, lineHeight = 28.sp, letterSpacing = 2.34.sp)
     val JournalSection = TextStyle(fontFamily = LifeFonts.JournalSection, fontSize = 13.sp, lineHeight = TextUnit.Unspecified, letterSpacing = 2.47.sp)
     val JournalStamp = TextStyle(fontFamily = LifeFonts.JournalStamp, fontSize = 13.sp, lineHeight = TextUnit.Unspecified, letterSpacing = .78.sp)
     val JournalEmptyYear = JournalMeta.copy(fontSize = 12.sp, letterSpacing = 2.4.sp)

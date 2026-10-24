@@ -44,7 +44,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
             }
         }
     }
-    if(origin!=null) com.qq.closie.ui.lifeos.components.LifeOriginDialog(origin,onClose) {close->contents(close)}
+    if(origin!=null) com.qq.closie.ui.lifeos.components.LifeOriginDialog(origin,onClose,compactHeight=true) {close->contents(close)}
     else ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
         containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {contents(onClose)}
 }

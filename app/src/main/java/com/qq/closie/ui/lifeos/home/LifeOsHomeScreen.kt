@@ -61,9 +61,16 @@ fun LifeOsHomeScreen(
                 }
                 Spacer(Modifier.height(16.dp))
                 Text(state.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)) + " ⌄", Modifier.clickable(onClickLabel = "选择首页日期") { datePopup = true }.padding(vertical = 4.dp), style = LifeType.DateHero, color = colors.ink)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(state.date.format(DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)), style = if (state.eligibleMedia.isEmpty()) LifeType.JournalEmptyYear else LifeType.JournalMeta, color = colors.muted)
-                    Text("把今天轻轻收好", style = LifeType.JournalMeta, color = colors.muted)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val year=state.date.format(DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA))
+                    val large=androidx.compose.ui.platform.LocalDensity.current.fontScale>1.2f
+                    if(maxWidth<300.dp || large) Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        Text(year,style=if(state.eligibleMedia.isEmpty())LifeType.JournalEmptyYear else LifeType.JournalMeta,color=colors.muted)
+                        Text("把今天轻轻收好",Modifier.align(Alignment.End),style=LifeType.JournalMeta,color=colors.muted)
+                    } else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                        Text(year,style=if(state.eligibleMedia.isEmpty())LifeType.JournalEmptyYear else LifeType.JournalMeta,color=colors.muted)
+                        Text("把今天轻轻收好",style=LifeType.JournalMeta,color=colors.muted)
+                    }
                 }
             }
             item {

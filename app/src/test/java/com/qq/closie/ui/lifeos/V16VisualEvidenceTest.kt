@@ -53,8 +53,14 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         File(output,name+".png").outputStream().use {assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}
     }
     private fun home(state:HomeUiState) {
-        compose.setContent {LifeOsTheme {LifeOsHomeScreen(state,{},{},{},{},{})}}
+        compose.setContent {LifeOsTheme {androidx.compose.material3.Surface(color=com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current.paper) {LifeOsHomeScreen(state,{},{},{},{},{})}}}
         compose.onNodeWithText("Life OS").assertIsDisplayed()
+    }
+    @Test fun startupLoadingRendersProductionCatAndRealStatus() {
+        compose.setContent {LifeOsTheme {LifeStartupFeedback("正在打开你的日子","正在读取本地账本与衣橱")}}
+        compose.onNodeWithText("正在打开你的日子").assertIsDisplayed()
+        compose.onNodeWithContentDescription("正在陪你等候的猫咪").assertIsDisplayed()
+        capture("startup-loading")
     }
     @Test fun homeEmptyStateRendersFromProductionComposable() {
         home(HomeUiState(LocalDate.of(2026,10,12)))
@@ -90,6 +96,13 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
             }
         }
         compose.onNodeWithText("Life OS").assertExists()
+        val layouts=mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithText(state.todayFacts.single().title).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) {assertTrue(it(layouts))}
+        val layout=layouts.single()
+        val minimum=layout.layoutInput.style.fontSize.value*layout.layoutInput.density.fontScale*layout.layoutInput.density.density
+        assertTrue(layout.lineCount>1)
+        for(i in 1 until layout.lineCount)assertTrue("Scaled journal lines must not overlap",layout.getLineBaseline(i)-layout.getLineBaseline(i-1)>=minimum)
+        compose.onNodeWithText("查看全文").assertExists()
         capture("home-narrow-font150-long")
     }
     private fun financeScene() {
@@ -101,6 +114,7 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         runBlocking {
             finance.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,openingBalanceMinor=12_345)
             finance.saveAccount(name="合成工资卡",kind=FinanceAccountKind.BANK_CARD,openingBalanceMinor=100_000)
+            finance.saveAccount(name="合成储蓄卡",kind=FinanceAccountKind.BANK_CARD,openingBalanceMinor=4_000)
             finance.saveAccount(name="合成现金",kind=FinanceAccountKind.CASH,openingBalanceMinor=5_000)
         }
         financeScene();compose.onNodeWithText("账户").performClick()
@@ -118,7 +132,9 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         capture("finance-ledger")
         compose.onNode(hasText("合成咖啡") and hasClickAction()).performClick()
         compose.onNodeWithText("账单详情").assertIsDisplayed()
-        compose.onNodeWithTag("finance-receipt").assertIsDisplayed()
+        val receipt=compose.onNodeWithTag("finance-receipt").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val windowHeight=compose.runOnIdle {WindowInspector.getGlobalWindowViews().last().height}
+        assertTrue("A short receipt must not force an almost-fullscreen blank paper",receipt.height<windowHeight*.7f)
         capture("finance-receipt")
         assertEquals(1,runBlocking {finance.snapshot()}.entries.size)
     }
