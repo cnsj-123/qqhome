@@ -44,7 +44,7 @@ internal class FinanceHostSession(val host:FinanceHostWindow,val orientation:Int
 
 /** Every read is synchronous/bounded. Behind an editor use getWindows(), never rootInActiveWindow. */
 internal class FinanceHostWindows(private val service:AccessibilityService) {
-    fun snapshot():FinanceHostSnapshot {
+    fun snapshot(readFacts:Boolean=true):FinanceHostSnapshot {
         val list=runCatching {service.windows}.getOrDefault(emptyList())
         val windows=list.mapNotNull { window ->
             try {
@@ -52,7 +52,7 @@ internal class FinanceHostWindows(private val service:AccessibilityService) {
                 try {
                     val pkg=root.packageName?.toString() ?: return@mapNotNull null
                     val provider=ProviderRegistry.providers.firstOrNull {pkg in it.packageNames}
-                    val identity=if(window.type==AccessibilityWindowInfo.TYPE_APPLICATION && provider!=null)
+                    val identity=if(readFacts && window.type==AccessibilityWindowInfo.TYPE_APPLICATION && provider!=null)
                         VisibleDetailReader.inspect(root,provider.adapter).fields?.let { fields ->
                             // Includes status, amount, time, channel and reference; an order number alone is insufficient.
                             provider.adapter.parse(fields,System.currentTimeMillis()).evidence?.let { e->

@@ -56,7 +56,7 @@ class FinanceAccessibilityService : AccessibilityService() {
         if(event==null || event.eventType !in setOf(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,AccessibilityEvent.TYPE_WINDOWS_CHANGED))return
         if(!VisibleDetailRuntime.state.value.connected){VisibleDetailRuntime.connected(true);screenshot.onConnected()}
-        val snapshot=hostWindows.snapshot()
+        val snapshot=hostWindows.snapshot(readFacts=screenshot.hasHostSession || deliverySession!=null)
         screenshot.hostEvent(event,snapshot);screenshot.update()
         deliverySession?.let {session->
             session.observe(event,snapshot,editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)

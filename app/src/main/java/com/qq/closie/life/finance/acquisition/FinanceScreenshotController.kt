@@ -45,6 +45,7 @@ internal class FinanceScreenshotController(
     private var connected = false
     private val hostWindows=FinanceHostWindows(service)
     private var hostSession:FinanceHostSession?=null
+    val hasHostSession:Boolean get()=hostSession!=null
     fun onConnected() {if(!disposed){connected=true;update()}}
     private val screenReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){invalidate();removeBubble()}}
     private val configuration=object:ComponentCallbacks {
@@ -87,6 +88,9 @@ internal class FinanceScreenshotController(
 
     fun update() {
         if (disposed) return
+        if(!FinanceReceiptOverlay.occupied && capture?.isActive!=true && presentedPage!=null){
+            hostSession?.cancel();hostSession=null;presentedPage=null
+        }
         if (!connected || !RestoreStartupGate.isReady || !FinanceScreenshotPreference.enabled(service) || locked() || !Settings.canDrawOverlays(service)) {
             invalidate(); removeBubble(); return
         }
@@ -147,12 +151,17 @@ internal class FinanceScreenshotController(
         if (disposed || capture?.isActive == true || Build.VERSION.SDK_INT < 30) return
         // Bind host identity at the click, before hiding any surface or suspending.
         val page = target() ?: return status("请停在需要识别的外部页面，再点击截图")
+        if(hostSession?.host?.identity==null) {
+            status("当前页无法可靠绑定交易身份，改用逐次系统授权；结果进入待确认")
+            runCatching {service.startActivity(FinanceProjectionRequests.intent(service))}
+                .onFailure {status("请使用快捷设置“财务单次截图”")}
+            return
+        }
         val fence = RestoreStartupGate.state.value
         if (!fence.canAcquireBusinessLease || !valid(page) || !FinanceReceiptOverlay.beginCapture()) return
         val preferenceGeneration = FinanceScreenshotPreference.generation
         val generation = ++requestGeneration
         capture = scope.launch {
-            val container = LifeContainer.getInstance(service)
             val current = { isActive && preferenceGeneration == FinanceScreenshotPreference.generation && generation == requestGeneration &&
                 RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration && valid(page) }
             val storageCurrent = { isActive && !disposed && preferenceGeneration == FinanceScreenshotPreference.generation && generation == requestGeneration &&
@@ -160,6 +169,7 @@ internal class FinanceScreenshotController(
                 RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration &&
                 FinanceScreenshotPreference.enabled(service) }
             try {
+                val container = LifeContainer.getInstance(service)
                 runFinanceCapture(
                     page, generation, fence.restoreGeneration, current, storageCurrent,
                     token = { withContext(Dispatchers.IO) { container.financeRepository.economics.token() } },

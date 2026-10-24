@@ -58,7 +58,7 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
             Text("开启主动截图入口")
         }
         Text("无障碍未连接或 Android 8–10：使用通知中的“财务单次截图”，每次由系统请求授权；也可添加同名快捷设置。入口不依赖后台服务长驻。", style = MaterialTheme.typography.bodySmall)
-        Text("Android 11+ 无障碍已连接时直接单次截图。系统授权后备路径将结果交到待确认，点通知继续核对；不会猜测外部宿主并挂窗。", style = MaterialTheme.typography.bodySmall)
+        Text("Android 11+ 无障碍已连接且交易身份可验证时直接单次截图并原位核对。其他页面走系统授权并交到待确认；不会猜测宿主挂窗。", style = MaterialTheme.typography.bodySmall)
         if(screenshotEnabled) {
             Text("截图入口：" + if(nativeEntry)"原生悬浮按钮" else if(notificationEntry)"通知 / 快捷设置" else "快捷设置（通知权限或渠道未允许）",style=MaterialTheme.typography.bodySmall)
             if(!notificationEntry)TextButton({context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))}) {Text("管理截图入口通知")}

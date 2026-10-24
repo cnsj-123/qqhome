@@ -54,4 +54,23 @@ class FinanceCaptureEntryTest {
         FinanceCaptureEntryState.nativeVisible.value=false;FinanceProjectionBubbleService.ensure(context)
         assertNotNull(shadowOf(manager).getNotification(606))
     }
+    @Test fun nativeEntryOnOpaquePageRequiresExplicitSystemConsentInsteadOfPretendingToBindATransaction() {
+        val controller=Robolectric.buildService(FinanceAccessibilityService::class.java).create()
+        try {
+            val service=controller.get()
+            val root=android.view.accessibility.AccessibilityNodeInfo.obtain().apply {packageName="opaque.host";isVisibleToUser=true}
+            val window=android.view.accessibility.AccessibilityWindowInfo.obtain()
+            shadowOf(window).apply {setId(9);setType(android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION);setRoot(root);setActive(true);setFocused(true)}
+            shadowOf(service).setWindows(listOf(window))
+            ReflectionHelpers.callInstanceMethod<Void>(service,"onServiceConnected")
+            FinanceScreenshotPreference.set(context,true);shadowOf(Looper.getMainLooper()).idle()
+            val wm=org.robolectric.shadow.api.Shadow.extract<org.robolectric.shadows.ShadowWindowManagerImpl>(service.getSystemService(WindowManager::class.java))
+            val button=wm.views.filterIsInstance<TextView>().single {it.contentDescription?.toString()?.startsWith("单次截图识别账单")==true}
+            assertTrue(button.performClick())
+            val launched=shadowOf(ApplicationProvider.getApplicationContext<android.app.Application>()).nextStartedActivity
+            assertEquals(FinanceProjectionActivity::class.java.name,launched.component?.className)
+            assertFalse(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
+        } finally {controller.destroy()}
+    }
+
 }
