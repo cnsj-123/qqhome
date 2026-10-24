@@ -14,7 +14,7 @@ internal object VisibleDetailReader {
         override val text get() = node.text
         override val childCount get() = node.childCount
         override fun child(index: Int) = node.getChild(index)?.let {AndroidDetailNode(it,includeOccluded)}
-        override fun parent() = node.parent?.let(::AndroidDetailNode)
+        override fun parent() = node.parent?.let {AndroidDetailNode(it,includeOccluded)}
         @Suppress("DEPRECATION") override fun close() = node.recycle()
     }
 }

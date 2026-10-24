@@ -132,5 +132,5 @@ class FinanceProjectionService:Service() {
         val previous=projection;projection=null;previous?.stop()
     }
     override fun onConfigurationChanged(config:android.content.res.Configuration){super.onConfigurationChanged(config);task?.cancel()}
-    override fun onDestroy(){com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();screenReceiver?.let {runCatching {unregisterReceiver(it)}};screenReceiver=null;FinanceProjectionRequests.inFlight=false;scope.cancel();releaseProjection();super.onDestroy()}
+    override fun onDestroy(){com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();FinanceProjectionBubbleService.ensure(this);screenReceiver?.let {runCatching {unregisterReceiver(it)}};screenReceiver=null;FinanceProjectionRequests.inFlight=false;scope.cancel();releaseProjection();super.onDestroy()}
 }

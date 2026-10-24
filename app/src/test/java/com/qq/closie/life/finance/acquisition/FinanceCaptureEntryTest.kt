@@ -25,7 +25,7 @@ import org.robolectric.util.ReflectionHelpers
 class FinanceCaptureEntryTest {
     private val context:Context=ApplicationProvider.getApplicationContext()
     @Before fun setup(){RestoreStartupGate.resetForTesting();RestoreStartupGate.markReady();ShadowSettings.setCanDrawOverlays(true);FinanceScreenshotPreference.set(context,false)}
-    @After fun cleanup(){FinanceScreenshotPreference.set(context,false);FinanceCaptureEntryState.nativeVisible.value=false;RestoreStartupGate.resetForTesting()}
+    @After fun cleanup(){com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.endCapture();FinanceScreenshotPreference.set(context,false);FinanceCaptureEntryState.nativeVisible.value=false;RestoreStartupGate.resetForTesting()}
     @Test fun enablingScreenshotAloneReconfiguresConnectedServiceWithoutReconnectAndOffRemovesButton() {
         val controller=Robolectric.buildService(FinanceAccessibilityService::class.java).create()
         try {
@@ -87,6 +87,20 @@ class FinanceCaptureEntryTest {
             assertFalse(FinanceCaptureEntryState.nativeVisible.value)
             assertNotNull(shadowOf(context.getSystemService(NotificationManager::class.java)).getNotification(606))
         } finally {controller.destroy()}
+    }
+
+    @Test fun failedProjectionStartupRestoresNotificationEntryAfterCaptureReservationIsReleased() {
+        FinanceScreenshotPreference.set(context,true)
+        assertTrue(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture())
+        FinanceProjectionBubbleService.ensure(context)
+        val notifications=context.getSystemService(NotificationManager::class.java)
+        assertNull(shadowOf(notifications).getNotification(606))
+        val controller=Robolectric.buildService(FinanceProjectionService::class.java).create()
+        try {
+            controller.get().onStartCommand(android.content.Intent(),0,1)
+            assertFalse(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
+        } finally {controller.destroy()}
+        assertNotNull(shadowOf(notifications).getNotification(606))
     }
 
 }
