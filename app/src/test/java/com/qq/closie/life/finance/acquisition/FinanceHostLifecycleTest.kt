@@ -106,6 +106,8 @@ class FinanceHostLifecycleTest {
         val host = FinanceDisplayWindow(1, AccessibilityWindowInfo.TYPE_APPLICATION, Rect(0, 0, 1080, 2400), "host")
         val bar = FinanceDisplayWindow(2, AccessibilityWindowInfo.TYPE_SYSTEM, Rect(0, 0, 1080, 60), "com.android.systemui")
         assertEquals(Rect(0, 60, 1080, 2400), financeHostCaptureRegion(1, listOf(host, bar)))
+        assertEquals(Rect(0, 60, 1080, 2400), financeHostCaptureRegion(1, listOf(host, bar.copy(packageName = ""))))
+        assertNull(financeHostCaptureRegion(1, listOf(host, bar.copy(packageName = "", bounds = Rect(100, 100, 400, 400)))))
         val split = FinanceDisplayWindow(3, AccessibilityWindowInfo.TYPE_APPLICATION, Rect(540, 0, 1080, 2400), "other")
         assertNull(financeHostCaptureRegion(1, listOf(host.copy(bounds = Rect(0, 0, 540, 2400)), split)))
         val overlay = FinanceDisplayWindow(4, AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, Rect(30, 50, 200, 150), "other")

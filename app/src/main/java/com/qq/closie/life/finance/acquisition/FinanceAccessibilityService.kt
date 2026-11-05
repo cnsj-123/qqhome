@@ -102,6 +102,7 @@ class FinanceAccessibilityService : AccessibilityService() {
             VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.LOCKED); return null
         }
         val handles=runCatching {windows}.getOrDefault(emptyList())
+        val bounds = android.graphics.Rect()
         val root=try {
             val window=handles.singleOrNull {it.id==target.windowId && it.isActive && it.isFocused && it.type==AccessibilityWindowInfo.TYPE_APPLICATION}
             if(window==null) {
@@ -109,6 +110,7 @@ class FinanceAccessibilityService : AccessibilityService() {
                 return null
             }
             if(!allowed(target))return null
+            window.getBoundsInScreen(bounds)
             if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0) else window.root
         } catch(_:Exception){null} finally {handles.forEach {@Suppress("DEPRECATION") it.recycle()}}
         if(root==null) {
@@ -118,16 +120,14 @@ class FinanceAccessibilityService : AccessibilityService() {
             if (root.packageName?.toString() != target.packageName) {
                 VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_PACKAGE_MISMATCH); return null
             }
-            if (!root.isVisibleToUser) {
-                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_NOT_VISIBLE); return null
-            }
             if(!allowed(target))return null
-            val inspected = VisibleDetailReader.inspect(root, provider.adapter)
+            val inspected = VisibleDetailReader.inspectAuthorizedRoot(root, provider.adapter,
+                target.windowId, target.packageName, bounds)
             if (inspected.fields == null) {
                 VisibleDetailRuntime.report(when (inspected.rejection) {
                     DetailReadRejection.TREE_LIMIT -> VisibleDetailRuntime.Phase.TREE_LIMIT
                     DetailReadRejection.AMBIGUOUS_ROWS -> VisibleDetailRuntime.Phase.AMBIGUOUS_ROWS
-                    else -> VisibleDetailRuntime.Phase.NOT_DETAIL
+                    else -> if (root.isVisibleToUser) VisibleDetailRuntime.Phase.NOT_DETAIL else VisibleDetailRuntime.Phase.ROOT_NOT_VISIBLE
                 })
                 return null
             }

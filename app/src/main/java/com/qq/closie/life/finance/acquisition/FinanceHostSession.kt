@@ -23,8 +23,9 @@ internal fun financeHostCaptureRegion(hostId: Int, windows: List<FinanceDisplayW
         if (other.type == AccessibilityWindowInfo.TYPE_APPLICATION && !other.bounds.isEmpty) return null
         val overlap = Rect(region)
         if (!overlap.intersect(other.bounds)) continue
-        if (other.type != AccessibilityWindowInfo.TYPE_SYSTEM || other.packageName != "com.android.systemui") return null
-        // System bars may overlap an edge-to-edge host. Never hand them to OCR.
+        if (other.type != AccessibilityWindowInfo.TYPE_SYSTEM) return null
+        // Exclude narrow edge strips by geometry, even before a system-bar event populates
+        // the package cache. Their pixels never reach OCR; interior/large overlays fail closed.
         when {
             overlap.width() == region.width() && overlap.top == region.top && overlap.height() < region.height() / 4 ->
                 region.top = overlap.bottom
@@ -120,8 +121,11 @@ internal class FinanceHostWindows(private val service:AccessibilityService,
             val root=root(window) ?: continue
             try {
                 actualPackage=root.packageName?.toString().orEmpty();packages[window.id]=actualPackage
-                if(actualPackage!=target.packageName || !root.isVisibleToUser || !canRead())continue
-                identity=inspect(root,provider.adapter).fields?.let {
+                if(actualPackage!=target.packageName || !canRead())continue
+                val detail = if (root.isVisibleToUser) inspect(root,provider.adapter) else
+                    VisibleDetailReader.inspectAuthorizedRoot(root, provider.adapter, window.id, target.packageName,
+                        Rect().also(window::getBoundsInScreen))
+                identity=detail.fields?.let {
                     if(canRead())provider.adapter.parse(it,System.currentTimeMillis()).evidence?.hostIdentity() else null
                 }
             } finally {@Suppress("DEPRECATION") root.recycle()}

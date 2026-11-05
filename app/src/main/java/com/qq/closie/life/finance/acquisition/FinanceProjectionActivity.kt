@@ -45,7 +45,12 @@ class FinanceProjectionActivity:ComponentActivity() {
     override fun onCreate(state:Bundle?) {
         super.onCreate(state)
         if(state!=null || FinanceProjectionRequests.inFlight){finish();return}
-        origin=FinanceProjectionHosts.take(intent.getStringExtra("originId"))
+        val originId=intent.getStringExtra("originId")
+        origin=FinanceProjectionHosts.take(originId)
+        if(originId!=null && origin==null) {
+            FinanceAutomationSettings(this).status("原截图窗口已失效，请回到需要识别的页面重新点击截图")
+            finish();return
+        }
         if(!com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.beginCapture(captureOwner)){origin?.close();finish();return}
         ownsRequest=true;FinanceProjectionRequests.start(captureOwner);FinanceProjectionBubbleService.ensure(this)
         if(origin==null)review=FinanceProjectionReview(this)
