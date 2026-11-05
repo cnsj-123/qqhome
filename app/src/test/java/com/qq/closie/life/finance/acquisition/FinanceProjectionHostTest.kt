@@ -34,7 +34,7 @@ class FinanceProjectionHostTest:FinanceRoomTest() {
     }
     @After fun cleanup(){host?.close();edits.cancel();FinanceReceiptOverlay.endCapture();FinanceProjectionHosts.current?.close();FinanceScreenshotPreference.set(service,false);serviceController.destroy()}
     private fun origin():FinanceProjectionHost {
-        val lease=requireNotNull(reader.bindActive());assertNotNull(lease.host.identity)
+        val lease=requireNotNull(reader.bindActive());assertNull(lease.host.identity)
         val container=LifeContainer.createForTesting(service,db)
         return FinanceProjectionHost(service,reader,lease){closed->FinanceReceiptOverlay(service,edits,{container},edits,closed)}
             .also {host=it;FinanceProjectionHosts.offer(it)}
@@ -44,7 +44,8 @@ class FinanceProjectionHostTest:FinanceRoomTest() {
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(3,service.packageName))
         origin.observe(FinanceHostFixtures.event(3,service.packageName))
         assertEquals(before,reads);assertTrue(origin.live)
-        FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,FinanceHostFixtures.ALIPAY,order="ORDER-999999"))
+        FinanceHostFixtures.windows(service,FinanceHostFixtures.window(8,"other.app"))
+        origin.observe(FinanceHostFixtures.event(8,"other.app"))
         assertTrue(runCatching {origin.awaitReturn()}.isFailure)
         assertFalse(origin.captureCurrent());assertTrue(db.financeIntakeDao().proposals().isEmpty())
     }

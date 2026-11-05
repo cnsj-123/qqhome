@@ -72,7 +72,11 @@ class FinanceReceiptSessionTest {
             assertTrue(FinanceReceiptOverlay.occupied)
         }
         assertFalse(FinanceReceiptOverlay.beginCapture()) // a second request cannot evict an editor
-        snapshot=snapshot.copy(windows=listOf(host.copy(identity="different-transaction")))
+        val navigation = android.view.accessibility.AccessibilityEvent.obtain(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+            packageName = host.packageName
+            shadowOf(this).setWindowId(host.id)
+        }
+        lease.observe(navigation,snapshot,true)
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(501))
         assertFalse(FinanceReceiptOverlay.occupied)
     }
