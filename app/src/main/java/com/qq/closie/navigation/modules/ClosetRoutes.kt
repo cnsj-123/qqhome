@@ -20,11 +20,11 @@ fun NavGraphBuilder.closetRoutes(nav: NavHostController, repository: WardrobeRep
         }
     }
     composable(LifeOsRoute.BACKUP) {
-        ClosieTheme { DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
-            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository) }
+        DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
+            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository)
     }
     composable(LifeOsRoute.SETTINGS_EXPORT) {
-        ClosieTheme { DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
-            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository, openExportCenter = true) }
+        DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
+            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository, openExportCenter = true)
     }
 }

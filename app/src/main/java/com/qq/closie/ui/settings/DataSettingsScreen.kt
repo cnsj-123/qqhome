@@ -34,6 +34,11 @@ import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.finance.FinanceRepository
 import com.qq.closie.ui.components.ClosieCompactTopBar
+import com.qq.closie.ui.lifeos.settings.SettingsLine
+import com.qq.closie.ui.lifeos.settings.SettingsPaperPage
+import com.qq.closie.ui.lifeos.settings.SettingsSection
+import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
+import com.qq.closie.ui.lifeos.theme.LifeText
 import com.qq.closie.ui.quickcapture.QuickCaptureActivity
 import com.qq.closie.ui.quickcapture.QuickCaptureService
 import com.qq.closie.ui.theme.ClosieColor
@@ -197,38 +202,31 @@ fun DataSettingsScreen(
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) selectRestoreSource(uri)
     }
-    val financeCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+    val financeCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null && finance != null) {
             localBusy = true; message = null
             scope.launch {
                 val result = FinanceExportManager.export(context, finance, uri)
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
-                message = result.fold({ "账目 CSV 已导出" }, { failureMessage("导出失败", it) })
+                message = result.fold({ "财务包已导出，包含可读 CSV 与关联 ID" }, { failureMessage("导出失败", it) })
                 localBusy = false
             }
         }
     }
 
-    Scaffold(
-        containerColor = ClosieColor.Canvas,
-        topBar = { ClosieCompactTopBar(title = "数据与备份", onBack = back) }
-    ) { pad ->
-        Column(
-            modifier = Modifier
-                .padding(pad)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    val lifeSurface = finance != null
+    val content: @Composable ColumnScope.() -> Unit = {
+            val colors = LocalLifeOsColors.current
+            if (lifeSurface) SettingsSection("本地加密备份")
             Text(
                 "完整备份覆盖衣橱、账本、关系、草稿与应用内管理的媒体。外部附件只保存引用，换机可能需要重新选择原件。系统权限、采集会话与云授权不会恢复。恢复会替换当前本地数据。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = ClosieColor.InkSecondary
+                style = if (lifeSurface) LifeText.caption else MaterialTheme.typography.bodyMedium,
+                color = if (lifeSurface) colors.inkSecondary else ClosieColor.InkSecondary
             )
 
             Text(verifiedTimes.firstOrNull()?.let { "最近验证 · " + verifiedTimeLabel(it) } ?: "尚无验证成功的备份",
-                style = MaterialTheme.typography.titleMedium)
-            SettingsRow(Icons.Default.Restore, "历史恢复点", if (verifiedTimes.isEmpty()) "验证成功后才会出现" else "${verifiedTimes.size} 个已验证备份") {
+                Modifier.padding(vertical = 8.dp), style = if (lifeSurface) LifeText.body else MaterialTheme.typography.titleMedium)
+            SettingsRow(Icons.Default.Restore, "历史恢复点", if (verifiedTimes.isEmpty()) "验证成功后才会出现" else "${verifiedTimes.size} 个已验证备份", paper = lifeSurface) {
                 historyOpen = !historyOpen
             }
             if (historyOpen) verifiedTimes.forEach {
@@ -241,7 +239,7 @@ fun DataSettingsScreen(
                     Text(verifiedTimeLabel(it) + " · 需重新选择备份文件", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            SettingsToggleRow(
+            if (!lifeSurface) SettingsToggleRow(
                 title = "快速采集",
                 subtitle = "通过悬浮球从其他 App 的商品页快速录入",
                 checked = quickCapture,
@@ -272,27 +270,38 @@ fun DataSettingsScreen(
                 icon = Icons.Default.CloudUpload,
                 title = "创建加密备份",
                 subtitle = "衣橱、Finance、关系、草稿和媒体；使用独立口令并验证恢复",
+                paper = lifeSurface,
                 onClick = { if (!busy) showBackupPassword = true }
             )
             SettingsRow(
                 icon = Icons.Default.Restore,
                 title = "恢复备份",
                 subtitle = "恢复加密备份；旧 ZIP 可在确认页单独选择",
+                paper = lifeSurface,
                 onClick = { if (!busy) restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
             )
             SettingsRow(
                 icon = Icons.Default.Download,
                 title = "导出中心",
                 subtitle = "选择表格范围并检查明文风险",
+                paper = lifeSurface,
                 onClick = { if (!busy) exportCenter = true }
             )
-            Text("自动备份与跨设备同步 · 规划中", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
+            if (lifeSurface) {
+                SettingsSection("计划中")
+                SettingsLine("自动备份与跨设备同步", "待接入", trailing = "规划中")
+            } else Text("自动备份与跨设备同步 · 规划中", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
 
             if (busy) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = ClosieColor.Rose)
                     Text("处理中…", color = ClosieColor.InkSecondary)
                 }
+            }
+            restoreTask.result?.let { result ->
+                Text(result, style = LifeText.body,
+                    color = if (restoreTask.failed) MaterialTheme.colorScheme.error else if (lifeSurface) colors.accentDeep else ClosieColor.RosePressed)
+                TextButton(restoreOwner::acknowledge) { Text("知道了") }
             }
             message?.let {
                 // A refused-while-restoring message is not an error the user caused or must act on
@@ -303,7 +312,12 @@ fun DataSettingsScreen(
                     !it.startsWith("应用正在恢复备份")
                 Text(it, color = if (isError) ClosieColor.Error else ClosieColor.RosePressed)
             }
-        }
+    }
+    if (lifeSurface) SettingsPaperPage("数据与备份", back, content = content)
+    else Scaffold(containerColor = ClosieColor.Canvas,
+        topBar = { ClosieCompactTopBar(title = "数据与备份", onBack = back) }) { pad ->
+        Column(Modifier.padding(pad).padding(horizontal = 16.dp, vertical = 12.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 
     if (showBackupPassword) AlertDialog(
@@ -327,11 +341,11 @@ fun DataSettingsScreen(
         text = { Column {
             Text("表格导出为明文，接收方可读取内容。")
             TextButton({ exportCenter = false; confirmCsv = true }, enabled = !busy) { Text("衣橱清单 · CSV") }
-            if (finance != null) TextButton({ exportCenter = false; confirmFinanceCsv = true }, enabled = !busy) { Text("账目与关联 ID · CSV") }
+            if (finance != null) TextButton({ exportCenter = false; confirmFinanceCsv = true }, enabled = !busy) { Text("完整财务包 · ZIP（含 CSV）") }
         } }, confirmButton = { TextButton({ exportCenter = false }) { Text("关闭") } })
-    if (confirmFinanceCsv) AlertDialog(onDismissRequest = { confirmFinanceCsv = false }, title = { Text("导出明文账目？") },
-        text = { Text("范围为当前账本的可导出记录，包含金额、账户和关联 ID。CSV 文件未加密。") },
-        confirmButton = { TextButton({ confirmFinanceCsv = false; financeCsvLauncher.launch("lifeos-finance-${LocalDate.now()}.csv") }) { Text("确认导出明文") } },
+    if (confirmFinanceCsv) AlertDialog(onDismissRequest = { confirmFinanceCsv = false }, title = { Text("导出明文财务包？") },
+        text = { Text("ZIP 包包含当前账本可导出的 CSV、金额、账户和关联 ID。文件未加密，接收者可解压读取。") },
+        confirmButton = { TextButton({ confirmFinanceCsv = false; financeCsvLauncher.launch("lifeos-finance-${LocalDate.now()}.zip") }) { Text("确认导出明文") } },
         dismissButton = { TextButton({ confirmFinanceCsv = false }) { Text("取消") } })
     confirmRestore?.let { uri ->
         AlertDialog(
@@ -411,8 +425,13 @@ private fun SettingsRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
+    paper: Boolean = false,
     onClick: () -> Unit
 ) {
+    if (paper) {
+        SettingsLine(title, subtitle, icon, onClick = onClick)
+        return
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
