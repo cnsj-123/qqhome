@@ -24,12 +24,14 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
         commands.run(token,"QUERY_SAVE",listOf(name,spec)) {
             spec.validate(); require(name.isNotBlank())
             val now=clock(); val result=id()
-            dao.putSavedQuery(listOf(FinanceSavedQueryEntity(result,name.trim(),1,com.google.gson.Gson().toJson(spec),now,now)))
+            dao.putSavedQuery(listOf(FinanceSavedQueryEntity(result,name.trim(),spec.version,com.google.gson.Gson().toJson(spec),now,now)))
             result
         }
     fun queryFrom(row:FinanceSavedQueryEntity):FinanceQuerySpec {
-        require(row.specVersion==1 && row.voidedAt==null)
-        return com.google.gson.Gson().fromJson(row.specJson,FinanceQuerySpec::class.java).also { it.validate() }
+        require(row.specVersion in 1..2 && row.voidedAt==null)
+        return FinanceQuerySpec.decode(row.specJson).also {
+            require(row.specVersion == it.version) { "保存视图的版本与条件不一致" }
+        }
     }
 
     suspend fun saveDraft(token:FinanceCommandToken, draft:FinanceDraftEntity, tags:Set<String>,

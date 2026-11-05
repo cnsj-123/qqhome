@@ -34,16 +34,19 @@ internal fun periodChange(current: Long, previous: Long): String {
 }
 
 @Composable
-internal fun FinancePeriodSummary(current: Map<String, PersonalCostTotal>, previous: Map<String, PersonalCostTotal>?) {
+internal fun FinancePeriodSummary(current: Map<String, PersonalCostTotal>, previous: Map<String, PersonalCostTotal>?,
+    dateUnknown:Map<String,Int> = emptyMap(),previousDateUnknown:Map<String,Int> = emptyMap()) {
     val colors = LocalLifeOsColors.current
     FinanceSection {
         Text("个人成本", style = LifeText.title)
         Text("按经济发生日与实际调整日归期 · 各币种分别统计", style = LifeText.caption, color = colors.muted)
-        (current.keys + previous.orEmpty().keys).sorted().forEach { currency ->
+        (current.keys + previous.orEmpty().keys + dateUnknown.keys + previousDateUnknown.keys).sorted().forEach { currency ->
             val totals = current[currency]
+            val undated=dateUnknown[currency] ?: 0
+            val previousUndated=previousDateUnknown[currency] ?: 0
             Text(currency, Modifier.padding(top = 10.dp), style = LifeText.caption, color = colors.accentDeep)
             if (totals == null) {
-                Text("本期没有个人成本记录", style = LifeText.body)
+                Text(if(undated==0) "本期没有个人成本记录" else "本期已知小计 "+FinanceMoney.display(0,currency), style = LifeText.body)
             } else {
                 Text("已确认 " + FinanceMoney.display(totals.confirmedMinor, currency), style = LifeText.body)
                 if (!totals.complete) Text("另有 ${totals.unknownCount} 项承担待确定", style = LifeText.caption)
@@ -51,13 +54,14 @@ internal fun FinancePeriodSummary(current: Map<String, PersonalCostTotal>, previ
             previous?.get(currency)?.let { prior ->
                 Text("上期已确认 " + FinanceMoney.display(prior.confirmedMinor, currency), style = LifeText.caption, color = colors.muted)
                 if (!prior.complete) Text("上期另有 ${prior.unknownCount} 项承担待确定", style = LifeText.caption)
-                if (totals?.complete == true && prior.complete) {
+                if (totals?.complete == true && prior.complete && undated==0 && previousUndated==0) {
                     Text(periodChange(totals.confirmedMinor, prior.confirmedMinor), style = LifeText.caption, color = colors.inkSecondary)
                 }
             }
+            if(undated>0 || previousUndated>0) Text("另有 ${maxOf(undated,previousUndated)} 项成本日期待确认，无法归期；本期与上期显示已知小计。",style=LifeText.caption,color=colors.muted)
             HorizontalDivider(Modifier.padding(top = 12.dp), color = colors.line)
         }
-        if (current.isEmpty() && previous.orEmpty().isEmpty()) Text("当前范围还没有个人成本记录。", style = LifeText.body)
+        if (current.isEmpty() && previous.orEmpty().isEmpty() && dateUnknown.isEmpty() && previousDateUnknown.isEmpty()) Text("当前范围还没有个人成本记录。", style = LifeText.body)
         if (previous == null) Text("选择日期范围后，可比较上一期。", style = LifeText.caption, color = colors.muted)
     }
 }

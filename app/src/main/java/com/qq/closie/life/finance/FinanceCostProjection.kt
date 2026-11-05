@@ -10,8 +10,22 @@ data class PersonalCostRow(
 data class PersonalCostTotal(val confirmedMinor: Long, val unknownCount: Int) {
     val complete: Boolean get() = unknownCount == 0
 }
+data class FinanceCostPeriod(val rows: List<PersonalCostRow>, val undatedCosts: List<PersonalCostRow>)
 
 object FinanceCostProjection {
+    fun hasUnknownDate(row:PersonalCostRow,unknownCashDateIds:Set<String>) =
+        row.entryId in unknownCashDateIds && (row.adjustment || row.eventId==null)
+    /** An independent economic date survives an unknown payment date. Adjustments and ordinary
+     * unlinked cash costs require their real cash date to choose a month or budget. */
+    fun period(snapshot: FinanceSnapshot, candidates: List<PersonalCostRow>, range: FinanceDateRange): FinanceCostPeriod {
+        val bounded = range.startInclusive != null || range.endExclusive != null
+        val unknown = snapshot.v16?.entryTimingRows.orEmpty().filter {
+            it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN
+        }.map { it.entryId }.toSet()
+        val undated = if (bounded) candidates.filter { hasUnknownDate(it,unknown) } else emptyList()
+        val ids = undated.map { it.id }.toSet()
+        return FinanceCostPeriod(candidates.filter { it.id !in ids && range.contains(it.occurredAt) }, undated)
+    }
     fun rows(snapshot: FinanceSnapshot,forBudget:Boolean=false,includeExcluded:Boolean=false): List<PersonalCostRow> {
         val v = snapshot.v16
         val events = snapshot.v4?.events.orEmpty().associateBy { it.id }

@@ -1,18 +1,19 @@
 package com.qq.closie.life.finance
 
 data class FinanceBudgetProgress(val budget:FinanceBudgetEntity,val used:PersonalCostTotal,val remainingMinor:Long,
-    val explanation:String)
+    val explanation:String, val unknownDateCount:Int=0)
 data class FinanceDiagnostic(val id:String,val message:String,val entryIds:Set<String> =emptySet(),val eventIds:Set<String> =emptySet(),val accountIds:Set<String> =emptySet())
 object FinanceInsightsProjection {
     fun budgets(s:FinanceSnapshot):List<FinanceBudgetProgress> {
         val rows=FinanceCostProjection.rows(s,forBudget=true);val tree=FinanceCategoryTree(s.categories)
         return s.v16?.budgetRows.orEmpty().filter {it.voidedAt==null}.map {budget->
             val categories=budget.categoryId?.let(tree::descendants)
-            val total=FinanceCostProjection.total(rows.filter {it.currencyCode==budget.currencyCode && it.budgetIncluded &&
-                it.occurredAt>=budget.startAt && it.occurredAt<budget.endExclusive && (categories==null || it.categoryId in categories)})
+            val candidates=rows.filter {it.currencyCode==budget.currencyCode && it.budgetIncluded && (categories==null || it.categoryId in categories)}
+            val period=FinanceCostProjection.period(s,candidates,FinanceDateRange(budget.startAt,budget.endExclusive))
+            val total=FinanceCostProjection.total(period.rows)
             FinanceBudgetProgress(budget,total,Math.subtractExact(budget.limitMinor,total.confirmedMinor),
                 if(total.confirmedMinor<0) "本期实际退款或返利超过本期确认承担，已用为负数；没有回写旧月份。"
-                else "个人承担与实际调整按各自发生期计入；内部转账和本金还款不重复消费。")
+                else "个人承担与实际调整按各自发生期计入；内部转账和本金还款不重复消费。",period.undatedCosts.size)
         }
     }
     fun burden(s:FinanceSnapshot,rows:List<PersonalCostRow>):Map<Pair<FinanceBurden?,String>,PersonalCostTotal> {

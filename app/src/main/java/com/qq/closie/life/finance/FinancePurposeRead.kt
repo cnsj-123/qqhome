@@ -50,8 +50,10 @@ object FinancePurposeRead {
         val result=FinanceQueryEngine.execute(s,spec)
         val costs=result.costs.filter {it.eventId in events || (it.eventId==null && it.entryId in entries)}
         val cash=result.cash.filter {it.id in entries}
+        val undatedCosts=result.undatedCosts.filter {it.eventId in events || (it.eventId==null && it.entryId in entries)}
+        val undatedCash=result.undatedCash.filter {it.id in entries}
         val totals=if(spec.mode==FinanceQueryMode.PERSONAL_COST) costs.groupBy {it.currencyCode}.mapValues {FinanceCostProjection.total(it.value)}
         else cash.groupBy {row->s.accounts.single {it.id==row.accountId}.currencyCode}.mapValues {(_,rows)->PersonalCostTotal(exactSum(rows.map {if(it.direction==FinanceDirection.OUTFLOW) it.amountMinor else -it.amountMinor}),0)}
-        return result.copy(costs=costs,cash=cash,totals=totals)
+        return result.copy(costs=costs,cash=cash,totals=totals,undatedCosts=undatedCosts,undatedCash=undatedCash)
     }
 }

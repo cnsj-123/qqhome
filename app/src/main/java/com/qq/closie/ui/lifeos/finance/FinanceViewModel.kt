@@ -41,7 +41,8 @@ data class FinanceUiState(
     val economicDates: Map<String, Long> = emptyMap(),
     val unknownCashDateIds: Set<String> = emptySet(),
     val unknownCashDateCount: Int = 0,
-    val costRows:List<PersonalCostRow> = emptyList(),val loaded:Boolean=false
+    val costRows:List<PersonalCostRow> = emptyList(),val loaded:Boolean=false,
+    val undatedCostRows:List<PersonalCostRow> = emptyList(),val previousUndatedCostRows:List<PersonalCostRow> = emptyList()
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
@@ -100,15 +101,14 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                 categoryMatches(it) && (selection.tagId == null || selection.tagId in it.tagIds) && cashAmountMatches(it)
             }
             val personal=personalFor(selection.range)
-            fun costsFor(range:FinanceDateRange):List<PersonalCostRow> = FinanceQueryEngine.execute(data,FinanceQuerySpec(
+            fun costQueryFor(range:FinanceDateRange):FinanceQueryResult = FinanceQueryEngine.execute(data,FinanceQuerySpec(
+                version=if(selection.nature==null)1 else 2,nature=selection.nature,
                 startInclusive=range.startInclusive,endExclusive=range.endExclusive,
                 accountIds=setOfNotNull(selection.accountId),categoryIds=setOfNotNull(selection.categoryId),
                 tagIds=setOfNotNull(selection.tagId),currencyCode=selection.currencyCode,
-                minimumMinor=selection.minimumMinor,maximumMinor=selection.maximumMinor,text=selection.query)).costs.filter { row ->
-                selection.nature==null || data.v4?.events.orEmpty().any { it.id==row.eventId && it.nature==selection.nature } ||
-                    (row.eventId==null && selection.nature==FinanceNature.PERSONAL)
-            }
-            val costRows=costsFor(selection.range)
+                minimumMinor=selection.minimumMinor,maximumMinor=selection.maximumMinor,text=selection.query))
+            val costQuery=costQueryFor(selection.range)
+            val costRows=costQuery.costs
             fun costTotals(costs: List<PersonalCostRow>) = costs.groupBy { it.currencyCode }
                 .mapValues { (_, entries) -> FinanceCostProjection.total(entries) }
             val categoryTree=FinanceCategoryTree(data.categories)
@@ -117,7 +117,8 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                 FinanceDimensionTotal(key.first, key.second, FinanceTotals(expenseMinor = cost.confirmedMinor), cost.unknownCount)
             }
             val previousRange=previousFinanceRange(selection.range)
-            val previousCostRows = previousRange?.let(::costsFor)
+            val previousCostQuery = previousRange?.let(::costQueryFor)
+            val previousCostRows = previousCostQuery?.costs
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
                 FinanceProjection.cashSummary(data, filteredRows, selection.range),
@@ -131,7 +132,7 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                 economicDates = FinanceProjection.economicDates(data),
                 unknownCashDateIds = unknownCashDateIds,
                 unknownCashDateCount = if (boundedCashRange) filteredRows.count { it.entry.id in unknownCashDateIds } else 0,
-                costRows=costRows)
+                costRows=costRows,undatedCostRows=costQuery.undatedCosts,previousUndatedCostRows=previousCostQuery?.undatedCosts.orEmpty())
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
     // Busy/error are main-thread presentation state. A large financial projection must never delay
@@ -293,7 +294,7 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             spec.eventIds.isEmpty() && spec.mode==FinanceQueryMode.PERSONAL_COST) { "此保存视图请在查询工作页完整打开" }
         updateFilter(FinanceFilter(spec.text,FinancePeriod.CUSTOM,FinanceDateRange(spec.startInclusive,spec.endExclusive),
             "保存视图",spec.accountIds.singleOrNull(),spec.categoryIds.singleOrNull(),spec.tagIds.singleOrNull(),
-            minimumMinor=spec.minimumMinor,maximumMinor=spec.maximumMinor,currencyCode=spec.currencyCode))
+            nature=spec.nature,minimumMinor=spec.minimumMinor,maximumMinor=spec.maximumMinor,currencyCode=spec.currencyCode))
     }
     fun filterAccount(id: String?) { updateFilter(filter.value.copy(accountId = id)) }
     fun filterCategory(id: String?) { updateFilter(filter.value.copy(categoryId = id)) }

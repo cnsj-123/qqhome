@@ -14,7 +14,7 @@ import java.time.LocalDate
 
 private val QuerySpecSaver=Saver<FinanceQuerySpec,String>(
     save={com.google.gson.Gson().toJson(it)},
-    restore={runCatching {com.google.gson.Gson().fromJson(it,FinanceQuerySpec::class.java).also {spec->spec.validate()}}.getOrNull()})
+    restore={runCatching {FinanceQuerySpec.decode(it)}.getOrNull()})
 
 @Composable
 internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
@@ -54,6 +54,12 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     FinanceMultiChoice("账户",spec.accountIds,s.accounts.map {it.id to it.name}){spec=spec.copy(accountIds=it)}
     FinanceMultiChoice("分类（含下级）",spec.categoryIds,s.categories.map {it.id to (FinanceProjection.categoryPath(s.categories,it.id) ?: it.name)}){spec=spec.copy(categoryIds=it)}
     FinanceMultiChoice("同时包含的标签",spec.tagIds,s.tags.map {it.id to it.name}){spec=spec.copy(tagIds=it)}
+    FinanceChoice("业务性质",spec.nature?.name.orEmpty(),listOf("" to "全部性质")+FinanceNature.entries.map {it.name to it.label}) {
+        val nature = it.takeIf(String::isNotBlank)?.let(FinanceNature::valueOf)
+        spec = spec.copy(version = if (nature == null) 1 else 2, nature = nature)
+        useLocal = false
+        error = null
+    }
     OutlinedTextField(start,{start=it},label={Text("开始日期 · 年-月-日（空为不限）")})
     OutlinedTextField(end,{end=it},label={Text("结束日期 · 年-月-日（含当天）")})
     OutlinedTextField(currency,{currency=it},label={Text("金额筛选币种")})
@@ -67,11 +73,11 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
             maximumMinor=max.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,currency,true)}).also {it.validate()}
     }.onSuccess {spec=it;useLocal=false;error=null}.onFailure {error=it.message}}) {Text("应用日期与金额条件")}
     Text("条件：${spec.mode} · "+(spec.startInclusive?.let(FinanceTime::input) ?: "不限起始")+" → "+(spec.endExclusive?.let(FinanceTime::input) ?: "不限结束")+
-        " · ${spec.accountIds.size}账户/${spec.categoryIds.size}分类/${spec.tagIds.size}标签",style=LifeText.caption)
+        " · ${spec.accountIds.size}账户/${spec.categoryIds.size}分类/${spec.tagIds.size}标签 · ${spec.nature?.label ?: "全部性质"}",style=LifeText.caption)
     OutlinedTextField(name,{name=it},label={Text("保存视图名称")})
     TextButton({vm.workspaceAction(epoch) {repo,token->repo.saveQuery(token,name,spec)}},enabled=!state.busy && name.isNotBlank()){Text("保存当前条件")}
     FinancePagedItems(s.v16?.savedQueryRows.orEmpty().filter {it.voidedAt==null},"saved-queries",{it.id}) {query->Row {
-        TextButton({runCatching {com.google.gson.Gson().fromJson(query.specJson,FinanceQuerySpec::class.java).also {it.validate();require(query.specVersion==1)}}
+        TextButton({runCatching {FinanceQuerySpec.decode(query.specJson).also {require(query.specVersion in 1..2 && query.specVersion==it.version)}}
             .onSuccess {adopt(it);useLocal=false;error=null}.onFailure {error="保存视图无法解释，请更新条件"}}){Text(query.name)}
         TextButton({vm.workspaceAction(epoch){repo,token->repo.removeQuery(token,query.id,query.revision)}}){Text("移除视图")}
     }}
@@ -88,28 +94,58 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     val result=remember(s,spec,useLocal,grant,grantActive) {runCatching {
         if(useLocal) FinancePurposeRead.query(s,spec,requireNotNull(grant){"请选择本次查询授权"},now) else FinanceQueryEngine.execute(s,spec)
     }}
+    val unknownCashDateIds = remember(s.v16?.entryTimingRows) {
+        s.v16?.entryTimingRows.orEmpty().filter {
+            it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN
+        }.map { it.entryId }.toSet()
+    }
     result.onSuccess {value->
         value.totals.forEach {(code,total)->Text((if(spec.mode==FinanceQueryMode.PERSONAL_COST) "个人成本 " else "真实流出减流入 ")+FinanceMoney.display(total.confirmedMinor,code)+if(total.complete) "" else " · ${total.unknownCount} 项金额未知")}
         if (useLocal) Text("受限结果仅展示本次授权的查询内容。", style=LifeText.caption)
+        val undatedCostCount = (value.undatedCosts + value.costs.filter {
+            FinanceCostProjection.hasUnknownDate(it,unknownCashDateIds)
+        }).distinctBy { it.id }.size
+        val undatedCashCount = (value.undatedCash + value.cash.filter {
+            it.id in unknownCashDateIds
+        }).distinctBy { it.id }.size
+        if (undatedCostCount > 0 || undatedCashCount > 0) {
+            Text("日期待确认 · $undatedCostCount 项成本 / $undatedCashCount 笔资金流水", style = LifeText.caption)
+            if (spec.startInclusive != null || spec.endExclusive != null)
+                Text("未归期记录单独列示，未纳入本次期间合计。", style = LifeText.caption)
+        }
+        @Composable
+        fun CostResult(row: PersonalCostRow, undated: Boolean = false) {
+            val date = if (undated || FinanceCostProjection.hasUnknownDate(row,unknownCashDateIds))
+                if (row.adjustment) "调整日期待确认" else "成本日期待确认"
+                else FinanceTime.input(row.occurredAt)
+            val label = date + " · " + row.description.ifBlank { "经济事项" } + " · " +
+                (row.amountMinor?.let { FinanceMoney.display(it, row.currencyCode) } ?: "未知")
+            val marker = Modifier.testTag("finance-query-cost-" + row.id)
+            if (useLocal) Text(label, marker)
+            else TextButton({
+                if (row.eventId != null) viewingEvent = row.eventId else viewingCash = row.entryId
+            }, modifier = marker.fillMaxWidth(), enabled = row.eventId != null || row.entryId != null) { Text(label) }
+        }
+        @Composable
+        fun CashResult(row: FinanceEntryEntity, undated: Boolean = false) {
+            val date = if (undated || row.id in unknownCashDateIds) "收付日期待确认" else FinanceTime.input(row.occurredAt)
+            val label = date + " · " + row.description.ifBlank { "资金流水" } + " · " + row.direction.name + " " +
+                FinanceMoney.display(row.amountMinor, s.accounts.single { it.id == row.accountId }.currencyCode)
+            val marker = Modifier.testTag("finance-query-cash-" + row.id)
+            if (useLocal) Text(label, marker)
+            else TextButton({ viewingCash = row.id }, modifier = marker.fillMaxWidth()) { Text(label) }
+        }
         key(spec,useLocal,grant) {
-            FinancePagedItems(value.costs,"query-costs",{it.id}) {row->
-                val label=FinanceTime.input(row.occurredAt)+" · "+row.description.ifBlank {"经济事项"}+" · "+
-                    (row.amountMinor?.let {FinanceMoney.display(it,row.currencyCode)} ?: "未知")
-                val marker=Modifier.testTag("finance-query-cost-"+row.id)
-                if(useLocal) Text(label,marker)
-                else TextButton({
-                    if(row.eventId!=null) viewingEvent=row.eventId else viewingCash=row.entryId
-                },modifier=marker.fillMaxWidth(),enabled=row.eventId!=null || row.entryId!=null) {Text(label)}
-            }
-            FinancePagedItems(value.cash,"query-cash",{it.id}) {row->
-                val label=FinanceTime.input(row.occurredAt)+" · "+row.description.ifBlank {"资金流水"}+" · "+row.direction.name+" "+
-                    FinanceMoney.display(row.amountMinor,s.accounts.single {it.id==row.accountId}.currencyCode)
-                val marker=Modifier.testTag("finance-query-cash-"+row.id)
-                if(useLocal) Text(label,marker)
-                else TextButton({viewingCash=row.id},modifier=marker.fillMaxWidth()) {Text(label)}
+            FinancePagedItems(value.costs,"query-costs",{it.id}) { CostResult(it) }
+            FinancePagedItems(value.cash,"query-cash",{it.id}) { CashResult(it) }
+            if (value.undatedCosts.isNotEmpty() || value.undatedCash.isNotEmpty()) {
+                Text("未归期记录", style = LifeText.title)
+                FinancePagedItems(value.undatedCosts, "query-undated-costs", { it.id }) { CostResult(it, undated = true) }
+                FinancePagedItems(value.undatedCash, "query-undated-cash", { it.id }) { CashResult(it, undated = true) }
             }
         }
-        if(value.costs.isEmpty() && value.cash.isEmpty()) Text("当前条件与授权范围内没有记录。")
+        if(value.costs.isEmpty() && value.cash.isEmpty() && value.undatedCosts.isEmpty() && value.undatedCash.isEmpty())
+            Text("当前条件与授权范围内没有记录。")
     }.onFailure {Text(it.message ?: "查询无法完成",color=MaterialTheme.colorScheme.error)}
     // Restricted results stay within the granted projection, including after state restoration.
     if(!useLocal) {

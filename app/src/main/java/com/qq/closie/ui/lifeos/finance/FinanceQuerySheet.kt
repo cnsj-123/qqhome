@@ -122,10 +122,7 @@ internal fun FinanceQuerySheet(
                 }
                 Text("查账", Modifier.weight(1f), style = LifeText.title, color = colors.ink)
                 TextButton({
-                    runCatching { prepared() }.onSuccess {
-                        if (it.nature != null) error = "包含业务性质的条件暂不能存为视图，可先查看结果。"
-                        else saveOpen = true
-                    }.onFailure { error = it.message }
+                    runCatching { prepared() }.onSuccess { saveOpen = true }.onFailure { error = it.message }
                 }, enabled = state.loaded && validSession) { Text("存为视图", style = LifeText.caption) }
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -301,13 +298,14 @@ internal fun FinanceQuerySheet(
         confirmButton = { TextButton({
             runCatching {
                 val filter = prepared()
-                require(filter.nature == null) { "包含业务性质的条件暂不能存为视图" }
                 FinanceQuerySpec(
+                    version = if (filter.nature != null) 2 else 1,
                     mode = savedMode,
                     startInclusive = filter.range.startInclusive, endExclusive = filter.range.endExclusive,
                     accountIds = setOfNotNull(filter.accountId), categoryIds = setOfNotNull(filter.categoryId),
                     tagIds = setOfNotNull(filter.tagId), currencyCode = filter.currencyCode,
-                    minimumMinor = filter.minimumMinor, maximumMinor = filter.maximumMinor, text = filter.query
+                    minimumMinor = filter.minimumMinor, maximumMinor = filter.maximumMinor, text = filter.query,
+                    nature = filter.nature
                 ).also(FinanceQuerySpec::validate)
             }.onSuccess { onSaveView(name.trim(), it) { saveOpen = false } }.onFailure { error = it.message }
         }, enabled = name.isNotBlank() && !state.busy && validSession) { Text("保存视图") } },

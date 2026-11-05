@@ -41,8 +41,10 @@ internal fun FinanceInsightsWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
     }},enabled=!state.busy){Text("建立可选预算")}
     FinancePagedItems(FinanceInsightsProjection.budgets(s),"budgets",{it.budget.id}) {progress->FinancePanel {
         Text(progress.budget.name,style=LifeText.title)
-        Text("已用 "+FinanceMoney.display(progress.used.confirmedMinor,progress.budget.currencyCode)+" / 上限 "+FinanceMoney.display(progress.budget.limitMinor,progress.budget.currencyCode))
-        Text("剩余 "+FinanceMoney.display(progress.remainingMinor,progress.budget.currencyCode)+if(progress.used.complete) "" else "，另有未知承担")
+        Text("已确认小计 "+FinanceMoney.display(progress.used.confirmedMinor,progress.budget.currencyCode)+" / 上限 "+FinanceMoney.display(progress.budget.limitMinor,progress.budget.currencyCode))
+        if(progress.used.complete && progress.unknownDateCount==0) Text("剩余 "+FinanceMoney.display(progress.remainingMinor,progress.budget.currencyCode))
+        if(!progress.used.complete) Text("另有 ${progress.used.unknownCount} 项承担待确定",style=LifeText.caption)
+        if(progress.unknownDateCount>0) Text("另有 ${progress.unknownDateCount} 项成本日期待确认，期间剩余额未确定。",style=LifeText.caption)
         Text(progress.explanation,style=LifeText.caption)
         TextButton({editingBudget=progress.budget.id},enabled=!state.busy) {Text("编辑预算范围与上限")}
         TextButton({vm.workspaceAction(epoch) {repo,token->val b=progress.budget
@@ -50,6 +52,7 @@ internal fun FinanceInsightsWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
         }},enabled=!state.busy){Text("停用此预算")}
     }}
     Text("固定与弹性负担",style=LifeText.title)
+    if(state.undatedCostRows.isNotEmpty()) Text("另有 ${state.undatedCostRows.size} 项成本日期待确认，以下为已知期间小计。",style=LifeText.caption)
     FinanceInsightsProjection.burden(s,state.costRows).forEach {(key,total)->Text((key.first?.let {if(it==FinanceBurden.FIXED) "固定负担" else "弹性消费"} ?: "尚未设置")+" · "+FinanceMoney.display(total.confirmedMinor,key.second)+if(total.complete) "" else " + 未知")}
     var policyCategory by rememberSaveable {mutableStateOf("")}
     var burden by rememberSaveable {mutableStateOf(FinanceBurden.FLEXIBLE.name)}

@@ -18,7 +18,10 @@ internal fun FinanceCostLine(row:PersonalCostRow,snapshot:FinanceSnapshot,editCa
     Column(Modifier.fillMaxWidth().padding(vertical=4.dp)) {
         Text("个人成本 · "+row.description.ifBlank { snapshot.categories.firstOrNull { it.id==row.categoryId }?.name ?: "经济事项" },style=LifeText.body)
         Text(row.amountMinor?.let { FinanceMoney.display(it,row.currencyCode) } ?: "承担待确认",style=LifeText.number)
-        Text(FinanceTime.input(row.occurredAt)+" · "+if(row.adjustment) "实际发生期成本调整" else "经济发生期个人承担",style=LifeText.caption)
+        val unknownDate=(row.adjustment || row.eventId==null) && snapshot.v16?.entryTimingRows.orEmpty().any {
+            it.entryId==row.entryId && it.voidedAt==null && it.cashPrecision==FinanceTimePrecision.UNKNOWN
+        }
+        Text((if(unknownDate) {if(row.adjustment) "调整日期待确认" else "成本日期待确认"} else FinanceTime.input(row.occurredAt))+" · "+if(row.adjustment) "实际发生期成本调整" else "经济发生期个人承担",style=LifeText.caption)
         TextButton({ details=true }) { Text("查看构成") }
     }
     if(details) AlertDialog(onDismissRequest={details=false},title={Text("个人成本构成")},text={
@@ -40,10 +43,12 @@ internal fun FinanceCostLine(row:PersonalCostRow,snapshot:FinanceSnapshot,editCa
 }
 
 @Composable
-internal fun FinanceCostTrend(rows:List<PersonalCostRow>,select:(String,String)->Unit) {
+internal fun FinanceCostTrend(rows:List<PersonalCostRow>,unknownCashDateIds:Set<String> = emptySet(),select:(String,String)->Unit) {
     Column {
         Text("按经济与实际调整月份",style=LifeText.title)
-        rows.groupBy { YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) }
+        val dated=rows.filterNot {FinanceCostProjection.hasUnknownDate(it,unknownCashDateIds)}
+        if(dated.size!=rows.size) Text("另有 ${rows.size-dated.size} 项成本日期待确认，未放入月份趋势。",style=LifeText.caption)
+        dated.groupBy { YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) }
             .toSortedMap().forEach { (month,monthRows) ->
                 monthRows.groupBy { it.currencyCode }.forEach { (currency,values) ->
                     val total=FinanceCostProjection.total(values)

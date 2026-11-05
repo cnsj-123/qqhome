@@ -123,4 +123,33 @@ class FinanceQueryDetailsTest : FinanceRoomTest() {
         compose.onNodeWithText("范围外的私密事项", substring = true).assertDoesNotExist()
         assertEquals(data, runBlocking { finance.snapshot() })
     }
+    @Test fun unknownCostDatesSuppressPeriodComparisonEvenWhenTheKnownAmountsAreComplete() {
+        compose.setContent { LifeOsTheme {
+            FinancePeriodSummary(mapOf("CNY" to PersonalCostTotal(1_000,0)),mapOf("CNY" to PersonalCostTotal(500,0)),
+                dateUnknown=mapOf("CNY" to 1),previousDateUnknown=mapOf("CNY" to 1))
+        } }
+        compose.onAllNodes(hasText("成本日期待确认",substring=true)).assertCountEquals(1)
+        compose.onAllNodes(hasText("较上期",substring=true)).assertCountEquals(0)
+    }
+    @Test fun anUndatedRefundCannotProduceACompleteCategoryRingOrBudgetRemainder() {
+        val data=runBlocking {
+            val a=account();val original=payment(a.id,1_000);val event=eventId(original.id)
+            val refund=finance.saveEntry(accountId=a.id,direction=FinanceDirection.INFLOW,amountMinor=200,
+                description="日期待确认的退款",occurredAt=4_000,event=FinanceEventInput(role=FinanceFlowRole.REFUND,existingEventId=event))
+            db.financeV16Dao().putEntryTiming(listOf(FinanceEntryTimingEntity(refund.id,cashPrecision=FinanceTimePrecision.UNKNOWN,
+                postedSource="未记录",createdAt=clock,updatedAt=clock)))
+            finance.workspace.saveBudget(finance.economics.token(),"期间预算","CNY",2_000,null,1_000,5_000)
+            finance.snapshot()
+        }
+        val query=FinanceQueryEngine.execute(data,FinanceQuerySpec(startInclusive=1_000,endExclusive=5_000))
+        val state=FinanceUiState(snapshot=data,filter=FinanceFilter(period=FinancePeriod.CUSTOM,range=FinanceDateRange(1_000,5_000)),
+            costSummary=query.totals,categories=listOf(FinanceDimensionTotal("衣服","CNY",FinanceTotals(expenseMinor=1_000))),
+            costRows=query.costs,undatedCostRows=query.undatedCosts,loaded=true,loading=false)
+        val vm=viewModel()
+        compose.setContent { LifeOsTheme { FinanceAnalysisOverview(state,vm,"期间",{_,_,_->},{_,_->}) } }
+        assertTrue(compose.onAllNodes(hasText("成本日期待确认",substring=true)).fetchSemanticsNodes().isNotEmpty())
+        compose.onAllNodes(hasContentDescription("个人成本分类构成",substring=true)).assertCountEquals(0)
+        compose.onAllNodes(hasText("剩余 ",substring=true)).assertCountEquals(0)
+        assertEquals(data,runBlocking {finance.snapshot()})
+    }
 }

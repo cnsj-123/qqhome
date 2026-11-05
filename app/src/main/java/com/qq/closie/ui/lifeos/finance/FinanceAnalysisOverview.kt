@@ -43,8 +43,8 @@ internal fun FinanceAnalysisOverview(
     var editingBudget by rememberSaveable { mutableStateOf<String?>(null) }
     var workspace by rememberSaveable { mutableStateOf<String?>(null) }
     var diagnosticId by rememberSaveable { mutableStateOf<String?>(null) }
-    val currencies = remember(state.costSummary, state.categories, state.cashSummary) {
-        (state.costSummary.keys + state.categories.map { it.currencyCode } + state.cashSummary.keys).distinct().sorted()
+    val currencies = remember(state.costSummary, state.categories, state.cashSummary,state.undatedCostRows) {
+        (state.costSummary.keys + state.categories.map { it.currencyCode } + state.cashSummary.keys + state.undatedCostRows.map {it.currencyCode}).distinct().sorted()
     }
     val currency = preferredCurrency?.takeIf { it in currencies } ?: currencies.firstOrNull()
     val now = remember(state.snapshot) { System.currentTimeMillis() }
@@ -76,6 +76,7 @@ internal fun FinanceAnalysisOverview(
             FilterChip(showIncome, { showIncome = true }, label = { Text("收入") })
         }
         Text(if (showIncome) "实际资金流入 · 收付发生日（含退款等到账）" else "个人净支出 · 经济发生日与实际调整日", style = LifeText.caption, color = colors.inkSecondary)
+        if(!showIncome && state.undatedCostRows.isNotEmpty()) Text("另有 ${state.undatedCostRows.size} 项成本日期待确认，无法归期；以下为已知期间小计。",style=LifeText.caption,color=colors.inkSecondary)
         if (currencies.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(currencies, key = { it }) { code -> FilterChip(currency == code, { preferredCurrency = code }, label = { Text(code) }) }
         }
@@ -86,7 +87,9 @@ internal fun FinanceAnalysisOverview(
                     .map { it.copy(totals = FinanceTotals(expenseMinor = it.totals.incomeMinor)) }
                     else state.categories.filter { it.currencyCode == currency }
                 val total = currency?.let { code -> if (showIncome) state.cashSummary[code]?.let {
-                    PersonalCostTotal(it.confirmed.incomeMinor, it.unknownDateCount)
+                    val bounded=state.filter.range.startInclusive!=null || state.filter.range.endExclusive!=null
+                    val unknown=if(bounded) state.calendarRows.count {row->row.currencyCode==code && row.entry.direction==FinanceDirection.INFLOW && row.entry.id in state.unknownCashDateIds} else 0
+                    PersonalCostTotal(it.confirmed.incomeMinor, unknown)
                 } else state.costSummary[code] }
                 AnalysisCategoryDistribution(rows, total, currency, state, showIncome) { label, code -> onCategory(label, code, showIncome) }
                 relevantBudgets.firstOrNull { it.budget.currencyCode == currency }?.let { progress ->
@@ -99,10 +102,13 @@ internal fun FinanceAnalysisOverview(
             1 -> {
                 if (showIncome) {
                     FinanceTrend(state.ledger.filter { it.entry.id !in state.unknownCashDateIds }, onRange)
-                    if (state.unknownCashDateCount > 0) Text("另有 ${state.unknownCashDateCount} 笔收付日期待确定，未放入月份趋势。", style = LifeText.caption)
+                    val missingDates=maxOf(state.unknownCashDateCount,state.ledger.count {it.entry.id in state.unknownCashDateIds})
+                    if (missingDates > 0) Text("另有 $missingDates 笔收付日期待确定，未放入月份趋势。", style = LifeText.caption)
                 } else {
-                    FinancePeriodSummary(state.costSummary, state.previousCosts)
-                    FinanceCostTrend(state.costRows, onRange)
+                    FinancePeriodSummary(state.costSummary, state.previousCosts,
+                        dateUnknown=state.undatedCostRows.groupingBy {it.currencyCode}.eachCount(),
+                        previousDateUnknown=state.previousUndatedCostRows.groupingBy {it.currencyCode}.eachCount())
+                    FinanceCostTrend(state.costRows, state.unknownCashDateIds, onRange)
                 }
             }
             2 -> {
@@ -160,11 +166,12 @@ private fun AnalysisCategoryDistribution(
     val positiveTotal = ranked.fold(BigInteger.ZERO) { sum, row ->
         sum + row.totals.expenseMinor.coerceAtLeast(0).toBigInteger()
     }.toDouble()
-    val complete = total?.complete == true && rows.none { it.unknownCount > 0 }
+    val dateUnknown=if(income) total?.unknownCount ?: 0 else state.undatedCostRows.count {it.currencyCode==currency}
+    val complete = total?.complete == true && rows.none { it.unknownCount > 0 } && dateUnknown==0
     val showRing = complete && positiveTotal > 0 && rows.none { it.totals.expenseMinor < 0 }
     val swatches = listOf(colors.accent, colors.soft, colors.warm, colors.secondary, colors.inkSecondary)
     if (currency == null || total == null) {
-        Text(if (income) "这个范围还没有实际流入。" else "这个范围还没有个人成本。", style = LifeText.body, color = colors.ink)
+        Text(if(dateUnknown>0) "此币种目前只有日期待确认的记录。" else if (income) "这个范围还没有实际流入。" else "这个范围还没有个人成本。", style = LifeText.body, color = colors.ink)
         return
     }
     if (showRing) Box(Modifier.fillMaxWidth().height(222.dp), contentAlignment = Alignment.Center) {
@@ -187,7 +194,9 @@ private fun AnalysisCategoryDistribution(
         }
     } else {
         Text("已确认 " + FinanceMoney.display(total.confirmedMinor, currency), style = LifeText.number, color = colors.ink)
-        if (!complete) Text("另有 " + total.unknownCount + if (income) " 笔收付日期待确定" else " 项承担待确认", style = LifeText.caption, color = colors.inkSecondary)
+        if (income && dateUnknown>0) Text("另有 $dateUnknown 笔收付日期待确定",style=LifeText.caption,color=colors.inkSecondary)
+        if (!income && total.unknownCount>0) Text("另有 ${total.unknownCount} 项承担待确认",style=LifeText.caption,color=colors.inkSecondary)
+        if (!income && dateUnknown>0) Text("另有 $dateUnknown 项成本日期待确认，未计算完整期间构成。",style=LifeText.caption,color=colors.inkSecondary)
         if (rows.any { it.totals.expenseMinor < 0 }) Text("含本期退款或返利冲减，分类保留正负金额。", style = LifeText.caption, color = colors.inkSecondary)
     }
     ranked.forEachIndexed { index, row ->
@@ -229,17 +238,19 @@ private fun AnalysisBudgetLine(progress: FinanceBudgetProgress, onClick: () -> U
             Text(FinanceMoney.display(progress.used.confirmedMinor, budget.currencyCode) + " / " +
                 FinanceMoney.display(budget.limitMinor, budget.currencyCode), style = LifeText.caption, color = colors.inkSecondary)
         }
-        if (progress.used.complete && progress.used.confirmedMinor >= 0 && budget.limitMinor > 0) {
+        if (progress.used.complete && progress.unknownDateCount==0 && progress.used.confirmedMinor >= 0 && budget.limitMinor > 0) {
             val portion = (progress.used.confirmedMinor.toDouble() / budget.limitMinor).toFloat().coerceIn(0f, 1f)
             Box(Modifier.fillMaxWidth().height(6.dp).background(colors.paperTertiary, RoundedCornerShape(3.dp))) {
                 Box(Modifier.fillMaxWidth(portion).fillMaxHeight().background(colors.warm, RoundedCornerShape(3.dp)))
             }
         }
-        Text(first + "—" + last + " · " + if (progress.used.complete) {
+        Text(first + "—" + last + " · " + if (progress.used.complete && progress.unknownDateCount==0) {
             "剩余 " + FinanceMoney.display(progress.remainingMinor, budget.currencyCode)
         } else {
-            "已确认小计，另有 " + progress.used.unknownCount + " 项承担待确定"
+            "已知小计，期间完整性待核对"
         }, style = LifeText.caption, color = colors.inkSecondary)
+        if(progress.used.unknownCount>0) Text("另有 ${progress.used.unknownCount} 项承担待确定",style=LifeText.caption,color=colors.inkSecondary)
+        if(progress.unknownDateCount>0) Text("另有 ${progress.unknownDateCount} 项成本日期待确认，不给出完整比例或剩余额结论。",style=LifeText.caption,color=colors.inkSecondary)
         if (progress.used.confirmedMinor < 0) Text(progress.explanation, style = LifeText.caption, color = colors.inkSecondary)
     }
 }
