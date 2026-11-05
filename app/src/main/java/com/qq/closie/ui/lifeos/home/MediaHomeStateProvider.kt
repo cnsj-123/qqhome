@@ -16,7 +16,7 @@ class MediaHomeStateProvider(private val base: HomeStateProvider, private val ph
             aspectRatio = photo.aspectRatio)
         state.copy(eligibleMedia = selected.filter { it.date == date }.map(::image),
             historyItems = (state.historyItems + selected.filter { it.date.isBefore(date) }
-                .take(6).map { HistoryItemUi(it.id, it.date, title = null, photo = image(it)) })
+                .map { HistoryItemUi(it.id, it.date, title = null, photo = image(it)) })
                 .sortedByDescending { it.date },
             calendarDays = state.calendarDays.toMutableMap().apply {
                 selected.groupBy { it.date }.forEach { (date, rows) ->

@@ -191,7 +191,7 @@ private fun AppearanceSettingsScreen(
             }
         }
         state.validationError?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
-        state.message?.takeUnless { state.saveEvent != 0L }?.let {
+        state.message?.takeUnless { it == "主题已保存" }?.let {
             Text(it, Modifier.padding(top = 10.dp), style = LifeText.caption, color = colors.inkSecondary)
         }
     }

@@ -35,7 +35,11 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
             val events = snapshot.v4?.events.orEmpty().filter { event -> event.voidedAt == null && links.any { it.eventId == event.id } }
             val timing = snapshot.v16?.entryTimingRows.orEmpty().firstOrNull { it.voidedAt == null && it.entryId == row.entry.id }
             val cashTime = row.entry.occurredAt.takeUnless { timing?.cashPrecision == FinanceTimePrecision.UNKNOWN }
-            val eventTime = FinanceProjection.economicDates(snapshot)[row.entry.id] ?: cashTime
+            val economicTime = FinanceProjection.economicDates(snapshot)[row.entry.id]
+            val ambiguousEvent = events.size > 1 && links.all { it.role in setOf(FinanceFlowRole.PAYMENT, FinanceFlowRole.FEE) }
+            val cashLabel = cashTime?.let(FinanceTime::input)?.let {
+                if (timing?.cashPrecision == FinanceTimePrecision.DATE) it.substringBefore(' ') else it
+            } ?: "未知"
             val credentials = snapshot.v16?.mediaLinkRows.orEmpty().filter {
                 it.voidedAt == null && ((source != null && it.proposalId == source.id) || events.any { event -> event.id == it.eventId })
             }
@@ -53,9 +57,9 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
             }
             HorizontalDivider(color = colors.line)
             ReceiptField("账户", row.account.name + (row.targetAccount?.let { " → " + it.name } ?: ""))
-            ReceiptField("发生时间", eventTime?.let(FinanceTime::input) ?: "未知")
+            ReceiptField("发生时间", economicTime?.let(FinanceTime::input) ?: if (ambiguousEvent) "多项关联，请查看事项" else cashLabel)
             ReceiptField(if (row.entry.direction == FinanceDirection.INFLOW) "收款时间" else "支付时间",
-                cashTime?.let(FinanceTime::input) ?: "未知")
+                cashLabel)
             ReceiptField("标签", row.tags.joinToString("、").ifBlank { "无" })
             ReceiptField("凭据", credentials.joinToString("、") { it.label.ifBlank { "附件" } }.ifBlank { "无" })
             if (events.isEmpty()) ReceiptField("关联事项", "无")

@@ -59,9 +59,11 @@ fun LifePhotoStack(
     val scope = rememberCoroutineScope()
     val reduced = reducedLifeMotion()
     val photoIds = remember(photos) { photos.map { it.id } }
-    var index by rememberSaveable(photoIds) { mutableIntStateOf(0) }
+    var selectedId by rememberSaveable { mutableStateOf(photos.first().id) }
+    val index = photoIds.indexOf(selectedId).coerceAtLeast(0)
     var fraction by remember(photoIds) { mutableFloatStateOf(0f) }
     var settlement by remember(photoIds) { mutableStateOf<Job?>(null) }
+    DisposableEffect(photoIds) { onDispose { settlement?.cancel() } }
     val origins = remember(photoIds) { mutableMapOf<String, LifeSurfaceOrigin>() }
     val caption = photos[index].caption?.takeIf(String::isNotBlank)
 
@@ -81,7 +83,7 @@ fun LifePhotoStack(
                         fraction, -step.toFloat(), velocity / travel,
                         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
                     ) { value, _ -> fraction = value.coerceIn(-1f, 1f) }
-                    index = PhotoStackInteraction.nextIndex(index, step, photos.size)
+                    selectedId = photos[PhotoStackInteraction.nextIndex(index, step, photos.size)].id
                     fraction = 0f
                 }
             }

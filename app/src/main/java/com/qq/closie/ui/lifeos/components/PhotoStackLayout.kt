@@ -44,8 +44,12 @@ object PhotoStackLayout {
         val h = paperHeight * scale
         val rx = (w * c + h * s) / 2
         val ry = (w * s + h * c) / 2
-        return Pose((width * (base.centerX + jitter * .025f)).coerceIn(margin + rx, width - margin - rx),
-            (height * base.centerY).coerceIn(margin + ry, height - margin - ry), w, h, angle)
+        fun clampCenter(preferred: Float, extent: Float, radius: Float): Float {
+            val inset = (margin + radius).coerceAtMost(extent / 2)
+            return preferred.coerceIn(inset, extent - inset)
+        }
+        return Pose(clampCenter(width * (base.centerX + jitter * .025f), width, rx),
+            clampCenter(height * base.centerY, height, ry), w, h, angle)
     }
 
     fun interpolate(from: Pose, to: Pose, progress: Float): Pose {

@@ -68,8 +68,9 @@ class FinanceCaptureEntryTest {
             val button=wm.views.filterIsInstance<TextView>().single {it.contentDescription?.toString()?.startsWith("单次截图识别账单")==true}
             assertTrue(button.performClick())
             val launched=shadowOf(ApplicationProvider.getApplicationContext<android.app.Application>()).nextStartedActivity
-            assertEquals(FinanceProjectionActivity::class.java.name,launched.component?.className)
-            assertFalse(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
+            // A window-bound Android 14 capture may begin without any transaction semantics.
+            assertNull(launched)
+            assertTrue(com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
         } finally {controller.destroy()}
     }
 

@@ -23,6 +23,7 @@ internal class FinanceProjectionHost(private val service:AccessibilityService,pr
         preferenceGeneration==FinanceScreenshotPreference.generation && FinanceScreenshotPreference.enabled(service)
     private fun snapshot(editing:Boolean=false)=windows.current(session,{live},editing)
     fun captureCurrent()=live && session.captureCurrent(snapshot())
+    fun captureBounds() = if (live) windows.screenCaptureBounds(session) else null
     fun editorCurrent()=live && session.editorCurrent(snapshot(true))
     fun observe(event:AccessibilityEvent) {
         windows.record(event)

@@ -1,6 +1,7 @@
 package com.qq.closie.life.finance.acquisition
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Rect
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -100,5 +101,14 @@ class FinanceHostLifecycleTest {
         assertFalse(lease.captureCurrent(facts().copy(orientation=12345)))
         RestoreStartupGate.beginRestore();RestoreStartupGate.markReady()
         assertFalse(lease.editorCurrent(facts()))
+    }
+    @Test fun oldDisplayCaptureExcludesSystemBarsAndRefusesOtherAppsOrOverlays() {
+        val host = FinanceDisplayWindow(1, AccessibilityWindowInfo.TYPE_APPLICATION, Rect(0, 0, 1080, 2400), "host")
+        val bar = FinanceDisplayWindow(2, AccessibilityWindowInfo.TYPE_SYSTEM, Rect(0, 0, 1080, 60), "com.android.systemui")
+        assertEquals(Rect(0, 60, 1080, 2400), financeHostCaptureRegion(1, listOf(host, bar)))
+        val split = FinanceDisplayWindow(3, AccessibilityWindowInfo.TYPE_APPLICATION, Rect(540, 0, 1080, 2400), "other")
+        assertNull(financeHostCaptureRegion(1, listOf(host.copy(bounds = Rect(0, 0, 540, 2400)), split)))
+        val overlay = FinanceDisplayWindow(4, AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, Rect(30, 50, 200, 150), "other")
+        assertNull(financeHostCaptureRegion(1, listOf(host, overlay)))
     }
 }

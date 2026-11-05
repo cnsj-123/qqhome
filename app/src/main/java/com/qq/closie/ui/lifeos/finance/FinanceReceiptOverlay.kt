@@ -22,6 +22,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** One editable surface at a time. New proposals remain in the durable inbox and notifications. */
 internal class FinanceReceiptOverlay(private val context:Context,private val scope:CoroutineScope,
@@ -48,6 +49,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     private val windows=context.getSystemService(WindowManager::class.java)
     private val editScope get()=editOwner ?: (context.applicationContext as ClosieApplication).financeReviewEditScope
     private var window:View?=null
+    private var windowLease: AtomicBoolean? = null
     val isShowing:Boolean get()=window!=null && owner===this
     private var observer:Job?=null
     private var monitor:Job?=null
@@ -86,6 +88,13 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                         com.qq.closie.life.finance.acquisition.FinanceScreenshotPreference.enabled(context)
                     else prefs.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE && prefs.enhancedReceiptOverlay && prefs.permits(proposal)
                 if((captureBusy && !userInitiated) || !canPresent() || window!=null || (owner != null && owner !== this@FinanceReceiptOverlay) || !permitted(settings) || FinanceReviewRequests.foreground || !canAttach()) return@withContext false
+                val lease = AtomicBoolean(false)
+                fun mayConfirm(): Boolean =
+                    lease.get() && canContinue() && canAttach() &&
+                        com.qq.closie.data.backup.RestoreStartupGate.isReady &&
+                        com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration == restoreGeneration &&
+                        !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked &&
+                        permitted(FinanceAutomationSettings(context).read())
                 val density=context.resources.displayMetrics.density
                 fun dp(n:Int)=(n*density).toInt()
                 val body=LinearLayout(context).apply {
@@ -152,6 +161,9 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 }
                 val kind=choice("类型",FinanceEditorKind.entries.map {it.name to it.label},initial.kind.name)
                 val amount=input("金额 · " + (permittedCurrency ?: "待确认币种"),initial.amount,true)
+                if (FinanceEvidenceOrigin.isLocalOcr(proposal)) {
+                    FinanceEvidenceOrigin.extraction(proposal, snapshot.v16)?.issue?.takeIf(String::isNotBlank)?.let { text(it) }
+                }
                 val accounts=listOf("" to "请选择真实账户与币种")+snapshot.accounts.filter {
                     it.archivedAt==null && (permittedCurrency == null || it.currencyCode == permittedCurrency)
                 }.map {it.id to "${it.name} · ${it.currencyCode}"}
@@ -251,7 +263,8 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                         editScope.launch {
                             try {persist(draft);mutex.withLock {
                                 container.financeRepository.reviews.confirm(FinanceCommandToken(java.util.UUID.randomUUID().toString(),epoch),id,
-                                    requireNotNull(revision),FinanceTime.resolve(draft.occurredAt,draft.preservedOccurredAt))
+                                    requireNotNull(revision),FinanceTime.resolve(draft.occurredAt,draft.preservedOccurredAt),
+                                    stillCurrent = ::mayConfirm)
                             };FinanceReviewNotifications.cancel(context,id);close(false, advance = true)}
                             catch(e:CancellationException){throw e}
                             catch(e:Exception){setBusy(false);message.text=e.message ?: "确认未完成，请接力到应用内核对"}
@@ -309,6 +322,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     else windows.addView(frame,params)
                 }
                 if (!attached) return@withContext false
+                windowLease=lease;lease.set(true)
                 window=frame;owner=this@FinanceReceiptOverlay;captureOwner=null;publish();scroll.requestFocus();ready=true
                 if(android.animation.ValueAnimator.areAnimatorsEnabled()) {
                     frame.translationY=dp(20).toFloat();frame.scaleX=.98f;frame.scaleY=.98f;frame.alpha=0f
@@ -358,6 +372,8 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
     }
     /** Never discards a candidate. Application-owned edit work survives listener teardown. */
     fun close(persist:Boolean=true, advance:Boolean=false) {
+        windowLease?.set(false)
+        windowLease = null
         val wasShowing=isShowing
         if (owner === this) {owner = null;publish()}
         val flush=flushLater;flushLater=null

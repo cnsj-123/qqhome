@@ -8,7 +8,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 
@@ -26,12 +28,13 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
     var kindsOpen by remember { mutableStateOf(false) }
     var currenciesOpen by remember { mutableStateOf(false) }
     var currency by rememberSaveable(account?.id) { mutableStateOf(account?.currencyCode ?: "CNY") }
+    var includedInNet by rememberSaveable { mutableStateOf(true) }
     // Includes voided entries, matching the repository's accountEntryCount guard.
     val currencyLocked = account != null && state.snapshot.entries.any { it.accountId == account.id }
     var confirmArchive by remember { mutableStateOf(false) }
     val kind = FinanceAccountKind.valueOf(kindName)
     FinanceReceipt(if (account == null) "建立真实账户" else "编辑账户", state.busy, state.error, onClose, actions = {
-        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency,FinanceOpeningChoice.valueOf(openingChoice),anchorText,expectedVersion,epoch), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency,FinanceOpeningChoice.valueOf(openingChoice),anchorText,expectedVersion,epoch,includedInNet), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.busy) "正在保存……" else "保存账户")
         }
     }) {
@@ -47,6 +50,10 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
         Text(if (currencyLocked) "此账户已有流水，币种不可更改。" else "不同币种分别统计；转账仅支持同币种账户。", style = LifeText.caption, color = colors.muted)
         Text("$currency 金额最多 ${FinanceMoney.fractionDigits(currency)} 位小数", style = LifeText.caption)
         if(account==null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("纳入账户净额", Modifier.weight(1f), style = LifeText.body)
+                Switch(includedInNet, { includedInNet = it }, enabled = !state.busy)
+            }
             FinanceChoice("起点方式",openingChoice,listOf(FinanceOpeningChoice.SAVE_TIME.name to "保存时作为起点",FinanceOpeningChoice.CUSTOM.name to "明确选择历史起点",FinanceOpeningChoice.FROM_ZERO.name to "从零完整记录")) {
                 openingChoice=it;if(it==FinanceOpeningChoice.FROM_ZERO.name) balance=FinanceMoney.input(0,currency)
             }

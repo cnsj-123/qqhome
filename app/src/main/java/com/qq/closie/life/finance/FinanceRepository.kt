@@ -37,12 +37,22 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
 
     suspend fun saveAccount(id: String? = null, name: String, kind: FinanceAccountKind,
         currencyCode: String = "CNY", openingBalanceMinor: Long = 0,balanceAnchorAt:Long?=null,
-        expectedUpdatedAt:Long?=null,expectedRestoreEpoch:Long?=null): FinanceAccountEntity = transaction {
+        expectedUpdatedAt:Long?=null,expectedRestoreEpoch:Long?=null,
+        includeNewInNet: Boolean = true): FinanceAccountEntity = transaction {
         require(expectedRestoreEpoch==null || (database.financeV16Dao().controlRows().singleOrNull()?.restoreEpoch ?: 0L)==expectedRestoreEpoch) {"恢复后请重新打开账户编辑器"}
         val old=id?.let {requireNotNull(dao.account(it))}
         require(expectedUpdatedAt==null || old?.updatedAt==expectedUpdatedAt) {"账户已改变，请重新打开"}
         require(balanceAnchorAt==null || (old==null && balanceAnchorAt<=clock()) || old?.balanceAnchorAt==balanceAnchorAt) {"已有账户起点须通过影响预览修改，新起点不能在未来"}
-        saveAccountInTransaction(id, name, kind, currencyCode, openingBalanceMinor,anchor=balanceAnchorAt).also { validateBalances() }
+        val saved = saveAccountInTransaction(id, name, kind, currencyCode, openingBalanceMinor, anchor = balanceAnchorAt)
+        if (old == null && !includeNewInNet) {
+            database.financeV16Dao().putAccountPolicy(listOf(FinanceAccountPolicyEntity(
+                saved.id, includedInNet = false,
+                liabilityConvention = if (kind == FinanceAccountKind.CREDIT) FinanceLiabilityConvention.UNCONFIRMED else FinanceLiabilityConvention.SIGNED,
+                createdAt = saved.createdAt, updatedAt = saved.updatedAt
+            )))
+        }
+        validateBalances()
+        saved
     }
     internal suspend fun saveAccountInTransaction(id: String?, name: String, kind: FinanceAccountKind,
         currencyCode: String, openingBalanceMinor: Long, anchor: Long? = null, batchId: String? = null,

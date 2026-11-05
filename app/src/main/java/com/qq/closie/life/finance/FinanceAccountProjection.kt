@@ -17,7 +17,7 @@ object FinanceAccountProjection {
 
     internal fun liabilitySignPending(account: FinanceAccountEntity, convention: FinanceLiabilityConvention?): Boolean =
         account.kind == FinanceAccountKind.CREDIT && account.openingBalanceMinor > 0 &&
-            (convention == null || convention == FinanceLiabilityConvention.UNCONFIRMED)
+            convention != FinanceLiabilityConvention.POSITIVE_DEBT && convention != FinanceLiabilityConvention.CONFIRMED_SIGNED
 
     fun register(s: FinanceSnapshot, accountId: String): List<FinanceRegisterRow> {
         val account = s.accounts.single { it.id == accountId }

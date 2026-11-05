@@ -83,7 +83,21 @@ fun DataSettingsScreen(
     var historyOpen by rememberSaveable { mutableStateOf(false) }
     val backupHistory = remember(context) { context.getSharedPreferences("lifeos_verified_backups", android.content.Context.MODE_PRIVATE) }
     var verifiedTimes by remember { mutableStateOf(backupHistory.getStringSet("verified_times", emptySet()).orEmpty().mapNotNull(String::toLongOrNull).sortedDescending()) }
+    var verifiedSources by remember {
+        mutableStateOf(backupHistory.getStringSet("verified_sources", emptySet()).orEmpty().mapNotNull { record ->
+            val fields = record.split('\n', limit = 2)
+            val at = fields.firstOrNull()?.toLongOrNull() ?: return@mapNotNull null
+            fields.getOrNull(1)?.let { at to Uri.parse(it) }
+        }.toMap())
+    }
     fun verifiedTimeLabel(at: Long): String = java.text.DateFormat.getDateTimeInstance().format(java.util.Date(at))
+    fun selectRestoreSource(uri: Uri) {
+        restorePreview = null
+        restorePassword = ""
+        legacyZip = false
+        message = null
+        confirmRestore = uri
+    }
     var quickCapture by remember { mutableStateOf(QuickCaptureService.isEnabled(context)) }
 
     /**
@@ -147,8 +161,19 @@ fun DataSettingsScreen(
             scope.launch {
                 val result = EncryptedBackupManager.export(context, repo, uri, lifeDatabase, password)
                 result.onSuccess {
-                    verifiedTimes = (listOf(System.currentTimeMillis()) + verifiedTimes).distinct().take(5)
-                    backupHistory.edit().putStringSet("verified_times", verifiedTimes.map(Long::toString).toSet()).apply()
+                    val now = System.currentTimeMillis()
+                    val previous = verifiedSources
+                    verifiedTimes = (listOf(now) + verifiedTimes.filter { previous[it] != uri }).distinct().take(5)
+                    val resolver = context.contentResolver
+                    val retained = runCatching {
+                        resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }.isSuccess || resolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+                    verifiedSources = previous.filterKeys { it in verifiedTimes } + if (retained) mapOf(now to uri) else emptyMap()
+                    (previous.values.toSet() - verifiedSources.values.toSet()).forEach { expired ->
+                        runCatching { resolver.releasePersistableUriPermission(expired, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                    }
+                    backupHistory.edit().putStringSet("verified_times", verifiedTimes.map(Long::toString).toSet())
+                        .putStringSet("verified_sources", verifiedSources.map { (at, source) -> "$at\n$source" }.toSet()).apply()
                 }
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
                 message = result.fold({ "加密备份已写入并验证可解密，请保管好口令" }, { failureMessage("导出失败", it) })
@@ -170,9 +195,7 @@ fun DataSettingsScreen(
     }
 
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            restorePreview = null; restorePassword = ""; legacyZip = false; confirmRestore = uri
-        }
+        if (uri != null) selectRestoreSource(uri)
     }
     val financeCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null && finance != null) {
@@ -209,7 +232,14 @@ fun DataSettingsScreen(
                 historyOpen = !historyOpen
             }
             if (historyOpen) verifiedTimes.forEach {
-                Text("已验证 · " + verifiedTimeLabel(it), style = MaterialTheme.typography.bodySmall)
+                val source = verifiedSources[it]?.takeIf { uri ->
+                    context.contentResolver.persistedUriPermissions.any { grant -> grant.uri == uri && grant.isReadPermission }
+                }
+                if (source != null) {
+                    TextButton({ selectRestoreSource(source) }, enabled = !busy) { Text("上次验证 · " + verifiedTimeLabel(it)) }
+                } else {
+                    Text(verifiedTimeLabel(it) + " · 需重新选择备份文件", style = MaterialTheme.typography.bodySmall)
+                }
             }
             SettingsToggleRow(
                 title = "快速采集",

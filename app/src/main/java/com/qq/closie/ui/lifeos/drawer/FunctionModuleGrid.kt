@@ -83,13 +83,14 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
             modules = previous; saving = false; message = it
         })
     }
-    fun moveAtPointer() {
-        val id = lifted?.id ?: return
-        val target = grid.layoutInfo.visibleItemsInfo.firstOrNull { item ->
+    fun targetAtPointer(): String? = grid.layoutInfo.visibleItemsInfo.firstOrNull { item ->
             modules.any { it.id == item.key } &&
                 pointer.x >= item.offset.x && pointer.x < item.offset.x + item.size.width &&
                 pointer.y >= item.offset.y && pointer.y < item.offset.y + item.size.height
-        }?.key as? String ?: return
+        }?.key as? String
+    fun moveAtPointer() {
+        val id = lifted?.id ?: return
+        val target = targetAtPointer() ?: return
         if (target == id) { lastTarget = null; return }
         if (target == lastTarget) return
         val from = modules.indexOfFirst { it.id == id }; val to = modules.indexOfFirst { it.id == target }
@@ -134,7 +135,10 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     if (lifted != null) { change.consume(); pointer += amount; moveAtPointer() }
                 }, onDragEnd = {
                     policy?.cancelReorder = null
-                    if (lifted != null) { lifted = null; persist(baseline) }
+                    if (lifted != null) {
+                        if (targetAtPointer() == null) cancel()
+                        else { lifted = null; persist(baseline) }
+                    }
                 },
                     onDragCancel = { if (lifted != null) cancel() })
             }, contentPadding = PaddingValues(horizontal = 24.dp, vertical = 22.dp)) {

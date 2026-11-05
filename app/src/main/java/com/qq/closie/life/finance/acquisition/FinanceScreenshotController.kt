@@ -261,13 +261,31 @@ internal class FinanceScreenshotController(
     @OptIn(ExperimentalCoroutinesApi::class)
     @android.annotation.TargetApi(30)
     private suspend fun screenshot(target: FinanceCapturePage): Bitmap = suspendCancellableCoroutine { continuation ->
+        val session = hostSession
+        val displayRegion = if (Build.VERSION.SDK_INT < 34) session?.let(hostWindows::screenCaptureBounds) else null
+        if (Build.VERSION.SDK_INT < 34 && displayRegion == null) {
+            continuation.resumeWithException(IllegalStateException("请关闭分屏、悬浮窗或键盘，再截取当前应用"))
+            return@suspendCancellableCoroutine
+        }
         val callback = object : AccessibilityService.TakeScreenshotCallback {
             override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                 val buffer = result.hardwareBuffer
                 var image: Bitmap? = null
                 try {
+                    if (displayRegion != null) {
+                        check(session != null && hostSession === session && valid(target) &&
+                            hostWindows.screenCaptureBounds(session) == displayRegion) { "截图窗口范围已改变，请重新截图" }
+                        check(android.graphics.Rect(0, 0, buffer.width, buffer.height).contains(displayRegion)) { "截图范围与当前应用不一致" }
+                    }
                     val hardware = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace) ?: error("截图为空")
-                    try { image = hardware.copy(Bitmap.Config.ARGB_8888, false) ?: error("截图转换失败") }
+                    try {
+                        val software = hardware.copy(Bitmap.Config.ARGB_8888, false) ?: error("截图转换失败")
+                        image = software
+                        if (displayRegion != null) {
+                            image = Bitmap.createBitmap(software, displayRegion.left, displayRegion.top, displayRegion.width(), displayRegion.height())
+                            if (image !== software) software.recycle()
+                        }
+                    }
                     finally { hardware.recycle() }
                     if (continuation.isActive) {
                         val completed = requireNotNull(image)

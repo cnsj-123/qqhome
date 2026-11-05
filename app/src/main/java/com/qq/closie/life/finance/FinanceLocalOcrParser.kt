@@ -27,7 +27,7 @@ object FinanceLocalOcrParser {
     private val currency = "(?<![A-Z])(?:${(supportedCodes + names.keys).sortedByDescending(String::length).joinToString("|")})(?![A-Z])"
     private const val symbols = """[¥￥$€£₩₹฿₽₫₱₺₪]"""
     private const val number = """(?:[0-9]{1,12}|[0-9]{1,3}(?:,[0-9]{3}){1,3})(?:\.[0-9]{1,6})?"""
-    private const val amountLabels = "实付|付款金额|交易金额|退款金额|收款金额|支付金额|返利金额|返现金额|到账金额"
+    private const val amountLabels = "实付|付款金额|交易金额|退款金额|收款金额|支付金额|返利金额|返现金额|到账金额|金额"
     private val labelAmount = Regex("""(?:$amountLabels)[:：\s]*(?:$currency)?\s*$symbols?\s*[-−+]?\s*($number)(?![0-9.,])""", RegexOption.IGNORE_CASE)
     private val prefixedAmount = Regex("""(?:$currency\s*$symbols?|$symbols)\s*[-−+]?\s*($number)(?![0-9.,])""", RegexOption.IGNORE_CASE)
     private val suffixedAmount = Regex("""(?<![0-9.,])($number)\s*(?:$currency|元(?!素|件))""", RegexOption.IGNORE_CASE)

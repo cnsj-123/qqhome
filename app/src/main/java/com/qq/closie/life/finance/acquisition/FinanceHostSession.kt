@@ -1,6 +1,7 @@
 package com.qq.closie.life.finance.acquisition
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.qq.closie.data.backup.RestoreStartupGate
@@ -8,6 +9,36 @@ import com.qq.closie.data.backup.RestoreStartupGate
 internal data class FinanceHostWindow(val id:Int,val packageName:String,val type:Int,
     val active:Boolean,val focused:Boolean,val identity:String?,val displayId:Int=0)
 internal data class FinanceHostSnapshot(val orientation:Int,val windows:List<FinanceHostWindow>)
+internal data class FinanceDisplayWindow(val id: Int, val type: Int, val bounds: Rect, val packageName: String)
+
+/** Old Android APIs return the whole display. Keep only the exact host's unobstructed pixels. */
+internal fun financeHostCaptureRegion(hostId: Int, windows: List<FinanceDisplayWindow>): Rect? {
+    val target = windows.singleOrNull { it.id == hostId && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        ?: return null
+    val region = Rect(target.bounds)
+    if (region.isEmpty) return null
+    for (other in windows) {
+        if (other.id == hostId) continue
+        // Split screen and picture-in-picture aren't safe sources for a display-wide capture.
+        if (other.type == AccessibilityWindowInfo.TYPE_APPLICATION && !other.bounds.isEmpty) return null
+        val overlap = Rect(region)
+        if (!overlap.intersect(other.bounds)) continue
+        if (other.type != AccessibilityWindowInfo.TYPE_SYSTEM || other.packageName != "com.android.systemui") return null
+        // System bars may overlap an edge-to-edge host. Never hand them to OCR.
+        when {
+            overlap.width() == region.width() && overlap.top == region.top && overlap.height() < region.height() / 4 ->
+                region.top = overlap.bottom
+            overlap.width() == region.width() && overlap.bottom == region.bottom && overlap.height() < region.height() / 4 ->
+                region.bottom = overlap.top
+            overlap.height() == region.height() && overlap.left == region.left && overlap.width() < region.width() / 4 ->
+                region.left = overlap.right
+            overlap.height() == region.height() && overlap.right == region.right && overlap.width() < region.width() / 4 ->
+                region.right = overlap.left
+            else -> return null
+        }
+    }
+    return region.takeUnless { it.isEmpty }
+}
 
 /** One host lease per user click or recognized detail. The editor retains frozen evidence. */
 internal class FinanceHostSession(val host:FinanceHostWindow,val orientation:Int) {
@@ -48,6 +79,20 @@ internal class FinanceHostWindows(private val service:AccessibilityService,
         if(event.windowId>=0)event.packageName?.toString()?.takeIf {it.isNotBlank()}?.let {packages[event.windowId]=it}
     }
     private fun root(window:AccessibilityWindowInfo)=if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0) else window.root
+    fun screenCaptureBounds(session: FinanceHostSession): Rect? {
+        if (!session.captureCurrent(current(session, { true })) || session.host.displayId != android.view.Display.DEFAULT_DISPLAY) return null
+        val windows = runCatching { service.windows }.getOrDefault(emptyList())
+        val display = windows.mapNotNull { window ->
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= 30 && window.displayId != session.host.displayId) return@mapNotNull null
+                val bounds = Rect().also(window::getBoundsInScreen)
+                FinanceDisplayWindow(window.id, window.type, bounds, packages[window.id].orEmpty())
+            } finally {
+                @Suppress("DEPRECATION") window.recycle()
+            }
+        }
+        return financeHostCaptureRegion(session.host.id, display)
+    }
     fun snapshot(target:FinanceHostWindow?=null,canRead:()->Boolean={false}):FinanceHostSnapshot {
         val list=runCatching {service.windows}.getOrDefault(emptyList())
         val windows=list.mapNotNull { window ->

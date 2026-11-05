@@ -108,7 +108,8 @@ class ClosetSmokeTest {
         compose.onNodeWithText("日历").assertIsDisplayed()
         compose.onNodeWithText("搜索").assertIsDisplayed()
         compose.onNodeWithTag("drawer-finance").assertIsDisplayed()
-        compose.onNodeWithText("长按直接移动").assertIsDisplayed()
+        val actions = compose.onNodeWithTag("drawer-finance").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.CustomActions]
+        org.junit.Assert.assertTrue(actions.any { it.label == "向前移动" })
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
         compose.onNodeWithTag("drawer-restore-order").assertExists().assertIsDisplayed()
 

@@ -108,6 +108,13 @@ class FinanceProjectionService:Service() {
         val wm=getSystemService(WindowManager::class.java)
         val bounds=if(Build.VERSION.SDK_INT>=30)wm.maximumWindowMetrics.bounds
             else android.util.DisplayMetrics().let { @Suppress("DEPRECATION") wm.defaultDisplay.getRealMetrics(it);Rect(0,0,it.widthPixels,it.heightPixels)}
+        val hostBounds = request.host?.let { host ->
+            host.captureBounds()?.takeIf { bounds.contains(it) }
+        }
+        if (request.host != null && hostBounds == null) {
+            continuation.resumeWith(Result.failure(IllegalStateException("当前应用范围不明确，请退出分屏和悬浮层后重试")))
+            return@suspendCancellableCoroutine
+        }
         val ratio=minOf(1f,2048f/maxOf(bounds.width(),bounds.height()))
         val width=(bounds.width()*ratio).roundToInt().coerceAtLeast(1)
         val height=(bounds.height()*ratio).roundToInt().coerceAtLeast(1)
@@ -120,14 +127,24 @@ class FinanceProjectionService:Service() {
                 try {
                     check(request.current(this))
                     check(request.host?.captureCurrent()!=false && request.review?.captureCurrent()!=false)
+                    if (hostBounds != null) check(request.host?.captureBounds() == hostBounds) { "截图范围已改变，请重试" }
                     val plane=image.planes[0];val paddedWidth=plane.rowStride/plane.pixelStride
                     padded=Bitmap.createBitmap(paddedWidth,height,Bitmap.Config.ARGB_8888)
                     padded!!.copyPixelsFromBuffer(plane.buffer)
-                    cropped=Bitmap.createBitmap(padded!!,0,0,width,height)
+                    val region = hostBounds?.let { host ->
+                        Rect(
+                            kotlin.math.ceil((host.left - bounds.left) * ratio).toInt().coerceIn(0, width),
+                            kotlin.math.ceil((host.top - bounds.top) * ratio).toInt().coerceIn(0, height),
+                            kotlin.math.floor((host.right - bounds.left) * ratio).toInt().coerceIn(0, width),
+                            kotlin.math.floor((host.bottom - bounds.top) * ratio).toInt().coerceIn(0, height)
+                        )
+                    } ?: Rect(0, 0, width, height)
+                    check(!region.isEmpty) { "截图范围过小，请重试" }
+                    cropped=Bitmap.createBitmap(padded!!,region.left,region.top,region.width(),region.height())
                     if(cropped===padded)padded=null
                     var visible=0
                     for(x in 0 until 10)for(y in 0 until 10){
-                        val color=cropped!!.getPixel(x*(width-1)/9,y*(height-1)/9)
+                        val color=cropped!!.getPixel(x*(region.width()-1)/9,y*(region.height()-1)/9)
                         if(Color.red(color)>12 || Color.green(color)>12 || Color.blue(color)>12)visible++
                     }
                     check(visible>=3){"页面受保护或无可识别画面，请手动录入"}

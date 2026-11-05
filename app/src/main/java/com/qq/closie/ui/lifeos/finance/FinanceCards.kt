@@ -104,10 +104,24 @@ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, in
     Surface(modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick), color = if (flat) Color.Transparent else colors.card,
         shape = if (flat) RectangleShape else RoundedCornerShape(18.dp)) {
         if (compact) Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(account.kind.label + if (account.archivedAt != null) " · 已归档" else "", style = LifeText.caption, color = colors.inkSecondary)
-            Text(account.name, style = LifeText.body, color = colors.ink)
-            Text(FinanceMoney.display(balance, account.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink)
-            netMinor?.let { Text("净额贡献 " + FinanceMoney.display(it, account.currencyCode), style = LifeText.caption) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val label = when (account.kind) {
+                    FinanceAccountKind.WECHAT -> "微"
+                    FinanceAccountKind.ALIPAY -> "支"
+                    FinanceAccountKind.CASH -> "现"
+                    else -> account.name.take(1)
+                }
+                Box(Modifier.size(30.dp).background(swatch.copy(alpha = .30f), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                    Text(label, style = LifeText.caption, color = colors.accentDeep)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(account.name, style = LifeText.body, color = colors.ink)
+                    Text(account.kind.label + " · " + account.currencyCode, style = LifeText.caption, color = colors.inkSecondary)
+                }
+            }
+            Text(FinanceMoney.display(netMinor ?: balance, account.currencyCode), Modifier.align(Alignment.End),
+                style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink)
+            if (netMinor != null) Text("旧口径 " + FinanceMoney.display(balance, account.currencyCode), style = LifeText.caption)
             if (signPending) Text("期初符号待确认", style = LifeText.caption, color = colors.inkSecondary)
         } else
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

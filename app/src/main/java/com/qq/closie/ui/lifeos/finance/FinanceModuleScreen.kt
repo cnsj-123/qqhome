@@ -153,10 +153,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(editing || viewing || accountEditing || dates || amountFilterOpen || monthPicker || queryMenu || filterDimension != null || detailAccount != null || chartLabel != null)
     val allRows = state.allRows
     val balancesAfter = remember(state.snapshot) { state.snapshot.accounts.flatMap { FinanceAccountProjection.register(state.snapshot, it.id) }.associate { it.entry.id to it.balanceMinor } }
-    val unknownCashDateIds = remember(state.snapshot.v16) {
-        state.snapshot.v16?.entryTimingRows.orEmpty().filter { it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN }
-            .map { it.entryId }.toSet()
-    }
+    val unknownCashDateIds = state.unknownCashDateIds
     val datedRows = remember(state.calendarRows, state.economicDates, unknownCashDateIds) {
         state.calendarRows.filter { it.entry.id !in unknownCashDateIds || it.entry.id in state.economicDates }
     }
@@ -404,9 +401,17 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     val accounts = state.snapshot.accounts.filter {
                         accountQuery.isBlank() || (it.name + " " + it.kind.label + " " + it.currencyCode).contains(accountQuery, true)
                     }
-                    val groups = accounts.groupBy { (if (it.archivedAt != null) "已归档 · " else "") + it.kind.label }
-                    groups.forEach { (label, group) ->
-                        val expanded = accountQuery.isNotBlank() || label !in collapsedAccounts
+                    val groups = accounts.groupBy {
+                        when {
+                            it.archivedAt != null -> "已归档"
+                            it.kind == FinanceAccountKind.CREDIT -> "负债"
+                            else -> "资产"
+                        }
+                    }
+                    listOf("资产", "负债", "已归档").forEach { label ->
+                        val group = groups[label].orEmpty()
+                        if (group.isEmpty()) return@forEach
+                        val expanded = accountQuery.isNotBlank() || (label in collapsedAccounts) == (label == "已归档")
                         item(key = "account-group-$label") {
                             TextButton({ collapsedAccounts = if (label in collapsedAccounts) collapsedAccounts - label else collapsedAccounts + label },
                                 modifier = Modifier.fillMaxWidth()) {
@@ -445,6 +450,8 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                                 MoneySummary("流出", real, true, Modifier.weight(1f)); MoneySummary("流入", real, false, Modifier.weight(1f))
                             }
                             Text("转账只改变账户余额；真实流量与个人收支分别展示。", style = LifeText.caption)
+                            if (state.unknownCashDateCount > 0) Text("另有 ${state.unknownCashDateCount} 笔收付日期待确认，期间流量只含已知日期。",
+                                style = LifeText.caption, color = colors.inkSecondary)
                         } }
                     } else {
                         val shownDays = groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
@@ -467,6 +474,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                                         if(entryId==row.id)recordOrigin=recordOrigin?.copy(rect=androidx.compose.ui.geometry.Rect.Zero)
                                     }}
                                     LedgerLine(row,roles[row.entry.id],state.snapshot,balancesAfter[row.entry.id],
+                                        showCashTime = row.entry.id !in unknownCashDateIds,
                                         hidden=viewing && entryId==row.id && recordOrigin!=null,onPosition={origin->
                                             rowOrigins[row.id]=origin
                                             if(viewing && entryId==row.id && recordOrigin!=null)recordOrigin=origin
@@ -556,5 +564,8 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     }, { dates = false },
         initial = state.filter.range.startInclusive?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now(),
         initialEnd = state.filter.range.endExclusive?.let { Instant.ofEpochMilli(it - 1).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now(),
-        transactionDays = remember(allRows, state.economicDates) { allRows.map { it.localDay(state.economicDates) }.toSet() })
+        transactionDays = remember(allRows, state.economicDates, unknownCashDateIds) {
+            allRows.filter { it.entry.id !in unknownCashDateIds || it.entry.id in state.economicDates }
+                .map { it.localDay(state.economicDates) }.toSet()
+        })
 }

@@ -175,7 +175,10 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
             }
             val old=dao.accountPolicyRows().singleOrNull { it.accountId==accountId && it.voidedAt==null }
             require(old?.revision==expectedRevision)
-            val convention = liability ?: old?.liabilityConvention ?: if (account.kind == FinanceAccountKind.CREDIT) {
+            val explicit = if (liability == FinanceLiabilityConvention.SIGNED && account.kind == FinanceAccountKind.CREDIT) {
+                FinanceLiabilityConvention.CONFIRMED_SIGNED
+            } else liability
+            val convention = explicit ?: old?.liabilityConvention ?: if (account.kind == FinanceAccountKind.CREDIT) {
                 FinanceLiabilityConvention.UNCONFIRMED
             } else {
                 FinanceLiabilityConvention.SIGNED

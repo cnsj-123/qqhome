@@ -39,6 +39,8 @@ data class FinanceUiState(
     val previousCategories: List<FinanceDimensionTotal> = emptyList(),
     val calendarRows: List<FinanceLedgerRow> = emptyList(),
     val economicDates: Map<String, Long> = emptyMap(),
+    val unknownCashDateIds: Set<String> = emptySet(),
+    val unknownCashDateCount: Int = 0,
     val costRows:List<PersonalCostRow> = emptyList(),val loaded:Boolean=false
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
@@ -48,7 +50,8 @@ data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, va
     val costReductionText:String="",val editGeneration:Long=0)
 enum class FinanceOpeningChoice { SAVE_TIME, CUSTOM, FROM_ZERO }
 data class FinanceAccountDraft(val name: String, val kind: FinanceAccountKind, val openingBalance: String, val currencyCode: String? = null,
-    val openingChoice:FinanceOpeningChoice=FinanceOpeningChoice.SAVE_TIME,val anchorText:String="",val expectedUpdatedAt:Long?=null,val epoch:Long?=null)
+    val openingChoice:FinanceOpeningChoice=FinanceOpeningChoice.SAVE_TIME,val anchorText:String="",val expectedUpdatedAt:Long?=null,val epoch:Long?=null,
+    val includedInNet: Boolean = true)
 
 /** Presentation and manual commands only; screens never obtain a DAO or persist projections. */
 class FinanceViewModel(private val repository: FinanceRepository,private val savedState:SavedStateHandle=SavedStateHandle()) : ViewModel() {
@@ -85,7 +88,13 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             val filteredRows = baseFor(FinanceDateRange()).filter {
                 categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) && cashAmountMatches(it)
             }
-            val rows = filteredRows.filter { selection.range.contains(it.entry.occurredAt) }
+            val unknownCashDateIds = data.v16?.entryTimingRows.orEmpty()
+                .filter { it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN }
+                .map { it.entryId }.toSet()
+            val boundedCashRange = selection.range.startInclusive != null || selection.range.endExclusive != null
+            val rows = filteredRows.filter {
+                (!boundedCashRange || it.entry.id !in unknownCashDateIds) && selection.range.contains(it.entry.occurredAt)
+            }
             // Apply dimension filters after attribution, so a refund follows its payment category/tag.
             fun personalFor(range:FinanceDateRange)=FinancePersonalProjection.rows(data, baseFor(range)).filter {
                 categoryMatches(it) && (selection.tagId == null || selection.tagId in it.tagIds) && cashAmountMatches(it)
@@ -120,6 +129,8 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                 previousCategories = previousCostRows?.let(::categoriesFor).orEmpty(),
                 calendarRows = filteredRows,
                 economicDates = FinanceProjection.economicDates(data),
+                unknownCashDateIds = unknownCashDateIds,
+                unknownCashDateCount = if (boundedCashRange) filteredRows.count { it.entry.id in unknownCashDateIds } else 0,
                 costRows=costRows)
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
@@ -326,7 +337,8 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             FinanceOpeningChoice.SAVE_TIME->null;FinanceOpeningChoice.CUSTOM->FinanceTime.parse(draft.anchorText);FinanceOpeningChoice.FROM_ZERO->0L
         }
         repository.saveAccount(id, draft.name, draft.kind, currency,
-            opening,balanceAnchorAt=anchor,expectedUpdatedAt=draft.expectedUpdatedAt,expectedRestoreEpoch=draft.epoch)
+            opening,balanceAnchorAt=anchor,expectedUpdatedAt=draft.expectedUpdatedAt,expectedRestoreEpoch=draft.epoch,
+            includeNewInNet=draft.includedInNet)
     }
     fun unarchiveAccount(id: String, onSaved: () -> Unit) = mutate(onSaved) { repository.unarchiveAccount(id) }
     fun archiveAccount(id: String, onSaved: () -> Unit) = mutate(onSaved) { repository.archiveAccount(id) }

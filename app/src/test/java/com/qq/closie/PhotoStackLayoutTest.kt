@@ -29,4 +29,11 @@ class PhotoStackLayoutTest {
         assertTrue(poses[0].width > poses[1].width * 1.5f)
         assertTrue(poses.any { it.rotation > 0 } && poses.any { it.rotation < 0 })
     }
+    @Test fun fillsTheAvailableHeightWithoutCrossingFloatBounds() {
+        val pose = PhotoStackLayout.pose("photo70", 0, 296f, 210f)
+        val angle = Math.toRadians(pose.rotation.toDouble())
+        val radius = (pose.width * abs(sin(angle)) + pose.height * abs(cos(angle))) / 2
+        assertTrue(pose.centerY - radius >= 0)
+        assertTrue(pose.centerY + radius <= 210)
+    }
 }

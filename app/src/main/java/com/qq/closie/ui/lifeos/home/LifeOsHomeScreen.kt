@@ -126,7 +126,7 @@ fun LifeOsHomeScreen(
                     } else {
                         val orientation = LocalConfiguration.current.orientation
                         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            state.historyItems.forEach { memory ->
+                            state.historyItems.take(6).forEach { memory ->
                                 key(memory.sourceId) {
                                     val photo = memory.photo
                                     var origin by remember { mutableStateOf<LifeSurfaceOrigin?>(null) }
