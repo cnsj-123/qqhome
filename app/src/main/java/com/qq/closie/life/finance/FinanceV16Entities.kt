@@ -6,7 +6,7 @@ import com.qq.closie.life.shopping.*
 enum class FinanceShareRelation { PERSONAL_CONFIRMED, GIFT_CONFIRMED, REPAYABLE_CONFIRMED, UNRESOLVED }
 enum class FinanceResolutionKind { HISTORICAL_SETTLED, WAIVED }
 enum class FinanceTimePrecision { UNKNOWN, DATE, INSTANT, LEGACY }
-enum class FinanceLiabilityConvention { SIGNED, POSITIVE_DEBT }
+enum class FinanceLiabilityConvention { SIGNED, POSITIVE_DEBT, UNCONFIRMED }
 enum class FinanceBalanceBasis { LEGACY_CASH, KNOWN_POSTED }
 enum class FinanceBurden { FIXED, FLEXIBLE }
 enum class FinanceReferenceKind { NONE, ORDER, PAYMENT, REFUND }

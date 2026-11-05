@@ -198,6 +198,24 @@ class FinanceV16ContractTest {
         assertEquals(2_000L, FinanceProjection.balance(usd, state.entries))
     }
 
+    @Test fun inclusionAndPostingBasisChangesLeaveLegacyDebtSignPendingUntilExplicitConfirmation() = runTest {
+        val credit = cash.saveAccount(name = "旧正数信用期初", kind = FinanceAccountKind.CREDIT, openingBalanceMinor = 10_000)
+        cash.workspace.setAccountPolicy(economics.token(), credit.id, false, null, null, null)
+        assertTrue(FinanceAccountProjection.liabilitySignPending(cash.snapshot(), credit))
+        assertTrue(FinanceAccountProjection.netByCurrency(cash.snapshot()).isEmpty())
+        cash.workspace.setAccountPolicy(economics.token(), credit.id, null, null, FinanceBalanceBasis.KNOWN_POSTED, 1)
+        cash.workspace.setAccountPolicy(economics.token(), credit.id, true, null, null, 2)
+        val pending = cash.snapshot()
+        assertTrue(FinanceAccountProjection.liabilitySignPending(pending, credit))
+        assertEquals(10_000L, FinanceAccountProjection.netByCurrency(pending)["CNY"])
+        cash.workspace.setAccountPolicy(economics.token(), credit.id, null, FinanceLiabilityConvention.POSITIVE_DEBT, null, 3)
+        val confirmed = cash.snapshot()
+        assertFalse(FinanceAccountProjection.liabilitySignPending(confirmed, credit))
+        assertEquals(-10_000L, FinanceAccountProjection.netByCurrency(confirmed)["CNY"])
+        assertEquals(FinanceBalanceBasis.KNOWN_POSTED, confirmed.v16!!.accountPolicyRows.single().anchorBasis)
+        assertEquals(credit, confirmed.accounts.single())
+    }
+
     @Test fun positiveLegacyDebtNormalizesOpeningOnlyAndInternalRepaymentPreservesNet() = runTest {
         val bank=bank()
         val credit=cash.saveAccount(name="旧正数欠款",kind=FinanceAccountKind.CREDIT,openingBalanceMinor=10_000)

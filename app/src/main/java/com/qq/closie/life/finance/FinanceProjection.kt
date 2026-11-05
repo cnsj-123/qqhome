@@ -35,7 +35,8 @@ data class FinanceLedgerRow(val entry: FinanceEntryEntity, val account: FinanceA
     val currencyCode get() = account.currencyCode
 }
 data class FinanceTotals(val expenseMinor: Long = 0, val incomeMinor: Long = 0)
-data class FinanceDimensionTotal(val label: String, val currencyCode: String, val totals: FinanceTotals)
+data class FinanceDimensionTotal(val label: String, val currencyCode: String, val totals: FinanceTotals, val unknownCount: Int = 0)
+data class FinanceCashSummary(val confirmed: FinanceTotals, val unknownDateCount: Int)
 
 object FinanceProjection {
     /** Opening balance is the balance at the explicit balance anchor; backfills belong to history only. */
@@ -73,11 +74,37 @@ object FinanceProjection {
     fun categoryPath(categories: List<FinanceCategoryEntity>, id: String?): String? {
         return FinanceCategoryTree(categories).fullPath(id)
     }
+
+    /** Payments can belong to an earlier economic event. Adjustments keep their own occurrence. */
+    fun economicDates(snapshot: FinanceSnapshot): Map<String, Long> {
+        val events = snapshot.v4?.events.orEmpty().filter { it.voidedAt == null }.associateBy { it.id }
+        return snapshot.v4?.activeLinks.orEmpty().groupBy { it.entryId }.mapNotNull { (entry, links) ->
+            if (links.any { it.role != FinanceFlowRole.PAYMENT && it.role != FinanceFlowRole.FEE }) return@mapNotNull null
+            val occurrence = links.mapNotNull { events[it.eventId]?.occurredAt }.distinct().singleOrNull()
+            occurrence?.let { entry to it }
+        }.toMap()
+    }
+
     /** F1 ordinary flows only; F2 relationships will refine personal-consumption/income projections. */
     fun totals(rows: List<FinanceLedgerRow>): Map<String, FinanceTotals> = rows.filter { it.transfer == null && it.entry.statPolicy != FinanceStatPolicy.EXCLUDE }
         .groupBy { it.currencyCode }.mapValues { (_, values) -> FinanceTotals(
             sum(values.filter { it.entry.direction == FinanceDirection.OUTFLOW }),
             sum(values.filter { it.entry.direction == FinanceDirection.INFLOW })) }
+
+    /** Real non-transfer receipts and payments use cash dates, independently of economic attribution. */
+    fun cashSummary(snapshot: FinanceSnapshot, rows: List<FinanceLedgerRow>, range: FinanceDateRange): Map<String, FinanceCashSummary> {
+        val unknown = snapshot.v16?.entryTimingRows.orEmpty().asSequence()
+            .filter { it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN }
+            .map { it.entryId }.toSet()
+        val bounded = range.startInclusive != null || range.endExclusive != null
+        val eligible = rows.filter { it.transfer == null && it.entry.statPolicy == FinanceStatPolicy.INCLUDE }
+        val unknownCounts = if (bounded) eligible.filter { it.entry.id in unknown }
+            .groupingBy { it.currencyCode }.eachCount() else emptyMap()
+        val known = totals(eligible.filter { (!bounded || it.entry.id !in unknown) && range.contains(it.entry.occurredAt) })
+        return (known.keys + unknownCounts.keys).associateWith {
+            FinanceCashSummary(known[it] ?: FinanceTotals(), unknownCounts[it] ?: 0)
+        }
+    }
     fun categoryTotals(rows: List<FinanceLedgerRow>): List<FinanceDimensionTotal> = dimensions(rows) { listOf(it.category ?: "未分类") }
     fun parentCategoryTotals(rows: List<FinanceLedgerRow>, categories: List<FinanceCategoryEntity>): List<FinanceDimensionTotal> {
         val tree = FinanceCategoryTree(categories)

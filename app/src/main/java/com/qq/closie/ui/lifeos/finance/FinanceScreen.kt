@@ -33,11 +33,11 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 
 @Composable
-fun FinanceRoute(repository: FinanceRepository, onBack: () -> Unit) = FinanceRoute(repository, null, null, onBack)
+fun FinanceRoute(repository: FinanceRepository, onBack: () -> Unit) = FinanceRoute(repository, null, null, onBack = onBack)
 
 @Composable
 fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportRepository?,
-    automationRepository: FinanceAutomationRepository?, onBack: () -> Unit) {
+    automationRepository: FinanceAutomationRepository?, onFinanceSettings: (() -> Unit)? = null, onBack: () -> Unit) {
     val vm: FinanceViewModel = viewModel(factory = remember(repository) {FinancePresentationFactory(repository)})
     val state by vm.state.collectAsStateWithLifecycle()
     var importOpen by rememberSaveable { mutableStateOf(false) }
@@ -54,10 +54,55 @@ fun FinanceRoute(repository: FinanceRepository, importRepository: FinanceImportR
     else if (automationOpen && automationRepository != null) FinanceAutomationScreen(automationRepository, repository) { automationOpen = false }
     else if (relationsOpen) FinanceRelationsScreen(state, vm) { relationsOpen = false }
     else if(workspaceOpen) FinanceWorkspaceScreen(state,vm) {workspaceOpen=false}
-    else FinanceModuleScreen(state, vm, onBack, onRelations = { relationsOpen = true }) {
-        if (automationRepository != null) TextButton(onClick = { automationOpen = true }) { Text("自动发现" + (pending?.let { " · $it 笔待确认" } ?: " · 查看状态")) }
-        if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账 →") }
-        TextButton({workspaceOpen=true}) {Text("事项、购买、查询与隐私 →")}
+    else FinanceModuleScreen(state, vm, onBack, onRelations = { relationsOpen = true }, onFinanceSettings = onFinanceSettings) {
+        if (onFinanceSettings == null) {
+            if (automationRepository != null) TextButton(onClick = { automationOpen = true }) { Text("自动发现" + (pending?.let { " · $it 笔待确认" } ?: " · 查看状态")) }
+            if (importRepository != null) TextButton(onClick = { importOpen = true }) { Text("导入旧账 →") }
+            TextButton({workspaceOpen=true}) {Text("事项、购买、查询与隐私 →")}
+        }
+    }
+}
+
+@Composable
+internal fun FinanceSettingsRoute(
+    repository: FinanceRepository, importRepository: FinanceImportRepository,
+    onDiscovery: () -> Unit, onReview: () -> Unit, onPrivacy: () -> Unit, onBackup: () -> Unit, onBack: () -> Unit
+) {
+    val vm: FinanceViewModel = viewModel(factory = remember(repository) { FinancePresentationFactory(repository) })
+    val state by vm.state.collectAsStateWithLifecycle()
+    var section by rememberSaveable { mutableStateOf<String?>(null) }
+    val closeSection = { section = null }
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe()
+    when (section) {
+        "import" -> FinanceImportScreen(importRepository, state.snapshot.accounts, closeSection)
+        "relations" -> FinanceRelationsScreen(state, vm, closeSection)
+        "categories" -> com.qq.closie.ui.lifeos.settings.SettingsPaperPage("分类与图标", closeSection) {
+            androidx.activity.compose.BackHandler(onBack = closeSection)
+            var selected by rememberSaveable { mutableStateOf<String?>(null) }
+            FinanceCategoryFields(state.snapshot, selected, { selected = it }, state.busy, vm::createCategory)
+            selected?.let { FinanceCategoryIconEditor(state, vm, it) }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+        "events" -> FinanceWorkspaceScreen(state, vm, close = closeSection)
+        "queries" -> FinanceWorkspaceScreen(state, vm, initialPage = 2, close = closeSection)
+        "budget" -> FinanceWorkspaceScreen(state, vm, initialPage = 3, close = closeSection)
+        "voided" -> FinanceWorkspaceScreen(state, vm, initialPage = 4, close = closeSection)
+        else -> com.qq.closie.ui.lifeos.settings.SettingsPaperPage("账目专项设置", onBack) {
+            com.qq.closie.ui.lifeos.settings.SettingsSection("发现与复核")
+            com.qq.closie.ui.lifeos.settings.SettingsLine("自动发现", "通知、可见详情与主动截图", onClick = onDiscovery)
+            com.qq.closie.ui.lifeos.settings.SettingsLine("待确认记录", "修正候选，确认后写入账目", onClick = onReview)
+            com.qq.closie.ui.lifeos.settings.SettingsSection("账簿")
+            com.qq.closie.ui.lifeos.settings.SettingsLine("分类与图标", "管理分类树与 SVG 图标", onClick = { section = "categories" })
+            com.qq.closie.ui.lifeos.settings.SettingsLine("往来工作区", "查看应收应付与结算", onClick = { section = "relations" })
+            com.qq.closie.ui.lifeos.settings.SettingsLine("事项与购买", "查看出资、承担与调整", onClick = { section = "events" })
+            com.qq.closie.ui.lifeos.settings.SettingsLine("查账与保存视图", onClick = { section = "queries" })
+            com.qq.closie.ui.lifeos.settings.SettingsLine("预算与专题", onClick = { section = "budget" })
+            com.qq.closie.ui.lifeos.settings.SettingsSection("数据与隐私")
+            com.qq.closie.ui.lifeos.settings.SettingsLine("隐私授权", "管理首页、分享与 AI 的用途授权", onClick = onPrivacy)
+            com.qq.closie.ui.lifeos.settings.SettingsLine("导入账目", "预览、映射与去重", onClick = { section = "import" })
+            com.qq.closie.ui.lifeos.settings.SettingsLine("作废箱", "核对影响与恢复记录", onClick = { section = "voided" })
+            com.qq.closie.ui.lifeos.settings.SettingsLine("数据与备份", onClick = onBackup)
+        }
     }
 }
 

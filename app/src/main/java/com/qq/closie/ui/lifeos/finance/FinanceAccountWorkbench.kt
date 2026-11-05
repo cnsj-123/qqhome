@@ -17,6 +17,7 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
     val s=state.snapshot
     val epoch=rememberSaveable(account.id) { s.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L }
     val policy=s.v16?.accountPolicyRows.orEmpty().singleOrNull { it.accountId==account.id && it.voidedAt==null }
+    val signPending = FinanceAccountProjection.liabilitySignPending(account, policy?.liabilityConvention)
     val trust=FinanceAccountStatusProjection.status(s,account.id)
     var editingObservation by rememberSaveable(account.id) { mutableStateOf(false) }
     var editingAnchor by rememberSaveable(account.id) { mutableStateOf(false) }
@@ -41,22 +42,21 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
         Text("旧余额起点 · "+FinanceTime.anchorLabel(account.balanceAnchorAt)+" · "+FinanceMoney.display(account.openingBalanceMinor,account.currencyCode),style=LifeText.caption)
         Row {
             Checkbox(policy?.includedInNet!=false,{ included -> vm.workspaceAction(epoch) { repo,token ->
-                repo.setAccountPolicy(token,account.id,included,policy?.liabilityConvention ?: FinanceLiabilityConvention.SIGNED,
-                    policy?.anchorBasis ?: FinanceBalanceBasis.LEGACY_CASH,policy?.revision,account.updatedAt)
+                repo.setAccountPolicy(token,account.id,included,null,null,policy?.revision,account.updatedAt)
             } },enabled=!state.busy && account.archivedAt==null)
             Text("纳入账户净额")
         }
         Text("净额贡献 · "+FinanceMoney.display(FinanceAccountProjection.netContribution(s,account),account.currencyCode),style=LifeText.body)
         Text("起点符号口径："+(if(policy?.liabilityConvention==FinanceLiabilityConvention.POSITIVE_DEBT) "旧期初正数表示欠款，只将期初转负，之后按真实收付计算。旧口径余额另行保留。" else "期初按账面正负号计入，之后按真实收付计算。"),style=LifeText.caption)
-        if(FinanceAccountProjection.liabilitySignPending(s,account)) Text("此正数信用期初尚未确认是欠款还是余额，净额暂沿旧账簿正号。请选择实际含义后再核对净额。",style=LifeText.caption)
-        if(policy==null && account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0) TextButton({vm.workspaceAction(epoch) {repo,token->
-            repo.setAccountPolicy(token,account.id,true,FinanceLiabilityConvention.SIGNED,FinanceBalanceBasis.LEGACY_CASH,null,account.updatedAt)
+        if(signPending) Text("此正数信用期初尚未确认是欠款还是余额，净额暂沿旧账簿正号。请选择实际含义后再核对净额。",style=LifeText.caption)
+        if(signPending) TextButton({vm.workspaceAction(epoch) {repo,token->
+            repo.setAccountPolicy(token,account.id,null,FinanceLiabilityConvention.SIGNED,null,policy?.revision,account.updatedAt)
         }},enabled=!state.busy && account.archivedAt==null) {Text("确认期初是正数余额，按账面符号计入")}
         TextButton({ vm.workspaceAction(epoch) { repo,token ->
-            repo.setAccountPolicy(token,account.id,policy?.includedInNet!=false,
+            repo.setAccountPolicy(token,account.id,null,
                 if(policy?.liabilityConvention==FinanceLiabilityConvention.POSITIVE_DEBT) FinanceLiabilityConvention.SIGNED else FinanceLiabilityConvention.POSITIVE_DEBT,
-                policy?.anchorBasis ?: FinanceBalanceBasis.LEGACY_CASH,policy?.revision,account.updatedAt)
-        } },enabled=!state.busy && account.openingBalanceMinor>=0 && account.archivedAt==null) { Text(if(policy?.liabilityConvention==FinanceLiabilityConvention.POSITIVE_DEBT) "改为期初按账面符号计入" else "确认旧期初正数表示欠款") }
+                null,policy?.revision,account.updatedAt)
+        } },enabled=!state.busy && account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0 && account.archivedAt==null) { Text(if(policy?.liabilityConvention==FinanceLiabilityConvention.POSITIVE_DEBT) "改为期初按账面符号计入" else "确认旧期初正数表示欠款") }
         TextButton({editingAnchor=!editingAnchor}) { Text("检查或更改余额起点") }
         if(editingAnchor) {
             OutlinedTextField(opening,{opening=it},label={Text("起点余额，可为负数")})
@@ -115,8 +115,8 @@ internal fun FinanceAccountWorkbench(state:FinanceUiState,account:FinanceAccount
                     Text("还款日 "+FinanceTime.input(statement.dueAt)+" · 另有 ${statement.unknownPostingCount} 笔入账日未知，不猜入账期。",style=LifeText.caption)
                 }
                 Text("入账口径起点须由用户明确确认，旧实际收付起点不会自动改用入账日。",style=LifeText.caption)
-                TextButton({vm.workspaceAction(epoch) {repo,token ->repo.setAccountPolicy(token,account.id,policy?.includedInNet!=false,
-                    policy?.liabilityConvention ?: FinanceLiabilityConvention.SIGNED,FinanceBalanceBasis.KNOWN_POSTED,policy?.revision,account.updatedAt)}},enabled=!state.busy) {Text("确认此起点也适用于确知入账口径")}
+                TextButton({vm.workspaceAction(epoch) {repo,token ->repo.setAccountPolicy(token,account.id,null,
+                    null,FinanceBalanceBasis.KNOWN_POSTED,policy?.revision,account.updatedAt)}},enabled=!state.busy) {Text("确认此起点也适用于确知入账口径")}
             }
         }
     }

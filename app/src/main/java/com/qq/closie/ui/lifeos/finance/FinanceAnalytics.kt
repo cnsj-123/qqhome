@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 import java.math.BigDecimal
-import java.math.BigInteger
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.ZoneId
@@ -35,32 +34,30 @@ internal fun periodChange(current: Long, previous: Long): String {
 }
 
 @Composable
-internal fun FinancePeriodSummary(current: Map<String, FinanceTotals>, previous: Map<String, FinanceTotals>?) {
+internal fun FinancePeriodSummary(current: Map<String, PersonalCostTotal>, previous: Map<String, PersonalCostTotal>?) {
     val colors = LocalLifeOsColors.current
     FinanceSection {
-        Text("这段日子的收支", style = LifeText.title)
-        Text("当前范围 · 个人收支 · 各币种分别统计", style = LifeText.caption, color = colors.muted)
+        Text("个人成本", style = LifeText.title)
+        Text("按经济发生日与实际调整日归期 · 各币种分别统计", style = LifeText.caption, color = colors.muted)
         (current.keys + previous.orEmpty().keys).sorted().forEach { currency ->
-            val totals = current[currency] ?: FinanceTotals()
+            val totals = current[currency]
             Text(currency, Modifier.padding(top = 10.dp), style = LifeText.caption, color = colors.accentDeep)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf("收入" to BigInteger.valueOf(totals.incomeMinor), "支出" to BigInteger.valueOf(totals.expenseMinor),
-                    "结余" to (BigInteger.valueOf(totals.incomeMinor) - BigInteger.valueOf(totals.expenseMinor))).forEach { (label, amount) ->
-                    Column(Modifier.weight(1f)) {
-                        Text(label, style = LifeText.caption, color = colors.muted)
-                        Text(BigDecimal(amount, FinanceMoney.fractionDigits(currency)).toPlainString(), style = LifeText.body)
-                    }
-                }
+            if (totals == null) {
+                Text("本期没有个人成本记录", style = LifeText.body)
+            } else {
+                Text("已确认 " + FinanceMoney.display(totals.confirmedMinor, currency), style = LifeText.body)
+                if (!totals.complete) Text("另有 ${totals.unknownCount} 项承担待确定", style = LifeText.caption)
             }
-            previous?.let {
-                val prior = it[currency] ?: FinanceTotals()
-                Text("支出 " + periodChange(totals.expenseMinor, prior.expenseMinor), style = LifeText.caption, color = colors.inkSecondary)
-                Text("上期支出 ${FinanceMoney.display(prior.expenseMinor, currency)} · 收入 ${FinanceMoney.display(prior.incomeMinor, currency)}",
-                    style = LifeText.caption, color = colors.muted)
+            previous?.get(currency)?.let { prior ->
+                Text("上期已确认 " + FinanceMoney.display(prior.confirmedMinor, currency), style = LifeText.caption, color = colors.muted)
+                if (!prior.complete) Text("上期另有 ${prior.unknownCount} 项承担待确定", style = LifeText.caption)
+                if (totals?.complete == true && prior.complete) {
+                    Text(periodChange(totals.confirmedMinor, prior.confirmedMinor), style = LifeText.caption, color = colors.inkSecondary)
+                }
             }
             HorizontalDivider(Modifier.padding(top = 12.dp), color = colors.line)
         }
-        if (current.isEmpty() && previous.orEmpty().isEmpty()) Text("当前范围还没有个人收支。", style = LifeText.body)
+        if (current.isEmpty() && previous.orEmpty().isEmpty()) Text("当前范围还没有个人成本记录。", style = LifeText.body)
         if (previous == null) Text("选择日期范围后，可比较上一期。", style = LifeText.caption, color = colors.muted)
     }
 }

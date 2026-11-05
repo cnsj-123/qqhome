@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.finance
 import com.qq.closie.life.ui.theme.BundledText as Text
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -42,6 +43,7 @@ enum class FinanceView(val label: String) { TRANSACTIONS("账簿"), ACCOUNTS("�
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, onBack: () -> Unit, onRelations: () -> Unit = {},
+    onFinanceSettings: (() -> Unit)? = null,
     secondaryActions: @Composable () -> Unit = {}) {
     val colors = LocalLifeOsColors.current
     val requestedFilter by vm.filterInput.collectAsState()
@@ -199,6 +201,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     })
                 }
             }
+            if (onFinanceSettings != null) IconButton(onFinanceSettings) {
+                Icon(Icons.Outlined.Settings, "账目专项设置", tint = colors.inkSecondary)
+            }
         } else Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
             Text(chartLabel ?: detailAccount?.let { id -> state.snapshot.accounts.find { it.id == id }?.name } ?: "账目",
@@ -254,12 +259,21 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             }
             if(view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null) {
                 Column(Modifier.padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                    FinancePeriodStrip(state.selected)
                     val net = remember(state.snapshot) { FinanceAccountProjection.netByCurrency(state.snapshot) }
-                    TextButton({ selectView(FinanceView.ACCOUNTS) }) {
-                        Text("账户净额 · " + net.entries.joinToString(" / ") { (currency, amount) -> FinanceMoney.display(amount, currency) },
-                            style = LifeText.caption)
+                    if (net.isNotEmpty()) {
+                        val policies = state.snapshot.v16?.accountPolicyRows.orEmpty().filter { it.voidedAt == null }.associateBy { it.accountId }
+                        val included = state.snapshot.accounts.filter { it.archivedAt == null && policies[it.id]?.includedInNet != false }
+                        Column(Modifier.fillMaxWidth().clickable { selectView(FinanceView.ACCOUNTS) }.padding(vertical = 6.dp)) {
+                            Text("${included.size} 个账户 · 纳入账户净额", style = LifeText.caption, color = colors.inkSecondary)
+                            net.toSortedMap().forEach { (currency, amount) ->
+                                Text(FinanceMoney.display(amount, currency), style = LifeText.number, color = colors.ink)
+                                if (included.any { it.currencyCode == currency && FinanceAccountProjection.liabilitySignPending(it, policies[it.id]?.liabilityConvention) }) {
+                                    Text("含期初符号待确认的账户 · 暂沿旧口径", style = LifeText.caption, color = colors.inkSecondary)
+                                }
+                            }
+                        }
                     }
+                    FinancePeriodStrip(state.cashSummary, rangeLabel)
                     Row { TextButton(onRelations) { Text("往来") }; Column { secondaryActions() } }
                     Row {
                         FinanceCalendarStop.entries.forEach { stop ->
@@ -374,7 +388,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }
                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
                     if (view == FinanceView.INSIGHTS) {
-                        item { FinancePeriodSummary(state.selected, state.previous) }
+                        item { FinancePeriodSummary(state.costSummary, state.previousCosts) }
                         item { FinanceCostTrend(state.costRows) { start,end -> vm.customRange(start,end); selectedDay=null; calendarMode=false } }
                         item { FinanceCategoryChart(state.categories, state.previousCategories) { label, currency -> chartLabel = label; chartCurrency = currency } }
                         item { FinanceSection {
@@ -420,6 +434,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     if (viewing && state.loaded) FinanceRecordDetails(allRows.find { it.id == entryId }, state.snapshot,
         origin=recordOrigin,
         onEdit = { recordDestination = FinanceRecordDestination.Editing(it.id, it.entry.revision) },
+        voidAction = { FinanceRecordVoidAction(it, state, vm) { recordDestination = FinanceRecordDestination.Closed } },
         onClose = { recordDestination = FinanceRecordDestination.Closed })
     if (editing && state.loaded) {
         val destination = recordDestination

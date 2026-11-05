@@ -9,9 +9,15 @@ data class FinanceReconciliationResult(val observation: FinanceObservationEntity
 /** Complete-account scans always precede filtering; the original inclusive anchor is unchanged. */
 object FinanceAccountProjection {
     const val RECONCILIATION_ALGORITHM=5
-    fun liabilitySignPending(s:FinanceSnapshot,account:FinanceAccountEntity):Boolean =
-        account.kind==FinanceAccountKind.CREDIT && account.openingBalanceMinor>0 &&
-            s.v16?.accountPolicyRows.orEmpty().none {it.accountId==account.id && it.voidedAt==null}
+    fun liabilitySignPending(s: FinanceSnapshot, account: FinanceAccountEntity): Boolean {
+        val convention = s.v16?.accountPolicyRows.orEmpty()
+            .singleOrNull { it.accountId == account.id && it.voidedAt == null }?.liabilityConvention
+        return liabilitySignPending(account, convention)
+    }
+
+    internal fun liabilitySignPending(account: FinanceAccountEntity, convention: FinanceLiabilityConvention?): Boolean =
+        account.kind == FinanceAccountKind.CREDIT && account.openingBalanceMinor > 0 &&
+            (convention == null || convention == FinanceLiabilityConvention.UNCONFIRMED)
 
     fun register(s: FinanceSnapshot, accountId: String): List<FinanceRegisterRow> {
         val account = s.accounts.single { it.id == accountId }

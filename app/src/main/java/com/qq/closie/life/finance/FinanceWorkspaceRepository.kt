@@ -164,8 +164,9 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
             p.accountId
         }
 
-    suspend fun setAccountPolicy(token:FinanceCommandToken,accountId:String,included:Boolean,
-        liability:FinanceLiabilityConvention,anchorBasis:FinanceBalanceBasis,expectedRevision:Long?,expectedAccountUpdatedAt:Long?=null):String =
+    /** A null field keeps its current value. Inclusion and posting-basis edits never confirm the opening sign. */
+    suspend fun setAccountPolicy(token:FinanceCommandToken,accountId:String,included:Boolean?,
+        liability:FinanceLiabilityConvention?,anchorBasis:FinanceBalanceBasis?,expectedRevision:Long?,expectedAccountUpdatedAt:Long?=null):String =
         commands.run(token,"ACCOUNT_POLICY",listOf(accountId,included,liability,anchorBasis,expectedRevision,expectedAccountUpdatedAt)) {
             val account=requireNotNull(db.financeDao().account(accountId)); require(account.archivedAt==null)
             require(expectedAccountUpdatedAt==null || account.updatedAt==expectedAccountUpdatedAt) {"账户起点或资料已改变，请重新核对净额口径"}
@@ -174,8 +175,14 @@ class FinanceWorkspaceRepository(private val db: LifeDatabase, private val finan
             }
             val old=dao.accountPolicyRows().singleOrNull { it.accountId==accountId && it.voidedAt==null }
             require(old?.revision==expectedRevision)
+            val convention = liability ?: old?.liabilityConvention ?: if (account.kind == FinanceAccountKind.CREDIT) {
+                FinanceLiabilityConvention.UNCONFIRMED
+            } else {
+                FinanceLiabilityConvention.SIGNED
+            }
             val now=clock()
-            dao.putAccountPolicy(listOf(FinanceAccountPolicyEntity(accountId,included,liability,anchorBasis,
+            dao.putAccountPolicy(listOf(FinanceAccountPolicyEntity(accountId,included ?: old?.includedInNet ?: true,
+                convention,anchorBasis ?: old?.anchorBasis ?: FinanceBalanceBasis.LEGACY_CASH,
                 old?.createdAt ?: now,now,Math.addExact(old?.revision ?: 0L,1L))))
             accountId
         }

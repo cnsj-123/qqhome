@@ -25,7 +25,8 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.math.BigInteger
 
-internal fun FinanceLedgerRow.localDay(): LocalDate = Instant.ofEpochMilli(entry.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
+internal fun FinanceLedgerRow.localDay(economicDates: Map<String, Long> = emptyMap()): LocalDate =
+    Instant.ofEpochMilli(economicDates[entry.id] ?: entry.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
 private data class TrendBucket(val month: YearMonth, val expense: Long, val income: Long)
 
 /** Canvas only paints ratios; exact amounts and attribution come from the existing projection. */
@@ -105,9 +106,13 @@ internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, previous: L
             val ranked = values.sortedByDescending { it.totals.expenseMinor }
             val positive = ranked.filter { it.totals.expenseMinor > 0 }
             val total = positive.fold(BigInteger.ZERO) { sum, v -> sum + BigInteger.valueOf(v.totals.expenseMinor) }.toDouble()
+            val complete = ranked.none { it.unknownCount > 0 }
             val swatches = listOf(colors.accent, colors.secondary, colors.soft, colors.warm, colors.accentDeep)
-            Text("$currency · 个人净支出", style = LifeText.caption, color = colors.muted)
-            if (total > 0) {
+            Text("$currency · 个人净成本", style = LifeText.caption, color = colors.muted)
+            if (!complete) {
+                Text("另有 ${ranked.sumOf { it.unknownCount }} 项承担待确定，显示各类已知小计。", style = LifeText.caption, color = colors.muted)
+            }
+            if (complete && total > 0) {
                 Box(Modifier.fillMaxWidth().height(156.dp), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize().semantics { contentDescription = "正向净支出分布；下方分类列表提供金额与查看操作" }) {
                     var start = -90f
@@ -133,13 +138,20 @@ internal fun FinanceCategoryChart(rows: List<FinanceDimensionTotal>, previous: L
                         Text(row.label, Modifier.weight(1f), style = LifeText.body)
                         Text(FinanceMoney.display(row.totals.expenseMinor, currency), style = LifeText.body.copy(fontFeatureSettings = "tnum"))
                     }
-                    val prior = previous.firstOrNull { it.currencyCode == currency && it.label == row.label }?.totals?.expenseMinor
+                    val prior = previous.firstOrNull { it.currencyCode == currency && it.label == row.label && it.unknownCount == 0 }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(if (row.totals.expenseMinor > 0 && total > 0) "%.1f%%".format(java.util.Locale.ROOT, row.totals.expenseMinor / total * 100) else "净退款 / 零支出", style = LifeText.caption, color = colors.muted)
-                        if (prior != null) Text(periodChange(row.totals.expenseMinor, prior), style = LifeText.caption, color = colors.muted)
+                        val detail = when {
+                            row.unknownCount > 0 -> "另有 ${row.unknownCount} 项待确定"
+                            row.totals.expenseMinor < 0 -> "净调整"
+                            row.totals.expenseMinor == 0L -> "零成本"
+                            complete -> "%.1f%%".format(java.util.Locale.ROOT, row.totals.expenseMinor / total * 100)
+                            else -> "承担已确认"
+                        }
+                        Text(detail, style = LifeText.caption, color = colors.muted)
+                        if (prior != null && row.unknownCount == 0) Text(periodChange(row.totals.expenseMinor, prior.totals.expenseMinor), style = LifeText.caption, color = colors.muted)
                     }
                     if (row.totals.incomeMinor != 0L) Text("收入 ${FinanceMoney.display(row.totals.incomeMinor, currency)}", style = LifeText.caption, color = colors.muted)
-                    if (total > 0 && row.totals.expenseMinor > 0) Box(Modifier.padding(top = 7.dp).fillMaxWidth().height(4.dp).background(colors.paperSecondary, RoundedCornerShape(2.dp))) {
+                    if (complete && total > 0 && row.totals.expenseMinor > 0) Box(Modifier.padding(top = 7.dp).fillMaxWidth().height(4.dp).background(colors.paperSecondary, RoundedCornerShape(2.dp))) {
                         Box(Modifier.fillMaxWidth((row.totals.expenseMinor / total).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(swatches[index % swatches.size], RoundedCornerShape(2.dp)))
                     }
                 }

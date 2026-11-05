@@ -10,8 +10,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.FinanceAccountEntity
 import com.qq.closie.ui.lifeos.theme.*
@@ -21,6 +27,7 @@ import com.qq.closie.ui.lifeos.theme.*
 internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String? = null,
     onClose: () -> Unit, actions: (@Composable ColumnScope.() -> Unit)? = null,
     origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?=null,
+    formal: Boolean = false,
     content: @Composable ColumnScope.() -> Unit) {
     com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe()
     val colors = LocalLifeOsColors.current
@@ -32,7 +39,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))
-                TextButton(onClick = close, enabled = !busy) { Text("收起") }
+                TextButton(onClick = close, enabled = !busy) { Text(if (formal) "关闭" else "收起") }
             }
             HorizontalDivider(color = colors.line)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -44,9 +51,36 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
             }
         }
     }
-    if(origin!=null) com.qq.closie.ui.lifeos.components.LifeOriginDialog(origin,onClose,compactHeight=true) {close->contents(close)}
+    if (origin != null || formal) com.qq.closie.ui.lifeos.components.LifeOriginDialog(
+        origin, { if (!busy) onClose() }, widthFraction = if (formal) .87f else .92f, compactHeight = true,
+        paperShape = if (formal) FormalReceiptShape else null
+    ) { close -> contents(close) }
     else ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
         containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {contents(onClose)}
+}
+
+private object FormalReceiptShape : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val corner = with(density) { 12.dp.toPx() }.coerceAtMost(minOf(size.width / 2, size.height / 2))
+        val edge = with(density) { 4.dp.toPx() }.coerceAtMost(size.height / 4)
+        return Outline.Generic(Path().apply {
+            moveTo(0f, corner)
+            quadraticBezierTo(0f, 0f, corner, 0f)
+            lineTo(size.width - corner, 0f)
+            quadraticBezierTo(size.width, 0f, size.width, corner)
+            lineTo(size.width, size.height - edge / 2)
+            for (tooth in 23 downTo 0) {
+                val offset = when (tooth % 4) {
+                    0 -> .55f
+                    1 -> .1f
+                    2 -> .75f
+                    else -> .3f
+                }
+                lineTo(size.width * tooth / 24, size.height - edge * offset)
+            }
+            close()
+        })
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

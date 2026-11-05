@@ -15,9 +15,9 @@ import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 
 @Composable
-internal fun FinanceWorkspaceScreen(state:FinanceUiState,vm:FinanceViewModel,close:()->Unit) {
+internal fun FinanceWorkspaceScreen(state:FinanceUiState,vm:FinanceViewModel,initialPage:Int=0,close:()->Unit) {
     if(!state.loaded) {FinanceReceipt("正在打开财务工作页",error=state.error,onClose=close) {Text("读取完整账本快照后继续。")};return}
-    var page by rememberSaveable {mutableIntStateOf(0)}
+    var page by rememberSaveable(initialPage) {mutableIntStateOf(initialPage)}
     val pageStates=rememberSaveableStateHolder()
     var economicOpen by rememberSaveable {mutableStateOf(false)}
     var eventId by rememberSaveable {mutableStateOf<String?>(null)}

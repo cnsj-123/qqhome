@@ -47,11 +47,7 @@ internal fun FinanceMonthCard(state: FinanceUiState, rangeLabel: String, onMonth
             Text(rangeLabel, Modifier.weight(1f), style = LifeText.title)
             TextButton(onMonth) { Text("查看流水 →") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            MoneySummary("个人支出", state.selected, true, Modifier.weight(1f))
-            MoneySummary("个人收入", state.selected, false, Modifier.weight(1f))
-        }
-        Text("转账不计收支 · 退款与报销按归属计算", style = LifeText.caption, color = colors.muted)
+        FinancePeriodStrip(state.cashSummary, rangeLabel)
     }
 }
 

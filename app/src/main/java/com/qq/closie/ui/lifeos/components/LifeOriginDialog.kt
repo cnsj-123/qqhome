@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -52,6 +53,7 @@ internal fun Modifier.lifeSurfaceOrigin(orientation:Int,rotation:Float=0f,onPosi
 @Composable
 internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
     widthFraction:Float=.92f,heightFraction:Float=.80f,corner:Dp=26.dp,compactHeight:Boolean=false,
+    paperShape: Shape? = null,
     content:@Composable (close:()->Unit)->Unit) {
     val reduced=reducedLifeMotion()
     val reveal=remember {Animatable(if(reduced)1f else 0f)}
@@ -98,7 +100,7 @@ internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
                     rotationZ=(source?.rotation ?: 0f)*(1-progress)
                     alpha=if(source!=null)1f else progress
                     clip=true
-                },shape=RoundedCornerShape(corner),color=colors.card) {
+                },shape=paperShape ?: RoundedCornerShape(corner),color=colors.card) {
                 content(::close)
             }
         }

@@ -28,16 +28,17 @@ data class FinanceFilter(val query: String = "", val period: FinancePeriod = Fin
 data class FinanceUiState(
     val snapshot: FinanceSnapshot = FinanceSnapshot(), val filter: FinanceFilter = FinanceFilter(),
     val ledger: List<FinanceLedgerRow> = emptyList(), val balances: Map<String, Long> = emptyMap(),
-    val month: Map<String, FinanceTotals> = emptyMap(), val year: Map<String, FinanceTotals> = emptyMap(),
-    val selected: Map<String, FinanceTotals> = emptyMap(),
+    val cashSummary: Map<String, FinanceCashSummary> = emptyMap(),
+    val costSummary: Map<String, PersonalCostTotal> = emptyMap(),
     val categories: List<FinanceDimensionTotal> = emptyList(), val tags: List<FinanceDimensionTotal> = emptyList(),
     val loading: Boolean = true, val busy: Boolean = false, val error: String? = null,
     val personalRows: List<FinanceLedgerRow> = emptyList(),
     val unassignedAdjustments: List<FinanceUnassignedAdjustment> = emptyList(),
     val allRows: List<FinanceLedgerRow> = emptyList(),
-    val previous: Map<String, FinanceTotals>? = null,
+    val previousCosts: Map<String, PersonalCostTotal>? = null,
     val previousCategories: List<FinanceDimensionTotal> = emptyList(),
     val calendarRows: List<FinanceLedgerRow> = emptyList(),
+    val economicDates: Map<String, Long> = emptyMap(),
     val costRows:List<PersonalCostRow> = emptyList(),val loaded:Boolean=false
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
@@ -81,8 +82,10 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             fun cashAmountMatches(row:FinanceLedgerRow)=(selection.currencyCode==null || row.currencyCode==selection.currencyCode) &&
                 (selection.minimumMinor==null || row.entry.amountMinor>=selection.minimumMinor) &&
                 (selection.maximumMinor==null || row.entry.amountMinor<=selection.maximumMinor)
-            val baseRows = baseFor(selection.range)
-            val rows = baseRows.filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) && cashAmountMatches(it) }
+            val filteredRows = baseFor(FinanceDateRange()).filter {
+                categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) && cashAmountMatches(it)
+            }
+            val rows = filteredRows.filter { selection.range.contains(it.entry.occurredAt) }
             // Apply dimension filters after attribution, so a refund follows its payment category/tag.
             fun personalFor(range:FinanceDateRange)=FinancePersonalProjection.rows(data, baseFor(range)).filter {
                 categoryMatches(it) && (selection.tagId == null || selection.tagId in it.tagIds) && cashAmountMatches(it)
@@ -97,29 +100,26 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                     (row.eventId==null && selection.nature==FinanceNature.PERSONAL)
             }
             val costRows=costsFor(selection.range)
-            fun totals(costs:List<PersonalCostRow>,cashRows:List<FinanceLedgerRow>):Map<String,FinanceTotals> {
-                val income=FinanceProjection.totals(cashRows)
-                val costsByCurrency=costs.groupBy { it.currencyCode }
-                return (income.keys+costsByCurrency.keys).associateWith { currency ->
-                    FinanceTotals(exactSum(costsByCurrency[currency].orEmpty().mapNotNull { it.amountMinor }),income[currency]?.incomeMinor ?: 0L)
-                }
-            }
+            fun costTotals(costs: List<PersonalCostRow>) = costs.groupBy { it.currencyCode }
+                .mapValues { (_, entries) -> FinanceCostProjection.total(entries) }
             val categoryTree=FinanceCategoryTree(data.categories)
             fun categoriesFor(costs:List<PersonalCostRow>)=costs.groupBy { (categoryTree.root(it.categoryId)?.name ?: "未分类") to it.currencyCode }.map { (key,rows) ->
-                FinanceDimensionTotal(key.first,key.second,FinanceTotals(exactSum(rows.mapNotNull { it.amountMinor }),0))
+                val cost = FinanceCostProjection.total(rows)
+                FinanceDimensionTotal(key.first, key.second, FinanceTotals(expenseMinor = cost.confirmedMinor), cost.unknownCount)
             }
             val previousRange=previousFinanceRange(selection.range)
+            val previousCostRows = previousRange?.let(::costsFor)
             FinanceUiState(data, selection, rows,
                 data.accounts.associate { it.id to FinanceProjection.balance(it, data.entries) },
-                totals(costsFor(FinanceDateRange.month()),personalFor(FinanceDateRange.month())),
-                totals(costsFor(FinanceDateRange.year()),personalFor(FinanceDateRange.year())),
-                totals(costRows,personal),
+                FinanceProjection.cashSummary(data, filteredRows, selection.range),
+                costTotals(costRows),
                 categoriesFor(costRows), FinanceProjection.tagTotals(personal),
                 loading = false, loaded=true, busy = saving, error = message, personalRows = personal,
                 unassignedAdjustments = FinancePersonalProjection.unassignedAdjustments(data, allRows), allRows = allRows,
-                previous = previousRange?.let { totals(costsFor(it),personalFor(it)) },
-                previousCategories = previousRange?.let { categoriesFor(costsFor(it)) }.orEmpty(),
-                calendarRows = baseFor(FinanceDateRange()).filter { categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) && cashAmountMatches(it) },
+                previousCosts = previousCostRows?.let(::costTotals),
+                previousCategories = previousCostRows?.let(::categoriesFor).orEmpty(),
+                calendarRows = filteredRows,
+                economicDates = FinanceProjection.economicDates(data),
                 costRows=costRows)
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
