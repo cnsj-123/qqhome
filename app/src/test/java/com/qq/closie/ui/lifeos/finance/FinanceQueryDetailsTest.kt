@@ -99,7 +99,7 @@ class FinanceQueryDetailsTest : FinanceRoomTest() {
             val first = payment(account.id, 10_000)
             val firstEvent = eventId(first.id)
             val second = finance.saveEntry(accountId = account.id, direction = FinanceDirection.OUTFLOW,
-                amountMinor = 1, description = "范围外的私密事项", occurredAt = 4_000)
+                amountMinor = 1, description = "范围外的私密事项", occurredAt = 4_000, event = FinanceEventInput())
             val secondEvent = eventId(second.id)
             finance.allocateEntry(first.id, listOf(
                 FinanceAllocation(firstEvent, FinanceFlowRole.PAYMENT, 5_000),
