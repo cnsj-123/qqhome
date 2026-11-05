@@ -128,6 +128,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     }
     var chartLabel by rememberSaveable { mutableStateOf<String?>(null) }
     var chartCurrency by rememberSaveable { mutableStateOf("CNY") }
+    var chartIncome by rememberSaveable { mutableStateOf(false) }
     var reviewAdjustments by rememberSaveable { mutableStateOf(false) }
     var previousDetail by rememberSaveable { mutableStateOf<String?>(detailAccount) }
     var previousChart by rememberSaveable { mutableStateOf<String?>(chartLabel) }
@@ -326,6 +327,21 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             }
             if (chartLabel != null) {
                 val categoryTree = FinanceCategoryTree(state.snapshot.categories)
+                if (chartIncome) {
+                    val matching = state.ledger.filter { it.transfer == null && it.entry.direction == FinanceDirection.INFLOW &&
+                        it.entry.statPolicy == FinanceStatPolicy.INCLUDE && it.currencyCode == chartCurrency &&
+                        FinanceProjection.parentCategoryLabel(it, categoryTree) == chartLabel }
+                    item { FinancePanel {
+                        Text("实际资金流入 · $chartLabel", style = LifeText.title)
+                        Text(FinanceMoney.display(exactSum(matching.map { it.entry.amountMinor }), chartCurrency))
+                    } }
+                    items(matching, key = { it.id }) { row ->
+                        LedgerLine(row, roles[row.entry.id], state.snapshot, balancesAfter[row.entry.id],
+                            showCashTime = row.entry.id !in unknownCashDateIds) {
+                            recordOrigin = null; recordDestination = FinanceRecordDestination.Viewing(row.id)
+                        }
+                    }
+                } else {
                 val matching = state.costRows.filter { (categoryTree.root(it.categoryId)?.name ?: "未分类") == chartLabel && it.currencyCode == chartCurrency }
                 item { FinancePanel {
                     Text("个人成本构成 · $chartLabel", style = LifeText.title)
@@ -334,6 +350,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 } }
                 items(matching,key={it.id}) { cost ->
                     FinanceCostLine(cost,state.snapshot) { id -> recordOrigin=null;recordDestination = FinanceRecordDestination.Viewing(id) }
+                }
                 }
             } else if (detailAccount != null) {
                 val account = state.snapshot.accounts.find { it.id == detailAccount }
@@ -402,7 +419,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     if (view == FinanceView.INSIGHTS) {
                         item {
                             FinanceAnalysisOverview(state, vm, rangeLabel,
-                                onCategory = { label, currency -> chartLabel = label; chartCurrency = currency },
+                                onCategory = { label, currency, income -> chartLabel = label; chartCurrency = currency; chartIncome = income },
                                 onRange = { start, end -> vm.customRange(start, end); selectedDay = null; calendarMode = false })
                         }
                     } else {

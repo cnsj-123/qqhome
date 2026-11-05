@@ -31,17 +31,18 @@ internal fun FinanceAnalysisOverview(
     state: FinanceUiState,
     vm: FinanceViewModel,
     rangeLabel: String,
-    onCategory: (String, String) -> Unit,
+    onCategory: (String, String, Boolean) -> Unit,
     onRange: (String, String) -> Unit
 ) {
     val colors = LocalLifeOsColors.current
     var page by rememberSaveable { mutableIntStateOf(0) }
+    var showIncome by rememberSaveable { mutableStateOf(false) }
     var preferredCurrency by rememberSaveable { mutableStateOf<String?>(null) }
     var editingBudget by rememberSaveable { mutableStateOf<String?>(null) }
     var workspace by rememberSaveable { mutableStateOf<String?>(null) }
     var diagnosticId by rememberSaveable { mutableStateOf<String?>(null) }
-    val currencies = remember(state.costSummary, state.categories) {
-        (state.costSummary.keys + state.categories.map { it.currencyCode }).sorted()
+    val currencies = remember(state.costSummary, state.categories, state.cashSummary) {
+        (state.costSummary.keys + state.categories.map { it.currencyCode } + state.cashSummary.keys).distinct().sorted()
     }
     val currency = preferredCurrency?.takeIf { it in currencies } ?: currencies.firstOrNull()
     val now = remember(state.snapshot) { System.currentTimeMillis() }
@@ -68,15 +69,24 @@ internal fun FinanceAnalysisOverview(
                 }
             }
         }
-        Text("个人成本 · 经济发生日与实际调整日", style = LifeText.caption, color = colors.inkSecondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            FilterChip(!showIncome, { showIncome = false }, label = { Text("支出") })
+            FilterChip(showIncome, { showIncome = true }, label = { Text("收入") })
+        }
+        Text(if (showIncome) "实际资金流入 · 收付发生日（含退款等到账）" else "个人净支出 · 经济发生日与实际调整日", style = LifeText.caption, color = colors.inkSecondary)
         if (currencies.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             currencies.forEach { code -> FilterChip(currency == code, { preferredCurrency = code }, label = { Text(code) }) }
         }
         when (page) {
             0 -> {
-                val rows = state.categories.filter { it.currencyCode == currency }
-                val total = currency?.let { state.costSummary[it] }
-                AnalysisCategoryDistribution(rows, total, currency, state, onCategory)
+                val rows = if (showIncome) FinanceProjection.parentCategoryTotals(state.ledger, state.snapshot.categories)
+                    .filter { it.currencyCode == currency && it.totals.incomeMinor != 0L }
+                    .map { it.copy(totals = FinanceTotals(expenseMinor = it.totals.incomeMinor)) }
+                    else state.categories.filter { it.currencyCode == currency }
+                val total = currency?.let { code -> if (showIncome) state.cashSummary[code]?.let {
+                    PersonalCostTotal(it.confirmed.incomeMinor, it.unknownDateCount)
+                } else state.costSummary[code] }
+                AnalysisCategoryDistribution(rows, total, currency, state, showIncome) { label, code -> onCategory(label, code, showIncome) }
                 relevantBudgets.firstOrNull { it.budget.currencyCode == currency }?.let { progress ->
                     AnalysisBudgetLine(progress) { editingBudget = progress.budget.id }
                 }
@@ -85,8 +95,13 @@ internal fun FinanceAnalysisOverview(
                 }
             }
             1 -> {
-                FinancePeriodSummary(state.costSummary, state.previousCosts)
-                FinanceCostTrend(state.costRows, onRange)
+                if (showIncome) {
+                    FinanceTrend(state.ledger.filter { it.entry.id !in state.unknownCashDateIds }, onRange)
+                    if (state.unknownCashDateCount > 0) Text("另有 ${state.unknownCashDateCount} 笔收付日期待确定，未放入月份趋势。", style = LifeText.caption)
+                } else {
+                    FinancePeriodSummary(state.costSummary, state.previousCosts)
+                    FinanceCostTrend(state.costRows, onRange)
+                }
             }
             2 -> {
                 Text("预算按各自区间、分类和币种计算", style = LifeText.caption, color = colors.inkSecondary)
@@ -135,6 +150,7 @@ private fun AnalysisCategoryDistribution(
     total: PersonalCostTotal?,
     currency: String?,
     state: FinanceUiState,
+    income: Boolean,
     onCategory: (String, String) -> Unit
 ) {
     val colors = LocalLifeOsColors.current
@@ -146,7 +162,7 @@ private fun AnalysisCategoryDistribution(
     val showRing = complete && positiveTotal > 0 && rows.none { it.totals.expenseMinor < 0 }
     val swatches = listOf(colors.accent, colors.soft, colors.warm, colors.secondary, colors.inkSecondary)
     if (currency == null || total == null) {
-        Text("这个范围还没有个人成本。", style = LifeText.body, color = colors.ink)
+        Text(if (income) "这个范围还没有实际流入。" else "这个范围还没有个人成本。", style = LifeText.body, color = colors.ink)
         return
     }
     if (showRing) Box(Modifier.fillMaxWidth().height(222.dp), contentAlignment = Alignment.Center) {
@@ -164,12 +180,12 @@ private fun AnalysisCategoryDistribution(
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("个人成本", style = LifeText.caption, color = colors.inkSecondary)
+            Text(if (income) "实际流入" else "个人成本", style = LifeText.caption, color = colors.inkSecondary)
             Text(FinanceMoney.display(total.confirmedMinor, currency), style = LifeText.body, color = colors.ink)
         }
     } else {
         Text("已确认 " + FinanceMoney.display(total.confirmedMinor, currency), style = LifeText.number, color = colors.ink)
-        if (!complete) Text("另有 " + total.unknownCount + " 项承担待确认", style = LifeText.caption, color = colors.inkSecondary)
+        if (!complete) Text("另有 " + total.unknownCount + if (income) " 笔收付日期待确定" else " 项承担待确认", style = LifeText.caption, color = colors.inkSecondary)
         if (rows.any { it.totals.expenseMinor < 0 }) Text("含本期退款或返利冲减，分类保留正负金额。", style = LifeText.caption, color = colors.inkSecondary)
     }
     ranked.forEachIndexed { index, row ->

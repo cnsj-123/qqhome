@@ -78,4 +78,33 @@ class EncryptedBackupManagerV16Test:FinanceRoomTest() {
         assertTrue(EncryptedBackupManager.export(context,LocalWardrobeRepository(context),Uri.fromFile(unreachable),db,key).isFailure)
         assertTrue(key.all {it=='\u0000'});assertEquals(before,finance.portableSnapshot());assertScratchClean()
     }
+
+    @Test fun inspectedRestoreRejectsAReplacedSourceAndAcceptsOnlyTheVerifiedBytes()=runTest {
+        val event=seedUnknown();val wardrobe=LocalWardrobeRepository(context)
+        val file=files.newFile("preview.lifeos");val uri=Uri.fromFile(file)
+        assertTrue(EncryptedBackupManager.export(context,wardrobe,uri,db,password()).isSuccess)
+        val firstKey=password()
+        val first=EncryptedBackupManager.inspect(context,uri,firstKey).getOrThrow()
+        assertTrue(first.includesLifeOs);assertEquals(0,first.entries);assertEquals(32,first.sourceDigest.size)
+        assertTrue(firstKey.all {it=='\u0000'});assertScratchClean()
+        val before=finance.portableSnapshot()
+        // A second valid encryption has a different salt/nonce. Even valid substituted bytes
+        // cannot silently replace the file whose scope the user just reviewed.
+        assertTrue(EncryptedBackupManager.export(context,wardrobe,uri,db,password()).isSuccess)
+        val staleKey=password()
+        val refused=EncryptedBackupManager.restoreInspected(context,wardrobe,uri,db,staleKey,first)
+        assertTrue(refused.isFailure)
+        assertTrue(refused.exceptionOrNull()?.message.orEmpty().contains("备份文件已改变"))
+        assertEquals(before,finance.portableSnapshot());assertTrue(staleKey.all {it=='\u0000'});assertScratchClean()
+        val verified=EncryptedBackupManager.inspect(context,uri,password()).getOrThrow()
+        val target=Room.inMemoryDatabaseBuilder(context,LifeDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            assertTrue(EncryptedBackupManager.restoreInspected(context,wardrobe,uri,target,password(),verified).isSuccess)
+            val restored=FinanceRepository(target).portableSnapshot()
+            assertEquals(event,restored.v4!!.events.single().id)
+            assertEquals(PersonalCostTotal(0,1),FinanceCostProjection.eventTotal(restored,event))
+            assertEquals(1L,restored.v16!!.controlRows.single().restoreEpoch)
+            assertScratchClean()
+        } finally {target.close()}
+    }
 }
