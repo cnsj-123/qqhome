@@ -71,7 +71,7 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
     }
     @Test fun screenshotFailureReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("capture")
     @Test fun ocrTimeoutReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("timeout")
-    @Test fun absentTransactionFieldsReleaseLeaseAndSubsequentRefreshCannotReadFacts()=terminal("noFields")
+    @Test fun currencyRefusalReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("noFields")
     @Test fun unknownCurrencyKeepsEditableCandidateWithoutWritingLedger()=terminal("unknownCurrency")
     @Test fun cancellationReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("cancel")
     @Test fun successfulMountedEditorRetainsLeaseUntilEditorCloses()=terminal("success")

@@ -56,6 +56,6 @@ private fun readPhotoAspect(resolver: ContentResolver, uri: Uri): Float? {
     } catch (_: IllegalArgumentException) {
         null
     }
-    return if (orientation in ExifInterface.ORIENTATION_TRANSPOSE..ExifInterface.ORIENTATION_ROTATE_270)
+    return if ((orientation ?: ExifInterface.ORIENTATION_NORMAL) in ExifInterface.ORIENTATION_TRANSPOSE..ExifInterface.ORIENTATION_ROTATE_270)
         bounds.outHeight.toFloat() / bounds.outWidth else bounds.outWidth.toFloat() / bounds.outHeight
 }

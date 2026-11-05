@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.drawer
 import com.qq.closie.life.ui.theme.BundledText as Text
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -24,6 +25,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -38,7 +40,8 @@ import kotlinx.coroutines.delay
 fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
     active: Boolean = true,
     moduleOrder: List<String> = emptyList(),
-    onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() }) {
+    onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() },
+    interactive: Boolean = true) {
     val colors = LocalLifeOsColors.current
     val grid = rememberLazyGridState()
     val haptic = LocalHapticFeedback.current
@@ -52,6 +55,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     var lastTarget by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var undoOrder by remember { mutableStateOf<List<LifeModule>?>(null) }
     val save by rememberUpdatedState(onSaveOrder)
     LaunchedEffect(moduleOrder) { if (lifted == null && !saving) modules = orderedModules(moduleOrder) }
     val policy = com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
@@ -68,11 +72,12 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
         policy?.cancelReorder = cancellation
         onDispose { if (policy?.cancelReorder === cancellation) policy?.cancelReorder = null }
     }
-    fun persist(previous: List<LifeModule>, restoreDefault: Boolean = false) {
+    fun persist(previous: List<LifeModule>, restoreDefault: Boolean = false, rememberUndo: Boolean = true) {
         policy?.cancelReorder = null
         if (!restoreDefault && modules == previous) return
         saving = true
         save(if (restoreDefault) emptyList() else modules.map { it.id }, {
+            undoOrder = previous.takeIf { rememberUndo }
             saving = false; message = if (restoreDefault) "已恢复默认顺序" else "顺序已保存"
         }, {
             modules = previous; saving = false; message = it
@@ -109,7 +114,8 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     // The shell handles cancellation when hosted there; standalone drawers retain Back.
     BackHandler(enabled = active && lifted != null && !saving && policy == null) { cancel() }
     Box(modifier.fillMaxHeight()) {
-        LazyVerticalGrid(GridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("life-drawer")
+        LazyVerticalGrid(GridCells.Fixed(2), state = grid, userScrollEnabled = interactive,
+            modifier = Modifier.fillMaxSize().testTag("life-drawer")
             .pointerInput(active, saving) {
                 if (!active || saving) return@pointerInput
                 detectDragGesturesAfterLongPress(onDragStart = { point ->
@@ -131,7 +137,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     if (lifted != null) { lifted = null; persist(baseline) }
                 },
                     onDragCancel = { if (lifted != null) cancel() })
-            }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+            }, contentPadding = PaddingValues(horizontal = 24.dp, vertical = 22.dp)) {
             item(key = "brand", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -139,16 +145,15 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                             Text("生活的抽屉", style = LifeText.journal, color = colors.ink)
                             Text("把日子放回自己的位置", style = LifeText.caption, color = colors.inkSecondary)
                         }
-                        IconButton(onClose, enabled = !saving) { Icon(Icons.Outlined.Close, "收起生活的抽屉", Modifier.size(20.dp)) }
+                        if (interactive) IconButton(onClose, enabled = !saving) { Icon(Icons.Outlined.Close, "收起生活的抽屉", Modifier.size(20.dp)) }
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 16.dp).background(colors.card.copy(alpha = .65f), RoundedCornerShape(12.dp))
-                        .clickable { onOpenModule(LifeModules.find("search")) }.heightIn(min = 48.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        .clickable(enabled = interactive) { onOpenModule(LifeModules.find("search")) }.heightIn(min = 48.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), colors.inkSecondary)
                         Text("找一件东西、一段经历", Modifier.padding(start = 8.dp), style = LifeText.caption)
                     }
                     Row(Modifier.padding(top = 20.dp, bottom = 8.dp)) {
                         Text("手边常用", Modifier.weight(1f), style = LifeText.caption, color = colors.accentDeep)
-                        Text("长按直接移动", style = LifeText.caption, color = colors.inkSecondary)
                     }
                 }
             }
@@ -170,19 +175,28 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                                     } else false
                                 }
                             }
-                        }.clickable(enabled = lifted == null && !saving) { onOpenModule(module) })
+                        }.clickable(enabled = interactive && lifted == null && !saving) { onOpenModule(module) })
                 }
             }
             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.padding(top = 20.dp, bottom = 16.dp)) {
                     Text(message ?: "左滑收起 · 顺序会随你保留", style = LifeText.caption, color = colors.inkSecondary)
+                    undoOrder?.let { original ->
+                        TextButton({
+                            val before = modules
+                            modules = original
+                            persist(before, rememberUndo = false)
+                        }, enabled = interactive && !saving && lifted == null) { Text("撤销上次排序", style = LifeText.caption) }
+                    }
                     TextButton(onClick = {
                         val previous = modules
                         modules = orderedModules(emptyList())
                         persist(previous, restoreDefault = true)
-                    }, enabled = !saving && lifted == null, modifier = Modifier.testTag("drawer-restore-order")) {
+                    }, enabled = interactive && !saving && lifted == null, modifier = Modifier.testTag("drawer-restore-order")) {
                         Text("恢复默认顺序", style = LifeText.caption)
                     }
+                    Image(painterResource(com.qq.closie.R.drawable.lifeos_drawer_cat), null,
+                        Modifier.align(Alignment.End).size(62.dp))
                 }
             }
         }
@@ -191,7 +205,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                 translationX = pointer.x - grab.x; translationY = pointer.y - grab.y
                 scaleX = 1.035f; scaleY = 1.035f; shadowElevation = 8.dp.toPx()
                 shape = RoundedCornerShape(10.dp); clip = true
-            }.background(colors.card))
+            }.background(colors.card.copy(alpha = .9f)))
         }
     }
 }

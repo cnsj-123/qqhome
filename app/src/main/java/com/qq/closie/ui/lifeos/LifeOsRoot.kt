@@ -164,6 +164,9 @@ fun LifeOsRoot(
                             else nav.navigateLifeTopLevel(module.route)
                         }, onClose = { drawerOpen = false }, active = drawerOpen, moduleOrder = appearance.moduleOrder,
                             onSaveOrder = appearanceViewModel::saveModuleOrder)
+                    },
+                    homePreview = {
+                        com.qq.closie.ui.lifeos.home.LifeOsHomeScreen(home, {}, {}, {}, {}, {}, interactive = false)
                     }
                 ) {
                     LifeOsNavHost(repository, lifeContainer, externalCommand, onExternalCommandConsumed, nav, home,

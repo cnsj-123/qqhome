@@ -46,7 +46,7 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
         assertEquals(0,FinanceWindowShadow.rootReads[2] ?: 0)
         assertTrue(finance.snapshot().entries.isEmpty())
     }
-    @Test fun explicitClickBindsWindowAndMountedEditorNeverReadsTransactionFacts() {
+    @Test fun explicitClickAndMountedEditorReadOnlyTheirOriginalHostAndRevokedGrantReadsNothing() {
         val original=FinanceHostFixtures.ALIPAY;val other=FinanceHostFixtures.WECHAT
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,original),FinanceHostFixtures.window(2,other,false))
         val lease=requireNotNull(reader.bindActive());assertNull(lease.host.identity)

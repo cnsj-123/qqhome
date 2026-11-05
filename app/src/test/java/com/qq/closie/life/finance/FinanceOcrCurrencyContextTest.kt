@@ -20,7 +20,7 @@ class FinanceOcrCurrencyContextTest:FinanceRoomTest() {
         }
         assertTrue(finance.snapshot().entries.isEmpty())
     }
-    @Test fun foreignAndUnknownCurrencyCandidatesPreserveDecimalWithoutGuessingCny()=runTest {
+    @Test fun knownForeignMixedAndUnknownCurrencyFieldsCannotCreateCnyCandidates()=runTest {
         val known = listOf("USD" to 1234L, "JPY" to null, "CHF" to 1234L)
         for ((code, minor) in known) {
             val fields = FinanceLocalOcrParser.parse("币种：$code\n实付：12.34")

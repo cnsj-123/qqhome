@@ -45,7 +45,7 @@ class FinanceHostLifecycleTest {
     }
     private fun windows(vararg values:AccessibilityWindowInfo){shadowOf(service).setWindows(values.toList())}
     private fun event(type:Int,id:Int,pkg:String)=AccessibilityEvent.obtain(type).apply {packageName=pkg;shadowOf(this).setWindowId(id)}
-    @Test fun ordinaryContentRefreshKeepsClickBoundCaptureButHostNavigationLatchesInvalidation() {
+    @Test fun normalContentRefreshKeepsClickBoundCaptureButSamePackageNewOrderLatchesInvalidation() {
         windows(host());val lease=requireNotNull(bind());assertNull(lease.host.identity)
         windows(host(extra="同页刷新后文字"))
         lease.observe(event(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,1,lease.host.packageName),facts(),false)
@@ -71,7 +71,7 @@ class FinanceHostLifecycleTest {
         lease.observe(event(AccessibilityEvent.TYPE_WINDOWS_CHANGED,8,"other.app"),facts(true),true)
         assertFalse(lease.editorCurrent(facts(true)))
     }
-    @Test fun ownApplicationNavigationClosesReceiptAndExplicitClickCanBindUnknownHost() {
+    @Test fun ownApplicationNavigationIsNotConfusedWithOwnReceiptAndUnknownPagesCannotOwnAnEditor() {
         windows(host());val lease=requireNotNull(bind())
         windows(host(focused=false),window(2,service.packageName,AccessibilityWindowInfo.TYPE_APPLICATION,true))
         lease.observe(event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,2,service.packageName),facts(),true)
@@ -80,7 +80,7 @@ class FinanceHostLifecycleTest {
         val opaque=requireNotNull(bind());assertTrue(opaque.captureCurrent(facts()))
         assertTrue(opaque.editorCurrent(facts()))
     }
-    @Test fun editorUsesFrozenEvidenceAndClosesOnHostNavigation() {
+    @Test fun onlyBoundEditorMayValidateFactsOccludedByItsOwnPaperAndStillDetectsAnotherOrder() {
         windows(host());val lease=requireNotNull(bind())
         exposed=false
         windows(host(focused=false),window(2,service.packageName,AccessibilityWindowInfo.TYPE_SYSTEM,true))

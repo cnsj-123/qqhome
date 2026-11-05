@@ -50,6 +50,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val rowOrigins=remember {mutableMapOf<String,com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin>()}
     var recordOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
     val gesturePolicy=com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
+    val drawerDrag: ((Float, Boolean?) -> Unit)? = gesturePolicy?.let { policy ->
+        { distance, settled -> policy.financeDrawerDrag?.invoke(distance, settled) }
+    }
     val pager = rememberPagerState { FinanceView.entries.size }
     // Pager pages are lazy. Their scrolling state belongs to the module, not a mounted page.
     val listStates = listOf(rememberLazyListState(), rememberLazyListState(),rememberLazyListState())
@@ -214,7 +217,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
     }, bottomBar = {
         // This bar belongs to Finance only. The Life OS root has no bottom navigation.
-        NavigationBar(modifier=Modifier.lifeHorizontalSwipe(onRight={ gesturePolicy?.requestDrawer?.invoke() }),
+        NavigationBar(modifier=Modifier.lifeHorizontalSwipe(onRightDrag = drawerDrag),
             containerColor = colors.card, tonalElevation = 0.dp, windowInsets = WindowInsets(0)) {
             FinanceView.entries.forEach { target ->
                 NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; selectView(target) },
@@ -299,7 +302,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         LazyColumn(Modifier.weight(1f).fillMaxWidth()
             .lifeHorizontalSwipe(enabled=view==FinanceView.TRANSACTIONS && page==pager.currentPage &&
                 !editing && !viewing && !accountEditing && detailAccount==null && chartLabel==null,
-                onRight={ gesturePolicy?.requestDrawer?.invoke() })
+                onRightDrag = drawerDrag)
             .testTag(if (page == pager.currentPage) "finance-ledger" else "finance-ledger-$page"),
             state = listState, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.loading) item { Text("正在打开账本……", style = LifeText.body) }

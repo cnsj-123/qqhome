@@ -44,7 +44,7 @@ class FinancePresentationSafetyTest:FinanceRoomTest() {
         assertTrue(runCatching {finance.workspace.setCategoryIcon(token(),category,"home",1)}.isFailure)
         assertEquals(restored,finance.snapshot())
     }
-    @Test fun incompleteOcrCreatesDraftsWithoutCnyMinorUnitsOrCanonicalEntries()=runTest {
+    @Test fun foreignAndUnknownOcrCannotCreateCnyCandidatesOrExtraction()=runTest {
         for(text in listOf("支付成功\n支付金额:12.34","支付成功\n¥12.34","支付成功\n￥12.34","人民币12.34 CHF","人民币12.34 USD")) {
             val fields=FinanceLocalOcrParser.parse(text)
             assertNull(fields.currencyCode);assertNull(fields.amountMinor)

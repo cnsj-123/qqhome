@@ -30,7 +30,8 @@ fun LifeFunctionPages(
     horizontalPages: Boolean = false,
     home: Boolean = false,
     effects: com.qq.closie.data.appearance.FunctionPageEffects = com.qq.closie.data.appearance.FunctionPageEffects(),
-    onOpenChange: (Boolean) -> Unit, functionPage: @Composable () -> Unit, content: @Composable () -> Unit
+    onOpenChange: (Boolean) -> Unit, functionPage: @Composable () -> Unit,
+    homePreview: (@Composable () -> Unit)? = null, content: @Composable () -> Unit
 ) {
     val colors = LocalLifeOsColors.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -49,6 +50,23 @@ fun LifeFunctionPages(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val revealWidth = maxWidth * .84f
         val travel = with(LocalDensity.current) { revealWidth.toPx() }
+        val policy = LocalFunctionPagePolicy.current
+        DisposableEffect(policy, enabled, horizontalPages, travel) {
+            if (enabled && horizontalPages && travel > 0f) policy?.financeDrawerDrag = { distance, settle ->
+                if (settle == null) {
+                    if (!currentOpen) {
+                        dragging = true
+                        progress = (distance / travel).coerceIn(0f, 1f)
+                    }
+                } else {
+                    dragging = false
+                    changeOpen(settle)
+                }
+            }
+            onDispose {
+                if (horizontalPages) policy?.financeDrawerDrag = null
+            }
+        }
         val mode = if (reducedMotion) FunctionPageStyle.FLAT else style
         Box(Modifier.fillMaxSize().background(colors.paper)
             .pointerInput(enabled, travel, edge, horizontalPages) {
@@ -137,7 +155,13 @@ fun LifeFunctionPages(
             }.background(colors.paper)) {
                 if (home) LifePaperBackdrop(effects, Modifier.fillMaxSize(), home = true)
                 Box(if (open) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) { content() }
-                if (open || dragging) Box(Modifier.fillMaxSize().clickable { changeOpen(false) })
+                if (!home && homePreview != null && (open || dragging || progress > 0f)) {
+                    Box(Modifier.fillMaxSize().background(colors.paper).clearAndSetSemantics {}) {
+                        LifePaperBackdrop(effects, Modifier.fillMaxSize(), home = true)
+                        homePreview()
+                    }
+                }
+                if (enabled && (open || dragging)) Box(Modifier.fillMaxSize().clickable { changeOpen(false) })
             }
         }
     }

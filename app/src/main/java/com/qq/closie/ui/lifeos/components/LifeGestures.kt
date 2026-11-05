@@ -25,9 +25,11 @@ fun reducedLifeMotion(): Boolean {
 
 /** Content swipes, excluding both Android system-back edges. */
 @Composable
-fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? = null, onRight: (() -> Unit)? = null): Modifier {
+fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? = null, onRight: (() -> Unit)? = null,
+    onRightDrag: ((Float, Boolean?) -> Unit)? = null): Modifier {
     val left = rememberUpdatedState(onLeft)
     val right = rememberUpdatedState(onRight)
+    val rightDrag = rememberUpdatedState(onRightDrag)
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }
     val edge = systemBackEdgePx()
     return if (!enabled) this else pointerInput(threshold, edge) {
@@ -39,6 +41,7 @@ fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? 
             // Do not consume anything until a horizontal intent is clear; vertical scrolling wins.
             var distance = 0f
             var drag: androidx.compose.ui.input.pointer.PointerInputChange? = null
+            var progress: ((Float, Boolean?) -> Unit)? = null
             while (drag == null) {
                 val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                     ?: return@awaitEachGesture
@@ -47,20 +50,30 @@ fun Modifier.lifeHorizontalSwipe(enabled: Boolean = true, onLeft: (() -> Unit)? 
                 when (LifeSwipeIntent.resolve(delta.x, delta.y, viewConfiguration.touchSlop)) {
                     LifeSwipeIntent.Direction.VERTICAL -> return@awaitEachGesture
                     LifeSwipeIntent.Direction.LEFT, LifeSwipeIntent.Direction.RIGHT -> {
-                        if ((delta.x < 0 && left.value == null) || (delta.x > 0 && right.value == null)) return@awaitEachGesture
+                        if ((delta.x < 0 && left.value == null) ||
+                            (delta.x > 0 && right.value == null && rightDrag.value == null)) return@awaitEachGesture
                         distance = delta.x
+                        progress = rightDrag.value.takeIf { delta.x > 0f }
                         change.consume()
                         drag = change
                     }
                     null -> Unit
                 }
             }
-            val released = horizontalDrag(drag.id) { change ->
-                distance += change.position.x - change.previousPosition.x
-                change.consume()
+            var settled = false
+            try {
+                progress?.invoke(distance, null)
+                val released = horizontalDrag(drag.id) { change ->
+                    distance += change.position.x - change.previousPosition.x
+                    progress?.invoke(distance, null)
+                    change.consume()
+                }
+                settled = released && distance > threshold
+                if (released && distance < -threshold && progress == null) left.value?.invoke()
+                if (settled && progress == null) right.value?.invoke()
+            } finally {
+                progress?.invoke(distance, settled)
             }
-            if (released && distance < -threshold) left.value?.invoke()
-            if (released && distance > threshold) right.value?.invoke()
         }
     }
 }
