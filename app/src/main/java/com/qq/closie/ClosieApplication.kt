@@ -23,6 +23,12 @@ import kotlinx.coroutines.flow.first
  * No Hilt, no manual re-instantiation.
  */
 class ClosieApplication : Application() {
+    val moduleAccess by lazy { com.qq.closie.data.privacy.ModuleAccessRepository(this) {
+        lifeContainer.financeRepository.economics.token().restoreEpoch
+    } }
+
+    fun createFinanceAssistantCoordinator(readPolicy: suspend () -> com.qq.closie.life.finance.FinanceAssistancePolicy) =
+        com.qq.closie.life.finance.FinanceAssistantCoordinator(readPolicy, moduleAccess.owner)
     internal val backupTasks = com.qq.closie.data.backup.BackupTaskOwner(
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

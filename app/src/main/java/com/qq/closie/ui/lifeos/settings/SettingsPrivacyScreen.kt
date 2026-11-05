@@ -45,7 +45,8 @@ fun SettingsPrivacyScreen(finance: FinanceRepository, onBack: () -> Unit) {
                 activePurposes == 0 -> "按用途管理"
                 else -> "$activePurposes 项已授权"
             }
-            SettingsLine("财务 Finance", "首页展示、分享、本地查询与授权记录", Icons.Outlined.AccountBalanceWallet, status) {
+            FinanceModulePermissionControl(state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L, state.loaded)
+            SettingsLine("财务用途与字段", "首页展示、分享、本地查询与授权记录", Icons.Outlined.FactCheck, status) {
                 financeOpen = true
             }
             SettingsLine("健康 Health", "AI 模块访问", Icons.Outlined.FavoriteBorder, "未接入")

@@ -1,5 +1,9 @@
 package com.qq.closie.life.finance
 
+import com.qq.closie.life.permissions.*
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+
 enum class FinanceAssistantCapability { QUERY_CONDITIONS, EXPLANATION, ANALYSIS, CHANGE_SUGGESTION }
 enum class FinanceProviderTransport { LOCAL_FAKE, REMOTE }
 data class FinanceDisclosurePlan(val providerId: String, val eventIds: Set<String>,
@@ -8,7 +12,8 @@ data class DisclosedFinanceRow(val eventId: String, val currencyCode: String,
     val amountMinor: Long?, val occurredAt: Long?, val description: String?)
 data class FinanceAssistanceRequest(val requestId: String, val capability: FinanceAssistantCapability,
     val question: String, val disclosure: FinanceDisclosurePlan, val rows: List<DisclosedFinanceRow>,
-    val dataRevision: String, val policyRevision: Long, val restoreEpoch: Long)
+    val dataRevision: String, val policyRevision: Long, val restoreEpoch: Long, val conversationId: String? = null,
+    val restoreGeneration: Long = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration)
 sealed interface FinanceAssistanceResult {
     data class QuerySuggestion(val spec: FinanceQuerySpec) : FinanceAssistanceResult
     data class Explanation(val text: String) : FinanceAssistanceResult
@@ -29,13 +34,25 @@ data class FinanceAssistancePolicy(val enabled: Boolean = false, val restoreEpoc
 
 /** The only V16 dispatch path permits a local fake. No real-cloud client is wired or called. */
 class FinanceAssistantCoordinator(private val readPolicy: suspend () -> FinanceAssistancePolicy,
+    private val moduleAccess: ModuleAccessOwner? = null,
     private val clock: () -> Long = System::currentTimeMillis) {
     suspend fun request(provider: FinanceAssistantProvider, request: FinanceAssistanceRequest): FinanceAssistanceResult {
         val before = readPolicy()
         validate(before, provider, request)
+        val access = requireNotNull(moduleAccess) { "模块读取控制尚未接入，拒绝披露" }
+        val permit = access.reserve(ModuleReadRequest(ReadModule.FINANCE, provider.id, request.requestId,
+            request.restoreEpoch, request.conversationId, request.restoreGeneration))
+        try {
+        // Reserving a module permit may suspend. Recheck the narrower disclosure grants before
+        // the provider receives any rows, as well as after it returns.
+        val ready = readPolicy()
+        validate(ready, provider, request)
+        require(ready.grants == before.grants && ready.scope == before.scope) { "用途授权已改变" }
+        access.validate(permit)
         val result = provider.assist(request)
         val after = readPolicy()
         validate(after, provider, request)
+        access.validate(permit)
         require(after.dataRevision == before.dataRevision && after.grants == before.grants && after.scope == before.scope) { "数据或授权已改变，请重新复核" }
         when (result) {
             is FinanceAssistanceResult.QuerySuggestion -> {
@@ -46,6 +63,7 @@ class FinanceAssistantCoordinator(private val readPolicy: suspend () -> FinanceA
             is FinanceAssistanceResult.ChangeSuggestion -> require(result.text.length <= 2_000)
         }
         return result
+        } finally { withContext(NonCancellable) { access.finish(permit) } }
     }
     private fun validate(policy: FinanceAssistancePolicy, provider: FinanceAssistantProvider, request: FinanceAssistanceRequest) {
         require(policy.enabled && provider.transport == FinanceProviderTransport.LOCAL_FAKE) { "云能力关闭；本版本仅离线验证 Provider 契约" }
