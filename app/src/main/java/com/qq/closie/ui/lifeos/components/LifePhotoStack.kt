@@ -1,139 +1,188 @@
 package com.qq.closie.ui.lifeos.components
 
-import com.qq.closie.life.ui.theme.BundledText as Text
-
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.qq.closie.R
+import com.qq.closie.life.ui.theme.BundledText as Text
+import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.ui.lifeos.media.LifeMediaUi
-import com.qq.closie.ui.lifeos.theme.*
+import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.sin
 
-/** UI interaction only. No storage knowledge and no production sample images. */
+/** Slot geometry changes together, so a photo keeps its identity and pose throughout a swipe. */
 @Composable
-fun LifePhotoStack(photos: List<LifeMediaUi>, onPhotoClick: (LifeMediaUi) -> Unit, modifier: Modifier = Modifier, hiddenPhotoId:String?=null,
-    onPhotoOrigin:((LifeMediaUi,LifeSurfaceOrigin)->Unit)?=null) {
-    if (photos.isEmpty()) { LifeEmptyState("今天还没有照片。", modifier); return }
+fun LifePhotoStack(
+    photos: List<LifeMediaUi>,
+    onPhotoClick: (LifeMediaUi) -> Unit,
+    modifier: Modifier = Modifier,
+    hiddenPhotoId: String? = null,
+    onPhotoOrigin: ((LifeMediaUi, LifeSurfaceOrigin) -> Unit)? = null,
+    interactive: Boolean = true,
+    aspects: Map<String, Float> = emptyMap()
+) {
+    if (photos.isEmpty()) return
     val colors = LocalLifeOsColors.current
-    val orientation=androidx.compose.ui.platform.LocalConfiguration.current.orientation
-    val origins=remember {mutableMapOf<String,LifeSurfaceOrigin>()}
-    val reduced = reducedLifeMotion()
-    val scope = rememberCoroutineScope()
+    val orientation = LocalConfiguration.current.orientation
     val density = LocalDensity.current
-    val threshold = with(density) { 48.dp.toPx() }
-    val lift = with(density) { 8.dp.toPx() }
-    var index by rememberSaveable(photos.map { it.id }) { mutableIntStateOf(0) }
-    var drag by remember { mutableFloatStateOf(0f) }
-    var dragging by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    val settling = remember { Animatable(0f) }
-    var animationJob by remember { mutableStateOf<Job?>(null) }
-    val current = PhotoStackInteraction.nextIndex(index, 0, photos.size)
-
-    fun settle(step: Int, distance: Float, extent: Float) {
-        animationJob?.cancel()
-        dragging = false
-        animationJob = scope.launch {
-            busy = true
-            try {
-                settling.snapTo(distance)
-                if (!reduced) settling.animateTo(
-                    if (step == 0) 0f else (if (step > 0) -1 else 1) * (extent + threshold),
-                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
-                )
-                if (step != 0) index = PhotoStackInteraction.nextIndex(current, step, photos.size)
-                settling.snapTo(0f)
-                drag = 0f
-            } finally { busy = false }
-        }
-    }
+    val scope = rememberCoroutineScope()
+    val reduced = reducedLifeMotion()
+    val photoIds = remember(photos) { photos.map { it.id } }
+    var index by rememberSaveable(photoIds) { mutableIntStateOf(0) }
+    var fraction by remember(photoIds) { mutableFloatStateOf(0f) }
+    var settlement by remember(photoIds) { mutableStateOf<Job?>(null) }
+    val origins = remember(photoIds) { mutableMapOf<String, LifeSurfaceOrigin>() }
+    val caption = photos[index].caption?.takeIf(String::isNotBlank)
 
     Column(modifier) {
-        BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f / .84f).clipToBounds()) {
-            val extent = with(density) { maxWidth.toPx() }
-            val offset = if (dragging) drag else settling.value
-            val dragModifier = Modifier.pointerInput(photos.map { it.id }, current, reduced) {
-                if (photos.size < 2) return@pointerInput
-                val start: (androidx.compose.ui.geometry.Offset) -> Unit = {
-                    drag = if (busy) settling.value else 0f
-                    animationJob?.cancel(); busy = false; dragging = true
-                }
-                val end: () -> Unit = { settle(PhotoStackInteraction.releaseStep(drag, threshold, photos.size), drag, extent) }
-                val cancel: () -> Unit = { settle(0, drag, extent) }
-                detectHorizontalDragGestures(start, end, cancel) { change, delta -> change.consume(); drag += delta }
-            }
-            (minOf(4, photos.size) - 1 downTo 0).forEach { depth ->
-                val photo = photos[PhotoStackInteraction.nextIndex(current, depth, photos.size)]
-                val top = depth == 0
-                val pose = PhotoStackLayout.pose(photo.id, depth, maxWidth.value, maxHeight.value)
-                Surface(
-                    Modifier.width(pose.width.dp).height(pose.height.dp)
-                        .offset((pose.centerX - pose.width / 2).dp, (pose.centerY - pose.height / 2).dp)
-                        .zIndex((4 - depth).toFloat())
-                        .lifeSurfaceOrigin(orientation,pose.rotation) {origins[photo.id]=it}
-                        .graphicsLayer {
-                            alpha=if(photo.id==hiddenPhotoId)0f else 1f
-                            val progress = (abs(offset) / extent.coerceAtLeast(1f)).coerceIn(0f, 1f)
-                            translationX = if (top) offset else 0f
-                            translationY = if (top && dragging && !reduced) -lift else 0f
-                            rotationZ = pose.rotation + if (top && !reduced) (offset / extent.coerceAtLeast(1f)).coerceIn(-1f, 1f) * 4f else 0f
-                            scaleX = 1f + if (top && dragging && !reduced) .012f else if (depth == 1 && !reduced) progress * .015f else 0f
-                            scaleY = scaleX
-                            shadowElevation = if (reduced) 0f else (if (top && dragging) 16.dp else 6.dp).toPx()
-                        }.then(if (top) dragModifier.semantics {
-                            customActions = listOf(
-                                CustomAccessibilityAction("上一张照片") { if (photos.size > 1) settle(-1, 0f, extent); true },
-                                CustomAccessibilityAction("下一张照片") { if (photos.size > 1) settle(1, 0f, extent); true }
-                            )
-                        }.clickable(role = Role.Button, onClickLabel = "查看照片", onClick = { if (!busy) {
-                            val origin=origins[photo.id]
-                            if(origin!=null && onPhotoOrigin!=null)onPhotoOrigin(photo,origin) else onPhotoClick(photo)
-                        } }) else Modifier.clearAndSetSemantics {}),
-                    shape = RoundedCornerShape(1.dp), color = Color(0xFFFFFDFA)
-                ) {
-                    Column(Modifier.padding(7.dp)) {
-                        LifeMediaImage(photo, Modifier.weight(1f).fillMaxWidth())
+        BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1.41f).clipToBounds()) {
+            val width = maxWidth.value
+            val height = maxHeight.value
+            if (width <= 0f || height <= 0f) return@BoxWithConstraints
+            val travel = with(density) { (maxWidth * .74f).toPx() }.coerceAtLeast(1f)
+            val swipeThreshold = with(density) { 48.dp.toPx() }
+            val flingThreshold = with(density) { 640.dp.toPx() }
 
+            fun settle(step: Int, velocity: Float = 0f) {
+                settlement?.cancel()
+                settlement = scope.launch {
+                    if (!reduced) animate(
+                        fraction, -step.toFloat(), velocity / travel,
+                        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
+                    ) { value, _ -> fraction = value.coerceIn(-1f, 1f) }
+                    index = PhotoStackInteraction.nextIndex(index, step, photos.size)
+                    fraction = 0f
+                }
+            }
+
+            val step = if (fraction > 0f) -1 else 1
+            val progress = abs(fraction)
+            val next = PhotoStackInteraction.nextIndex(index, step, photos.size)
+            // The whole collection remains navigable. Cards deep enough to be occluded
+            // have no decoded image until they move toward the visible layers.
+            val layerCount = photos.size.coerceAtMost(12)
+            val activeIndices = remember(index, next, photos.size, layerCount) {
+                buildSet {
+                    repeat(layerCount) { depth ->
+                        add(PhotoStackInteraction.nextIndex(index, depth, photos.size))
+                        add(PhotoStackInteraction.nextIndex(next, depth, photos.size))
+                    }
+                }
+            }
+            for (photoIndex in activeIndices) {
+                val photo = photos[photoIndex]
+                key(photo.id) {
+                    val oldDepth = Math.floorMod(photoIndex - index, photos.size)
+                    val newDepth = Math.floorMod(photoIndex - next, photos.size)
+                    val ratio = aspects[photo.id] ?: photo.aspectRatio
+                    val from = PhotoStackLayout.pose(photo.id, oldDepth, width, height, ratio)
+                    val to = PhotoStackLayout.pose(photo.id, newDepth, width, height, ratio)
+                    val pose = PhotoStackLayout.interpolate(from, to, progress)
+                    val wraps = abs(oldDepth - newDepth) > 1
+                    val excursion = if (wraps && !reduced) {
+                        val direction = if (step > 0) -1 else 1
+                        width * .47f * direction * sin(PI * progress).toFloat()
+                    } else 0f
+                    val depth = if (progress < .50f) oldDepth else newDepth
+                    val top = oldDepth == 0
+                    val showTape = if (progress < .50f) top else newDepth == 0
+                    val changeAlpha = when {
+                        oldDepth >= layerCount -> progress
+                        newDepth >= layerCount -> 1f - progress
+                        else -> 1f
+                    }
+                    val paperSize = minOf(7.dp, pose.width.dp / 5, pose.height.dp / 5)
+                    val input = if (top && interactive) {
+                        val drag = rememberDraggableState { delta ->
+                            fraction = (fraction + delta / travel).coerceIn(-1f, 1f)
+                        }
+                        Modifier.draggable(
+                            state = drag,
+                            orientation = Orientation.Horizontal,
+                            enabled = photos.size > 1,
+                            startDragImmediately = settlement?.isActive == true,
+                            onDragStarted = { settlement?.cancel() },
+                            onDragStopped = { velocity ->
+                                val distance = fraction * travel
+                                val release = if (abs(velocity) >= flingThreshold && abs(distance) >= swipeThreshold * .33f)
+                                    if (velocity < 0f) 1 else -1
+                                else PhotoStackInteraction.releaseStep(distance, swipeThreshold, photos.size)
+                                settle(release, velocity)
+                            }
+                        ).semantics {
+                            if (photos.size > 1) customActions = listOf(
+                                CustomAccessibilityAction("上一张照片") { settle(-1); true },
+                                CustomAccessibilityAction("下一张照片") { settle(1); true }
+                            )
+                        }.clickable(role = Role.Button, onClickLabel = "查看照片") {
+                            if (settlement?.isActive != true) {
+                                val origin = origins[photo.id]
+                                if (origin != null && onPhotoOrigin != null) onPhotoOrigin(photo, origin)
+                                else onPhotoClick(photo)
+                            }
+                        }
+                    } else Modifier.clearAndSetSemantics {}
+
+                    Box(
+                        Modifier.size(pose.width.dp, pose.height.dp)
+                            .offset((pose.centerX - pose.width / 2 + excursion).dp, (pose.centerY - pose.height / 2).dp)
+                            .zIndex(-depth.toFloat())
+                            .lifeSurfaceOrigin(orientation, pose.rotation) { origins[photo.id] = it }
+                            .graphicsLayer {
+                                rotationZ = pose.rotation
+                                alpha = if (photo.id == hiddenPhotoId) 0f else changeAlpha
+                            }.then(input)
+                    ) {
+                        Surface(
+                            Modifier.fillMaxSize(), shape = RoundedCornerShape(1.dp),
+                            color = if (colors.isDark) colors.card else Color(0xFFFFFDFA),
+                            shadowElevation = 5.dp
+                        ) {
+                            LifeMediaImage(photo, Modifier.fillMaxSize().padding(paperSize), ContentScale.Fit)
+                        }
+                        if (showTape) Image(
+                            painterResource(R.drawable.lifeos_photo_tape), null,
+                            Modifier.align(Alignment.TopCenter).offset(y = (-10).dp).size(41.dp, 22.dp)
+                        )
                     }
                 }
             }
         }
-        val selected = photos[current]
-        Text(selected.caption ?: selected.title ?: "", Modifier.fillMaxWidth().padding(top = 8.dp),
-            style = LifeText.caption, color = colors.inkSecondary, maxLines = 2)
-    }
-}
-
-@Preview(name = "Photo Stack · PreviewOnly fixture", showBackground = true)
-@Composable
-private fun LifePhotoStackPreview() {
-    LifeOsTheme {
-        LifePhotoStack(listOf(LifeMediaUi("preview-only-1", null, caption = "PreviewOnly · 第一张"),
-            LifeMediaUi("preview-only-2", null, caption = "PreviewOnly · 第二张"),
-            LifeMediaUi("preview-only-3", null, caption = "PreviewOnly · 第三张")), {})
+        if (caption != null) Text(
+            caption, Modifier.fillMaxWidth().padding(top = 5.dp, end = 18.dp),
+            style = LifeType.journalFor(caption).copy(fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp)),
+            color = colors.accentDeep, textAlign = TextAlign.End, maxLines = 2
+        )
     }
 }

@@ -18,7 +18,10 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
-data class HomePhotoReference(val id: String, val assetId: String, val date: LocalDate, val uri: String?, val name: String?)
+data class HomePhotoReference(
+    val id: String, val assetId: String, val date: LocalDate, val uri: String?,
+    val aspectRatio: Float? = null
+)
 
 /** The home-photo link is explicit Home sharing consent, not a gallery scan.
  * Its owner is the registered, typed MediaAsset itself. No parallel media store or file copy.
@@ -35,9 +38,11 @@ class HomePhotoRepository(private val database: LifeDatabase) {
                     database.mediaDao().getHomePhotoLinks().map { link ->
                         val source = database.mediaDao().getResourcesForAsset(link.mediaAssetId)
                             .firstOrNull { it.role in setOf(MediaResourceRole.ORIGINAL, MediaResourceRole.PRIMARY_IMAGE) && it.contentUri != null }
+                        val width = source?.width?.takeIf { it > 0 }
+                        val height = source?.height?.takeIf { it > 0 }
                         HomePhotoReference(link.id, link.mediaAssetId,
                             Instant.ofEpochMilli(link.createdAt).atZone(ZoneId.systemDefault()).toLocalDate(),
-                            source?.contentUri, source?.originalName)
+                            source?.contentUri, if (width != null && height != null) width.toFloat() / height else null)
                     }
                 }
             }

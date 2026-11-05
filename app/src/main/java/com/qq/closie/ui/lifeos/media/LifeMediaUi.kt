@@ -8,5 +8,6 @@ data class LifeMediaUi(
     val id: String, val uri: String?, val title: String? = null, val caption: String? = null,
     val mediaKind: LifeMediaKind = LifeMediaKind.PHOTO,
     val motionAvailable: Boolean = false, val pairedVideoUri: String? = null,
-    val sourceState: MediaSourceState = MediaSourceState.AVAILABLE
+    val sourceState: MediaSourceState = MediaSourceState.AVAILABLE,
+    val aspectRatio: Float? = null
 )

@@ -38,9 +38,10 @@ internal fun rememberFunctionPageVisuals(effects: FunctionPageEffects, home: Boo
         // never the opacity endpoint or the atmosphere amount.
         val neutral = lerp(colors.paper, if (colors.isDark) androidx.compose.ui.graphics.Color.Black
             else androidx.compose.ui.graphics.Color.White, (if (home) effects.homeBlur / 100f * .35f else effects.diffusion))
+        val colorMix = if (home) effects.homeGradient / 50f else effects.atmosphereScale * effects.gradient / 50f
         val stops = listOf(colors.secondary to .26f, colors.soft to .32f,
             colors.paper to 0f, colors.warm to .30f, colors.accent to .09f).map { (tint, mix) ->
-            lerp(neutral, tint, mix * effects.atmosphereScale * (if (home) effects.homeGradient else effects.gradient) / 50f).copy(alpha = if (home) 1f else effects.surfaceAlpha)
+            lerp(neutral, tint, (mix * colorMix).coerceIn(0f, 1f)).copy(alpha = if (home) 1f else effects.surfaceAlpha)
         }
         FunctionPageVisuals(Brush.linearGradient(stops), blur)
     }
