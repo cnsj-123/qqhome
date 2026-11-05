@@ -21,24 +21,30 @@ internal data class FinanceReviewReceiptModel(
                 proposal.targetAccountId.orEmpty(), FinanceTime.input(proposal.occurredAt), safe.description,
                 proposal.category, tags.joinToString("，"), proposal.occurredAt, proposal.subcategory,
                 FinanceRelationshipDraft.fromProposal(proposal), tree.find(proposal.category, proposal.subcategory)?.id)
-            val account = snapshot.accounts.find { it.id == content.accountId && it.archivedAt == null && it.currencyCode == "CNY" }
+            val permittedCurrency = FinanceEvidenceOrigin.permittedCurrency(proposal, snapshot.v16)
+            val account = snapshot.accounts.find {
+                it.id == content.accountId && it.archivedAt == null &&
+                    (permittedCurrency == null || it.currencyCode == permittedCurrency)
+            }
+            val currency = account?.currencyCode ?: permittedCurrency
             val category = tree.node(content.categoryId) ?: tree.find(content.category, content.subcategory)
-            val amount = runCatching { FinanceCalculator.evaluate(content.amount) }.getOrNull()
+            val amount = currency?.let { runCatching { FinanceCalculator.evaluate(content.amount, it) }.getOrNull() }
             val occurred = runCatching { FinanceTime.resolve(content.occurredAt, content.preservedOccurredAt) }.getOrNull()
             val event = content.relationship.eventId?.let { id -> snapshot.v4?.events?.find { it.id == id && it.voidedAt == null } }
             val duplicates = amount?.let { FinanceDuplicateReview.candidates(proposal.id, FinanceProposalKind.valueOf(content.kind.name),
-                it, occurred ?: proposal.occurredAt, snapshot.v4?.proposals.orEmpty(), snapshot) }.orEmpty()
+                it, occurred ?: proposal.occurredAt, snapshot.v4?.proposals.orEmpty(), snapshot, requireNotNull(currency)) }.orEmpty()
             val reason = when {
                 FinanceEvidenceCorrelation.blocking(proposal, snapshot.v4?.proposals.orEmpty(),snapshot.v16).isNotEmpty() -> "付款编号可能重复或冲突，请核对来源身份；同一笔请忽略重复小票"
                 !reviewedDuplicateIds.containsAll(duplicates) -> "存在相近记录，请打开完整小票核对；同一笔请忽略，其他交易须明确确认"
                 proposal.status !in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) -> "这笔已处理，请重新打开"
-                FinanceEvidenceOrigin.requiresManualAccount(proposal) && proposal.role == FinanceFlowRole.REFUND &&
-                    (content.kind != FinanceEditorKind.INCOME || content.relationship.role != FinanceFlowRole.REFUND) -> "退款须保留退款性质并关联原资金事项"
+                FinanceEvidenceOrigin.requiresManualAccount(proposal) &&
+                    proposal.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK) &&
+                    (content.kind != FinanceEditorKind.INCOME || content.relationship.role != proposal.role) -> "调整到账须保留资金性质并关联原事项"
                 FinanceEvidenceOrigin.requiresManualAccount(proposal) && proposal.kind == FinanceProposalKind.TRANSFER &&
                     content.kind != FinanceEditorKind.TRANSFER -> "还款候选须核对两端账户"
+                account == null -> "请选择账户以确认币种"
                 amount == null || amount <= 0 -> "金额需要核对"
                 occurred == null -> "时间需要核对"
-                account == null -> "需要选择账户"
                 content.kind == FinanceEditorKind.TRANSFER -> "转账需要核对两端账户"
                 category == null -> "需要选择分类"
                 content.relationship.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REIMBURSEMENT, FinanceFlowRole.SETTLEMENT,
@@ -46,7 +52,7 @@ internal data class FinanceReviewReceiptModel(
                 else -> null
             }
             val confirmation = if (reason != null) null else runCatching {
-                content.copy(categoryId = category!!.id).toProposalConfirmation().copy(reviewedDuplicateIds = reviewedDuplicateIds)
+                content.copy(categoryId = category!!.id).toProposalConfirmation(requireNotNull(currency)).copy(reviewedDuplicateIds = reviewedDuplicateIds)
             }.getOrNull()
             return FinanceReviewReceiptModel(proposal.id, proposal.revision, amount, FinanceProposalKind.valueOf(content.kind.name),
                 occurred ?: proposal.occurredAt, proposal.discoverySourceLabel() + " · " + FinanceEvidenceOrigin.label(proposal),
@@ -57,8 +63,8 @@ internal data class FinanceReviewReceiptModel(
 }
 
 /** Shared command translation for editable receipts and the default overlay; repository validates truth. */
-internal fun FinanceEntryDraft.toProposalConfirmation() = FinanceProposalConfirmation(
+internal fun FinanceEntryDraft.toProposalConfirmation(currency: String) = FinanceProposalConfirmation(
     FinanceProposalKind.valueOf(kind.name), accountId, targetAccountId.ifBlank { null },
-    FinanceCalculator.evaluate(amount), description, FinanceTime.resolve(occurredAt, preservedOccurredAt),
+    FinanceCalculator.evaluate(amount, currency), description, FinanceTime.resolve(occurredAt, preservedOccurredAt),
     category, subcategory, tags.split('，', ',').map(String::trim).filter(String::isNotBlank),
-    relationship.resolve("CNY"), categoryId,personalReductionMinor=costReductionText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,"CNY",true)})
+    relationship.resolve(currency), categoryId,personalReductionMinor=costReductionText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,currency,true)})

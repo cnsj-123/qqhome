@@ -8,10 +8,14 @@ class FinanceReviewRepository(private val db:LifeDatabase,finance:FinanceReposit
     private val commands=FinanceCommandRunner(db,finance,clock)
     private val dao get()=db.financeV16Dao()
     private val provenance=finance.provenance
-    private suspend fun validateAccount(accountId:String,proposalId:String,occurredAt:Long) {
-        val account=requireNotNull(db.financeDao().account(accountId))
-        require(account.archivedAt==null && account.currencyCode=="CNY") {"请选择有效的人民币账户"}
-        provenance.validateAccountSuggestion(proposalId,accountId,occurredAt)
+    private suspend fun validateAccount(accountId: String, proposal: FinanceProposalEntity, occurredAt: Long): String {
+        val account = requireNotNull(db.financeDao().account(accountId)) { "请选择账户以确认币种" }
+        val currency = FinanceEvidenceOrigin.permittedCurrency(proposal, readFinanceSnapshot(db, true).v16)
+        require(account.archivedAt == null && (currency == null || account.currencyCode == currency)) {
+            currency?.let { "请选择 $it 账户" } ?: "请选择有效账户"
+        }
+        provenance.validateAccountSuggestion(proposal.id, accountId, occurredAt)
+        return account.currencyCode
     }
     private suspend fun linkingSession(proposalId:String,revision:Long,epoch:Long):Pair<FinanceReviewSessionEntity,FinanceProposalEntity> {
         val row=requireNotNull(dao.reviewSessionRows().singleOrNull {it.proposalId==proposalId && it.voidedAt==null})
@@ -34,8 +38,8 @@ class FinanceReviewRepository(private val db:LifeDatabase,finance:FinanceReposit
             val (row,p)=linkingSession(proposalId,sessionRevision,token.restoreEpoch)
             val e=requireNotNull(db.financeDao().entry(entryId))
             require(e.revision==entryRevision && e.voidedAt==null && db.financeDao().transferForEntry(entryId)==null)
-            validateAccount(e.accountId,p.id,e.occurredAt)
-            require(row.kind!=FinanceDraftKind.TRANSFER && row.accountId==e.accountId && FinanceCalculator.evaluate(row.amountText)==e.amountMinor &&
+            val currency = validateAccount(e.accountId, p, e.occurredAt)
+            require(row.kind!=FinanceDraftKind.TRANSFER && row.accountId==e.accountId && FinanceCalculator.evaluate(row.amountText,currency)==e.amountMinor &&
                 (row.kind==FinanceDraftKind.INCOME)==(e.direction==FinanceDirection.INFLOW)) {"已有流水的账户、方向或金额不符"}
             if(FinanceEvidenceOrigin.requiresManualAccount(p)) {
                 require(p.kind!=FinanceProposalKind.TRANSFER)
@@ -61,9 +65,10 @@ class FinanceReviewRepository(private val db:LifeDatabase,finance:FinanceReposit
             require(!FinanceEvidenceOrigin.requiresManualAccount(p) || p.role!=FinanceFlowRole.REFUND) {"退款不能关联为转账"}
             val t=requireNotNull(db.financeDao().transfers().singleOrNull {it.id==transferId && it.voidedAt==null})
             val out=requireNotNull(db.financeDao().entry(t.outflowEntryId));val incoming=requireNotNull(db.financeDao().entry(t.inflowEntryId))
-            validateAccount(out.accountId,p.id,out.occurredAt);validateAccount(incoming.accountId,p.id,incoming.occurredAt)
+            val currency = validateAccount(out.accountId, p, out.occurredAt)
+            require(currency == validateAccount(incoming.accountId, p, incoming.occurredAt))
             require(t.updatedAt==expectedUpdatedAt && row.kind==FinanceDraftKind.TRANSFER && row.accountId==out.accountId &&
-                row.targetAccountId==incoming.accountId && FinanceCalculator.evaluate(row.amountText)==out.amountMinor)
+                row.targetAccountId==incoming.accountId && FinanceCalculator.evaluate(row.amountText,currency)==out.amountMinor)
             finishLink(row,p,transferId)
         }
     suspend fun save(token:FinanceCommandToken,input:FinanceReviewSessionEntity,expectedRevision:Long?,
@@ -84,25 +89,30 @@ class FinanceReviewRepository(private val db:LifeDatabase,finance:FinanceReposit
             input.proposalId
         }
     suspend fun confirm(token:FinanceCommandToken,proposalId:String,expectedRevision:Long,resolvedOccurredAt:Long,
-        reviewedDuplicateIds:Set<String> =emptySet()):String =
+        reviewedDuplicateIds:Set<String> =emptySet(),stillCurrent:()->Boolean={true}):String =
         commands.run(token,"REVIEW_CONFIRM",listOf(proposalId,expectedRevision,resolvedOccurredAt,reviewedDuplicateIds)) {
+            require(stillCurrent()) { "当前复核窗口已失效，请从待确认重新打开" }
             val row=requireNotNull(dao.reviewSessionRows().singleOrNull {it.proposalId==proposalId && it.voidedAt==null})
             require(row.epoch==token.restoreEpoch && row.revision==expectedRevision && row.state!=FinanceReviewState.COMPLETED) {"复核草稿已改变"}
             val candidate=requireNotNull(db.financeIntakeDao().proposal(proposalId))
             require(candidate.revision==row.baseRevision && candidate.status in setOf(FinanceProposalStatus.ACTIVE,FinanceProposalStatus.SNOOZED)) {
                 "此候选已由其他复核确认或改变，请查看已入账记录"
             }
+            val accountId = requireNotNull(row.accountId) { "请选择账户以确认币种" }
+            val currency = validateAccount(accountId, candidate, resolvedOccurredAt)
             val expected=dao.reviewExpectedRows().filter {it.proposalId==proposalId}.sortedBy {it.position}.map {input->
-                FinanceExpectedFlowInput(input.expectedId,input.role,input.amountText.takeIf {it.isNotBlank() && !input.cancelled}?.let {FinanceMoney.parse(it)},input.note,input.cancelled)
+                FinanceExpectedFlowInput(input.expectedId,input.role,input.amountText.takeIf {it.isNotBlank() && !input.cancelled}?.let {FinanceMoney.parse(it,currency)},input.note,input.cancelled)
             }
-            val input=FinanceProposalConfirmation(FinanceProposalKind.valueOf(row.kind.name),requireNotNull(row.accountId),row.targetAccountId,
-                FinanceCalculator.evaluate(row.amountText),row.description,resolvedOccurredAt,row.category,row.subcategory,
+            val input=FinanceProposalConfirmation(FinanceProposalKind.valueOf(row.kind.name),accountId,row.targetAccountId,
+                FinanceCalculator.evaluate(row.amountText,currency),row.description,resolvedOccurredAt,row.category,row.subcategory,
                 row.tagsText.split(',', '，','\n').map(String::trim).filter(String::isNotBlank),
-                FinanceEventInput(row.nature,row.shareText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,"CNY",true)},row.role,row.eventId,
+                FinanceEventInput(row.nature,row.shareText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,currency,true)},row.role,row.eventId,
                     expected.takeIf {row.expectedEdited},if(row.excluded) FinanceStatPolicy.EXCLUDE else FinanceStatPolicy.INCLUDE,
                     if(row.excludedBudget) FinanceBudgetPolicy.EXCLUDE else FinanceBudgetPolicy.INCLUDE,expectedEventUpdatedAt=row.eventUpdatedAt),
-                row.categoryId,reviewedDuplicateIds,row.costReductionText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,"CNY",true)})
+                row.categoryId,reviewedDuplicateIds,row.costReductionText.takeIf(String::isNotBlank)?.let {FinanceMoney.parse(it,currency,true)})
+            require(stillCurrent()) { "当前复核窗口已失效，请从待确认重新打开" }
             val result=automation.confirm(row.proposalId,row.baseRevision,input,token.restoreEpoch)
+            require(stillCurrent()) { "当前复核窗口已失效，请从待确认重新打开" }
             dao.putReviewSession(listOf(row.copy(state=FinanceReviewState.COMPLETED,updatedAt=clock(),revision=Math.addExact(row.revision,1L))))
             result
         }

@@ -93,23 +93,28 @@ class FinanceAutomationRepository(private val database: LifeDatabase, private va
             "待确认记录已改变，请重新打开"
         }
         require(input.amountMinor > 0)
-        if (FinanceEvidenceOrigin.requiresManualAccount(proposal) && proposal.role == FinanceFlowRole.REFUND) {
-            require(input.kind == FinanceProposalKind.INCOME && input.event.role == FinanceFlowRole.REFUND &&
-                input.event.existingEventId != null) { "退款须保留退款性质并关联原资金事项，不能作为普通收入确认" }
+        if (FinanceEvidenceOrigin.requiresManualAccount(proposal) &&
+            proposal.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)) {
+            require(input.kind == FinanceProposalKind.INCOME && input.event.role == proposal.role &&
+                input.event.existingEventId != null) { "调整到账须保留资金性质并关联原事项" }
         }
         if (FinanceEvidenceOrigin.requiresManualAccount(proposal) && proposal.kind == FinanceProposalKind.TRANSFER) {
             require(input.kind == FinanceProposalKind.TRANSFER) { "还款候选须核对两端账户，不能作为普通收支确认" }
         }
-        require(FinanceEvidenceCorrelation.blocking(proposal, dao.proposals(),readFinanceSnapshot(database,true).v16).isEmpty()) {
+        val snapshot = readFinanceSnapshot(database, true)
+        require(FinanceEvidenceCorrelation.blocking(proposal, dao.proposals(), snapshot.v16).isEmpty()) {
             "同一交易编号存在冲突或已入账记录，请先核对并忽略重复小票；不能作为另一笔交易确认"
         }
+        val account = requireNotNull(database.financeDao().account(input.accountId)) { "请选择账户以确认币种" }
+        val expectedCurrency = FinanceEvidenceOrigin.permittedCurrency(proposal, snapshot.v16)
+        require(account.archivedAt == null && (expectedCurrency == null || account.currencyCode == expectedCurrency)) {
+            expectedCurrency?.let { "请选择 $it 账户" } ?: "请选择有效账户"
+        }
         val candidates = FinanceDuplicateReview.candidates(id, input.kind, input.amountMinor, input.occurredAt,
-            dao.proposals(), readFinanceSnapshot(database))
+            dao.proposals(), snapshot, account.currencyCode)
         require(input.reviewedDuplicateIds.containsAll(candidates)) {
             "存在金额与时间接近的候选或已入账记录，请核对是否同一笔；同一笔请忽略当前小票"
         }
-        val account = requireNotNull(database.financeDao().account(input.accountId)) { "请选择账户" }
-        require(account.archivedAt == null && account.currencyCode == "CNY") { "请选择有效的人民币账户" }
         finance.provenance.validateAccountSuggestion(id,input.accountId,input.occurredAt)
         val typedAdjustment=if(input.event.role in setOf(FinanceFlowRole.REFUND,FinanceFlowRole.REBATE,FinanceFlowRole.CASHBACK))
             database.financeV16Dao().economicRows().singleOrNull {it.eventId==input.event.existingEventId && it.voidedAt==null} else null

@@ -101,7 +101,8 @@ internal class FinanceAutomationViewModel(private val repository: FinanceAutomat
         block(finance.media,FinanceCommandToken(java.util.UUID.randomUUID().toString(),epoch))
     }
     fun confirm(proposal: FinanceProposalEntity, draft: FinanceEntryDraft, reviewedDuplicateIds: Set<String> = emptySet(), done: () -> Unit) = action {
-        repository.confirm(proposal.id, proposal.revision, draft.toProposalConfirmation().copy(reviewedDuplicateIds = reviewedDuplicateIds))
+        val currency = requireNotNull(finance.snapshot().accounts.find { it.id == draft.accountId }?.currencyCode) { "请选择账户以确认币种" }
+        repository.confirm(proposal.id, proposal.revision, draft.toProposalConfirmation(currency).copy(reviewedDuplicateIds = reviewedDuplicateIds))
         done()
     }
     fun confirmReceipt(receipt: FinanceReviewReceiptModel, done: () -> Unit) = action {

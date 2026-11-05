@@ -7,7 +7,9 @@ import kotlinx.coroutines.flow.asStateFlow
 object VisibleDetailRuntime {
     enum class Phase(val label: String) {
         IDLE("尚未读取"), SETTLING("正在等待页面稳定"),
-        ROOT_NOT_READY("页面尚未就绪"), WINDOW_CHANGED("页面已切换"),
+        ROOT_NOT_READY("页面根节点尚未就绪"), WINDOW_CHANGED("目标窗口已切换或失去焦点"),
+        ROOT_PACKAGE_MISMATCH("页面根节点与授权来源不一致"), ROOT_NOT_VISIBLE("系统未标记页面根节点为可见"),
+        SOURCE_NOT_PERMITTED("此来源尚未允许详情识别"),
         TREE_LIMIT("页面层级过大，已停止读取"), AMBIGUOUS_ROWS("同一字段有多个值，需手动核对"),
         LOW_CONFIDENCE("交易字段不足或相互冲突，未生成小票"), NOT_DETAIL("当前页面不是受支持的交易详情"),
         LOCKED("锁屏时已停止读取"), PAGE_UNSUPPORTED("未读到受支持的完整详情"),

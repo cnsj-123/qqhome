@@ -71,8 +71,10 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
             if (expectedEpoch != null && epoch != expectedEpoch) return false
             val saved=snapshot.v16?.reviewSessionRows.orEmpty().singleOrNull {it.proposalId==id && it.voidedAt==null && it.state!=FinanceReviewState.COMPLETED}
             val safe=FinanceProposalPrivacy.sanitize(proposal,FinanceProposalPrivacy.userDescriptions(automation.rules.flatMap {it.actions}))
+            val permittedCurrency = FinanceEvidenceOrigin.permittedCurrency(proposal, snapshot.v16)
             val initial=saved?.toEntryDraft(snapshot) ?: FinanceEntryDraft(FinanceEditorKind.valueOf(proposal.kind.name),
-                proposal.amountMinor?.let {FinanceMoney.input(it)}.orEmpty(),proposal.accountId.orEmpty(),proposal.targetAccountId.orEmpty(),
+                proposal.amountMinor?.let { value -> permittedCurrency?.let { FinanceMoney.input(value, it) } }.orEmpty(),
+                proposal.accountId.orEmpty(),proposal.targetAccountId.orEmpty(),
                 FinanceTime.input(proposal.occurredAt),safe.description,proposal.category,
                 automation.tags.filter {it.proposalId==id}.joinToString("，"){it.name},proposal.occurredAt,proposal.subcategory,
                 FinanceRelationshipDraft.fromProposal(proposal),FinanceCategoryTree(snapshot.categories).find(proposal.category,proposal.subcategory)?.id)
@@ -143,8 +145,10 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     return {value}
                 }
                 val kind=choice("类型",FinanceEditorKind.entries.map {it.name to it.label},initial.kind.name)
-                val amount=input("金额 · CNY",initial.amount,true)
-                val accounts=listOf("" to "请选择真实账户")+snapshot.accounts.filter {it.archivedAt==null && it.currencyCode=="CNY"}.map {it.id to it.name}
+                val amount=input("金额 · " + (permittedCurrency ?: "待确认币种"),initial.amount,true)
+                val accounts=listOf("" to "请选择真实账户与币种")+snapshot.accounts.filter {
+                    it.archivedAt==null && (permittedCurrency == null || it.currencyCode == permittedCurrency)
+                }.map {it.id to "${it.name} · ${it.currencyCode}"}
                 val account=choice("收付/转出账户",accounts,initial.accountId)
                 val targetStart = body.childCount
                 val target=choice("转账时的转入账户",accounts,initial.targetAccountId)

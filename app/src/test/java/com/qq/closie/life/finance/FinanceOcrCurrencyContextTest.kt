@@ -20,12 +20,22 @@ class FinanceOcrCurrencyContextTest:FinanceRoomTest() {
         }
         assertTrue(finance.snapshot().entries.isEmpty())
     }
-    @Test fun knownForeignMixedAndUnknownCurrencyFieldsCannotCreateCnyCandidates()=runTest {
-        for(raw in listOf("币种：USD\n实付：12.34","币种：JPY\n实付：12.34","币种：CHF\n实付：12.34",
+    @Test fun foreignAndUnknownCurrencyCandidatesPreserveDecimalWithoutGuessingCny()=runTest {
+        val known = listOf("USD" to 1234L, "JPY" to null, "CHF" to 1234L)
+        for ((code, minor) in known) {
+            val fields = FinanceLocalOcrParser.parse("币种：$code\n实付：12.34")
+            assertEquals(code, fields.currencyCode)
+            assertEquals(minor, fields.amountMinor)
+            assertEquals("12.34", fields.amountText)
+        }
+        for(raw in listOf(
             "币种：XYZ\n人民币12.34","币种：未知\n人民币12.34","币种：CNY/USD\n实付：12.34","人民币12.34 CHF",
             "人民币\nUSD 支付金额:12.34","支付成功\n实付：12.34\nKFC VIP POS","支付成功\n¥12.34")) {
             val fields=FinanceLocalOcrParser.parse(raw);assertNull(raw,fields.currencyCode)
-            assertTrue(runCatching {finance.media.createScreenshotCandidate(finance.economics.token(),fields){true}}.isFailure)
+            val id = finance.media.createScreenshotCandidate(finance.economics.token(), fields) { true }
+            val snapshot = finance.snapshot()
+            assertNull(snapshot.v4!!.proposals.single { it.id == id }.amountMinor)
+            assertEquals("12.34", snapshot.v16!!.reviewSessionRows.single { it.proposalId == id }.amountText)
         }
         assertTrue(finance.snapshot().entries.isEmpty())
     }

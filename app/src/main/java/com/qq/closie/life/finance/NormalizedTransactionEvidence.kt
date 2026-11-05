@@ -31,7 +31,20 @@ data class NormalizedTransactionEvidence(
 }
 
 object FinanceEvidenceOrigin {
-    fun requiresManualAccount(proposal:FinanceProposalEntity)=isVisible(proposal) || proposal.source in setOf(FinanceSource.SELECTED_IMAGE, FinanceSource.SCREENSHOT)
+    fun isLocalOcr(proposal: FinanceProposalEntity) =
+        proposal.source in setOf(FinanceSource.SELECTED_IMAGE, FinanceSource.SCREENSHOT)
+    fun requiresManualAccount(proposal: FinanceProposalEntity) = isVisible(proposal) || isLocalOcr(proposal)
+
+    fun extraction(proposal: FinanceProposalEntity, snapshot: FinanceV16Snapshot?): FinanceExtractionEntity? {
+        if (snapshot == null) return null
+        val evidenceIds = snapshot.evidenceProposalRows.filter { it.proposalId == proposal.id }.map { it.evidenceId }.toSet()
+        return snapshot.extractionRows.filter { it.evidenceId in evidenceIds }
+            .maxWithOrNull(compareBy(FinanceExtractionEntity::extractorVersion, FinanceExtractionEntity::createdAt))
+    }
+
+    fun permittedCurrency(proposal: FinanceProposalEntity, snapshot: FinanceV16Snapshot?): String? =
+        if (isLocalOcr(proposal)) extraction(proposal, snapshot)?.currencyCode else "CNY"
+
     fun isVisible(proposal: FinanceProposalEntity) = proposal.sourceKey.startsWith("visible:v1:") || proposal.sourceKey.startsWith("visible:v2:") || proposal.sourceKey.startsWith("visible:v3:")
     /** sourceKey is the existing typed evidence identity field, not user-visible prose. */
     fun strongReference(proposal: FinanceProposalEntity): String? {

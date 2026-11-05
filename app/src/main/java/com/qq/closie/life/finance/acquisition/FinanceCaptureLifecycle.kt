@@ -4,7 +4,8 @@ import com.qq.closie.life.finance.FinanceCommandToken
 import com.qq.closie.life.finance.FinanceOcrFields
 import kotlinx.coroutines.delay
 
-internal data class FinanceCapturePage(val packageName: String, val windowId: Int, val orientation: Int, val pageGeneration: Long)
+internal data class FinanceCapturePage(val packageName: String, val windowId: Int, val orientation: Int, val pageGeneration: Long,
+    val displayId: Int = 0)
 internal data class FinanceCaptureRequest(val page: FinanceCapturePage, val requestGeneration: Long,
     val restoreGeneration: Long, val token: FinanceCommandToken)
 
@@ -34,7 +35,7 @@ internal suspend fun <F> runFinanceCapture(
         recognize(frame)
     } finally { if (!handedToRecognizer) releaseUnused(frame) }
     check(current()) { "识别期间页面或恢复状态已改变" }
-    check(fields.amountMinor != null || fields.occurredAt != null || fields.suggestedKind != null) { "未发现可核对的交易字段" }
+    check(fields.hasTransactionFields) { "未发现可核对的交易字段" }
     val id = store(request, fields, currentForStorage)
     // Store may succeed just as the user leaves: the candidate survives, presentation must recheck.
     present(request, id, current)

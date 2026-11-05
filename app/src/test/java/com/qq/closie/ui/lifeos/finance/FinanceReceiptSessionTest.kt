@@ -37,7 +37,7 @@ class FinanceReceiptSessionTest {
         container=LifeContainer.createForTesting(context,androidx.room.Room.inMemoryDatabaseBuilder(context,
             com.qq.closie.life.data.database.LifeDatabase::class.java).allowMainThreadQueries().build())
         overlay=FinanceReceiptOverlay(context,scope,containerProvider={container},editOwner=edits)
-        lease=FinanceHostSession(host,1,context.packageName)
+        lease=FinanceHostSession(host,1)
     }
     @After fun cleanup() {
         overlay.close(false);FinanceReceiptOverlay.endCapture();scope.cancel()

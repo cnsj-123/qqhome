@@ -44,16 +44,19 @@ class FinancePresentationSafetyTest:FinanceRoomTest() {
         assertTrue(runCatching {finance.workspace.setCategoryIcon(token(),category,"home",1)}.isFailure)
         assertEquals(restored,finance.snapshot())
     }
-    @Test fun foreignAndUnknownOcrCannotCreateCnyCandidatesOrExtraction()=runTest {
-        val before=finance.snapshot()
-        for(text in listOf("支付成功\n支付金额:12.34","支付成功\n¥12.34","支付成功\n￥12.34","人民币12.34 CHF","支付成功\nUSD $12.34","支付成功\n￥12.34 JPY","人民币12.34 USD")) {
+    @Test fun incompleteOcrCreatesDraftsWithoutCnyMinorUnitsOrCanonicalEntries()=runTest {
+        for(text in listOf("支付成功\n支付金额:12.34","支付成功\n¥12.34","支付成功\n￥12.34","人民币12.34 CHF","人民币12.34 USD")) {
             val fields=FinanceLocalOcrParser.parse(text)
             assertNull(fields.currencyCode);assertNull(fields.amountMinor)
-            assertTrue(runCatching {finance.media.createScreenshotCandidate(token(),fields){true}}.isFailure)
+            val screenshot = finance.media.createScreenshotCandidate(token(), fields) { true }
             val document=FinanceSelectedDocument("content://synthetic/receipt","image/png","a".repeat(64),123)
-            assertTrue(runCatching {finance.media.createOcrCandidate(token(),fields,FinanceProposalKind.EXPENSE,document,false)}.isFailure)
+            val selected = finance.media.createOcrCandidate(token(), fields, FinanceProposalKind.EXPENSE, document, false)
+            val snapshot = finance.snapshot()
+            assertTrue(snapshot.entries.isEmpty())
+            val drafts = snapshot.v16!!.reviewSessionRows.filter { it.proposalId in setOf(screenshot, selected) }
+            assertEquals(2, drafts.size)
+            assertTrue(drafts.all { it.amountText == "12.34" && it.accountId == null })
         }
-        assertEquals(before,finance.snapshot())
     }
     @Test fun originalOcrTokenIsRejectedAfterActualRestore()=runTest {
         val original=finance.economics.token()

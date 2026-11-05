@@ -29,7 +29,7 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
         val container=LifeContainer.createForTesting(service,db)
         var reads=0;var shots=0
         var recognitionStarted=CompletableDeferred<Unit>()
-        val windows=FinanceHostWindows(service){node,adapter,occluded->reads++;VisibleDetailReader.inspect(node,adapter,occluded)}
+        val windows=FinanceHostWindows(service){node,adapter->reads++;VisibleDetailReader.inspect(node,adapter)}
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,FinanceHostFixtures.ALIPAY))
         ShadowSettings.setCanDrawOverlays(true);FinanceScreenshotPreference.set(service,true)
         FinanceAutomationSettings(service).save(FinanceDiscoverySettings(visibleDetailEnabled=false))
@@ -37,7 +37,11 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
             captureFrame={shots++;if(reason=="capture")error("synthetic platform failure")
                 Bitmap.createBitmap(8,8,Bitmap.Config.ARGB_8888).apply {eraseColor(Color.WHITE)}},
             recognizeFrame={frame->frame.recycle();recognitionStarted.complete(Unit);if(reason in setOf("timeout","cancel"))awaitCancellation()
-                FinanceLocalOcrParser.parse(if(reason=="success")"支付成功\n人民币12.34" else "支付成功\nUSD 12.34")},
+                FinanceLocalOcrParser.parse(when (reason) {
+                    "success" -> "支付成功\n人民币12.34"
+                    "unknownCurrency" -> "支付成功\n¥12.34"
+                    else -> "无交易信息"
+                })},
             containerProvider={container},io=dispatcher,editOwner=scope,hostWindows=windows)
         try {
             controller.onConnected();runCurrent()
@@ -48,9 +52,10 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
             val task=start();advanceTimeBy(181);runCurrent()
             if(reason=="cancel"){recognitionStarted.await();task.cancel()}
             task.join();runCurrent()
-            if(reason=="success") {
+            if(reason in setOf("success", "unknownCurrency")) {
                 assertTrue(controller.hasHostSession);assertTrue(FinanceReceiptOverlay.occupied)
                 controller.hostEvent(FinanceHostFixtures.event());assertTrue(controller.hasHostSession)
+                assertTrue(finance.snapshot().entries.isEmpty())
                 controller.close();assertFalse(controller.hasHostSession);assertFalse(FinanceReceiptOverlay.occupied)
             } else {
             assertFalse(controller.hasHostSession);assertFalse(FinanceReceiptOverlay.occupied)
@@ -66,7 +71,8 @@ class FinanceCaptureTerminationTest:FinanceRoomTest() {
     }
     @Test fun screenshotFailureReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("capture")
     @Test fun ocrTimeoutReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("timeout")
-    @Test fun currencyRefusalReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("currency")
+    @Test fun absentTransactionFieldsReleaseLeaseAndSubsequentRefreshCannotReadFacts()=terminal("noFields")
+    @Test fun unknownCurrencyKeepsEditableCandidateWithoutWritingLedger()=terminal("unknownCurrency")
     @Test fun cancellationReleasesLeaseAndSubsequentRefreshCannotReadFacts()=terminal("cancel")
     @Test fun successfulMountedEditorRetainsLeaseUntilEditorCloses()=terminal("success")
     @Test fun staleCaptureOwnerCannotReleaseNewReservation() {

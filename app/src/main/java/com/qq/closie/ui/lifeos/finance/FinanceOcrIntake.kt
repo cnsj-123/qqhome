@@ -44,9 +44,9 @@ internal fun FinanceOcrIntake(busy:Boolean,action:FinanceMediaAction) {
     result?.let {found->
         val (document,fields)=found
         Text(fields.issue)
-        Text("识别金额："+(fields.amountMinor?.let {FinanceMoney.display(it)} ?: "待填写"))
+        Text("识别金额：" + (fields.amountText ?: "待填写") + " · " + (fields.currencyCode ?: "币种待核对"))
         Text("识别时间："+(fields.occurredAt?.let(FinanceTime::input) ?: "待填写，不使用选图时间代替"))
-        FinanceChoice("核对资金方向 · 人民币",kind,listOf("" to "请选择")+FinanceProposalKind.entries.map {it.name to when(it){FinanceProposalKind.EXPENSE->"支出";FinanceProposalKind.INCOME->"收入";FinanceProposalKind.TRANSFER->"转账/信用卡还款"}}){kind=it;reviewed=false}
+        FinanceChoice("核对资金方向",kind,listOf("" to "请选择")+FinanceProposalKind.entries.map {it.name to when(it){FinanceProposalKind.EXPENSE->"支出";FinanceProposalKind.INCOME->"收入";FinanceProposalKind.TRANSFER->"转账/信用卡还款"}}){kind=it;reviewed=false}
         Row {Checkbox(reviewed,{reviewed=it});Text("已核对方向，接下来逐项修改小票")}
         Row {Checkbox(retain,{retain=it});Text("明确保留这张原图的凭据引用")}
         Text("未勾选保留时，不写入原图 URI；候选只保留金额、时间、方向和识别问题。")
@@ -58,7 +58,7 @@ internal fun FinanceOcrIntake(busy:Boolean,action:FinanceMediaAction) {
                 if(keep) retainFinanceUri(context,android.net.Uri.parse(document.uri))
                 result=null;retain=false;reviewed=false;FinanceReviewRequests.open(id)
             }
-        }},enabled=!busy && reviewed && kind.isNotBlank()) {Text("保存待复核候选并打开小票")}
+        }},enabled=!busy && reviewed && kind.isNotBlank() && fields.hasTransactionFields) {Text("保存待复核候选并打开小票")}
         TextButton({result=null;reviewed=false;retain=false}) {Text("丢弃识别结果")}
     }
 }

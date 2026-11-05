@@ -49,7 +49,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
     if(epoch!=(state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L)) {
         FinanceReceipt("复核代际已改变",onClose=close) {Text("请收起后重新打开当前候选，旧编辑不会覆盖恢复后的数据。")};return
     }
-    var editing by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(FinanceEvidenceOrigin.isLocalOcr(proposal)) }
     var kind by rememberSaveable { mutableStateOf(resumed?.kind?.name ?: proposal.kind.name) }
     var amount by rememberSaveable { mutableStateOf(resumed?.amount ?: proposal.amountMinor?.let { FinanceMoney.input(it) }.orEmpty()) }
     var account by rememberSaveable { mutableStateOf(resumed?.accountId ?: proposal.accountId.orEmpty()) }
@@ -63,18 +63,24 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
     var tags by rememberSaveable { mutableStateOf(resumed?.tags ?: state.data.tags.filter { it.proposalId == proposal.id }.joinToString("，") { it.name }) }
     var relation by rememberSaveable(stateSaver = FinanceRelationshipDraft.Saver) { mutableStateOf(resumed?.relationship ?: FinanceRelationshipDraft.fromProposal(proposal)) }
     var costReduction by rememberSaveable {mutableStateOf(resumed?.costReductionText.orEmpty())}
-    val accounts = state.finance.accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }
+    val extraction = FinanceEvidenceOrigin.extraction(proposal, state.finance.v16)
+    val permittedCurrency = FinanceEvidenceOrigin.permittedCurrency(proposal, state.finance.v16)
+    val accounts = state.finance.accounts.filter { it.archivedAt == null &&
+        (permittedCurrency == null || it.currencyCode == permittedCurrency) }
+    val currency = accounts.find { it.id == account }?.currencyCode ?: permittedCurrency
+    val moneyLabel = currency ?: "币种待核对"
+
     val draft = FinanceEntryDraft(FinanceEditorKind.valueOf(kind), amount, account, target, date,
         description, category, tags, resumed?.preservedOccurredAt ?: proposal.occurredAt, subcategory, relation, selectedCategoryId,costReduction)
     LaunchedEffect(draft) {kotlinx.coroutines.delay(250);vm.persistReview(editor,saved?.revision,proposal,draft,epoch)}
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
         vm.flushReviewOnStop(editor,saved?.revision,proposal,draft,epoch)
     }
-    val parsedAmount = runCatching { FinanceCalculator.evaluate(amount) }.getOrNull()
+    val parsedAmount = currency?.let { runCatching { FinanceCalculator.evaluate(amount, it) }.getOrNull() }
     val parsedTime = runCatching { FinanceTime.resolve(date, proposal.occurredAt) }.getOrDefault(proposal.occurredAt)
     val strongPeers = FinanceEvidenceCorrelation.blocking(proposal, state.data.proposals,state.finance.v16)
     val duplicates = parsedAmount?.let { FinanceDuplicateReview.candidates(proposal.id, FinanceProposalKind.valueOf(kind),
-        it, parsedTime, state.data.proposals, state.finance) }.orEmpty()
+        it, parsedTime, state.data.proposals, state.finance, requireNotNull(currency)) }.orEmpty()
     var distinctConfirmed by remember(proposal.id, duplicates, kind, parsedAmount, parsedTime) { mutableStateOf(false) }
     var existingLink by remember {mutableStateOf<FinanceLedgerRow?>(null)}
     val reviewed = if (distinctConfirmed) duplicates else emptySet()
@@ -132,7 +138,8 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             Text("若已手工记过，可只补来源关联，不新增或改写流水。",style=MaterialTheme.typography.bodySmall)
             existing.take(20).forEach {row->TextButton({existingLink=row},enabled=!state.busy) {Text("关联已有："+FinanceTime.input(row.entry.occurredAt)+" · "+row.entry.description.ifBlank {row.account.name})}}
         }
-        Text(if (amount.isBlank()) "金额待确认（通知中有多个金额）" else "¥$amount", style = com.qq.closie.life.ui.theme.LifeType.Money)
+        Text(if (amount.isBlank()) "金额待核对" else "$amount · $moneyLabel", style = com.qq.closie.life.ui.theme.LifeType.Money)
+        if (FinanceEvidenceOrigin.isLocalOcr(proposal)) extraction?.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         Text("${receipt.source} · ${when (receipt.direction) { FinanceProposalKind.INCOME -> "收入"; FinanceProposalKind.TRANSFER -> "转账"; else -> "支出" }}")
         Text("账户：${accounts.find { it.id == account }?.name ?: "待选择"}")
         Text("分类：${FinanceProjection.categoryPath(state.finance.categories, selectedCategoryId) ?: FinanceCategoryTree.displayProposalPath(category, subcategory) ?: "待选择"}")
@@ -145,7 +152,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
                     val role = if (kind != FinanceProposalKind.INCOME.name) relation.role else when (nature) {
                         FinanceNature.REIMBURSABLE -> FinanceFlowRole.REIMBURSEMENT
                         FinanceNature.PROXY_PURCHASE, FinanceNature.SPLIT -> FinanceFlowRole.SETTLEMENT
-                        else -> if (proposal.role == FinanceFlowRole.REFUND) FinanceFlowRole.REFUND else FinanceFlowRole.OTHER
+                        else -> proposal.role.takeIf { it in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK) } ?: FinanceFlowRole.OTHER
                     }
                     relation = relation.copy(nature = nature, role = role)
                 }, enabled = !state.busy,
@@ -153,14 +160,19 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             }
         }
         if (!editing) receipt.ambiguityReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-        Text("尚未入账 · ${FinanceTime.input(receipt.occurredAt)}", style = MaterialTheme.typography.bodySmall)
+        Text("尚未入账 · " + (if (date.isBlank()) "发生时间待核对" else date), style = MaterialTheme.typography.bodySmall)
         if (editing) {
             EnumChoice("类型", kind, FinanceEditorKind.entries.map { it.name to it.label }, !state.busy) {
-                kind = it; relation = relation.copy(role = if (it == FinanceProposalKind.INCOME.name) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
+                kind = it
+                val adjustment = proposal.role.takeIf { role -> role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK) }
+                relation = relation.copy(role = if (it == FinanceProposalKind.INCOME.name) adjustment ?: FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
             }
-            OutlinedTextField(amount, { amount = it }, label = { Text("金额") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.Money)
-            AccountChoice("账户", accounts, account, !state.busy) { account = it }
-            if (kind == FinanceProposalKind.TRANSFER.name) AccountChoice("转入账户", accounts.filter { it.id != account }, target, !state.busy) { target = it }
+            OutlinedTextField(amount, { amount = it }, label = { Text("金额 · $moneyLabel") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.Money)
+            AccountChoice("账户 · 确认币种", accounts, account, !state.busy) {
+                account = it
+                if (accounts.find { row -> row.id == target }?.currencyCode != accounts.find { row -> row.id == it }?.currencyCode) target = ""
+            }
+            if (kind == FinanceProposalKind.TRANSFER.name) AccountChoice("转入账户", accounts.filter { it.id != account && it.currencyCode == currency }, target, !state.busy) { target = it }
             OutlinedTextField(description, { description = it }, label = { Text("备注（可留空）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
             OutlinedTextField(date, { date = it }, label = { Text("发生时间 · 年-月-日 时:分") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.MonoNumber)
             if (kind != FinanceProposalKind.TRANSFER.name) {
@@ -178,7 +190,12 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             }
             Text("识别依据", style = MaterialTheme.typography.labelMedium)
             Text("来源：${receipt.source}", style = MaterialTheme.typography.bodySmall)
-            Text("时间：${FinanceTime.input(proposal.occurredAt)} · 金额：${proposal.amountMinor?.let { FinanceMoney.display(it, "CNY") } ?: "待核对"}", style = MaterialTheme.typography.bodySmall)
+            val evidenceTime = if (FinanceEvidenceOrigin.isLocalOcr(proposal)) extraction?.occurredAt else proposal.occurredAt
+            val evidenceAmount = if (FinanceEvidenceOrigin.isLocalOcr(proposal)) {
+                extraction?.let { row -> row.currencyCode?.let { code -> row.amountMinor?.let { FinanceMoney.display(it, code) } } }
+            } else proposal.amountMinor?.let { FinanceMoney.display(it) }
+            Text("时间：" + (evidenceTime?.let(FinanceTime::input) ?: "待核对") + " · 金额：" + (evidenceAmount ?: "待核对"),
+                style = MaterialTheme.typography.bodySmall)
             Text("原始通知或页面仅用于本机即时识别，不保存。", style = MaterialTheme.typography.bodySmall)
         }
 

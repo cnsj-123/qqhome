@@ -62,10 +62,10 @@ class FinanceAccessibilityService : AccessibilityService() {
         FinanceProjectionHosts.current?.observe(event)
         screenshot.hostEvent(event);screenshot.update()
         deliverySession?.let {session->
-            val facts=hostWindows.current(session,{visiblePermitted(session.host.packageName)},
-                editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
-            session.observe(event,facts,editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied)
-            if(!session.editorCurrent(facts)){cancelReads();delivery.close()}
+            val editing=com.qq.closie.ui.lifeos.finance.FinanceReceiptOverlay.occupied
+            val facts=hostWindows.current(session,{visiblePermitted(session.host.packageName)},editing)
+            session.observe(event,facts,editing)
+            if(!session.notCancelled){cancelReads();delivery.close()}
         }
         val pkg=event.packageName?.toString().orEmpty()
         val eventWindow=snapshot.windows.firstOrNull {it.id==event.windowId}
@@ -73,6 +73,10 @@ class FinanceAccessibilityService : AccessibilityService() {
         val config=settings.read()
         val provider=if(config.visibleDetailEnabled)VisibleTransactionEvidenceRouter.provider(pkg,config.enabledVisibleProviders) else null
         if(provider==null) {
+            if(config.visibleDetailEnabled && ProviderRegistry.providers.any {pkg in it.packageNames} &&
+                eventWindow?.active==true && eventWindow.focused) {
+                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.SOURCE_NOT_PERMITTED)
+            }
             if(snapshot.windows.any {it.type==AccessibilityWindowInfo.TYPE_APPLICATION && (it.active || it.focused) &&
                     it.id!=sessionTarget?.windowId}){cancelReads();delivery.close()}
             return
@@ -100,15 +104,22 @@ class FinanceAccessibilityService : AccessibilityService() {
         val handles=runCatching {windows}.getOrDefault(emptyList())
         val root=try {
             val window=handles.singleOrNull {it.id==target.windowId && it.isActive && it.isFocused && it.type==AccessibilityWindowInfo.TYPE_APPLICATION}
-            if(window==null || !allowed(target))null
-            else if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0) else window.root
+            if(window==null) {
+                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.WINDOW_CHANGED)
+                return null
+            }
+            if(!allowed(target))return null
+            if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0) else window.root
         } catch(_:Exception){null} finally {handles.forEach {@Suppress("DEPRECATION") it.recycle()}}
         if(root==null) {
             VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_NOT_READY); return null
         }
         try {
-            if (root.packageName?.toString() != target.packageName || !root.isVisibleToUser) {
-                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.WINDOW_CHANGED); return null
+            if (root.packageName?.toString() != target.packageName) {
+                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_PACKAGE_MISMATCH); return null
+            }
+            if (!root.isVisibleToUser) {
+                VisibleDetailRuntime.report(VisibleDetailRuntime.Phase.ROOT_NOT_VISIBLE); return null
             }
             if(!allowed(target))return null
             val inspected = VisibleDetailReader.inspect(root, provider.adapter)

@@ -50,7 +50,7 @@ internal class FinanceScreenshotController(
     private var disposed = false
     private var connected = false
     private var reservationOwner:Any?=null
-    private var hostSession:FinanceHostSession?=null
+    @Volatile private var hostSession:FinanceHostSession?=null
     private enum class Phase { IDLE, CAPTURING, EDITING }
     private var phase=Phase.IDLE
     val hasHostSession:Boolean get()=hostSession!=null
@@ -157,12 +157,14 @@ internal class FinanceScreenshotController(
         if(locked())return null
         val session=hostWindows.bindActive() ?: return null
         hostSession=session;phase=Phase.CAPTURING
-        return FinanceCapturePage(session.host.packageName,session.host.id,session.orientation,eventSerial)
+        return FinanceCapturePage(session.host.packageName,session.host.id,session.orientation,eventSerial,session.host.displayId)
     }
     private fun valid(expected:FinanceCapturePage,editing:Boolean=false):Boolean {
         val session=hostSession ?: return false
         if(disposed || !connected || locked() || !FinanceScreenshotPreference.enabled(service) ||
-            !RestoreStartupGate.isReady || !Settings.canDrawOverlays(service) || expected.pageGeneration!=eventSerial)return false
+            !RestoreStartupGate.isReady || !Settings.canDrawOverlays(service) || expected.pageGeneration!=eventSerial ||
+            expected.windowId!=session.host.id || expected.packageName!=session.host.packageName ||
+            expected.orientation!=session.orientation || expected.displayId!=session.host.displayId)return false
         val snapshot=hostWindows.current(session,{FinanceScreenshotPreference.enabled(service) && !locked()},editing)
         return if(editing)session.editorCurrent(snapshot) else session.captureCurrent(snapshot)
     }
@@ -172,14 +174,14 @@ internal class FinanceScreenshotController(
         // Bind host identity at the click, before hiding any surface or suspending.
         val page = target() ?: return status("请停在需要识别的外部页面，再点击截图")
         val session=hostSession ?: return
-        if(hostSession?.host?.identity==null || Build.VERSION.SDK_INT<30) {
+        if(Build.VERSION.SDK_INT<30) {
             hostSession=null;phase=Phase.IDLE
-            val origin=if(session.host.identity!=null)FinanceProjectionHost(service,hostWindows,session) else null
-            if(origin!=null)FinanceProjectionHosts.offer(origin) else session.cancel()
+            val origin=FinanceProjectionHost(service,hostWindows,session)
+            FinanceProjectionHosts.offer(origin)
             removeBubble()
-            status(if(origin!=null)"请授权本次截图，返回原详情后原位核对" else "请授权本次截图，识别后直接打开小票核对")
-            runCatching {service.startActivity(FinanceProjectionRequests.intent(service).putExtra("originId",origin?.id))}
-                .onFailure {origin?.close();update();status("请使用快捷设置“财务单次截图”")}
+            status("请授权本次截图，返回原页面后原位核对")
+            runCatching {service.startActivity(FinanceProjectionRequests.intent(service).putExtra("originId",origin.id))}
+                .onFailure {origin.close();update();status("请使用快捷设置“财务单次截图”")}
             return
         }
         val fence = RestoreStartupGate.state.value
@@ -197,7 +199,7 @@ internal class FinanceScreenshotController(
             val storageCurrent = { isActive && !disposed && preferenceGeneration == FinanceScreenshotPreference.generation && generation == requestGeneration &&
                 page.pageGeneration == eventSerial && RestoreStartupGate.isReady &&
                 RestoreStartupGate.state.value.restoreGeneration == fence.restoreGeneration &&
-                FinanceScreenshotPreference.enabled(service) }
+                FinanceScreenshotPreference.enabled(service) && valid(page) }
             try {
                 val container = containerProvider()
                 runFinanceCapture(
@@ -228,7 +230,7 @@ internal class FinanceScreenshotController(
                             val mounted=overlay.show(id, userInitiated = true, expectedEpoch = request.token.restoreEpoch,
                                     canContinue = { preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
                                         RestoreStartupGate.state.value.restoreGeneration == request.restoreGeneration && valid(request.page,editing=true) },
-                                    canPresent = { hostSession?.host?.identity!=null && preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
+                                    canPresent = { preferenceGeneration == FinanceScreenshotPreference.generation && presentedPage == request.page && generation == requestGeneration &&
                                         RestoreStartupGate.state.value.restoreGeneration == request.restoreGeneration && valid(request.page) })
                             if(mounted && hostSession===session)phase=Phase.EDITING
                             if (!mounted) {
@@ -282,7 +284,7 @@ internal class FinanceScreenshotController(
         }
         try {
             if (Build.VERSION.SDK_INT >= 34) service.takeScreenshotOfWindow(target.windowId, service.mainExecutor, callback)
-            else service.takeScreenshot(Display.DEFAULT_DISPLAY, service.mainExecutor, callback)
+            else service.takeScreenshot(target.displayId, service.mainExecutor, callback)
         } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
     }
 

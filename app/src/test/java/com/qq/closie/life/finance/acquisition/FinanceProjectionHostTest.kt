@@ -29,7 +29,7 @@ class FinanceProjectionHostTest:FinanceRoomTest() {
     private val edits=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     @Before fun setup() {
         service=serviceController.create().get();ShadowSettings.setCanDrawOverlays(true);FinanceScreenshotPreference.set(service,true)
-        reader=FinanceHostWindows(service){node,adapter,occluded->reads++;VisibleDetailReader.inspect(node,adapter,occluded)}
+        reader=FinanceHostWindows(service){node,adapter->reads++;VisibleDetailReader.inspect(node,adapter)}
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,FinanceHostFixtures.ALIPAY))
     }
     @After fun cleanup(){host?.close();edits.cancel();FinanceReceiptOverlay.endCapture();FinanceProjectionHosts.current?.close();FinanceScreenshotPreference.set(service,false);serviceController.destroy()}

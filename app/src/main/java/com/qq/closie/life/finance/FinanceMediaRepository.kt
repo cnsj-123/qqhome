@@ -31,55 +31,64 @@ class FinanceMediaRepository(private val db:LifeDatabase,private val finance:Fin
     suspend fun createOcrCandidate(token:FinanceCommandToken,fields:FinanceOcrFields,chosenKind:FinanceProposalKind,
         document:FinanceSelectedDocument,retainReceipt:Boolean):String=
         commands.run(token,"OCR_CANDIDATE",listOf(fields,chosenKind,document,retainReceipt)) {
-            require(fields.currencyCode=="CNY") {"币种未明确或含外币，请核实币种后手动录入"}
             validateDocument(document)
-            require(document.mimeType.startsWith("image/") && fields.issue.length<=240 && (fields.amountMinor==null || fields.amountMinor>0))
-            require(fields.role!=FinanceFlowRole.REFUND || chosenKind==FinanceProposalKind.INCOME) {"退款需按收入方向复核，并关联原事项"}
-            val now=clock();val proposalId=id();val evidenceId=id()
-            val proposal=FinanceProposalPrivacy.sanitize(FinanceProposalEntity(proposalId,FinanceSource.SELECTED_IMAGE,"ocr:v1:${id()}","",now,
-                fields.occurredAt ?: now,chosenKind,fields.amountMinor,"",role=fields.role ?: if(chosenKind==FinanceProposalKind.EXPENSE) FinanceFlowRole.PAYMENT else FinanceFlowRole.OTHER))
-            db.financeIntakeDao().insertProposal(proposal)
-            dao.putEvidence(listOf(FinanceEvidenceEntity(evidenceId,"local-ocr","selected-image",referenceKind=FinanceReferenceKind.NONE,
-                digestNamespace="selected-image:unscoped:NONE",capturedAt=now,summary=fields.issue,createdAt=now,updatedAt=now)))
-            dao.putExtraction(listOf(FinanceExtractionEntity(id(),evidenceId,1,fields.amountMinor,"CNY",fields.occurredAt,
-                when(fields.suggestedKind){FinanceProposalKind.EXPENSE->FinanceDirection.OUTFLOW;FinanceProposalKind.INCOME->FinanceDirection.INFLOW;else->null},
-                fields.issue,now,now)))
-            dao.putEvidenceProposal(listOf(FinanceEvidenceProposalEntity(evidenceId,proposalId)))
-            dao.putReviewSession(listOf(FinanceReviewSessionEntity(proposalId,0,token.restoreEpoch,
-                fields.amountMinor?.let {FinanceMoney.input(it)}.orEmpty(),null,"","",proposal.description,FinanceReviewState.EDITING,
-                kind=FinanceDraftKind.valueOf(chosenKind.name),occurredAt=proposal.occurredAt,
-                occurredText=fields.occurredAt?.let(FinanceTime::input).orEmpty(),role=proposal.role,createdAt=now,updatedAt=now)))
+            require(document.mimeType.startsWith("image/"))
+            val proposalId = writeOcrCandidate(token, fields, chosenKind, FinanceSource.SELECTED_IMAGE)
             if(retainReceipt) attachInTransaction(FinanceMediaTarget(proposalId=proposalId),document,"所选识别凭据")
             proposalId
         }
-    /** Explicit capture: no image URI or OCR prose is persisted, and confirmation remains separate. */
+
+    /** Explicit capture stores the structured fields, never a screenshot or OCR prose. */
     suspend fun createScreenshotCandidate(token: FinanceCommandToken, fields: FinanceOcrFields,
         stillCurrent: () -> Boolean): String =
         commands.run(token, "SCREENSHOT_CANDIDATE", listOf(fields)) {
             require(stillCurrent()) { "截图请求已失效，请重新点击截图识别" }
-            require(fields.currencyCode=="CNY") {"币种未明确或含外币，请核实币种后手动录入"}
-            require(fields.amountMinor == null || fields.amountMinor > 0)
-            require(fields.amountMinor != null || fields.occurredAt != null || fields.suggestedKind != null)
-            val now = clock(); val proposalId = id(); val evidenceId = id()
-            val kind = if (fields.role == FinanceFlowRole.REFUND) FinanceProposalKind.INCOME else fields.suggestedKind ?: FinanceProposalKind.EXPENSE
-            val proposal = FinanceProposalPrivacy.sanitize(FinanceProposalEntity(proposalId, FinanceSource.SCREENSHOT,
-                "screenshot:v1:${id()}", "", now, fields.occurredAt ?: now, kind, fields.amountMinor, "",
-                role = fields.role ?: if (kind == FinanceProposalKind.EXPENSE) FinanceFlowRole.PAYMENT else FinanceFlowRole.OTHER))
-            db.financeIntakeDao().insertProposal(proposal)
-            dao.putEvidence(listOf(FinanceEvidenceEntity(evidenceId, "local-ocr", "user-screenshot",
-                referenceKind = FinanceReferenceKind.NONE, digestNamespace = "user-screenshot:unscoped:NONE",
-                capturedAt = now, summary = fields.issue.take(240), createdAt = now, updatedAt = now)))
-            dao.putExtraction(listOf(FinanceExtractionEntity(id(), evidenceId, 1, fields.amountMinor, "CNY", fields.occurredAt,
-                when (fields.suggestedKind) { FinanceProposalKind.EXPENSE -> FinanceDirection.OUTFLOW
-                    FinanceProposalKind.INCOME -> FinanceDirection.INFLOW; else -> null }, fields.issue.take(240), now, now)))
-            dao.putEvidenceProposal(listOf(FinanceEvidenceProposalEntity(evidenceId, proposalId)))
-            dao.putReviewSession(listOf(FinanceReviewSessionEntity(proposalId, 0, token.restoreEpoch,
-                fields.amountMinor?.let { FinanceMoney.input(it) }.orEmpty(), null, "", "", "", FinanceReviewState.EDITING,
-                kind = FinanceDraftKind.valueOf(kind.name), occurredAt = proposal.occurredAt,
-                occurredText = fields.occurredAt?.let(FinanceTime::input).orEmpty(), role = proposal.role, createdAt = now, updatedAt = now)))
+            val kind = if (fields.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK))
+                FinanceProposalKind.INCOME else fields.suggestedKind ?: FinanceProposalKind.EXPENSE
+            val proposalId = writeOcrCandidate(token, fields, kind, FinanceSource.SCREENSHOT)
             require(stillCurrent()) { "截图请求已失效，本次候选已撤回" }
             proposalId
         }
+
+    private suspend fun writeOcrCandidate(token: FinanceCommandToken, fields: FinanceOcrFields, kind: FinanceProposalKind,
+        source: FinanceSource): String {
+        val currency = fields.currencyCode
+        if (currency != null) FinanceMoney.fractionDigits(currency)
+        require(fields.hasTransactionFields && fields.issue.length <= 240)
+        require(fields.amountMinor == null || currency != null && fields.amountMinor > 0)
+        require(fields.amountCandidates.size <= 5 && fields.amountCandidates.all {
+            it.matches(Regex("[0-9]{1,12}(\\.[0-9]{1,6})?")) && it.toBigDecimal().signum() > 0
+        })
+        val adjustment = fields.role in setOf(FinanceFlowRole.REFUND, FinanceFlowRole.REBATE, FinanceFlowRole.CASHBACK)
+        require(!adjustment || kind == FinanceProposalKind.INCOME) { "调整到账须按收入方向复核，并关联原事项" }
+        val now = clock()
+        val proposalId = id()
+        val evidenceId = id()
+        val screenshot = source == FinanceSource.SCREENSHOT
+        val sourceKind = if (screenshot) "user-screenshot" else "selected-image"
+        val key = if (screenshot) "screenshot:v1" else "ocr:v1"
+        val role = fields.role ?: if (kind == FinanceProposalKind.EXPENSE) FinanceFlowRole.PAYMENT else FinanceFlowRole.OTHER
+        // Legacy proposal readers assume CNY. Typed foreign amounts live only in the extraction.
+        val proposal = FinanceProposalPrivacy.sanitize(FinanceProposalEntity(proposalId, source, "$key:$evidenceId", "", now,
+            fields.occurredAt ?: now, kind, fields.amountMinor.takeIf { currency == "CNY" }, "", role = role))
+        db.financeIntakeDao().insertProposal(proposal)
+        dao.putEvidence(listOf(FinanceEvidenceEntity(evidenceId, "local-ocr", sourceKind,
+            referenceKind = FinanceReferenceKind.NONE, digestNamespace = "$sourceKind:unscoped:NONE",
+            capturedAt = now, summary = fields.issue, createdAt = now, updatedAt = now)))
+        val direction = when (fields.suggestedKind) {
+            FinanceProposalKind.EXPENSE -> FinanceDirection.OUTFLOW
+            FinanceProposalKind.INCOME -> FinanceDirection.INFLOW
+            else -> null
+        }
+        dao.putExtraction(listOf(FinanceExtractionEntity(id(), evidenceId, 1, fields.amountMinor, currency,
+            fields.occurredAt, direction, fields.issue, now, now)))
+        dao.putEvidenceProposal(listOf(FinanceEvidenceProposalEntity(evidenceId, proposalId)))
+        dao.putReviewSession(listOf(FinanceReviewSessionEntity(proposalId, 0, token.restoreEpoch,
+            fields.amountText.orEmpty(), null, "", "", proposal.description, FinanceReviewState.EDITING,
+            kind = FinanceDraftKind.valueOf(kind.name), occurredAt = proposal.occurredAt,
+            occurredText = fields.occurredAt?.let(FinanceTime::input).orEmpty(), role = proposal.role, createdAt = now, updatedAt = now)))
+        return proposalId
+    }
 
     private fun validateDocument(document:FinanceSelectedDocument) {
         require(Uri.parse(document.uri).scheme=="content" && document.sha256.matches(Regex("[a-f0-9]{64}")))

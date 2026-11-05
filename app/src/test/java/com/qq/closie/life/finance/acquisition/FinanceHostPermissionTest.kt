@@ -19,9 +19,9 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
     @Before fun setup() {
         service=controller.create().get()
         FinanceWindowShadow.rootReads.clear()
-        reader=FinanceHostWindows(service){root,adapter,occluded->
+        reader=FinanceHostWindows(service){root,adapter->
             val pkg=root.packageName.toString();reads[pkg]=(reads[pkg] ?: 0)+1
-            VisibleDetailReader.inspect(root,adapter,occluded)
+            VisibleDetailReader.inspect(root,adapter)
         }
     }
     @After fun cleanup(){controller.destroy()}
@@ -46,13 +46,14 @@ class FinanceHostPermissionTest:FinanceRoomTest() {
         assertEquals(0,FinanceWindowShadow.rootReads[2] ?: 0)
         assertTrue(finance.snapshot().entries.isEmpty())
     }
-    @Test fun explicitClickAndMountedEditorReadOnlyTheirOriginalHostAndRevokedGrantReadsNothing() {
+    @Test fun explicitClickBindsWindowAndMountedEditorNeverReadsTransactionFacts() {
         val original=FinanceHostFixtures.ALIPAY;val other=FinanceHostFixtures.WECHAT
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,original),FinanceHostFixtures.window(2,other,false))
-        val lease=requireNotNull(reader.bindActive());assertNotNull(lease.host.identity)
+        val lease=requireNotNull(reader.bindActive());assertNull(lease.host.identity)
         FinanceHostFixtures.windows(service,FinanceHostFixtures.window(1,original,false),FinanceHostFixtures.window(2,other,false),
             FinanceHostFixtures.window(3,service.packageName,type=android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM))
         assertTrue(lease.editorCurrent(reader.current(lease,{true},true)))
+        assertTrue(reads.isEmpty())
         assertEquals(0,reads[other] ?: 0)
         assertEquals(0,FinanceWindowShadow.rootReads[2] ?: 0)
         val before=reads.toMap();reader.current(lease,{false},true);assertEquals(before,reads)
