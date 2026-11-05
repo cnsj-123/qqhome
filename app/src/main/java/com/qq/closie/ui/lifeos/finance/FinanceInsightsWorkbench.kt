@@ -16,8 +16,6 @@ internal fun FinanceInsightsWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
     var exported by remember {mutableStateOf(false)}
     var editingBudget by rememberSaveable {mutableStateOf<String?>(null)}
     var diagnostic by remember {mutableStateOf<FinanceDiagnostic?>(null)}
-    var share by remember {mutableStateOf<FinanceSharePreview?>(null)}
-    var shareError by remember {mutableStateOf<String?>(null)}
     val exporter=androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) {uri->
         if(uri!=null) vm.exportFinance(context,uri){exported=true}
     }
@@ -65,50 +63,11 @@ internal fun FinanceInsightsWorkbench(state:FinanceUiState,vm:FinanceViewModel) 
     val diagnostics=FinanceInsightsProjection.diagnostics(s,System.currentTimeMillis())
     if(diagnostics.isEmpty()) Text("当前没有符合规则的线索；这不代表已完成所有账务核验。",style=LifeText.caption)
     FinancePagedItems(diagnostics,"diagnostics",{it.id}) {d->Text(d.message);TextButton({diagnostic=d}) {Text("查看相关原记录")}}
-    HorizontalDivider()
-    Text("分用途授权",style=LifeText.title)
-    var purpose by rememberSaveable {mutableStateOf(FinanceReadPurpose.HOME.name)}
-    val selectionSaver=androidx.compose.runtime.saveable.listSaver<Set<String>,String>(save={it.toList()},restore={it.toSet()})
-    var selected by rememberSaveable(stateSaver=selectionSaver) {mutableStateOf(emptySet<String>())}
-    var selectedEntries by rememberSaveable(stateSaver=selectionSaver) {mutableStateOf(emptySet<String>())}
-    var amount by rememberSaveable {mutableStateOf(false)}
-    var date by rememberSaveable {mutableStateOf(false)}
-    var description by rememberSaveable {mutableStateOf(false)}
-    var hours by rememberSaveable {mutableStateOf("24")}
-    listOf(FinanceReadPurpose.HOME,FinanceReadPurpose.SHARE,FinanceReadPurpose.LOCAL_QUERY).forEach {p->FilterChip(purpose==p.name,{purpose=p.name},label={Text(when(p){FinanceReadPurpose.HOME->"Home回忆";FinanceReadPurpose.SHARE->"分享携出";else->"本地条件查询"})})}
-    FinanceMultiChoice("明确选择允许的事项",selected,s.v4?.events.orEmpty().filter {it.voidedAt==null}.map {it.id to (it.description.ifBlank {"事项"}+" · "+FinanceTime.input(it.occurredAt))}){selected=it}
-    if(purpose==FinanceReadPurpose.LOCAL_QUERY.name) {
-        Text("真实流水单独授权整笔内容，可能含其他事项的分配。仅选事项不会自动授权关联流水。",style=LifeText.caption)
-        FinanceMultiChoice("另行授权整笔真实流水",selectedEntries,s.entries.filter {it.voidedAt==null}.map {entry->entry.id to
-            (FinanceTime.input(entry.occurredAt)+" · "+entry.description+" · "+FinanceMoney.display(entry.amountMinor,s.accounts.single {it.id==entry.accountId}.currencyCode))}){selectedEntries=it}
-    }
-    Row {Checkbox(amount,{amount=it});Text("允许金额")}
-    Row {Checkbox(date,{date=it});Text("允许日期")}
-    Row {Checkbox(description,{description=it});Text("允许备注")}
-    OutlinedTextField(hours,{hours=it},label={Text("有效小时数")})
-    TextButton({vm.workspaceAction(epoch) {repo,token->
-        val p=FinanceReadPurpose.valueOf(purpose);val provider=when(p){FinanceReadPurpose.HOME->"home-memory";FinanceReadPurpose.SHARE->"manual-share";else->"local-conditions"}
-        val duration=hours.toLong();require(duration in 1..8760)
-        val entries=if(p==FinanceReadPurpose.LOCAL_QUERY) selectedEntries else emptySet()
-        repo.grant(token,p,provider,selected,entries,amount,date,description,Math.addExact(System.currentTimeMillis(),Math.multiplyExact(duration,3_600_000)))
-    }},enabled=!state.busy && (selected.isNotEmpty() || (purpose==FinanceReadPurpose.LOCAL_QUERY.name && selectedEntries.isNotEmpty())) && (amount || date || description)){Text("确认此用途与范围授权")}
-    FinancePagedItems(v?.purposeGrantRows.orEmpty().filter {it.voidedAt==null},"purpose-grants",{it.id}) {g->Row {
-        Text(g.purpose.name+" · 至 "+FinanceTime.input(g.expiresAt))
-        TextButton({vm.workspaceAction(epoch) {repo,token->repo.revoke(token,g.id)}},enabled=!state.busy){Text("撤销")}
-        if(g.purpose==FinanceReadPurpose.SHARE) TextButton({
-            runCatching {FinanceShareProjection.preview(s,g.id,System.currentTimeMillis())}.onSuccess {share=it;shareError=null}.onFailure {shareError=it.message}
-        },enabled=!state.busy) {Text("预览此范围分享")}
-    }}
-    shareError?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-    Text("云AI默认关闭，当前没有真实云连接或数据发送。Home、分享、本地查询和AI分别授权。未来可选的自动加密同步目标保留。",style=LifeText.caption)
+    FinancePurposePermissions(state, vm)
     TextButton({exportWarning=true},enabled=!state.busy){Text("携出完整财务事实与可读CSV")}
     if(exported) Text("财务携出文件已写入并读回校验。附件与跨域恢复请使用设置中的加密备份。",style=LifeText.caption)
     if(exportWarning) AlertDialog(onDismissRequest={exportWarning=false},title={Text("导出明文财务数据？")},text={Text("此文件含账户、原始ID、流水、事项关系、义务、购买明细及复核配置，未加密。接收方可以读取全部内容；只在你主动选择的位置创建。")},
         confirmButton={TextButton({exportWarning=false;exporter.launch("LifeOS-finance-${LocalDate.now()}.zip")}){Text("确认明文携出")}},dismissButton={TextButton({exportWarning=false}){Text("取消")}})
     editingBudget?.let {id->v?.budgetRows.orEmpty().singleOrNull {it.id==id && it.voidedAt==null}?.let {budget->key(id) {FinanceBudgetEditor(state,vm,budget){editingBudget=null}}}}
     diagnostic?.let {d->key(d.id) {FinanceDiagnosticViewer(state,vm,d){diagnostic=null}}}
-    share?.let {preview->FinanceReceipt("核对分享内容",state.busy,state.error,{share=null},actions={Button({vm.shareFinance(context,preview){share=null}},enabled=!state.busy){Text("确认并选择接收应用")}}) {
-        Text("以下是唯一将交给所选应用的明文内容。接收者可保存它；原图、账户身份、未授权字段不在此片段中。")
-        Text(preview.text)
-    }}
 }

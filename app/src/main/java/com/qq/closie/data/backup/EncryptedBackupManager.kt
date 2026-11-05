@@ -11,6 +11,8 @@ import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.UUID
 
+internal data class BackupRestorePreview(val includesLifeOs: Boolean, val entries: Int?, val sourceDigest: ByteArray)
+
 /** Encrypts the existing complete typed backup, and verifies stored bytes before reporting success. */
 object EncryptedBackupManager {
     /** Crash leftovers are private cache, never a recovery credential or authoritative data. */
@@ -63,6 +65,47 @@ object EncryptedBackupManager {
             // Authentication completed before the existing staging/coordinator sees any bytes.
             BackupManager.restore(context, repo, Uri.fromFile(plain), db, hooks).getOrThrow()
         } } finally { password.fill('\u0000'); scratch.deleteRecursively() }
+    }
+
+    internal suspend fun inspect(context: Context, uri: Uri, password: CharArray?): Result<BackupRestorePreview> =
+        withRestoreSource(context, uri, password) { archive, scratch, sourceDigest ->
+            val staged = BackupImporter.stage(context, Uri.fromFile(archive), File(scratch, "inspect"),
+                File(scratch, "closet"), File(scratch, "media"))
+            BackupRestorePreview(staged.payload != null, staged.payload?.finance?.entries?.size, sourceDigest)
+        }
+
+    internal suspend fun restoreInspected(
+        context: Context, repo: WardrobeRepository, uri: Uri, db: LifeDatabase,
+        password: CharArray?, preview: BackupRestorePreview
+    ): Result<Unit> = withRestoreSource(context, uri, password, expectedDigest = preview.sourceDigest) { archive, _, _ ->
+        BackupManager.restore(context, repo, Uri.fromFile(archive), db).getOrThrow()
+    }
+
+    private suspend fun <T> withRestoreSource(
+        context: Context, uri: Uri, password: CharArray?, expectedDigest: ByteArray? = null,
+        action: suspend (File, File, ByteArray) -> T
+    ): Result<T> = withContext(Dispatchers.IO) {
+        val scratch = File(context.cacheDir, "secure_restore_" + UUID.randomUUID())
+        try {
+            runCatching {
+                check(scratch.mkdirs()) { "无法创建恢复暂存目录" }
+                val source = File(scratch, "source")
+                requireNotNull(context.contentResolver.openInputStream(uri)) { "无法读取备份" }.use { input ->
+                    source.outputStream().use { input.copyTo(it) }
+                }
+                val digest = digest(source)
+                check(expectedDigest == null || expectedDigest.contentEquals(digest)) { "备份文件已改变，请重新检查" }
+                val archive = if (password == null) source else File(scratch, "verified.zip").also { output ->
+                    source.inputStream().use { input ->
+                        output.outputStream().use { EncryptedBackupEnvelope.decrypt(input, it, password) }
+                    }
+                }
+                action(archive, scratch, digest)
+            }
+        } finally {
+            password?.fill('\u0000')
+            scratch.deleteRecursively()
+        }
     }
 
     private fun digest(file: File): ByteArray = file.inputStream().use { input -> digest(input) }

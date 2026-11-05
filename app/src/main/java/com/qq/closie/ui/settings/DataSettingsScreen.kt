@@ -20,14 +20,19 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.qq.closie.data.backup.BackupManager
+import com.qq.closie.data.backup.BackupRestorePreview
+import com.qq.closie.data.backup.EncryptedBackupManager
+import com.qq.closie.data.backup.FinanceExportManager
 import com.qq.closie.data.backup.RestoreRecoveryPendingException
 import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.data.database.LifeDatabase
+import com.qq.closie.life.finance.FinanceRepository
 import com.qq.closie.ui.components.ClosieCompactTopBar
 import com.qq.closie.ui.quickcapture.QuickCaptureActivity
 import com.qq.closie.ui.quickcapture.QuickCaptureService
@@ -53,7 +58,9 @@ fun DataSettingsScreen(
      * Passing the database through rather than looking it up here keeps this screen a renderer — it
      * already receives the wardrobe repository the same way.
      */
-    lifeDatabase: LifeDatabase
+    lifeDatabase: LifeDatabase,
+    finance: FinanceRepository? = null,
+    openExportCenter: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
@@ -64,11 +71,19 @@ fun DataSettingsScreen(
     val busy = localBusy || restoreTask.running
     var message by remember { mutableStateOf<String?>(null) }
     var confirmRestore by remember { mutableStateOf<Uri?>(null) }
+    var restorePreview by remember { mutableStateOf<BackupRestorePreview?>(null) }
+    var legacyZip by remember { mutableStateOf(false) }
     var backupPassword by remember { mutableStateOf("") }
     var repeatedPassword by remember { mutableStateOf("") }
     var restorePassword by remember { mutableStateOf("") }
     var showBackupPassword by remember { mutableStateOf(false) }
     var confirmCsv by remember { mutableStateOf(false) }
+    var confirmFinanceCsv by remember { mutableStateOf(false) }
+    var exportCenter by rememberSaveable { mutableStateOf(openExportCenter) }
+    var historyOpen by rememberSaveable { mutableStateOf(false) }
+    val backupHistory = remember(context) { context.getSharedPreferences("lifeos_verified_backups", android.content.Context.MODE_PRIVATE) }
+    var verifiedTimes by remember { mutableStateOf(backupHistory.getStringSet("verified_times", emptySet()).orEmpty().mapNotNull(String::toLongOrNull).sortedDescending()) }
+    fun verifiedTimeLabel(at: Long): String = java.text.DateFormat.getDateTimeInstance().format(java.util.Date(at))
     var quickCapture by remember { mutableStateOf(QuickCaptureService.isEnabled(context)) }
 
     /**
@@ -130,7 +145,11 @@ fun DataSettingsScreen(
             backupPassword = ""; repeatedPassword = ""
             localBusy = true; message = null
             scope.launch {
-                val result = com.qq.closie.data.backup.EncryptedBackupManager.export(context, repo, uri, lifeDatabase, password)
+                val result = EncryptedBackupManager.export(context, repo, uri, lifeDatabase, password)
+                result.onSuccess {
+                    verifiedTimes = (listOf(System.currentTimeMillis()) + verifiedTimes).distinct().take(5)
+                    backupHistory.edit().putStringSet("verified_times", verifiedTimes.map(Long::toString).toSet()).apply()
+                }
                 result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
                 message = result.fold({ "加密备份已写入并验证可解密，请保管好口令" }, { failureMessage("导出失败", it) })
                 localBusy = false
@@ -151,7 +170,20 @@ fun DataSettingsScreen(
     }
 
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) confirmRestore = uri
+        if (uri != null) {
+            restorePreview = null; restorePassword = ""; legacyZip = false; confirmRestore = uri
+        }
+    }
+    val financeCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null && finance != null) {
+            localBusy = true; message = null
+            scope.launch {
+                val result = FinanceExportManager.export(context, finance, uri)
+                result.onFailure { runCatching { context.contentResolver.delete(uri, null, null) } }
+                message = result.fold({ "账目 CSV 已导出" }, { failureMessage("导出失败", it) })
+                localBusy = false
+            }
+        }
     }
 
     Scaffold(
@@ -171,6 +203,14 @@ fun DataSettingsScreen(
                 color = ClosieColor.InkSecondary
             )
 
+            Text(verifiedTimes.firstOrNull()?.let { "最近验证 · " + verifiedTimeLabel(it) } ?: "尚无验证成功的备份",
+                style = MaterialTheme.typography.titleMedium)
+            SettingsRow(Icons.Default.Restore, "历史恢复点", if (verifiedTimes.isEmpty()) "验证成功后才会出现" else "${verifiedTimes.size} 个已验证备份") {
+                historyOpen = !historyOpen
+            }
+            if (historyOpen) verifiedTimes.forEach {
+                Text("已验证 · " + verifiedTimeLabel(it), style = MaterialTheme.typography.bodySmall)
+            }
             SettingsToggleRow(
                 title = "快速采集",
                 subtitle = "通过悬浮球从其他 App 的商品页快速录入",
@@ -202,20 +242,21 @@ fun DataSettingsScreen(
                 icon = Icons.Default.CloudUpload,
                 title = "创建加密备份",
                 subtitle = "衣橱、Finance、关系、草稿和媒体；使用独立口令并验证恢复",
-                onClick = { showBackupPassword = true }
+                onClick = { if (!busy) showBackupPassword = true }
             )
             SettingsRow(
                 icon = Icons.Default.Restore,
                 title = "恢复备份",
                 subtitle = "恢复加密备份；旧 ZIP 可在确认页单独选择",
-                onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
+                onClick = { if (!busy) restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
             )
             SettingsRow(
                 icon = Icons.Default.Download,
-                title = "导出衣橱 CSV",
-                subtitle = "导出衣物清单为表格",
-                onClick = { confirmCsv = true }
+                title = "导出中心",
+                subtitle = "选择表格范围并检查明文风险",
+                onClick = { if (!busy) exportCenter = true }
             )
+            Text("自动备份与跨设备同步 · 规划中", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
 
             if (busy) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -252,35 +293,56 @@ fun DataSettingsScreen(
         text = { Text("CSV 未加密，接收方可以读取全部导出内容。仅导出当前衣橱清单，请自行保管。") },
         confirmButton = { TextButton({ confirmCsv = false; csvLauncher.launch("closie-wardrobe-${LocalDate.now()}.csv") }) { Text("确认导出明文") } },
         dismissButton = { TextButton({ confirmCsv = false }) { Text("取消") } })
+    if (exportCenter) AlertDialog(onDismissRequest = { exportCenter = false }, title = { Text("导出中心") },
+        text = { Column {
+            Text("表格导出为明文，接收方可读取内容。")
+            TextButton({ exportCenter = false; confirmCsv = true }, enabled = !busy) { Text("衣橱清单 · CSV") }
+            if (finance != null) TextButton({ exportCenter = false; confirmFinanceCsv = true }, enabled = !busy) { Text("账目与关联 ID · CSV") }
+        } }, confirmButton = { TextButton({ exportCenter = false }) { Text("关闭") } })
+    if (confirmFinanceCsv) AlertDialog(onDismissRequest = { confirmFinanceCsv = false }, title = { Text("导出明文账目？") },
+        text = { Text("范围为当前账本的可导出记录，包含金额、账户和关联 ID。CSV 文件未加密。") },
+        confirmButton = { TextButton({ confirmFinanceCsv = false; financeCsvLauncher.launch("lifeos-finance-${LocalDate.now()}.csv") }) { Text("确认导出明文") } },
+        dismissButton = { TextButton({ confirmFinanceCsv = false }) { Text("取消") } })
     confirmRestore?.let { uri ->
         AlertDialog(
-            onDismissRequest = { confirmRestore = null; restorePassword = "" },
-            title = { Text("恢复备份？") },
+            onDismissRequest = { if (!busy) { confirmRestore = null; restorePassword = ""; restorePreview = null } },
+            title = { Text(if (restorePreview == null) "检查备份" else "确认恢复范围") },
             text = { Column {
-                Text("恢复将替换备份覆盖的数据，系统权限与云授权不会恢复。建议先创建当前数据的加密备份。")
-                OutlinedTextField(restorePassword, { restorePassword = it }, label = { Text("加密备份口令") },
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-                TextButton(enabled = !busy, onClick = {
-                    confirmRestore = null; restorePassword = ""; message = null
-                    restoreOwner.start("旧 ZIP 恢复成功，权限需重新评估") {
-                        BackupManager.restore(context.applicationContext, repo, uri, lifeDatabase)
+                val preview = restorePreview
+                if (preview == null) {
+                    Text("先校验备份内容，检查完成后再决定是否恢复。")
+                    if (!legacyZip) OutlinedTextField(restorePassword, { restorePassword = it }, label = { Text("加密备份口令") },
+                        enabled = !busy, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                    TextButton({ legacyZip = !legacyZip; restorePassword = ""; message = null }, enabled = !busy) {
+                        Text(if (legacyZip) "切换到加密备份" else "这是未加密的旧 ZIP")
                     }
-                }) { Text("这是未加密的旧 ZIP，确认恢复") }
+                } else {
+                    Text(if (preview.includesLifeOs) "衣橱及 Life OS 数据 · 账目记录 ${preview.entries ?: 0} 条" else "旧版备份 · 仅覆盖衣橱数据")
+                    Text("确认后会替换上述范围的当前数据。系统权限与云授权需重新确认。")
+                }
+                if (busy) Text("正在检查备份…")
+                message?.let { Text(it, color = ClosieColor.Error) }
             } },
             confirmButton = {
-                TextButton(enabled = restorePassword.isNotEmpty() && !busy, onClick = {
-                    val u = uri
-                    val password = restorePassword.toCharArray()
-                    restorePassword = ""
-                    confirmRestore = null
-                    message = null
-                    if (!restoreOwner.start("恢复成功") {
-                        try { com.qq.closie.data.backup.EncryptedBackupManager.restore(context.applicationContext, repo, u, lifeDatabase, password) }
-                        finally { password.fill('\u0000') }
-                    }) password.fill('\u0000')
-                }) { Text("确认恢复", color = ClosieColor.Rose) }
+                val preview = restorePreview
+                TextButton(enabled = (legacyZip || restorePassword.isNotEmpty()) && !busy, onClick = {
+                    val password = if (legacyZip) null else restorePassword.toCharArray()
+                    if (preview == null) {
+                        localBusy = true; message = null
+                        scope.launch {
+                            EncryptedBackupManager.inspect(context, uri, password).fold(
+                                { restorePreview = it }, { message = failureMessage("检查失败", it) }
+                            )
+                            localBusy = false
+                        }
+                    } else if (restoreOwner.start("恢复成功") {
+                        EncryptedBackupManager.restoreInspected(context.applicationContext, repo, uri, lifeDatabase, password, preview)
+                    }) {
+                        restorePassword = ""; confirmRestore = null; restorePreview = null; message = null
+                    } else password?.fill('\u0000')
+                }) { Text(if (preview == null) "校验并预览" else "确认恢复", color = ClosieColor.Rose) }
             },
-            dismissButton = { TextButton(onClick = { confirmRestore = null; restorePassword = "" }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { confirmRestore = null; restorePassword = ""; restorePreview = null }, enabled = !busy) { Text("取消") } }
         )
     }
 }

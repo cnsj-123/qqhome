@@ -23,6 +23,7 @@ class AppearanceViewModel(
     private val _editor = MutableStateFlow<AppearanceEditorState?>(null)
     val editor = _editor.asStateFlow()
     private var editGeneration = 0
+    private var saveEvent = 0L
     val savedAppearance = appearanceRepository.settings
     val appearance = combine(savedAppearance, editor) { stored, draft ->
         stored?.let { draft?.preview ?: it }
@@ -42,7 +43,7 @@ class AppearanceViewModel(
     }
 
     fun editThemeField(field: ThemeField, value: String) {
-        _editor.value?.takeUnless { it.isSaving }?.let { _editor.value = it.edit(field, value) }
+        _editor.value?.takeUnless { it.isSaving || it.extracting }?.let { _editor.value = it.edit(field, value) }
     }
 
     fun previewNamed(id: String) {
@@ -61,14 +62,14 @@ class AppearanceViewModel(
     }
 
     // Old CUSTOM means an already saved palette, not an unsaved palette to append on Apply.
-    private fun savedEditor(saved: AppearanceSettings): AppearanceEditorState {
+    internal fun savedEditor(saved: AppearanceSettings): AppearanceEditorState {
         val selected = if (saved.selectedThemeId == AppearanceSettings.CUSTOM_ID &&
             saved.namedThemes.any { it.id == "legacy-custom" }) saved.copy(selectedThemeId = "legacy-custom") else saved
         return AppearanceEditorState.from(selected)
     }
 
     fun nameTheme(value: String) {
-        _editor.value?.takeUnless { it.isSaving }?.let {
+        _editor.value?.takeUnless { it.isSaving || it.extracting }?.let {
             _editor.value = it.copy(themeName = value.take(40), selectedId = AppearanceSettings.CUSTOM_ID)
         }
     }
@@ -134,10 +135,9 @@ class AppearanceViewModel(
                 appearanceRepository.saveTheme(draft.selectedId, draft.themeName,
                     CustomTheme(draft.accent, draft.paper, draft.secondary, draft.soft, draft.warm), draft.editingNamedId,
                     draft.preview.functionPageStyle, draft.preview.functionEffects, draft.removedThemeIds)
-                appearanceRepository.read()
             }.onSuccess { saved ->
                 if (generation == editGeneration && _editor.value != null) {
-                    _editor.value = savedEditor(saved).copy(message = "主题已保存")
+                    _editor.value = savedEditor(saved).copy(message = "主题已保存", saveEvent = ++saveEvent)
                 }
             }.onFailure {
                 if (it is kotlinx.coroutines.CancellationException) throw it

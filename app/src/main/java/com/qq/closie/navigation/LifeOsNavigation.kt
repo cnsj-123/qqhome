@@ -61,7 +61,8 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         referenceRoutes(nav, container, onCapture)
         planRoutes(nav, container)
         composable(LifeOsRoute.FINANCE) {
-            FinanceRoute(container.financeRepository, container.financeImportRepository, container.financeAutomationRepository) { nav.returnToLifeHome() }
+            FinanceRoute(container.financeRepository, container.financeImportRepository, container.financeAutomationRepository,
+                onFinanceSettings = { nav.navigate(LifeOsRoute.FINANCE_SETTINGS) }) { nav.returnToLifeHome() }
         }
         composable(LifeOsRoute.CALENDAR) {
             LifeCalendarScreen(initialDate = home.date, state = com.qq.closie.ui.lifeos.calendar.CalendarUiState(java.time.YearMonth.from(home.date), home.calendarDays), onBack = { nav.returnToLifeHome() }, onOpenHomeDate = {
@@ -75,10 +76,30 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         composable(LifeOsRoute.FINANCE_AUTOMATION) {
             com.qq.closie.ui.lifeos.finance.FinanceAutomationScreen(container.financeAutomationRepository, container.financeRepository) { nav.returnWithinLifeModule() }
         }
+        composable(LifeOsRoute.FINANCE_REVIEW) {
+            com.qq.closie.ui.lifeos.finance.FinanceAutomationScreen(container.financeAutomationRepository,
+                container.financeRepository, com.qq.closie.ui.lifeos.finance.FinanceAutomationSection.REVIEW) { nav.returnWithinLifeModule() }
+        }
+        composable(LifeOsRoute.SETTINGS_PRIVACY) {
+            com.qq.closie.ui.lifeos.settings.SettingsPrivacyScreen(container.financeRepository) { nav.returnWithinLifeModule() }
+        }
+        composable(LifeOsRoute.FINANCE_SETTINGS) {
+            com.qq.closie.ui.lifeos.finance.FinanceSettingsRoute(container.financeRepository, container.financeImportRepository,
+                onDiscovery = { nav.navigate(LifeOsRoute.FINANCE_AUTOMATION) },
+                onReview = { nav.navigate(LifeOsRoute.FINANCE_REVIEW) },
+                onPrivacy = { nav.navigate(LifeOsRoute.SETTINGS_PRIVACY) },
+                onBackup = { nav.navigate(LifeOsRoute.BACKUP) },
+                onBack = { nav.returnWithinLifeModule() })
+        }
         composable(LifeOsRoute.SETTINGS) {
-            LifeSettingsScreen(onBack = { nav.returnToLifeHome() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
-                onBackup = { nav.navigateLifeTopLevel(LifeOsRoute.BACKUP) },
-                onFinanceAutomation = { nav.navigate(LifeOsRoute.FINANCE_AUTOMATION) })
+            LifeSettingsScreen(appearanceViewModel, container.financeAutomationRepository,
+                onBack = { nav.returnToLifeHome() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
+                onBackup = { nav.navigate(LifeOsRoute.BACKUP) },
+                onFinanceAutomation = { nav.navigate(LifeOsRoute.FINANCE_AUTOMATION) },
+                onReviewInbox = { nav.navigate(LifeOsRoute.FINANCE_REVIEW) },
+                onFinanceSettings = { nav.navigate(LifeOsRoute.FINANCE_SETTINGS) },
+                onPrivacy = { nav.navigate(LifeOsRoute.SETTINGS_PRIVACY) },
+                onExport = { nav.navigate(LifeOsRoute.SETTINGS_EXPORT) })
         }
         composable(LifeOsRoute.MODULE, arguments = listOf(navArgument("moduleId") { type = NavType.StringType })) { entry ->
             ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.returnToLifeHome() }

@@ -11,12 +11,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -27,34 +29,49 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qq.closie.life.finance.*
 import com.qq.closie.navigation.modules.PresentationFactory
+import com.qq.closie.ui.lifeos.settings.SettingsPaperPage
+import com.qq.closie.ui.lifeos.settings.SettingsLine
+import com.qq.closie.ui.lifeos.settings.SettingsSection
+import com.qq.closie.ui.lifeos.theme.*
 import java.util.UUID
 
+enum class FinanceAutomationSection { DISCOVERY, REVIEW }
+
 @Composable
-internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, finance: FinanceRepository, onBack: () -> Unit) {
+internal fun FinanceAutomationScreen(
+    repository: FinanceAutomationRepository,
+    finance: FinanceRepository,
+    initialSection: FinanceAutomationSection = FinanceAutomationSection.DISCOVERY,
+    onBack: () -> Unit
+) {
     val vm: FinanceAutomationViewModel = viewModel(factory = PresentationFactory(FinanceAutomationViewModel::class.java) {
         FinanceAutomationViewModel(repository, finance)
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val settings = remember { FinanceAutomationSettings(context) }
-    val settingsFlow = remember(settings) { settings.observe() }
-    val discovery by settingsFlow.collectAsStateWithLifecycle(initialValue = settings.read())
+    val colors = LocalLifeOsColors.current
+    val settings = remember(context) { FinanceAutomationSettings(context) }
+    val discovery by remember(settings) { settings.observe() }.collectAsStateWithLifecycle(initialValue = settings.read())
+    val diagnostic by FinanceDiscoveryDiagnostics.state.collectAsStateWithLifecycle()
     var access by remember { mutableStateOf(false) }
     var notifications by remember { mutableStateOf(false) }
-    var overlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var overlayPermission by remember { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf<String?>(null) }
     var editRule by remember { mutableStateOf<FinanceRuleSet?>(null) }
-    var processedShown by androidx.compose.runtime.saveable.rememberSaveable {mutableIntStateOf(30)}
+    var section by rememberSaveable(initialSection) { mutableStateOf(initialSection) }
+    var recentOpen by rememberSaveable { mutableStateOf(false) }
+    var principlesOpen by rememberSaveable { mutableStateOf(false) }
+    var rulesOpen by rememberSaveable { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) {
+    DisposableEffect(lifecycle, context) {
+        fun refresh() {
             access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
             notifications = NotificationManagerCompat.from(context).areNotificationsEnabled()
             overlayPermission = Settings.canDrawOverlays(context)
-        } }
+        }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refresh() }
         lifecycle.addObserver(observer)
-        access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
-        notifications = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        refresh()
         onDispose { lifecycle.removeObserver(observer) }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -65,100 +82,157 @@ internal fun FinanceAutomationScreen(repository: FinanceAutomationRepository, fi
                 Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-    BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("返回") }
-        Text("账目 · 自动发现", style = MaterialTheme.typography.headlineSmall)
-        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                if(state.loaded) {
-                val epoch=androidx.compose.runtime.saveable.rememberSaveable {state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
-                FinanceOcrIntake(state.busy) {block->vm.mediaAction(epoch,block)}
+    val pending = state.data.proposals.filter {
+        it.status == FinanceProposalStatus.ACTIVE || it.status == FinanceProposalStatus.SNOOZED
+    }
+    val back = {
+        if (initialSection == FinanceAutomationSection.DISCOVERY && section == FinanceAutomationSection.REVIEW)
+            section = FinanceAutomationSection.DISCOVERY
+        else onBack()
+    }
+    BackHandler(onBack = back)
+    SettingsPaperPage(if (section == FinanceAutomationSection.REVIEW) "待确认记录" else "自动发现", back) {
+        state.error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
+        settingsError?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
+        if (section == FinanceAutomationSection.REVIEW) {
+            if (state.loaded) {
+                val epoch = state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L
+                key(epoch) { FinanceOcrIntake(state.busy) { block -> vm.mediaAction(epoch, block) } }
+                SettingsSection("待复核")
+                if (pending.isEmpty()) Text("目前没有待确认的候选", style = LifeText.caption, color = colors.muted)
+                FinancePagedItems(pending, "pending-review", { it.id }) { proposal ->
+                    SettingsLine(
+                        proposal.description.ifBlank { "待确认交易" },
+                        if (proposal.status == FinanceProposalStatus.SNOOZED) "稍后处理" else "确认后才会写入正式账目"
+                    ) { FinanceReviewRequests.open(proposal.id) }
+                }
+                SettingsSection("最近处理")
+                val processed = state.data.proposals.filterNot { it in pending }.sortedByDescending { it.createdAt }
+                FinancePagedItems(processed, "processed-review", { it.id }) { proposal ->
+                    val label = when (proposal.status) {
+                        FinanceProposalStatus.CONFIRMED -> "已确认"
+                        FinanceProposalStatus.REJECTED -> "已忽略"
+                        else -> "已失效"
+                    }
+                    SettingsLine(proposal.description.ifBlank { "交易候选" }, FinanceTime.input(proposal.createdAt), trailing = label)
+                    FinanceAttachments(state.finance, FinanceMediaTarget(proposalId = proposal.id), state.busy, state.error) { block ->
+                        vm.mediaAction(epoch, block)
+                    }
+                }
+            } else Text("正在读取候选…", style = LifeText.caption, color = colors.muted)
+        } else {
+            Text("识别 → 小票 → 你确认 → 入账。识别结果先留在本机。", style = LifeText.caption, color = colors.muted)
+            SettingsSection("三种能力，三种权限")
+            DiscoverySwitch(
+                "支付通知识别", "读取获授权的微信、支付宝支付提示",
+                discovery.enabled, { enabled ->
+                    settings.save(settings.read().copy(enabled = enabled))
+                    if (enabled && discovery.deliveryMode != FinanceReviewDeliveryMode.INBOX_ONLY) requestNotifications()
+                }
+            )
+            Text("系统通知访问 · " + if (access) "已允许" else "未允许", style = LifeText.caption, color = colors.muted)
+            Text("通知服务 · " + if (access && diagnostic.connected) "已连接" else "未连接", style = LifeText.caption, color = colors.muted)
+            SettingsLine("管理通知访问", trailing = if (access) "系统设置" else "去授权") {
+                runCatching { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                    .onFailure { settingsError = "请在系统设置中搜索“通知使用权”" }
+            }
+            VisibleDetailSettings(discovery, settings)
+
+            SettingsSection("支付后的复核方式")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(FinanceReviewDeliveryMode.IMMEDIATE, FinanceReviewDeliveryMode.NORMAL, FinanceReviewDeliveryMode.INBOX_ONLY)
+                    .forEach { mode ->
+                        FilterChip(
+                            selected = discovery.deliveryMode == mode,
+                            onClick = {
+                                settings.save(settings.read().copy(deliveryMode = mode))
+                                if (mode != FinanceReviewDeliveryMode.INBOX_ONLY) requestNotifications()
+                            },
+                            label = { Text(when (mode) {
+                                FinanceReviewDeliveryMode.IMMEDIATE -> "即时小票"
+                                FinanceReviewDeliveryMode.NORMAL -> "普通通知"
+                                FinanceReviewDeliveryMode.INBOX_ONLY -> "仅待确认"
+                            }, style = LifeText.caption) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+            }
+            if (discovery.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE) {
+                DiscoverySwitch("通知来源 · 增强小票", "允许支付通知来源在上层显示复核小票",
+                    discovery.enhancedReceiptOverlay, { enabled ->
+                        settings.save(settings.read().copy(enhancedReceiptOverlay = enabled))
+                        if (enabled && !overlayPermission) runCatching {
+                            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + context.packageName)))
+                        }.onFailure { settingsError = "请在系统设置中管理上层显示权限" }
+                    })
+                if (!discovery.enhancedReceiptOverlay || !overlayPermission) {
+                    Text("通知来源的增强小票暂不可用时，降级为通知或留在待确认。", style = LifeText.caption, color = colors.muted)
                 }
             }
-            item { VisibleDetailSettings(discovery, settings) }
-            item { FinanceDiagnosticsCard(access, discovery) }
-            item {
-                Text("通知访问允许应用读取设备通知。本功能只处理下面选中的微信／支付宝支付提示，在本机解析，不上传内容，其他通知忽略。发现的信息仅供确认，不会自动记账。")
-                Row { Switch(discovery.enabled, { settings.save(discovery.copy(enabled = it)); if (it && discovery.deliveryMode != FinanceReviewDeliveryMode.INBOX_ONLY) requestNotifications() }); Text("自动发现 ${if (discovery.enabled) "开启" else "关闭"}") }
-                Text("系统通知访问：${if (access) "已允许" else "未允许"}")
-                TextButton(onClick = {
-                    try { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-                    catch (_: Exception) { settingsError = "无法打开系统设置，请在系统设置中搜索“通知使用权”" }
-                }) { Text("管理通知访问") }
-                Row { Checkbox(discovery.wechat, { settings.save(discovery.copy(wechat = it)) }); Text("微信 · ${installedSource(context, "com.tencent.mm")}") }
-                Row { Checkbox(discovery.alipay, { settings.save(discovery.copy(alipay = it)) }); Text("支付宝 · ${installedSource(context, "com.eg.android.AlipayGphone")}") }
-                Text("支付后复核", style = MaterialTheme.typography.titleMedium)
-                FinanceReviewDeliveryMode.entries.forEach { mode ->
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        RadioButton(discovery.deliveryMode == mode, {
-                            settings.save(discovery.copy(deliveryMode = mode))
-                            if (mode != FinanceReviewDeliveryMode.INBOX_ONLY) requestNotifications()
-                        })
-                        Column { Text(mode.label); Text(mode.description, style = MaterialTheme.typography.bodySmall) }
-                    }
-                }
-                if (discovery.deliveryMode == FinanceReviewDeliveryMode.IMMEDIATE) {
-                    Row {
-                        Switch(discovery.enhancedReceiptOverlay, { enabled ->
-                            settings.save(discovery.copy(enhancedReceiptOverlay = enabled))
-                            if (enabled && !Settings.canDrawOverlays(context)) {
-                                try { context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    android.net.Uri.parse("package:${context.packageName}"))) }
-                                catch (_: Exception) { settingsError = "无法打开权限设置，仍使用即时提醒" }
-                            }
-                        })
-                        Text("增强小票弹屏")
-                    }
-                    Text("在其他应用上层附加显示半屏小票，系统通知仍然保留。不读取其他应用画面，需“显示在其他应用上层”权限。", style = MaterialTheme.typography.bodySmall)
-                    if (discovery.enhancedReceiptOverlay && !overlayPermission) Text("上层显示未授权，仍使用即时提醒。")
-                }
-                if (discovery.deliveryMode != FinanceReviewDeliveryMode.INBOX_ONLY && !notifications) Text("系统通知未允许，发现的记录仍可在这里查看。")
-                if (discovery.lastStatus.isNotBlank()) Text(discovery.lastStatus, style = MaterialTheme.typography.bodySmall)
-                HorizontalDivider()
-                Text("规则只提供建议", style = MaterialTheme.typography.titleMedium)
+            if (discovery.deliveryMode != FinanceReviewDeliveryMode.INBOX_ONLY && !notifications) {
+                Text("系统未允许复核通知。待确认中的候选仍可查看。", style = LifeText.caption, color = colors.muted)
+            }
+
+            SettingsSection("来源与支持范围")
+            DiscoverySwitch("微信通知", installedSource(context, "com.tencent.mm"), discovery.wechat, {
+                settings.save(settings.read().copy(wechat = it))
+            }, enabled = discovery.enabled)
+            DiscoverySwitch("支付宝通知", installedSource(context, "com.eg.android.AlipayGphone"), discovery.alipay, {
+                settings.save(settings.read().copy(alipay = it))
+            }, enabled = discovery.enabled)
+            VisibleDetailProviderSettings(discovery, settings)
+
+            val rules = state.data.rules.filter { it.rule.deletedAt == null }
+            SettingsLine("记账识别规则", "匹配账户、分类和标签，仅提供建议", trailing = if (state.loaded) "${rules.size} 条" else null) {
+                rulesOpen = !rulesOpen
+            }
+            if (rulesOpen) {
                 TextButton(onClick = {
                     val id = UUID.randomUUID().toString()
                     editRule = FinanceRuleSet(FinanceRuleEntity(id, "", 0, true, System.currentTimeMillis()),
                         listOf(FinanceRuleConditionEntity(id, 0, FinanceConditionKind.TEXT_CONTAINS, "")),
                         listOf(FinanceRuleActionEntity(id, 0, FinanceActionKind.SUGGEST_CATEGORY, "")))
                 }) { Text("添加规则") }
-            }
-            items(state.data.rules.filter { it.rule.deletedAt == null }, key = { it.rule.id }) { rule ->
-                Row {
-                    Checkbox(rule.rule.enabled, { vm.saveRule(rule.copy(rule = rule.rule.copy(enabled = it))) {} }, enabled = !state.busy)
-                    TextButton(onClick = { editRule = rule }, enabled = !state.busy) { Text("${rule.rule.name} · 顺序 ${rule.rule.priority}") }
+                FinancePagedItems(rules, "discovery-rules", { it.rule.id }) { rule ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(rule.rule.enabled, { vm.saveRule(rule.copy(rule = rule.rule.copy(enabled = it))) {} }, enabled = !state.busy)
+                        TextButton(onClick = { editRule = rule }, enabled = !state.busy) { Text(rule.rule.name) }
+                    }
                 }
             }
-            item {
-                HorizontalDivider()
-                val pending = state.data.proposals.count { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }
-                Text("待确认 $pending · 有空再看", style = MaterialTheme.typography.titleMedium)
+            SettingsLine("待确认记录", "查看候选、已确认和失败结果", trailing = if (state.loaded) pending.size.toString() else null) {
+                section = FinanceAutomationSection.REVIEW
             }
-            items(state.data.proposals.filter { it.status in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }, key = { it.id }) { proposal ->
-                TextButton(onClick = { FinanceReviewRequests.open(proposal.id) }) {
-                    Text("${proposal.description} · ${proposal.amountMinor?.let { FinanceMoney.display(it) } ?: "金额待确认"} · ${if (proposal.status == FinanceProposalStatus.SNOOZED) "稍后" else "待确认"}")
-                }
+            SettingsLine("最近一次识别", discovery.lastStatus.ifBlank { "尚无结果" }, trailing = if (recentOpen) "收起" else "过程") {
+                recentOpen = !recentOpen
             }
-            item { Text("最近处理", style = MaterialTheme.typography.titleMedium) }
-            val processed=state.data.proposals.filter { it.status !in setOf(FinanceProposalStatus.ACTIVE, FinanceProposalStatus.SNOOZED) }.sortedByDescending {it.createdAt}
-            items(processed.take(processedShown), key = { it.id }) {proposal->
-                Text("${FinanceTime.input(proposal.createdAt)} · ${proposal.description} · " + when (proposal.status) {
-                    FinanceProposalStatus.CONFIRMED -> "已确认"
-                    FinanceProposalStatus.REJECTED -> "已忽略"
-                    else -> "已失效"
-                }, style = MaterialTheme.typography.bodySmall)
-                val epoch=androidx.compose.runtime.saveable.rememberSaveable {state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
-                FinanceAttachments(state.finance,FinanceMediaTarget(proposalId=proposal.id),state.busy,state.error) {block->vm.mediaAction(epoch,block)}
+            if (recentOpen) FinanceDiagnosticsCard(access, discovery)
+            SettingsLine("了解自动发现的工作原理", "权限、隐私与数据流向", trailing = if (principlesOpen) "收起" else "展开") {
+                principlesOpen = !principlesOpen
             }
-            if(processed.size>processedShown) item {TextButton({processedShown+=30}) {Text("再显示 30 条已处理记录")}}
+            if (principlesOpen) Text(
+                "通知和详情各自需要授权。主动截图只在你点击后采集一次，在本机 OCR 后交给你核对。权限撤回、宿主切换或页面受保护时，本次操作会停止。",
+                style = LifeText.caption, color = colors.inkSecondary
+            )
         }
     }
     editRule?.let { set -> key(set.rule.id) { FinanceRuleEditor(set, state, vm) { editRule = null } } }
 }
 
+@Composable
+internal fun DiscoverySwitch(
+    title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true
+) {
+    val colors = LocalLifeOsColors.current
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = LifeText.body, color = colors.ink)
+            Text(subtitle, style = LifeText.caption, color = colors.muted)
+        }
+        Switch(checked, onCheckedChange, enabled = enabled,
+            modifier = Modifier.semantics { contentDescription = title })
+    }
+}
 @Suppress("DEPRECATION")
 private fun installedSource(context: android.content.Context, name: String): String =
     if (runCatching { context.packageManager.getApplicationInfo(name, 0).enabled }.getOrDefault(false)) "已安装" else "未安装或已停用"

@@ -13,8 +13,16 @@ data class AppearanceEditorState(
     val isSaving: Boolean = false,
     val message: String? = null,
     val soft: String = secondary, val warm: String = paper,
-    val themeName: String = "我的配色", val extracting: Boolean = false, val editingNamedId: String? = null, val removedThemeIds: Set<String> = emptySet()
+    val themeName: String = "我的配色", val extracting: Boolean = false, val editingNamedId: String? = null,
+    val removedThemeIds: Set<String> = emptySet(), val saveEvent: Long = 0L
 ) {
+    fun hasUnsavedChanges(saved: AppearanceEditorState): Boolean =
+        selectedId != saved.selectedId || themeName != saved.themeName ||
+            accent != saved.accent || paper != saved.paper || secondary != saved.secondary ||
+            soft != saved.soft || warm != saved.warm || removedThemeIds.isNotEmpty() ||
+            preview.functionEffects != saved.preview.functionEffects ||
+            preview.functionPageStyle != saved.preview.functionPageStyle
+
     fun edit(field: ThemeField, text: String): AppearanceEditorState {
         val changed = when (field) {
             ThemeField.ACCENT -> copy(accent = text)

@@ -36,12 +36,12 @@ class AppearanceRepository(
 
     /** One DataStore transaction for the whole editor, including deletion and effect preferences. */
     suspend fun saveTheme(selectedId: String, name: String, colors: CustomTheme, replacingId: String?,
-        style: FunctionPageStyle, effects: FunctionPageEffects, removedIds: Set<String>) {
+        style: FunctionPageStyle, effects: FunctionPageEffects, removedIds: Set<String>): AppearanceSettings {
         val valid = colors.normalized()
         val effect = effects.normalized()
         require(name.trim().length in 1..40)
         require("legacy-custom" !in removedIds)
-        store.edit { values ->
+        val saved = store.edit { values ->
             var themes = AppearanceCodec.decode(values).namedThemes.filterNot { it.id in removedIds }
             val id = when {
                 replacingId != null && replacingId != "legacy-custom" -> {
@@ -67,6 +67,7 @@ class AppearanceRepository(
             values[AppearanceCodec.gradient] = effect.gradient
             values[AppearanceCodec.homeGradient] = effect.homeGradient
         }
+        return AppearanceCodec.decode(saved)
     }
 
     suspend fun saveModuleOrder(ids: List<String>) {
