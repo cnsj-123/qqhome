@@ -23,12 +23,14 @@ internal fun FinanceWorkspaceScreen(state:FinanceUiState,vm:FinanceViewModel,ini
     var eventId by rememberSaveable {mutableStateOf<String?>(null)}
     var resumeDraft by rememberSaveable {mutableStateOf<String?>(null)}
     var freshEconomic by rememberSaveable {mutableStateOf(false)}
+    var viewingEvent by rememberSaveable {mutableStateOf<String?>(null)}
+    var viewingCash by rememberSaveable {mutableStateOf<String?>(null)}
     var adjustment by rememberSaveable {mutableStateOf<String?>(null)}
     var obligation by rememberSaveable {mutableStateOf<String?>(null)}
     var preview by remember {mutableStateOf<FinanceChangePreview?>(null)}
     val s=state.snapshot;val v=s.v16
     val epoch=rememberSaveable {v?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
-    BackHandler(!economicOpen && adjustment==null && obligation==null && preview==null) {close()}
+    BackHandler(!economicOpen && viewingEvent==null && viewingCash==null && adjustment==null && obligation==null && preview==null) {close()}
     Scaffold(containerColor=LocalLifeOsColors.current.paper,topBar={Row(Modifier.fillMaxWidth().padding(12.dp)) {
         TextButton(close) {Text("返回财务")};Text("财务工作页",style=LifeText.title)
     }}) {padding->Column(Modifier.padding(padding).fillMaxSize()) {
@@ -53,7 +55,7 @@ internal fun FinanceWorkspaceScreen(state:FinanceUiState,vm:FinanceViewModel,ini
                             Text(event.description.ifBlank {"经济事项"},style=LifeText.title)
                             Text(FinanceTime.input(event.occurredAt)+" · "+event.currencyCode)
                             Text("确认个人成本 "+FinanceMoney.display(total.confirmedMinor,event.currencyCode)+if(total.complete) "" else "，另有未知承担")
-                            TextButton({eventId=event.id;resumeDraft=null;freshEconomic=false;economicOpen=true}) {Text(if(detail==null) "查看并确认经济分配" else "编辑出资与承担")}
+                            TextButton({viewingEvent=event.id}) {Text("查看事项详情")}
                             FinanceAttachments(s,FinanceMediaTarget(eventId=event.id),state.busy,state.error) {block->vm.mediaAction(epoch,block)}
                             if(detail!=null) TextButton({adjustment=event.id}) {Text("记录实际退款或返利")}
                             TextButton({vm.previewVoid(eventId=event.id){preview=it}},enabled=!state.busy) {Text("预览整组作废")}
@@ -87,7 +89,13 @@ internal fun FinanceWorkspaceScreen(state:FinanceUiState,vm:FinanceViewModel,ini
             }
         }}
     }}
+    viewingEvent?.let { id ->
+        if (!economicOpen) FinanceEconomicDetails(s, id, onEdit = {
+            eventId=id;resumeDraft=null;freshEconomic=false;economicOpen=true
+        }, onOpenCash = {viewingCash=it}, onClose = {viewingEvent=null})
+    }
     if(economicOpen) key(eventId,resumeDraft,freshEconomic) {FinanceEconomicEditor(state,vm,eventId,resumeDraft,freshEconomic){economicOpen=false}}
+    viewingCash?.let {id->FinanceCanonicalRecordSheet(state,vm,id){viewingCash=null}}
     adjustment?.let {id->FinanceCashActionSheet(state,vm,eventId=id,close={adjustment=null})}
     obligation?.let {id->FinanceCashActionSheet(state,vm,obligationId=id,close={obligation=null})}
     preview?.let {p->AlertDialog(onDismissRequest={preview=null},title={Text("整组作废影响")},text={FinanceChangeImpact(p)},

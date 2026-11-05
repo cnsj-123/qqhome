@@ -282,6 +282,7 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
         filter.value=safe;spaceFilters[activeSpace]=safe
         savedState["finance_filter_"+activeSpace.name]=FinanceFilterState.encode(safe)
     }
+    fun applyFilter(value: FinanceFilter) { updateFilter(value) }
     fun amountRange(minimum:Long?,maximum:Long?,currency:String?) {
         require(minimum==null || maximum==null || minimum<=maximum)
         updateFilter(filter.value.copy(minimumMinor=minimum,maximumMinor=maximum,currencyCode=currency))

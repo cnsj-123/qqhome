@@ -63,7 +63,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
         dragHandle = dragHandle) {contents(onClose)}
 }
 
-private object ManualReceiptShape : Shape {
+internal object ManualReceiptShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val depth = with(density) { 8.dp.toPx() }.coerceAtMost(size.height / 4)
         return Outline.Generic(Path().apply {

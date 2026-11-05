@@ -106,10 +106,8 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     } ?: YearMonth.now().toString()) }
     var selectedDay by rememberSaveable { mutableStateOf<String?>(null) }
     var dates by rememberSaveable { mutableStateOf(false) }
-    var amountFilterOpen by rememberSaveable {mutableStateOf(false)}
     var monthPicker by rememberSaveable { mutableStateOf(false) }
-    var queryMenu by remember { mutableStateOf(false) }
-    var filterDimension by remember { mutableStateOf<FinanceFilterDimension?>(null) }
+    var queryMenu by rememberSaveable { mutableStateOf(false) }
     val month = YearMonth.parse(calendarMonth)
     val monthlyRange = state.filter.range == FinanceDateRange.month(month.atDay(1))
     val rangeLabel = when {
@@ -150,7 +148,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             if (YearMonth.from(LocalDate.parse(day)).toString() != calendarMonth) selectedDay = null
         }
     }
-    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(editing || viewing || accountEditing || dates || amountFilterOpen || monthPicker || queryMenu || filterDimension != null || detailAccount != null || chartLabel != null)
+    com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe(editing || viewing || accountEditing || dates || monthPicker || queryMenu || detailAccount != null || chartLabel != null)
     val allRows = state.allRows
     val balancesAfter = remember(state.snapshot) { state.snapshot.accounts.flatMap { FinanceAccountProjection.register(state.snapshot, it.id) }.associate { it.entry.id to it.balanceMinor } }
     val unknownCashDateIds = state.unknownCashDateIds
@@ -164,9 +162,8 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val undatedRows = remember(state.calendarRows, state.economicDates, unknownCashDateIds) {
         state.calendarRows.filter { it.entry.id in unknownCashDateIds && it.entry.id !in state.economicDates }
     }
-    val noncashDays = remember(state.costRows, state.snapshot.v4) {
-        val fundedEvents = state.snapshot.v4?.activeLinks.orEmpty().map { it.eventId }.toSet()
-        state.costRows.filter { it.entryId == null && it.eventId !in fundedEvents }
+    val noncashDays = remember(state.costRows, state.snapshot.v4, datedRows, state.economicDates) {
+        unrepresentedEconomicCosts(state.costRows, state.snapshot, datedRows, state.economicDates)
             .groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
     }
     val roles = remember(state.snapshot.v4) { state.snapshot.v4?.activeLinks.orEmpty().groupBy { it.entryId }.mapValues { (_, links) ->
@@ -182,48 +179,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             monthLabel, if (view == FinanceView.ACCOUNTS) accountQuery else requestedFilter.query,
             if (view == FinanceView.ACCOUNTS) "搜索账户" else "搜索账目",
             ::back, { monthPicker = true }, { if (view == FinanceView.ACCOUNTS) accountQuery = it else vm.search(it) }) {
-            if (view != FinanceView.ACCOUNTS) Box {
+            if (view != FinanceView.ACCOUNTS) {
                 val active = state.filter.accountId != null || state.filter.categoryId != null || state.filter.tagId != null || state.filter.nature != null || state.filter.minimumMinor!=null || state.filter.maximumMinor!=null || state.filter.currencyCode!=null
                 IconButton({ queryMenu = true }) { Icon(Icons.Outlined.FilterList, if (active) "筛选与日期，已筛选" else "筛选与日期",
                     tint = if (active) colors.accentDeep else colors.ink) }
-                DropdownMenu(queryMenu, { queryMenu = false }) {
-                    DropdownMenuItem(text = { Text("日期 · $rangeLabel") }, onClick = { queryMenu = false; monthPicker = true })
-                    if (view != FinanceView.ACCOUNTS) {
-                        DropdownMenuItem(text = { Text("选择日期范围") }, onClick = {
-                            queryMenu = false; dates = true
-                        })
-                        FinancePeriod.entries.filter { it != FinancePeriod.CUSTOM }.forEach { period ->
-                            DropdownMenuItem(text = { Text(period.label) }, onClick = {
-                                queryMenu = false
-                                // Overview/Insights ranges do not replace the saved Transactions month/day.
-                                if (view == FinanceView.TRANSACTIONS) {
-                                    selectedDay = null
-                                    calendarMode = period == FinancePeriod.MONTH
-                                    if (calendarMode) selectMonth(YearMonth.now()) else vm.selectPeriod(period)
-                                } else vm.selectPeriod(period)
-                            })
-                        }
-                        if (view == FinanceView.TRANSACTIONS) DropdownMenuItem(
-                            text = { Text(if (calendarMode) "切换到列表与范围" else "切换到月历") },
-                            onClick = { queryMenu = false; calendarMode = !calendarMode; selectedDay = null
-                                if (calendarMode) selectMonth(month) })
-                        HorizontalDivider()
-                        DropdownMenuItem(text={Text("金额与币种 · "+(state.filter.currencyCode ?: "不限"))},onClick={queryMenu=false;amountFilterOpen=true})
-                        FinanceFilterDimension.entries.forEach { dimension ->
-                            val selected = when (dimension) {
-                                FinanceFilterDimension.ACCOUNT -> state.snapshot.accounts.find { it.id == state.filter.accountId }?.name
-                                FinanceFilterDimension.CATEGORY -> FinanceProjection.categoryPath(state.snapshot.categories, state.filter.categoryId)
-                                FinanceFilterDimension.TAG -> state.snapshot.tags.find { it.id == state.filter.tagId }?.name
-                                FinanceFilterDimension.NATURE -> state.filter.nature?.label
-                            }
-                            DropdownMenuItem(text = { Text("${dimension.label} · ${selected ?: "全部"}") },
-                                onClick = { queryMenu = false; filterDimension = dimension })
-                        }
-                    }
-                    DropdownMenuItem(text = { Text("清除搜索") }, onClick = {
-                        queryMenu = false; if (view == FinanceView.ACCOUNTS) accountQuery = "" else vm.search("")
-                    })
-                }
             }
             if (onFinanceSettings != null) IconButton(onFinanceSettings) {
                 Icon(Icons.Outlined.Settings, "账目专项设置", tint = colors.inkSecondary)
@@ -267,7 +226,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
     }) { padding ->
         HorizontalPager(pager, Modifier.padding(padding).fillMaxSize(),
-            userScrollEnabled = !editing && !viewing && !accountEditing && !dates && !monthPicker && !queryMenu && filterDimension == null && detailAccount == null && chartLabel == null) { page ->
+            userScrollEnabled = !editing && !viewing && !accountEditing && !dates && !monthPicker && !queryMenu && detailAccount == null && chartLabel == null) { page ->
         val view = FinanceView.entries[page]
         val listState = listStates[page]
         val density = LocalDensity.current
@@ -441,19 +400,11 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }
                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
                     if (view == FinanceView.INSIGHTS) {
-                        item { FinancePeriodSummary(state.costSummary, state.previousCosts) }
-                        item { FinanceCostTrend(state.costRows) { start,end -> vm.customRange(start,end); selectedDay=null; calendarMode=false } }
-                        item { FinanceCategoryChart(state.categories, state.previousCategories) { label, currency -> chartLabel = label; chartCurrency = currency } }
-                        item { FinanceSection {
-                            Text("账户真实流量", style = LifeText.title)
-                            val real = FinancePersonalProjection.realTotals(state.ledger, state.filter.accountId)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                MoneySummary("流出", real, true, Modifier.weight(1f)); MoneySummary("流入", real, false, Modifier.weight(1f))
-                            }
-                            Text("转账只改变账户余额；真实流量与个人收支分别展示。", style = LifeText.caption)
-                            if (state.unknownCashDateCount > 0) Text("另有 ${state.unknownCashDateCount} 笔收付日期待确认，期间流量只含已知日期。",
-                                style = LifeText.caption, color = colors.inkSecondary)
-                        } }
+                        item {
+                            FinanceAnalysisOverview(state, vm, rangeLabel,
+                                onCategory = { label, currency -> chartLabel = label; chartCurrency = currency },
+                                onRange = { start, end -> vm.customRange(start, end); selectedDay = null; calendarMode = false })
+                        }
                     } else {
                         val shownDays = groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
                         val selectedCosts = noncashDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
@@ -531,31 +482,29 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     if (accountEditing && state.loaded) FinanceAccountSheet(state, state.snapshot.accounts.find { it.id == accountId }, vm) { accountEditing = false }
     if (monthPicker) FinanceMonthPicker(month, { selectMonth(it); monthPicker = false }, { monthPicker = false },
         onRange = { monthPicker = false; dates = true })
-    filterDimension?.let { dimension ->
-        val choices = when (dimension) {
-            FinanceFilterDimension.ACCOUNT -> state.snapshot.accounts.map { it.id to it.name }
-            FinanceFilterDimension.CATEGORY -> state.snapshot.categories.map { it.id to (FinanceProjection.categoryPath(state.snapshot.categories, it.id) ?: it.name) }
-            FinanceFilterDimension.TAG -> state.snapshot.tags.map { it.id to it.name }
-            FinanceFilterDimension.NATURE -> FinanceNature.entries.map { it.name to it.label }
-        }
-        val selected = when (dimension) {
-            FinanceFilterDimension.ACCOUNT -> state.filter.accountId
-            FinanceFilterDimension.CATEGORY -> state.filter.categoryId
-            FinanceFilterDimension.TAG -> state.filter.tagId
-            FinanceFilterDimension.NATURE -> state.filter.nature?.name
-        }
-        fun select(value: String?) { when (dimension) {
-            FinanceFilterDimension.ACCOUNT -> vm.filterAccount(value)
-            FinanceFilterDimension.CATEGORY -> vm.filterCategory(value)
-            FinanceFilterDimension.TAG -> vm.filterTag(value)
-            FinanceFilterDimension.NATURE -> vm.filterNature(value?.let(FinanceNature::valueOf))
-        } }
-        val common = if (dimension == FinanceFilterDimension.CATEGORY) state.snapshot.entries
-            .filter { it.voidedAt == null }.mapNotNull { it.categoryId }.groupingBy { it }.eachCount()
-            .entries.sortedByDescending { it.value }.take(6).map { it.key } else emptyList()
-        FinanceChoiceSheet(dimension.label, selected, choices, { select(it) }, { filterDimension = null }, { select(null) }, common)
-    }
-    if(amountFilterOpen) FinanceAmountRangeSheet(state.filter,state.snapshot.accounts.map {it.currencyCode},vm::amountRange) {amountFilterOpen=false}
+    if (queryMenu) FinanceQuerySheet(
+        state = state,
+        initialFilter = requestedFilter,
+        calendarMode = calendarMode,
+        calendarMonth = month,
+        showCalendarControls = view == FinanceView.TRANSACTIONS,
+        onApply = { filter, useCalendar ->
+            vm.applyFilter(filter)
+            if (view == FinanceView.TRANSACTIONS) {
+                calendarMode = useCalendar
+                selectedDay = null
+                filter.range.startInclusive?.let {
+                    calendarMonth = YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())).toString()
+                }
+            }
+            queryMenu = false
+        },
+        onSaveView = { name, spec, done ->
+            val epoch = state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L
+            vm.workspaceAction(epoch, done) { repository, token -> repository.saveQuery(token, name, spec) }
+        },
+        onClose = { queryMenu = false }
+    )
     if (dates) FinanceDateSheet(state.error, { start, end ->
         if (vm.customRange(start, end)) {
             calendarMonth = YearMonth.from(LocalDate.parse(start)).toString()

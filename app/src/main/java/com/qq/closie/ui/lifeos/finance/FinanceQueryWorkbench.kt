@@ -6,6 +6,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeText
 import java.time.LocalDate
@@ -30,6 +32,12 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     var min by rememberSaveable {mutableStateOf("")}
     var max by rememberSaveable {mutableStateOf("")}
     var currency by rememberSaveable {mutableStateOf("CNY")}
+    var viewingEvent by rememberSaveable {mutableStateOf<String?>(null)}
+    var viewingCash by rememberSaveable {mutableStateOf<String?>(null)}
+    var editingEvent by rememberSaveable {mutableStateOf(false)}
+    LaunchedEffect(spec,useLocal,grant) {
+        viewingEvent=null;viewingCash=null;editingEvent=false
+    }
     fun adopt(next:FinanceQuerySpec) {
         val zone=java.time.ZoneId.systemDefault()
         spec=next
@@ -70,7 +78,7 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     HorizontalDivider()
     Text("本地受限查账",style=LifeText.title)
     Text("例如：今年 标签=回家 分类=交通 花多少。完整解释后展示条件；不执行修改、删除、SQL或不完整语句。",style=LifeText.caption)
-    OutlinedTextField(localText,{localText=it},label={Text("用固定短句描述查询")})
+    OutlinedTextField(localText,{localText=it},label={Text("用固定短句描述查询")},modifier=Modifier.testTag("finance-query-local-input"))
     val grants=s.v16?.purposeGrantRows.orEmpty().filter {it.purpose==FinanceReadPurpose.LOCAL_QUERY && it.providerId=="local-conditions" && it.voidedAt==null && it.expiresAt>now}
     FinanceChoice("本次查询授权",grant.orEmpty(),grants.map {it.id to ("授权至 "+FinanceTime.input(it.expiresAt))}){grant=it}
     Text("在预算与隐私页可选择事项并单独授权本地查询；Home、分享和AI授权互不替代。",style=LifeText.caption)
@@ -82,12 +90,35 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     }}
     result.onSuccess {value->
         value.totals.forEach {(code,total)->Text((if(spec.mode==FinanceQueryMode.PERSONAL_COST) "个人成本 " else "真实流出减流入 ")+FinanceMoney.display(total.confirmedMinor,code)+if(total.complete) "" else " · ${total.unknownCount} 项金额未知")}
+        if (useLocal) Text("受限结果仅展示本次授权的查询内容。", style=LifeText.caption)
         key(spec,useLocal,grant) {
-            FinancePagedItems(value.costs,"query-costs",{it.id}) {row->Text(FinanceTime.input(row.occurredAt)+" · "+row.description.ifBlank {"经济事项"}+" · "+(row.amountMinor?.let {FinanceMoney.display(it,row.currencyCode)} ?: "未知"))}
-            FinancePagedItems(value.cash,"query-cash",{it.id}) {row->Text(FinanceTime.input(row.occurredAt)+" · "+row.description.ifBlank {"资金流水"}+" · "+row.direction.name+" "+FinanceMoney.display(row.amountMinor,s.accounts.single {it.id==row.accountId}.currencyCode))}
+            FinancePagedItems(value.costs,"query-costs",{it.id}) {row->
+                val label=FinanceTime.input(row.occurredAt)+" · "+row.description.ifBlank {"经济事项"}+" · "+
+                    (row.amountMinor?.let {FinanceMoney.display(it,row.currencyCode)} ?: "未知")
+                val marker=Modifier.testTag("finance-query-cost-"+row.id)
+                if(useLocal) Text(label,marker)
+                else TextButton({
+                    if(row.eventId!=null) viewingEvent=row.eventId else viewingCash=row.entryId
+                },modifier=marker.fillMaxWidth(),enabled=row.eventId!=null || row.entryId!=null) {Text(label)}
+            }
+            FinancePagedItems(value.cash,"query-cash",{it.id}) {row->
+                val label=FinanceTime.input(row.occurredAt)+" · "+row.description.ifBlank {"资金流水"}+" · "+row.direction.name+" "+
+                    FinanceMoney.display(row.amountMinor,s.accounts.single {it.id==row.accountId}.currencyCode)
+                val marker=Modifier.testTag("finance-query-cash-"+row.id)
+                if(useLocal) Text(label,marker)
+                else TextButton({viewingCash=row.id},modifier=marker.fillMaxWidth()) {Text(label)}
+            }
         }
         if(value.costs.isEmpty() && value.cash.isEmpty()) Text("当前条件与授权范围内没有记录。")
     }.onFailure {Text(it.message ?: "查询无法完成",color=MaterialTheme.colorScheme.error)}
+    // Restricted results stay within the granted projection, including after state restoration.
+    if(!useLocal) {
+        viewingEvent?.let {id->
+            if(editingEvent) FinanceEconomicEditor(state,vm,id){editingEvent=false}
+            else FinanceEconomicDetails(s,id,onEdit={editingEvent=true},onOpenCash={viewingCash=it},onClose={viewingEvent=null})
+        }
+        viewingCash?.let {id->FinanceCanonicalRecordSheet(state,vm,id){viewingCash=null}}
+    }
 }
 
 @Composable

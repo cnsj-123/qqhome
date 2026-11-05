@@ -122,7 +122,9 @@ class FinanceSmokeTest {
     }
     private fun selectPeriod(label: String) {
         openFilters()
-        click(label)
+        val period = FinancePeriod.entries.single { it.label == label }
+        compose.onNodeWithTag("query-period-${period.name}").performClick()
+        click("查看结果")
         compose.waitForIdle()
     }
     private fun assertViewedMonth(month: YearMonth) {
@@ -174,7 +176,7 @@ class FinanceSmokeTest {
         compose.waitForIdle()
         openFilters()
         val month=YearMonth.now()
-        compose.onNodeWithText("日期 · ${month.year} 年 ${month.monthValue} 月").assertIsDisplayed()
+        compose.onNodeWithText("${month.year}.${month.monthValue.toString().padStart(2, '0')}").assertIsDisplayed()
     }
 
     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {

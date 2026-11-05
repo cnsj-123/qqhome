@@ -87,6 +87,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val recentAccounts = remember(state.snapshot.entries) { state.snapshot.entries.filter { it.voidedAt == null }.sortedByDescending { it.updatedAt }.map { it.accountId }.distinct().take(4) }
     val accounts = state.snapshot.accounts.filter { it.archivedAt == null || it.id == row?.account?.id || it.id == row?.targetAccount?.id }
+    val currency = accounts.find { it.id == accountId }?.currencyCode ?: "CNY"
     fun currentDraft()=FinanceEntryDraft(kind,amount,accountId,targetId,occurredAt,description,category,tags,preservedOccurredAt,subcategory,relationship,selectedCategoryId,editGeneration=editGeneration)
     LaunchedEffect(editorId,editGeneration,kindName,amount,accountId,targetId,occurredAt,description,selectedCategoryId,category,subcategory,tags,relationship,continuous) {
         if(row==null) { kotlinx.coroutines.delay(250); vm.persistDraft(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) }
@@ -97,7 +98,13 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
         if(row==null) vm.flushDraftOnStop(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch)
     }
-    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, actions = {
+    FinanceReceipt(if (row == null) "记一笔" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, actions = {
+        FinanceAmountKeypad(amount, currency, !state.busy) { amount = it }
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        if (row == null) {
+            Checkbox(continuous, { continuous = it }, enabled = !state.busy)
+            Text("再记一笔", style = LifeText.caption, modifier = Modifier.padding(end = 12.dp))
+        }
         Button(onClick = {
             if(row==null) vm.saveDraftRecord(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) {
                 if(continuous) {savedFeedback=true;feedbackGeneration++
@@ -107,11 +114,11 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             } else vm.saveRecord(row,currentDraft(),onSaved ?: onClose,editorEpoch)
         },
             enabled = !state.busy, interactionSource=saveInteraction,
-            modifier = Modifier.fillMaxWidth().graphicsLayer {scaleX=saveScale;scaleY=saveScale}) { Text(if (state.busy) "正在保存……" else "保存记录") }
+            modifier = Modifier.weight(1f).graphicsLayer {scaleX=saveScale;scaleY=saveScale}) { Text(if (state.busy) "正在保存……" else "保存记录") }
+        }
     }) {
         if(row==null) {
-            Text(if(savedFeedback) "已保存，可继续记录" else if(savedDraft!=null) "已恢复未完成草稿；保存前核对账户与关系。" else "未完成内容自动保存为草稿，不计余额。",style=LifeText.caption)
-            Row { Checkbox(continuous,{continuous=it},enabled=!state.busy);Text("连续记账 · 锁定账户与日期") }
+            if (savedFeedback || savedDraft != null) Text(if(savedFeedback) "已保存，可继续记录" else "已恢复草稿",style=LifeText.caption)
             if(continuous) Text("本轮锁定：${accounts.firstOrNull { it.id==accountId }?.name ?: "待选择账户"} · $occurredAt",style=LifeText.caption)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -121,27 +128,36 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
                     label = { Text(tab.label) })
             }
         }
-        val currency = accounts.find { it.id == accountId }?.currencyCode ?: "CNY"
-        FinanceAmountInput(amount,currency,!state.busy) { amount=it }
+        if (kind != FinanceEditorKind.TRANSFER) {
+            FinanceInlineCategories(state.snapshot, selectedCategoryId, state.busy) { selectedCategoryId = it }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        OutlinedTextField(description, { description = it }, Modifier.weight(1f),
+            label = { Text("备注（可留空）") }, enabled = !state.busy, singleLine = true,
+            textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
+        Box(Modifier.weight(.85f)) { FinanceAmountInput(amount,currency,!state.busy,showKeypad = false) { amount=it } }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.weight(1f)) {
         AccountChoice(if (kind == FinanceEditorKind.TRANSFER) "转出账户" else "账户", accounts, accountId, !state.busy && !continuous, recentAccounts) { accountId = it; if (targetId == it) targetId = accounts.firstOrNull { a -> a.id != it && a.archivedAt == null }?.id.orEmpty() }
+        }
+        TextButton({ pickingDate = !pickingDate }, enabled = !state.busy && !continuous) { Text("时间 · $occurredAt", maxLines = 1, style = LifeText.caption) }
+        }
         if (kind == FinanceEditorKind.TRANSFER) {
             AccountChoice("转入账户", accounts.filter { it.id != accountId }, targetId, !state.busy && !continuous, recentAccounts) { targetId = it }
             if (accounts.count { it.archivedAt == null } < 2 && row == null) Text("转账需要两个不同的真实账户。", style = LifeText.caption, color = colors.muted)
         }
-        TextButton({ pickingDate = !pickingDate }, enabled = !state.busy && !continuous) { Text("时间 · $occurredAt") }
         if (pickingDate) FinanceDateTimePanel(occurredAt, !state.busy && !continuous,
             onCancel={pickingDate=false},onApply={occurredAt=it;pickingDate=false})
-        OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(),
-            label = { Text("备注（可留空）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
         if (kind != FinanceEditorKind.TRANSFER) {
             TextButton({ pickingCategory = !pickingCategory }, enabled = !state.busy) {
                 Text("分类 · " + (FinanceProjection.categoryPath(state.snapshot.categories, selectedCategoryId) ?: category.ifBlank { "选择分类" }))
             }
             if (pickingCategory) FinanceCategoryFields(state.snapshot, selectedCategoryId,
                 { selectedCategoryId = it; pickingCategory = false }, state.busy, vm::createCategory)
-            selectedCategoryId?.let { FinanceCategoryIconEditor(state, vm, it) }
             TextButton({ moreFields = !moreFields }, enabled = !state.busy) { Text(if (moreFields) "收起标签与新分类" else "标签与新分类") }
             if (moreFields) {
+                selectedCategoryId?.let { FinanceCategoryIconEditor(state, vm, it) }
                 OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), label = { Text("标签 · 逗号分隔") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(tags))
                 androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(state.snapshot.tags.size) { index ->
