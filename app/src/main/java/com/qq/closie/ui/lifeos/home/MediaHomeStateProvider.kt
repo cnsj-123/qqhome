@@ -13,7 +13,7 @@ class MediaHomeStateProvider(private val base: HomeStateProvider, private val ph
     override fun stateFor(date: LocalDate): Flow<HomeUiState> = combine(base.stateFor(date), photos.observe()) { state, selected ->
         fun image(photo: HomePhotoReference) = LifeMediaUi(photo.id, photo.uri,
             sourceState = if (photo.uri == null) MediaSourceState.SOURCE_MISSING else MediaSourceState.AVAILABLE,
-            aspectRatio = photo.aspectRatio)
+            aspectRatio = photo.aspectRatio, caption = photo.caption)
         state.copy(eligibleMedia = selected.filter { it.date == date }.map(::image),
             historyItems = (state.historyItems + selected.filter { it.date.isBefore(date) }
                 .map { HistoryItemUi(it.id, it.date, title = null, photo = image(it)) })

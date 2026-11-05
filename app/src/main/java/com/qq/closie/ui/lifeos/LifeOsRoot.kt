@@ -177,7 +177,7 @@ fun LifeOsRoot(
                                 android.widget.Toast.makeText(photoContext, "已从首页移除，原图保留", android.widget.Toast.LENGTH_SHORT).show()
                             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                             catch (_: Exception) { android.widget.Toast.makeText(photoContext, "未能移除，请刷新后重试", android.widget.Toast.LENGTH_LONG).show() }
-                        } })
+                        } }, onSavePhotoCaption = lifeContainer.homePhotoRepository::setCaption)
                     // BoxWithConstraints subcomposes this slot during layout. Register after
                     // NavHost here, not in the earlier parent composition outside LifeFunctionPages.
                     // Gesture leases cannot veto Back on an already-open drawer.

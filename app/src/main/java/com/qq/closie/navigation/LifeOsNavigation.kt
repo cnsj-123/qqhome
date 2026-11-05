@@ -35,7 +35,8 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
     externalCommand: ExternalNavCommand?, onExternalCommandConsumed: (Long) -> Unit,
     nav: NavHostController, home: HomeUiState, onHomeDateSelected: (LocalDate) -> Unit,
     appearanceViewModel: AppearanceViewModel, onDrawer: () -> Unit,
-    onCapture: () -> Unit, onFileToLibrary: (String) -> Unit, onRemoveHomePhoto: (String) -> Unit = {}) {
+    onCapture: () -> Unit, onFileToLibrary: (String) -> Unit, onRemoveHomePhoto: (String) -> Unit = {},
+    onSavePhotoCaption: (suspend (String, String, String?, Long) -> Unit)? = null) {
     val reducedMotion = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
     val paperOrigin = TransformOrigin(.5f, 0f)
     NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
@@ -66,7 +67,8 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         composable(LifeOsRoute.HOME) {
             LifeOsHomeScreen(home, onDrawer, onCalendar = { nav.navigateLifeTopLevel(LifeOsRoute.CALENDAR) },
                 onMap = { nav.navigateLifeTopLevel(LifeOsRoute.MAP) }, onCompanion = { nav.navigateLifeTopLevel(LifeOsRoute.COMPANION) },
-                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) }, onDateSelected = onHomeDateSelected, onRemovePhoto = onRemoveHomePhoto)
+                onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) }, onDateSelected = onHomeDateSelected,
+                onRemovePhoto = onRemoveHomePhoto, onSavePhotoCaption = onSavePhotoCaption)
         }
         closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed)
         captureRoutes(nav, container, onCapture, onFileToLibrary)

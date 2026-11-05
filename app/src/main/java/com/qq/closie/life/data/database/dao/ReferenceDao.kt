@@ -34,6 +34,9 @@ interface ReferenceDao {
     @Query("SELECT * FROM reference_items WHERE id = :id")
     suspend fun getById(id: String): ReferenceItemEntity?
 
+    @Query("SELECT * FROM reference_items WHERE lifeEntityId = :ownerId")
+    suspend fun getByOwnerId(ownerId: String): ReferenceItemEntity?
+
     @Query("SELECT * FROM reference_items WHERE id = :id")
     fun observeById(id: String): Flow<ReferenceItemEntity?>
 

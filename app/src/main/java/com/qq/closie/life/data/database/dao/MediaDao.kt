@@ -9,6 +9,8 @@ import com.qq.closie.life.media.MediaLinkEntity
 import com.qq.closie.life.media.MediaResourceEntity
 import kotlinx.coroutines.flow.Flow
 
+data class HomePhotoCaption(val mediaAssetId: String, val caption: String)
+
 @Dao
 interface MediaDao {
 
@@ -59,6 +61,12 @@ interface MediaDao {
 
     @Query("SELECT media_links.* FROM media_links JOIN life_entities ON life_entities.id = media_links.ownerEntityId WHERE media_links.role = 'home-photo' AND life_entities.deletedAt IS NULL ORDER BY media_links.createdAt DESC, media_links.id")
     suspend fun getHomePhotoLinks(): List<MediaLinkEntity>
+
+    @Query("SELECT media_links.mediaAssetId, reference_items.summary AS caption FROM media_links JOIN reference_items ON reference_items.lifeEntityId = media_links.ownerEntityId JOIN life_entities ON life_entities.id = reference_items.lifeEntityId WHERE media_links.role = 'home-photo-caption' AND reference_items.referenceType = 'NOTE' AND reference_items.summary IS NOT NULL AND life_entities.deletedAt IS NULL ORDER BY media_links.createdAt DESC, media_links.id")
+    fun observeHomePhotoCaptions(): Flow<List<HomePhotoCaption>>
+
+    @Query("SELECT media_links.mediaAssetId, reference_items.summary AS caption FROM media_links JOIN reference_items ON reference_items.lifeEntityId = media_links.ownerEntityId JOIN life_entities ON life_entities.id = reference_items.lifeEntityId WHERE media_links.role = 'home-photo-caption' AND reference_items.referenceType = 'NOTE' AND reference_items.summary IS NOT NULL AND life_entities.deletedAt IS NULL ORDER BY media_links.createdAt DESC, media_links.id")
+    suspend fun getHomePhotoCaptions(): List<HomePhotoCaption>
 
     // --- MediaLink ---
 

@@ -14,6 +14,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -39,6 +40,7 @@ import com.qq.closie.ui.lifeos.theme.*
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val homeDayFormat = DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)
 private val homeWeekFormat = DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)
@@ -59,12 +61,23 @@ fun LifeOsHomeScreen(
     onDateSelected: (LocalDate) -> Unit = {},
     onRemovePhoto: (String) -> Unit = {},
     interactive: Boolean = true,
-    today: LocalDate = LocalDate.now()
+    today: LocalDate = LocalDate.now(),
+    onSavePhotoCaption: (suspend (String, String, String?, Long) -> Unit)? = null
 ) {
     var datePopup by rememberSaveable(state.date) { mutableStateOf(false) }
     var showTodayText by rememberSaveable(state.date) { mutableStateOf(false) }
     var truncatedToday by remember(state.date) { mutableStateOf(false) }
     var viewer by remember(state.date) { mutableStateOf<HomePhotoSelection?>(null) }
+    var captionPhoto by remember(state.date) { mutableStateOf<LifeMediaUi?>(null) }
+    var captionText by remember { mutableStateOf("") }
+    var captionGeneration by remember { mutableLongStateOf(0L) }
+    var captionBusy by remember { mutableStateOf(false) }
+    var captionError by remember { mutableStateOf<String?>(null) }
+    val captionScope = rememberCoroutineScope()
+    fun editCaption(photo: LifeMediaUi) {
+        captionPhoto = photo; captionText = photo.caption.orEmpty(); captionError = null
+        captionGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
+    }
     val memoryPhotos = remember(state.historyItems) { state.historyItems.mapNotNull { it.photo }.distinctBy { it.id } }
     val allPhotos = remember(state.eligibleMedia, memoryPhotos) { (state.eligibleMedia + memoryPhotos).distinctBy { it.id } }
     val aspects by rememberPhotoAspects(allPhotos)
@@ -74,7 +87,7 @@ fun LifeOsHomeScreen(
     val hasToday = state.eligibleMedia.isNotEmpty() || state.todayFacts.isNotEmpty()
     val colors = LocalLifeOsColors.current
     val openDate = { datePopup = true }
-    if (interactive) SuspendFunctionPageSwipe(visibleViewer || showTodayText || datePopup)
+    if (interactive) SuspendFunctionPageSwipe(visibleViewer || showTodayText || datePopup || captionPhoto != null)
 
     Box(modifier.fillMaxSize().then(if (interactive) Modifier.semantics {
         customActions = listOf(
@@ -147,7 +160,9 @@ fun LifeOsHomeScreen(
                                             }
                                             val note = photo?.caption?.takeIf(String::isNotBlank)
                                             if (note != null || (photo != null && memory.title.isNullOrBlank())) {
-                                                Text(note ?: "要不要留下点什么呢", style = LifeType.JournalMeta, color = colors.accentDeep)
+                                                Text(note ?: "要不要留下点什么呢",
+                                                    Modifier.then(if (interactive && onSavePhotoCaption != null) Modifier.clickable(onClickLabel = "编辑照片备注") { editCaption(photo!!) } else Modifier),
+                                                    style = LifeType.JournalMeta, color = colors.accentDeep)
                                             }
                                         }
                                     }
@@ -195,7 +210,7 @@ fun LifeOsHomeScreen(
                 onRemove = { onRemovePhoto(it.id); viewer = null }, origin = selection.origin,
                 aspects = aspects, dateFor = { photo ->
                     if (!selection.memory) state.date else state.historyItems.firstOrNull { it.photo?.id == photo.id }?.date
-                }, today = today
+                }, today = today, onEditCaption = if (onSavePhotoCaption == null) null else ::editCaption
             )
         }
     }
@@ -207,6 +222,25 @@ fun LifeOsHomeScreen(
         text = { Text(todayText, Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), style = LifeText.body) },
         confirmButton = { TextButton({ showTodayText = false }) { Text("收好") } }
     )
+    captionPhoto?.let { photo -> AlertDialog(onDismissRequest = { if (!captionBusy) captionPhoto = null },
+        title = { Text("照片备注") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("此备注会展示在首页，原图保留。", style = LifeText.caption)
+            OutlinedTextField(captionText, { if (it.length <= 1000) captionText = it }, label = { Text("留下一点回忆") },
+                enabled = !captionBusy, modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                textStyle = LifeType.inputFor(captionText))
+            captionError?.let { Text(it, style = LifeText.caption, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+        } }, confirmButton = { TextButton({
+            captionBusy = true; captionError = null
+            captionScope.launch {
+                try {
+                    onSavePhotoCaption?.invoke(photo.id, captionText, photo.caption, captionGeneration)
+                    captionPhoto = null
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (error: Exception) { captionError = error.message ?: "备注未保存，请重试" }
+                finally { captionBusy = false }
+            }
+        }, enabled = !captionBusy && onSavePhotoCaption != null) { Text(if (captionBusy) "保存中…" else "保存备注") } },
+        dismissButton = { TextButton({ captionPhoto = null }, enabled = !captionBusy) { Text("取消") } }) }
 }
 
 @Composable

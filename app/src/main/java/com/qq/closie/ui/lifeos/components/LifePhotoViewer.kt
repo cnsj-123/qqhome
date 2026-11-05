@@ -68,7 +68,8 @@ fun LifePhotoViewer(
     origin: LifeSurfaceOrigin? = null,
     aspects: Map<String, Float> = emptyMap(),
     dateFor: (LifeMediaUi) -> LocalDate? = { null },
-    today: LocalDate = LocalDate.now()
+    today: LocalDate = LocalDate.now(),
+    onEditCaption: ((LifeMediaUi) -> Unit)? = null
 ) {
     if (photos.isEmpty()) return
     var selectedId by rememberSaveable(initialPhotoId) { mutableStateOf(initialPhotoId) }
@@ -182,6 +183,7 @@ fun LifePhotoViewer(
                         if (current > 0) add(CustomAccessibilityAction("上一张照片") { step(-1) })
                         if (current < photos.lastIndex) add(CustomAccessibilityAction("下一张照片") { step(1) })
                         if (onRemove != null) add(CustomAccessibilityAction("从首页移除照片") { removePhoto = photo; true })
+                        if (onEditCaption != null) add(CustomAccessibilityAction("编辑照片备注") { onEditCaption(photo); true })
                     }
                 }
                 .pointerInput(distanceThreshold, speedThreshold) {
@@ -242,9 +244,10 @@ fun LifePhotoViewer(
                         if (date == today) Text("今天", style = LifeType.JournalMeta, color = colors.muted)
                     }
                 }
-                photo.caption?.takeIf(String::isNotBlank)?.let { note ->
-                    Text(note, style = LifeType.journalFor(note).copy(fontSize = 14.sp), color = colors.accentDeep, maxLines = 3)
-                }
+                val note = photo.caption?.takeIf(String::isNotBlank)
+                if (note != null || onEditCaption != null) Text(note ?: "要不要留下点什么呢",
+                    Modifier.then(if (onEditCaption != null) Modifier.clickable(onClickLabel = "编辑照片备注") { onEditCaption(photo) } else Modifier),
+                    style = LifeType.journalFor(note.orEmpty()).copy(fontSize = 14.sp), color = colors.accentDeep, maxLines = 3)
                 if (photo.motionAvailable) Text("此照片含动态组件，当前无法播放", style = LifeType.JournalMeta, color = colors.muted)
             }
             PhotoInkIndicator(current, photos.size, Modifier.padding(top = 18.dp))
