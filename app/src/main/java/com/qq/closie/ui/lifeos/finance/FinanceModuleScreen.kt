@@ -270,11 +270,12 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             userScrollEnabled = !editing && !viewing && !accountEditing && !dates && !monthPicker && !queryMenu && filterDimension == null && detailAccount == null && chartLabel == null) { page ->
         val view = FinanceView.entries[page]
         val listState = listStates[page]
-        val initialDistance = with(LocalDensity.current) { 240.dp.toPx() }
+        val density = LocalDensity.current
+        val initialDistance = with(density) { 240.dp.toPx() }
         var collapseDistance by remember { mutableFloatStateOf(initialDistance) }
         var calendarDragged by remember { mutableStateOf(false) }
         val calendarVisible = view == FinanceView.TRANSACTIONS && calendarMode && detailAccount == null && chartLabel == null
-        val nested = remember(listState, calendarVisible, collapseDistance) { object : NestedScrollConnection {
+        val nested = remember(listState, calendarVisible, collapseDistance, density) { object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (!calendarVisible || source != NestedScrollSource.UserInput) return Offset.Zero
                 val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
@@ -290,7 +291,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             override suspend fun onPreFling(available:Velocity):Velocity {
                 if(!calendarVisible || !calendarDragged) return Velocity.Zero
                 calendarDragged=false
-                setCalendarStop(financeCalendarRelease(collapseProgress,available.y))
+                setCalendarStop(financeCalendarRelease(collapseProgress,available.y / density.density))
                 collapseAnimation?.join()
                 return Velocity(0f,available.y)
             }

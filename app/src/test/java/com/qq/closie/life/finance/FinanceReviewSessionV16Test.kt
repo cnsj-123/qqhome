@@ -59,6 +59,19 @@ class FinanceReviewSessionV16Test:FinanceRoomTest() {
         assertTrue(runCatching {finance.reviews.save(save,row,null,emptyList())}.isFailure)
         assertEquals(before,finance.snapshot());assertTrue(before.entries.isEmpty())
     }
+    @Test fun windowLeaseLossDuringConfirmationRollsBackCanonicalWrite()=runTest {
+        val a = account()
+        val p = proposal()
+        finance.reviews.save(token(), input(p, a.id), null, emptyList())
+        val before = finance.snapshot()
+        var checks = 0
+        val result = runCatching {
+            finance.reviews.confirm(token(), p.id, 1, p.occurredAt, stillCurrent = { ++checks < 3 })
+        }
+        assertTrue(result.isFailure)
+        assertEquals(3, checks)
+        assertEquals(before, finance.snapshot())
+    }
     @Test fun competingSurfaceConfirmationCannotPretendSavedEditsWerePosted()=runTest {
         val a=account();val p=proposal();val row=input(p,a.id)
         finance.reviews.save(token(),row,null,emptyList())

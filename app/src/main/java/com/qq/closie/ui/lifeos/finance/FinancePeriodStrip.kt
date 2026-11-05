@@ -27,7 +27,7 @@ internal fun FinancePeriodStrip(current: Map<String, FinanceCashSummary>, rangeL
         val maximum = rows.maxOf { it.second.abs().toDouble() }.coerceAtLeast(1.0)
         Column(Modifier.fillMaxWidth().background(colors.card, RoundedCornerShape(24.dp))
             .padding(horizontal = 18.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("$rangeLabel · $currency · 实际收付", style = LifeText.caption, color = colors.inkSecondary)
+            Text("$rangeLabel · $currency · 纳入统计的实际收付", style = LifeText.caption, color = colors.inkSecondary)
             rows.forEach { (label, value, tint) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(label, Modifier.widthIn(min = 32.dp), style = LifeText.caption, color = colors.inkSecondary)

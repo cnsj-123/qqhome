@@ -64,7 +64,10 @@ fun LifeFunctionPages(
                 }
             }
             onDispose {
-                if (horizontalPages) policy?.financeDrawerDrag = null
+                if (horizontalPages) {
+                    policy?.financeDrawerDrag = null
+                    dragging = false
+                }
             }
         }
         val mode = if (reducedMotion) FunctionPageStyle.FLAT else style
@@ -74,8 +77,7 @@ fun LifeFunctionPages(
                 awaitEachGesture {
                     val pass = androidx.compose.ui.input.pointer.PointerEventPass.Main
                     val down = awaitFirstDown(requireUnconsumed = false, pass = pass)
-                    // Finance owns its local Ledger/Calendar/Pager/Bottom-bar regions. The Shell
-                    // receives a drawer intent; it never takes a Finance pointer stream.
+                    // Finance owns its local regions and sends drag distance into this surface.
                     if (!currentOpen && horizontalPages) return@awaitEachGesture
                     if (down.position.x <= edge || down.position.x >= size.width - edge) return@awaitEachGesture
                     var owned = false

@@ -216,6 +216,37 @@ class FinanceV16ContractTest {
         assertEquals(credit, confirmed.accounts.single())
     }
 
+    @Test fun legacySignedCreditPolicyNeedsConfirmationWithoutChangingItsAnchor() = runTest {
+        val credit = cash.saveAccount(name = "CI83 信用账户", kind = FinanceAccountKind.CREDIT, openingBalanceMinor = 10_000)
+        db.financeV16Dao().putAccountPolicy(listOf(FinanceAccountPolicyEntity(credit.id,
+            liabilityConvention = FinanceLiabilityConvention.SIGNED, createdAt = now, updatedAt = now)))
+        assertTrue(FinanceAccountProjection.liabilitySignPending(cash.snapshot(), credit))
+        cash.workspace.setAccountPolicy(economics.token(), credit.id, null, FinanceLiabilityConvention.SIGNED, null, 1)
+        val snapshot = cash.snapshot()
+        assertFalse(FinanceAccountProjection.liabilitySignPending(snapshot, credit))
+        assertEquals(credit, snapshot.accounts.single())
+        assertEquals(10_000L, FinanceAccountProjection.netByCurrency(snapshot)["CNY"])
+    }
+
+    @Test fun cashSummaryDoesNotAttributeAnUnknownDateFromItsStoredPlaceholder() = runTest {
+        val account = bank()
+        val known = cash.saveEntry(accountId = account.id, direction = FinanceDirection.OUTFLOW,
+            amountMinor = 100, description = "", occurredAt = now)
+        val undated = cash.saveEntry(accountId = account.id, direction = FinanceDirection.INFLOW,
+            amountMinor = 200, description = "", occurredAt = now)
+        val before = cash.snapshot()
+        val state = before.copy(v16 = before.v16!!.copy(entryTimingRows = listOf(
+            FinanceEntryTimingEntity(undated.id, cashPrecision = FinanceTimePrecision.UNKNOWN,
+                postedSource = "未记录", createdAt = now, updatedAt = now)
+        )))
+        val rows = FinanceProjection.ledger(state)
+        assertTrue(rows.any { it.entry.id == known.id })
+        val period = FinanceProjection.cashSummary(state, rows, FinanceDateRange(now, now + 1)).getValue("CNY")
+        assertEquals(FinanceTotals(100, 0), period.confirmed)
+        assertEquals(1, period.unknownDateCount)
+        assertEquals(FinanceTotals(100, 200), FinanceProjection.cashSummary(state, rows, FinanceDateRange()).getValue("CNY").confirmed)
+    }
+
     @Test fun positiveLegacyDebtNormalizesOpeningOnlyAndInternalRepaymentPreservesNet() = runTest {
         val bank=bank()
         val credit=cash.saveAccount(name="旧正数欠款",kind=FinanceAccountKind.CREDIT,openingBalanceMinor=10_000)

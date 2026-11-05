@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.KeyboardType
@@ -29,6 +30,13 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         state.snapshot.v16?.draftRows.orEmpty().filter { it.voidedAt==null }.maxByOrNull { it.updatedAt } else null }
     val editorId=rememberSaveable(row?.id) { java.util.UUID.randomUUID().toString() }
     val persistentDraftId=rememberSaveable(editorId) { candidateDraft?.id ?: java.util.UUID.randomUUID().toString() }
+    var printed by remember(editorId) { mutableStateOf(false) }
+    val reducedSaveMotion = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    val finish by rememberUpdatedState(onSaved ?: onClose)
+    if (printed) {
+        FinancePrintedReceipt(finish)
+        return
+    }
     val savedDraft=remember(persistentDraftId) {state.snapshot.v16?.draftRows.orEmpty().singleOrNull {it.id==persistentDraftId && it.voidedAt==null}}
     val initialDraftRevision=remember(editorId) { savedDraft?.revision }
     val editorEpoch=rememberSaveable(editorId) { state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L }
@@ -44,7 +52,6 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     LaunchedEffect(feedbackGeneration) {if(savedFeedback){kotlinx.coroutines.delay(150);savedFeedback=false}}
     val saveInteraction=remember {MutableInteractionSource()}
     val savePressed by saveInteraction.collectIsPressedAsState()
-    val reducedSaveMotion=com.qq.closie.ui.lifeos.components.reducedLifeMotion()
     val saveScale by animateFloatAsState(if(savePressed && !reducedSaveMotion)0.98f else 1f,tween(80),label="receipt-save-press")
     var continuous by rememberSaveable(editorId) { mutableStateOf(savedDraft?.continuous ?: false) }
     var kindName by rememberSaveable(row?.id) { mutableStateOf(when {
@@ -90,13 +97,13 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
         if(row==null) vm.flushDraftOnStop(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch)
     }
-    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, ::leave, actions = {
+    FinanceReceipt(if (row == null) "记一笔 · 日常收据" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, actions = {
         Button(onClick = {
             if(row==null) vm.saveDraftRecord(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) {
                 if(continuous) {savedFeedback=true;feedbackGeneration++
                     editGeneration=Math.addExact(editGeneration,1L);amount="";description="";selectedCategoryId=null;category="";subcategory="";tags=""
                     relationship=FinanceRelationshipDraft(role=if(kind==FinanceEditorKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
-                } else (onSaved ?: onClose)()
+                } else if (reducedSaveMotion) finish() else printed = true
             } else vm.saveRecord(row,currentDraft(),onSaved ?: onClose,editorEpoch)
         },
             enabled = !state.busy, interactionSource=saveInteraction,
@@ -169,4 +176,22 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         text = { FinanceChangeImpact(requireNotNull(voidPreview)) },
         confirmButton = { TextButton(onClick = { vm.confirmVoid(requireNotNull(voidPreview)) { voidPreview = null; (onSaved ?: onClose)() } }, enabled = !state.busy) { Text("确认作废") } },
         dismissButton = { TextButton(onClick = { voidPreview = null }, enabled = !state.busy) { Text("取消") } })
+}
+
+@Composable
+private fun FinancePrintedReceipt(onClose: () -> Unit) {
+    val close by rememberUpdatedState(onClose)
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(230))
+        progress.animateTo(0f, tween(190))
+        close()
+    }
+    FinanceReceipt("记账完成", onClose = onClose, manualPaper = true) {
+        Text("已记入账簿", Modifier.fillMaxWidth().graphicsLayer {
+            alpha = progress.value
+            translationY = (1f - progress.value) * 10.dp.toPx()
+        }.padding(vertical = 20.dp), style = LifeText.title,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
 }

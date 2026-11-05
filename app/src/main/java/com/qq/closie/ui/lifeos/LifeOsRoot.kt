@@ -142,7 +142,6 @@ fun LifeOsRoot(
             }
         }
         SideEffect { onDarkAppearance(colors.isDark && !legacySurface) }
-        SideEffect { gesturePolicy.requestDrawer = ::openDrawer }
         CompositionLocalProvider(LocalFunctionPagePolicy provides gesturePolicy,LocalShellCompanionGesture provides true) {
         Surface(Modifier.fillMaxSize(), color = if (legacySurface) ClosieColor.Canvas else colors.paper) {
             Box(Modifier.safeDrawingPadding().clipToBounds()

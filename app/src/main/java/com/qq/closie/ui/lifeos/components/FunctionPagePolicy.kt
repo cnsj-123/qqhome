@@ -6,8 +6,6 @@ import com.qq.closie.navigation.LifeOsRoute
 /** Shell-owned arbitration; nested editors temporarily lease gesture ownership. */
 @Stable
 class FunctionPagePolicy {
-    /** A navigation intent only. Local Finance regions recognize their own gestures. */
-    var requestDrawer: (() -> Unit)? = null
     /** Ledger-owned drag distance in pixels. A non-null second argument settles or cancels it. */
     internal var financeDrawerDrag: ((Float, Boolean?) -> Unit)? = null
     /** True only when the visible drawer actually cancelled a live reorder. */

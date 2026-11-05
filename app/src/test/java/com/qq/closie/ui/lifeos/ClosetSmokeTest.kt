@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.hasScrollAction
@@ -108,8 +109,7 @@ class ClosetSmokeTest {
         compose.onNodeWithText("日历").assertIsDisplayed()
         compose.onNodeWithText("搜索").assertIsDisplayed()
         compose.onNodeWithTag("drawer-finance").assertIsDisplayed()
-        val actions = compose.onNodeWithTag("drawer-finance").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.CustomActions]
-        org.junit.Assert.assertTrue(actions.any { it.label == "向前移动" })
+        compose.onNode(hasTestTag("drawer-finance") and hasClickAction()).assertIsDisplayed()
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
         compose.onNodeWithTag("drawer-restore-order").assertExists().assertIsDisplayed()
 

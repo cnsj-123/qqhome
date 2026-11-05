@@ -28,11 +28,13 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
     onClose: () -> Unit, actions: (@Composable ColumnScope.() -> Unit)? = null,
     origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?=null,
     formal: Boolean = false,
+    manualPaper: Boolean = false,
     content: @Composable ColumnScope.() -> Unit) {
     com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe()
     val colors = LocalLifeOsColors.current
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
         confirmValueChange = { !busy || it != SheetValue.Hidden })
+    val dragHandle: (@Composable () -> Unit)? = if (manualPaper) null else { { BottomSheetDefaults.DragHandle() } }
     val contents:@Composable (()->Unit)->Unit = { close ->
         Column(Modifier.testTag("finance-receipt").fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
             .imePadding().padding(horizontal = 20.dp).padding(bottom = 12.dp),
@@ -56,7 +58,25 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
         paperShape = if (formal) FormalReceiptShape else null
     ) { close -> contents(close) }
     else ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
-        containerColor = colors.card, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {contents(onClose)}
+        containerColor = colors.card,
+        shape = if (manualPaper) ManualReceiptShape else RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        dragHandle = dragHandle) {contents(onClose)}
+}
+
+private object ManualReceiptShape : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val depth = with(density) { 8.dp.toPx() }.coerceAtMost(size.height / 4)
+        return Outline.Generic(Path().apply {
+            moveTo(0f, depth * .7f)
+            for (tooth in 1..22) {
+                val edge = when (tooth % 5) { 0 -> .3f; 1 -> .9f; 2 -> .1f; 3 -> .6f; else -> .4f }
+                lineTo(size.width * tooth / 22, depth * edge)
+            }
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        })
+    }
 }
 
 private object FormalReceiptShape : Shape {
