@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material3.*
@@ -96,7 +97,7 @@ private fun ModuleReadPermissionDialog(initial: ModuleReadMode, request: ModuleR
                         } })
                 }
                 Text("授权有效期", style = LifeText.body)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ModuleGrantDuration.entries.forEach { item ->
                         val enabled = !busy && when (item) {
                             ModuleGrantDuration.ONCE -> request != null

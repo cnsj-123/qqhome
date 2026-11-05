@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -74,8 +76,8 @@ internal fun FinanceAnalysisOverview(
             FilterChip(showIncome, { showIncome = true }, label = { Text("收入") })
         }
         Text(if (showIncome) "实际资金流入 · 收付发生日（含退款等到账）" else "个人净支出 · 经济发生日与实际调整日", style = LifeText.caption, color = colors.inkSecondary)
-        if (currencies.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            currencies.forEach { code -> FilterChip(currency == code, { preferredCurrency = code }, label = { Text(code) }) }
+        if (currencies.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(currencies, key = { it }) { code -> FilterChip(currency == code, { preferredCurrency = code }, label = { Text(code) }) }
         }
         when (page) {
             0 -> {
@@ -167,7 +169,7 @@ private fun AnalysisCategoryDistribution(
     }
     if (showRing) Box(Modifier.fillMaxWidth().height(222.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(212.dp).semantics {
-            contentDescription = currency + "个人成本分类构成，明细提供准确金额及账单入口"
+            contentDescription = currency + (if (income) "实际流入" else "个人成本") + "分类构成，明细提供准确金额及账单入口"
         }) {
             val stroke = 40.dp.toPx()
             val diameter = size.minDimension - stroke

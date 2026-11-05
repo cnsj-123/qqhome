@@ -294,8 +294,8 @@ fun DataSettingsScreen(
 
             if (busy) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = ClosieColor.Rose)
-                    Text("处理中…", color = ClosieColor.InkSecondary)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = if (lifeSurface) colors.accentDeep else ClosieColor.Rose)
+                    Text("处理中…", color = if (lifeSurface) colors.inkSecondary else ClosieColor.InkSecondary)
                 }
             }
             restoreTask.result?.let { result ->
@@ -310,7 +310,7 @@ fun DataSettingsScreen(
                 // the decision next to the string instead of re-deriving it from an exception type here.
                 val isError = (it.startsWith("导出失败") || it.startsWith("恢复失败")) &&
                     !it.startsWith("应用正在恢复备份")
-                Text(it, color = if (isError) ClosieColor.Error else ClosieColor.RosePressed)
+                Text(it, color = if (isError) MaterialTheme.colorScheme.error else if (lifeSurface) colors.accentDeep else ClosieColor.RosePressed)
             }
     }
     if (lifeSurface) SettingsPaperPage("数据与备份", back, content = content)
@@ -365,7 +365,7 @@ fun DataSettingsScreen(
                     Text("确认后会替换上述范围的当前数据。系统权限与云授权需重新确认。")
                 }
                 if (busy) Text("正在检查备份…")
-                message?.let { Text(it, color = ClosieColor.Error) }
+                message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             } },
             confirmButton = {
                 val preview = restorePreview
@@ -384,7 +384,7 @@ fun DataSettingsScreen(
                     }) {
                         restorePassword = ""; confirmRestore = null; restorePreview = null; message = null
                     } else password?.fill('\u0000')
-                }) { Text(if (preview == null) "校验并预览" else "确认恢复", color = ClosieColor.Rose) }
+                }) { Text(if (preview == null) "校验并预览" else "确认恢复", color = if (lifeSurface) LocalLifeOsColors.current.accentDeep else ClosieColor.Rose) }
             },
             dismissButton = { TextButton(onClick = { confirmRestore = null; restorePassword = ""; restorePreview = null }, enabled = !busy) { Text("取消") } }
         )
