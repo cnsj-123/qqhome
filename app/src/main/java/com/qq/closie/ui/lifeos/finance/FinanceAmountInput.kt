@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeText
@@ -13,10 +16,19 @@ import com.qq.closie.ui.lifeos.theme.LifeText
 internal fun FinanceAmountInput(value:String,currency:String,enabled:Boolean,onChange:(String)->Unit) {
     var keypad by remember { mutableStateOf(true) }
     var calculationError by remember { mutableStateOf<String?>(null) }
-    OutlinedTextField(value,{onChange(it);calculationError=null},Modifier.fillMaxWidth(),label={Text("金额 · $currency")},
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    OutlinedTextField(value,{onChange(it);calculationError=null},Modifier.fillMaxWidth()
+        .onFocusChanged { if (it.isFocused) keypad = false }, label={Text("金额 · $currency")},
         textStyle=LifeText.number,singleLine=true,enabled=enabled,
         keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Decimal))
-    TextButton({keypad=!keypad}) { Text(if(keypad) "收起金额键盘" else "展开金额键盘与计算器") }
+    TextButton({
+        if (!keypad) {
+            focus.clearFocus()
+            keyboard?.hide()
+        }
+        keypad = !keypad
+    }, enabled = enabled) { Text(if(keypad) "收起金额键盘" else "展开金额键盘与计算器") }
     if(keypad) Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
         listOf(listOf("7","8","9","÷"),listOf("4","5","6","×"),listOf("1","2","3","−"),listOf(".","0","⌫","+")).forEach { keys ->
             Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {

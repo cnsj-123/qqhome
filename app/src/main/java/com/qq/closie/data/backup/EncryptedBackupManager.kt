@@ -5,6 +5,7 @@ import android.net.Uri
 import com.qq.closie.data.repository.WardrobeRepository
 import com.qq.closie.life.data.database.LifeDatabase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.OutputStream
@@ -91,7 +92,18 @@ object EncryptedBackupManager {
                 check(scratch.mkdirs()) { "无法创建恢复暂存目录" }
                 val source = File(scratch, "source")
                 requireNotNull(context.contentResolver.openInputStream(uri)) { "无法读取备份" }.use { input ->
-                    source.outputStream().use { input.copyTo(it) }
+                    source.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            ensureActive()
+                            val size = input.read(buffer)
+                            if (size < 0) break
+                            total += size
+                            check(total <= BackupValidator.MAX_TOTAL_SIZE + 64L * 1024 * 1024) { "备份文件过大" }
+                            output.write(buffer, 0, size)
+                        }
+                    }
                 }
                 val digest = digest(source)
                 check(expectedDigest == null || expectedDigest.contentEquals(digest)) { "备份文件已改变，请重新检查" }

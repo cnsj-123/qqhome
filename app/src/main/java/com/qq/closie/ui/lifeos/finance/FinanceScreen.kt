@@ -119,7 +119,7 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
 
 @Composable
 internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: FinanceSnapshot? = null, balanceAfter: Long? = null, hidden:Boolean=false,
-    onPosition:(com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin)->Unit={}, onClick: () -> Unit) {
+    onPosition:(com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin)->Unit={}, showCashTime: Boolean = true, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
     Surface(color = androidx.compose.ui.graphics.Color.Transparent) {
     Row(Modifier.fillMaxWidth()
@@ -138,7 +138,7 @@ internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: F
             Text(if (row.transfer != null) "转账 · ${row.entry.description.ifBlank { "账户间转移" }}" else
                 listOfNotNull(row.category ?: "未分类", row.account.name).joinToString(" · "),
                 style = LifeText.caption, color = colors.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            Text(FinanceTime.input(row.entry.occurredAt).substringAfter(' '), style = LifeText.caption, color = colors.muted)
+            if (showCashTime) Text(FinanceTime.input(row.entry.occurredAt).substringAfter(' '), style = LifeText.caption, color = colors.muted)
             if (role != null) Text(role, style = LifeText.caption, color = colors.accentDeep)
         }
         val prefix = if (row.transfer != null) "" else if (row.entry.direction == FinanceDirection.INFLOW) "+" else "−"

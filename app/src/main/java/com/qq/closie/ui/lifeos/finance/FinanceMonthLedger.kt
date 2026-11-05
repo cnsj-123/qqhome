@@ -31,8 +31,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 internal data class LedgerDay(val count: Int, val spending: BigInteger, val income: BigInteger)
-internal fun ledgerDays(rows: List<FinanceLedgerRow>, currency: String): Map<LocalDate, LedgerDay> =
-    rows.filter { it.currencyCode == currency }.groupBy { it.localDay() }.mapValues { (_, day) ->
+internal fun ledgerDays(rows: List<FinanceLedgerRow>, currency: String, economicDates: Map<String, Long> = emptyMap()): Map<LocalDate, LedgerDay> =
+    rows.filter { it.currencyCode == currency }.groupBy { it.localDay(economicDates) }.mapValues { (_, day) ->
         fun sum(direction: FinanceDirection) = day.filter { it.transfer == null && it.entry.direction == direction }
             .fold(BigInteger.ZERO) { total, row -> total + BigInteger.valueOf(row.entry.amountMinor) }
         LedgerDay(day.size, sum(FinanceDirection.OUTFLOW), sum(FinanceDirection.INFLOW))
@@ -41,14 +41,15 @@ internal fun ledgerDays(rows: List<FinanceLedgerRow>, currency: String): Map<Loc
 @Composable
 internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, selected: LocalDate?,
     onMonth: (YearMonth) -> Unit, onDay: (LocalDate?) -> Unit,
-    collapseProgress: Float = 0f, onCollapse: (Boolean) -> Unit = {}, onCollapseDistance: (Float) -> Unit = {}) {
+    collapseProgress: Float = 0f, onCollapse: (Boolean) -> Unit = {}, onCollapseDistance: (Float) -> Unit = {},
+    economicDates: Map<String, Long> = emptyMap()) {
     val progress = collapseProgress.coerceIn(0f, 1f)
     val colors = LocalLifeOsColors.current
     val currencies = remember(rows) { rows.map { it.currencyCode }.distinct().sorted().ifEmpty { listOf("CNY") } }
     var preferredCurrency by rememberSaveable { mutableStateOf("CNY") }
     val currency = preferredCurrency.takeIf { it in currencies } ?: currencies.first()
     var currencyPicker by remember { mutableStateOf(false) }
-    val days = remember(rows, currency) { ledgerDays(rows, currency) }
+    val days = remember(rows, currency, economicDates) { ledgerDays(rows, currency, economicDates) }
     fun amount(value: BigInteger) = BigDecimal(value, FinanceMoney.fractionDigits(currency)).toPlainString()
     var weekAnchor by rememberSaveable { mutableStateOf((selected ?: LocalDate.now().takeIf { YearMonth.from(it) == month } ?: month.atDay(1)).toString()) }
     val anchor = LocalDate.parse(weekAnchor).takeIf { YearMonth.from(it) == month }
@@ -74,7 +75,7 @@ internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, 
             if (selected != null || progress > 0f) TextButton({ onDay(null); onCollapse(false) }) { Text("整月") }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("实际收付 · 转账不计收支", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
+            Text("按事项日期归组 · 转账不计收支", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
             TextButton({ currencyPicker = true }, enabled = currencies.size > 1) { Text(currency) }
         }
         Row { listOf("一", "二", "三", "四", "五", "六", "日").forEach {

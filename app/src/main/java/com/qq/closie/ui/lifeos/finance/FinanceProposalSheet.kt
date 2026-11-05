@@ -139,7 +139,7 @@ private fun FinanceProposalSheet(proposal: FinanceProposalEntity, state: Automat
             existing.take(20).forEach {row->TextButton({existingLink=row},enabled=!state.busy) {Text("关联已有："+FinanceTime.input(row.entry.occurredAt)+" · "+row.entry.description.ifBlank {row.account.name})}}
         }
         Text(if (amount.isBlank()) "金额待核对" else "$amount · $moneyLabel", style = com.qq.closie.life.ui.theme.LifeType.Money)
-        if (FinanceEvidenceOrigin.isLocalOcr(proposal)) extraction?.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (FinanceEvidenceOrigin.isLocalOcr(proposal)) extraction?.issue?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         Text("${receipt.source} · ${when (receipt.direction) { FinanceProposalKind.INCOME -> "收入"; FinanceProposalKind.TRANSFER -> "转账"; else -> "支出" }}")
         Text("账户：${accounts.find { it.id == account }?.name ?: "待选择"}")
         Text("分类：${FinanceProjection.categoryPath(state.finance.categories, selectedCategoryId) ?: FinanceCategoryTree.displayProposalPath(category, subcategory) ?: "待选择"}")

@@ -80,6 +80,7 @@ jobs:
         run: |
           git rev-parse HEAD > app/build/outputs/apk/debug/commit-sha.txt
           sha256sum app/build/outputs/apk/debug/*.apk > app/build/outputs/apk/debug/SHA256SUMS.txt
+          cat app/build/outputs/apk/debug/SHA256SUMS.txt
       - name: Upload CI debug APK (com.qqhome.lifeos.debug)
         if: steps.assemble.outcome == 'success'
         uses: actions/upload-artifact@v4

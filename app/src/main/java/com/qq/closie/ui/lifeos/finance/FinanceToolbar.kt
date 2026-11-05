@@ -28,7 +28,7 @@ import com.qq.closie.ui.lifeos.theme.*
 @Composable
 internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: String,
     onBack: () -> Unit, onMonth: () -> Unit, onQuery: (String) -> Unit,
-    onAdd: () -> Unit, canAdd: Boolean, actions: @Composable RowScope.() -> Unit) {
+    actions: @Composable RowScope.() -> Unit) {
     val colors = LocalLifeOsColors.current
     val focus = LocalFocusManager.current
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -54,9 +54,6 @@ internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: Strin
                 }
             })
         actions()
-        IconButton(onAdd, enabled = canAdd, modifier = Modifier.testTag("finance-add")) {
-            Icon(Icons.Outlined.Add, "记一笔")
-        }
     }
 }
 

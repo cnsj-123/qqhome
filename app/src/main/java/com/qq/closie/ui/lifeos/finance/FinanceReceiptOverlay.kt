@@ -95,23 +95,29 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 val editable=mutableListOf<View>();var ready=false;var busy=false
                 fun setBusy(value:Boolean){busy=value;editable.forEach {it.isEnabled=!value}}
                 fun text(value:String)=TextView(context).apply {text=value;applyLifeTypography(LifeType.Caption);setTextColor(Color.parseColor(tokens.ink));setPadding(0,dp(6),0,dp(6))}.also(body::addView)
-                text("Life OS · 可编辑消费小票 · 尚未入账")
-                text(proposal.discoverySourceLabel()+" · 新小票会留在待确认队列，不覆盖本次编辑。")
+                text("Life OS").apply {applyLifeTypography(LifeType.Wordmark);gravity=Gravity.CENTER}
+                text(proposal.discoverySourceLabel()+" · 待确认小票").apply {gravity=Gravity.CENTER}
                 var scheduleSave:()->Unit={}
                 var updateVisibility:()->Unit={}
                 fun input(label:String,value:String,numeric:Boolean=false):EditText {
-                    text(label)
+                    val row = LinearLayout(context).apply {gravity=Gravity.CENTER_VERTICAL;orientation=LinearLayout.HORIZONTAL}
+                    val title = TextView(context).apply {
+                        text=label;applyLifeTypography(LifeType.Caption);setTextColor(Color.parseColor(tokens.ink))
+                    }
+                    row.addView(title,LinearLayout.LayoutParams(dp(if(numeric) 108 else 86),LinearLayout.LayoutParams.WRAP_CONTENT))
+                    body.addView(row)
                     return EditText(context).apply {
                         setSingleLine(true);inputType=if(numeric) android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL else android.text.InputType.TYPE_CLASS_TEXT
-                        imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE;setText(value);applyLifeTypography(LifeType.Body)
-                        setTextColor(Color.parseColor(tokens.ink));minHeight=dp(48)
+                        imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE;setText(value)
+                        applyLifeTypography(if (numeric) LifeType.MoneyCompact else LifeType.Body)
+                        contentDescription=label;setTextColor(Color.parseColor(tokens.ink));minHeight=dp(48)
                         setOnEditorActionListener {view,action,_->if(action==android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
                             context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken,0);true
                         } else false}
                         addTextChangedListener(object:TextWatcher {override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
                             override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){if(ready && !busy)scheduleSave()}
                             override fun afterTextChanged(s:Editable?){} })
-                    }.also {body.addView(it);editable.add(it)}
+                    }.also {row.addView(it,LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f));editable.add(it)}
                 }
                 var openPanel:(String, View)->Unit = { _, _ -> }
                 var closePanel:()->Boolean = { false }
@@ -227,10 +233,20 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                         catch(_:Exception){setBusy(false);message.text="保存未完成；已保存内容仍保留，请在应用内复核"}
                     }
                 }
-                val actions=LinearLayout(context).apply { setPadding(dp(12), dp(8), dp(12), dp(10)) }
-                fun button(label:String,action:()->Unit)=Button(context).apply {text=label;minHeight=dp(48);applyLifeTypography(LifeType.Action);setOnClickListener {action()}}.also {actions.addView(it,LinearLayout.LayoutParams(0,dp(52),1f));editable.add(it)}
-                button("稍后"){later()};button("应用内接力"){later(true)}
-                button("确认保存") {
+                val actions=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(20), dp(4), dp(20), dp(8)) }
+                val secondaryActions=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
+                fun button(label:String,primary:Boolean=false,action:()->Unit)=Button(context).apply {
+                    text=label;minHeight=dp(48);applyLifeTypography(LifeType.Action);setOnClickListener {action()}
+                    if(primary) {
+                        setTextColor(Color.parseColor(tokens.paper))
+                        background=GradientDrawable().apply {setColor(Color.parseColor(tokens.accent));cornerRadius=dp(12).toFloat()}
+                    }
+                }.also {
+                    if(primary) actions.addView(it,LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,dp(48)))
+                    else secondaryActions.addView(it,LinearLayout.LayoutParams(0,dp(48),1f))
+                    editable.add(it)
+                }
+                button("确认记账", primary=true) {
                     if(!busy) {setBusy(true);autosave?.cancel();val draft=current()
                         editScope.launch {
                             try {persist(draft);mutex.withLock {
@@ -242,6 +258,8 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                         }
                     }
                 }
+                button("稍后处理"){later()};button("应用内接力"){later(true)}
+                actions.addView(secondaryActions)
                 val panelBody=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE;setPadding(dp(16),dp(12),dp(16),dp(12))}
                 val pages=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;addView(body);addView(panelBody)}
                 closePanel = {
@@ -276,8 +294,10 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
                     addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
                 }
-                val params=WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,
-                    (context.resources.displayMetrics.heightPixels*.8f).toInt(),WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                val paperWidth=(context.resources.displayMetrics.widthPixels*.87f).toInt()
+                val paperHeight=(context.resources.displayMetrics.heightPixels*.62f).toInt()
+                val params=WindowManager.LayoutParams(paperWidth,
+                    paperHeight,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT).apply {
                     gravity=Gravity.BOTTOM;softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 }
@@ -285,7 +305,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     (!captureBusy || userInitiated) && permitted(FinanceAutomationSettings(context).read()) &&
                         canAttach() && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
                 }) {
-                    if(embeddedHost!=null)embeddedHost.addView(frame,FrameLayout.LayoutParams(params.width,params.height,Gravity.BOTTOM))
+                    if(embeddedHost!=null)embeddedHost.addView(frame,FrameLayout.LayoutParams(params.width,params.height,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
                     else windows.addView(frame,params)
                 }
                 if (!attached) return@withContext false
@@ -299,11 +319,11 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                     val ime=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
                     val height=context.resources.displayMetrics.heightPixels
                     val available=(height-maxOf(bars.bottom,ime.bottom)-bars.top).coerceAtLeast(dp(120))
-                    val targetHeight=minOf((height*.82f).toInt(),available)
+                    val targetHeight=minOf((height*.62f).toInt(),available)
                     if(params.height!=targetHeight || params.y!=bars.bottom) {
                         params.height=targetHeight;params.y=bars.bottom
                         runCatching {
-                            if(embeddedHost!=null)frame.layoutParams=FrameLayout.LayoutParams(params.width,params.height,Gravity.BOTTOM).apply {bottomMargin=params.y}
+                            if(embeddedHost!=null)frame.layoutParams=FrameLayout.LayoutParams(params.width,params.height,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {bottomMargin=params.y}
                             else windows.updateViewLayout(frame,params)
                         }.onFailure {close()}
                     }
