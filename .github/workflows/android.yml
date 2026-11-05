@@ -67,6 +67,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 engineering/v16/verify-ci-tests.py
+          cat app/build/reports/v16/testDebugUnitTest/synthetic-history-2000.json
+          cat app/build/reports/v16/testDebugUnitTest/synthetic-history-4332-20-accounts.json
           python3 engineering/v16/verify-product-baseline.py --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/product-baseline-junit.json
           python3 engineering/v16/verify-product-baseline.py --review-round2 --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/round2-baseline-junit.json
           python3 engineering/v16/verify-product-baseline.py --review-round3 --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/round3-baseline-junit.json

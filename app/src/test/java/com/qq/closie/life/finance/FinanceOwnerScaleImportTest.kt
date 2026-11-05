@@ -51,7 +51,9 @@ class FinanceOwnerScaleImportTest : FinanceRoomTest() {
             val known = preview.rows.filter { it.status == FinanceRowStatus.READY }
             val unresolved = preview.rows.filter { it.occurredAt == null }
             assertEquals(4_320, known.size); assertEquals(12, unresolved.size)
-            assertTrue(unresolved.all { it.status == FinanceRowStatus.REVIEW && it.canonicalId == null })
+            assertTrue("Missing dates must remain individually blocked, with their original null date", unresolved.all {
+                it.status == FinanceRowStatus.INVALID && it.requiresIndividualReview && it.issue.isNotBlank() && it.canonicalId == null
+            })
             val mappings = preview.rows.map { it.sourceAccount }.distinct().map { FinanceAccountMapping(it, fromHistory = true) }
             assertEquals(20, mappings.size)
             val commitAt = System.nanoTime()
@@ -70,7 +72,7 @@ class FinanceOwnerScaleImportTest : FinanceRoomTest() {
             assertEquals(balances.values.sum(), FinanceAccountProjection.netByCurrency(snapshot).getValue("CNY"))
             val after = imports.preview(preview.batch.id, mappings)
             assertTrue(after.rows.filter { it.id in unresolved.map { row -> row.id } }.all {
-                it.occurredAt == null && it.canonicalId == null && it.status == FinanceRowStatus.REVIEW
+                it.occurredAt == null && it.canonicalId == null && it.status == FinanceRowStatus.INVALID && it.requiresIndividualReview
             })
             report["projectionNanos"] = System.nanoTime() - projectionAt
             assertEquals(0, imports.commit(preview.batch.id, mappings, known.map { it.id }.toSet(), emptySet(), false, false))

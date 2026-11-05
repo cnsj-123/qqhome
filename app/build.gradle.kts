@@ -69,6 +69,12 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             all { test ->
+                test.testLogging {
+                    events("failed")
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                    showCauses = true
+                    showStackTraces = true
+                }
                 val fixtures=rootProject.file("engineering/v16/fixtures")
                 val metrics=project.layout.buildDirectory.dir("reports/v16/${test.name}").get().asFile
                 test.systemProperty("lifeos.v16.fixtureDir", fixtures.absolutePath)
