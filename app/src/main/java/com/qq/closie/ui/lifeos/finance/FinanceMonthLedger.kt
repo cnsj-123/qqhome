@@ -67,21 +67,12 @@ internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, 
         }
     }
         .scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
-        .padding(horizontal = 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            TextButton({ weekAnchor = LocalDate.now().toString(); onMonth(YearMonth.now()); onDay(LocalDate.now()) }) { Text("今天") }
-            TextButton({ onCollapse(progress < .5f) }) { Text(if (progress >= .5f) "展开" else "收起") }
-            if (selected != null || progress > 0f) TextButton({ onDay(null); onCollapse(false) }) { Text("整月") }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("按事项日期归组 · 转账不计收支", Modifier.weight(1f), style = LifeText.caption, color = colors.muted)
-            TextButton({ currencyPicker = true }, enabled = currencies.size > 1) { Text(currency) }
-        }
-        Row { listOf("一", "二", "三", "四", "五", "六", "日").forEach {
-            Box(Modifier.weight(1f).height(28.dp), contentAlignment = Alignment.Center) { Text(it, style = LifeText.caption, color = colors.muted) }
+        .padding(horizontal = 32.dp)) {
+        if(currencies.size>1) TextButton({currencyPicker=true}) { Text(currency,style=LedgerText.caption) }
+        Row { listOf("日", "一", "二", "三", "四", "五", "六").forEach {
+            Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.Center) { Text(it, style = LedgerText.caption, color = colors.accentDeep) }
         } }
-        val leading = month.atDay(1).dayOfWeek.value - 1
+        val leading = month.atDay(1).dayOfWeek.value % 7
         val weeks = (leading + month.lengthOfMonth() + 6) / 7
         val focus = anchor
         val selectedWeek = (leading + focus.dayOfMonth - 1) / 7
@@ -116,7 +107,7 @@ internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, 
                             .semantics { contentDescription = "$date，${day?.count ?: 0} 笔，$currency 支出 ${day?.let { amount(it.spending) } ?: "0"}，收入 ${day?.let { amount(it.income) } ?: "0"}" } else Modifier)
                         .padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (date != null) {
-                            Text(date.dayOfMonth.toString(), style = LifeText.body, color = if (date == LocalDate.now()) colors.accentDeep else if (inMonth) colors.ink else colors.muted)
+                            Text(date.dayOfMonth.toString(), style = LedgerText.caption, color = if (date == LocalDate.now()) colors.accentDeep else if (inMonth) colors.ink else colors.muted)
                             if (day != null) {
                                 if (day.spending.signum() > 0) Text("−${amount(day.spending)}", style = com.qq.closie.life.ui.theme.LifeType.MoneyCalendar, color = colors.inkSecondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 if (day.income.signum() > 0) Text("+${amount(day.income)}", style = com.qq.closie.life.ui.theme.LifeType.MoneyCalendar, color = colors.accentDeep, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -127,11 +118,7 @@ internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, 
                 }
             }
         }
-        selected?.let { date ->
-            Text("$date · $currency 支出 ${days[date]?.let { amount(it.spending) } ?: "0"} / 收入 ${days[date]?.let { amount(it.income) } ?: "0"}", style = LifeText.caption)
-        }
         if (currencies.size > 1) Text("日历显示 $currency；下方保留各币种流水，不做换算。", style = LifeText.caption, color = colors.muted)
-        HorizontalDivider(Modifier.padding(vertical = 4.dp), color = colors.line)
     }
     if (currencyPicker) FinanceChoiceSheet("日历币种", currency, currencies.map { it to it }, { preferredCurrency = it }, { currencyPicker = false })
 }

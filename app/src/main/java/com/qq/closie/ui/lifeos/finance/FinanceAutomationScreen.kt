@@ -92,14 +92,14 @@ internal fun FinanceAutomationScreen(
     }
     BackHandler(onBack = back)
     SettingsPaperPage(if (section == FinanceAutomationSection.REVIEW) "待确认记录" else "自动发现", back) {
-        state.error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
-        settingsError?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
+        state.error?.let { Text(it, style = LedgerText.caption, color = MaterialTheme.colorScheme.error) }
+        settingsError?.let { Text(it, style = LedgerText.caption, color = MaterialTheme.colorScheme.error) }
         if (section == FinanceAutomationSection.REVIEW) {
             if (state.loaded) {
                 val epoch = state.finance.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L
                 key(epoch) { FinanceOcrIntake(state.busy) { block -> vm.mediaAction(epoch, block) } }
                 SettingsSection("待复核")
-                if (pending.isEmpty()) Text("目前没有待确认的候选", style = LifeText.caption, color = colors.muted)
+                if (pending.isEmpty()) Text("目前没有待确认的候选", style = LedgerText.caption, color = colors.muted)
                 FinancePagedItems(pending, "pending-review", { it.id }) { proposal ->
                     SettingsLine(
                         proposal.description.ifBlank { "待确认交易" },
@@ -119,9 +119,9 @@ internal fun FinanceAutomationScreen(
                         vm.mediaAction(epoch, block)
                     }
                 }
-            } else Text("正在读取候选…", style = LifeText.caption, color = colors.muted)
+            } else Text("正在读取候选…", style = LedgerText.caption, color = colors.muted)
         } else {
-            Text("识别 → 小票 → 你确认 → 入账。识别结果先留在本机。", style = LifeText.caption, color = colors.muted)
+            Text("识别 → 小票 → 你确认 → 入账。识别结果先留在本机。", style = LedgerText.caption, color = colors.muted)
             SettingsSection("三种能力，三种权限")
             DiscoverySwitch(
                 "支付通知识别", "读取获授权的微信、支付宝支付提示",
@@ -130,8 +130,8 @@ internal fun FinanceAutomationScreen(
                     if (enabled && discovery.deliveryMode != FinanceReviewDeliveryMode.INBOX_ONLY) requestNotifications()
                 }
             )
-            Text("系统通知访问 · " + if (access) "已允许" else "未允许", style = LifeText.caption, color = colors.muted)
-            Text("通知服务 · " + if (access && diagnostic.connected) "已连接" else "未连接", style = LifeText.caption, color = colors.muted)
+            Text("系统通知访问 · " + if (access) "已允许" else "未允许", style = LedgerText.caption, color = colors.muted)
+            Text("通知服务 · " + if (access && diagnostic.connected) "已连接" else "未连接", style = LedgerText.caption, color = colors.muted)
             SettingsLine("管理通知访问", trailing = if (access) "系统设置" else "去授权") {
                 runCatching { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                     .onFailure { settingsError = "请在系统设置中搜索“通知使用权”" }
@@ -142,7 +142,7 @@ internal fun FinanceAutomationScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(FinanceReviewDeliveryMode.IMMEDIATE, FinanceReviewDeliveryMode.NORMAL, FinanceReviewDeliveryMode.INBOX_ONLY)
                     .forEach { mode ->
-                        FilterChip(
+                        LedgerFilterChip(
                             selected = discovery.deliveryMode == mode,
                             onClick = {
                                 settings.save(settings.read().copy(deliveryMode = mode))
@@ -152,7 +152,7 @@ internal fun FinanceAutomationScreen(
                                 FinanceReviewDeliveryMode.IMMEDIATE -> "即时小票"
                                 FinanceReviewDeliveryMode.NORMAL -> "普通通知"
                                 FinanceReviewDeliveryMode.INBOX_ONLY -> "仅待确认"
-                            }, style = LifeText.caption) },
+                            }, style = LedgerText.caption) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -166,11 +166,11 @@ internal fun FinanceAutomationScreen(
                         }.onFailure { settingsError = "请在系统设置中管理上层显示权限" }
                     })
                 if (!discovery.enhancedReceiptOverlay || !overlayPermission) {
-                    Text("通知来源的增强小票暂不可用时，降级为通知或留在待确认。", style = LifeText.caption, color = colors.muted)
+                    Text("通知来源的增强小票暂不可用时，降级为通知或留在待确认。", style = LedgerText.caption, color = colors.muted)
                 }
             }
             if (discovery.deliveryMode != FinanceReviewDeliveryMode.INBOX_ONLY && !notifications) {
-                Text("系统未允许复核通知。待确认中的候选仍可查看。", style = LifeText.caption, color = colors.muted)
+                Text("系统未允许复核通知。待确认中的候选仍可查看。", style = LedgerText.caption, color = colors.muted)
             }
 
             SettingsSection("来源与支持范围")
@@ -212,7 +212,7 @@ internal fun FinanceAutomationScreen(
             }
             if (principlesOpen) Text(
                 "通知和详情各自需要授权。主动截图只在你点击后采集一次，在本机 OCR 后交给你核对。权限撤回、宿主切换或页面受保护时，本次操作会停止。",
-                style = LifeText.caption, color = colors.inkSecondary
+                style = LedgerText.caption, color = colors.inkSecondary
             )
         }
     }
@@ -226,8 +226,8 @@ internal fun DiscoverySwitch(
     val colors = LocalLifeOsColors.current
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = LifeText.body, color = colors.ink)
-            Text(subtitle, style = LifeText.caption, color = colors.muted)
+            Text(title, style = LedgerText.body, color = colors.ink)
+            Text(subtitle, style = LedgerText.caption, color = colors.inkSecondary)
         }
         Switch(checked, onCheckedChange, enabled = enabled,
             modifier = Modifier.semantics { contentDescription = title })

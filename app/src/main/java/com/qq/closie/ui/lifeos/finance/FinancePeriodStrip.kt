@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,15 +27,13 @@ internal fun FinancePeriodStrip(current: Map<String, FinanceCashSummary>, rangeL
             Triple("结余", total.incomeMinor.toBigInteger() - total.expenseMinor.toBigInteger(), colors.muted)
         )
         val maximum = rows.maxOf { it.second.abs().toDouble() }.coerceAtLeast(1.0)
-        Column(Modifier.fillMaxWidth().background(colors.card, RoundedCornerShape(24.dp))
-            .padding(horizontal = 18.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("$rangeLabel · $currency · 纳入统计的实际收付", style = LifeText.caption, color = colors.inkSecondary)
+        Column(Modifier.fillMaxWidth().semantics { contentDescription = "$rangeLabel · $currency · 纳入统计的实际收付" }.background(colors.card, RoundedCornerShape(69.dp))
+            .padding(horizontal = 32.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             rows.forEach { (label, value, tint) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(label, Modifier.widthIn(min = 32.dp), style = LifeText.caption, color = colors.inkSecondary)
-                    Text(BigDecimal(value, FinanceMoney.fractionDigits(currency)).toPlainString(), Modifier.weight(2f),
-                        style = LifeText.caption, color = tint)
-                    Box(Modifier.weight(4f).height(5.dp).background(colors.paperSecondary, RoundedCornerShape(3.dp))) {
+                    Text(label, Modifier.width(48.dp), style = LedgerText.caption, color = colors.inkSecondary)
+                    LedgerOdometer((if(currency=="CNY") "¥" else currency+" ")+BigDecimal(value, FinanceMoney.fractionDigits(currency)).toPlainString(), LedgerText.caption, tint, Modifier.widthIn(min=48.dp))
+                    Box(Modifier.weight(1f).height(6.dp).background(colors.paperSecondary, RoundedCornerShape(3.dp))) {
                         Box(Modifier.fillMaxWidth((value.abs().toDouble() / maximum).toFloat()).fillMaxHeight()
                             .background(tint, RoundedCornerShape(3.dp)))
                     }
@@ -41,7 +41,7 @@ internal fun FinancePeriodStrip(current: Map<String, FinanceCashSummary>, rangeL
             }
             if (summary.unknownDateCount > 0) {
                 Text("已知收付小计 · 另有 ${summary.unknownDateCount} 笔收付日期待确定",
-                    style = LifeText.caption, color = colors.inkSecondary)
+                    style = LedgerText.caption, color = colors.inkSecondary)
             }
         }
     }

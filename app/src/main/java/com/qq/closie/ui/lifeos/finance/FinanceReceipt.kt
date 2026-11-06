@@ -19,6 +19,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.paneTitle
 import com.qq.closie.life.finance.FinanceAccountEntity
 import com.qq.closie.ui.lifeos.theme.*
 
@@ -28,6 +32,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
     onClose: () -> Unit, actions: (@Composable ColumnScope.() -> Unit)? = null,
     origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?=null,
     formal: Boolean = false,
+    formalStatus: String? = null,
     manualPaper: Boolean = false,
     content: @Composable ColumnScope.() -> Unit) {
     com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe()
@@ -36,19 +41,32 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
         confirmValueChange = { !busy || it != SheetValue.Hidden })
     val dragHandle: (@Composable () -> Unit)? = if (manualPaper) null else { { BottomSheetDefaults.DragHandle() } }
     val contents:@Composable (()->Unit)->Unit = { close ->
-        Column(Modifier.testTag("finance-receipt").fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
-            .imePadding().padding(horizontal = 20.dp).padding(bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.testTag("finance-receipt").semantics { paneTitle = title }.fillMaxWidth()
+            .heightIn(min = if (formal) minOf(566.dp, (LocalConfiguration.current.screenHeightDp * .8f).dp) else 0.dp,
+                max = (LocalConfiguration.current.screenHeightDp * .9f).dp)
+            .imePadding().padding(horizontal = if (formal) 22.dp else 20.dp)
+            .padding(top = if (formal) 32.dp else 0.dp, bottom = if (formal) 56.dp else 12.dp),
+            verticalArrangement = Arrangement.spacedBy(if (formal) 0.dp else 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))
-                TextButton(onClick = close, enabled = !busy) { Text(if (formal) "关闭" else "收起") }
+                if (formal) {
+                    Surface(shape = RoundedCornerShape(5.dp), color = androidx.compose.ui.graphics.Color.Transparent,
+                        border = BorderStroke(1.dp, colors.secondary.copy(alpha = .45f))) {
+                        Text(formalStatus ?: title, Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                            style = LedgerText.body.copy(fontSize = 10.sp, lineHeight = 12.sp), color = colors.secondary)
+                    }
+                    Spacer(Modifier.weight(1f))
+                } else Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))
+                TextButton(onClick = close, enabled = !busy, contentPadding = PaddingValues(0.dp)) {
+                    Text(if (formal) "关闭 ✕" else "收起", style = if (formal) LedgerText.body.copy(fontSize = 12.sp, lineHeight = 20.sp) else LifeText.body,
+                        color = colors.inkSecondary)
+                }
             }
-            HorizontalDivider(color = colors.line)
+            if (!formal) HorizontalDivider(color = colors.line)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+                verticalArrangement = Arrangement.spacedBy(if (formal) 0.dp else 12.dp)) { content() }
             error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
             if (actions != null) {
-                HorizontalDivider(color = colors.line)
+                if (formal) Spacer(Modifier.height(40.dp)) else HorizontalDivider(color = colors.line)
                 actions()
             }
         }
@@ -79,7 +97,7 @@ internal object ManualReceiptShape : Shape {
     }
 }
 
-private object FormalReceiptShape : Shape {
+internal object FormalReceiptShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val corner = with(density) { 12.dp.toPx() }.coerceAtMost(minOf(size.width / 2, size.height / 2))
         val edge = with(density) { 4.dp.toPx() }.coerceAtMost(size.height / 4)
@@ -106,12 +124,14 @@ private object FormalReceiptShape : Shape {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, selected: String,
-    enabled: Boolean, recentIds: List<String> = emptyList(), onSelect: (String) -> Unit) {
+    enabled: Boolean, recentIds: List<String> = emptyList(), compact:Boolean=false, onSelect: (String) -> Unit) {
     var expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     Column {
-        TextButton({ expanded = !expanded }, enabled = enabled) {
-            Text(label + " · " + (accounts.find { it.id == selected }?.let { "${it.name} · ${it.currencyCode}" } ?: "选择账户"))
+        TextButton({ expanded = !expanded }, enabled = enabled,modifier=if(compact) Modifier.height(32.dp) else Modifier,
+            contentPadding=if(compact) PaddingValues(horizontal=9.dp,vertical=3.dp) else ButtonDefaults.TextButtonContentPadding,
+            border=if(compact) androidx.compose.foundation.BorderStroke(1.dp,colorsForAccountChoice()) else null) {
+            Text((if(compact && label=="账户") "" else label+" · ")+(accounts.find {it.id==selected}?.let {if(compact) it.name else it.name+" · "+it.currencyCode} ?: "选择账户"),style=if(compact) LedgerText.caption else LifeText.body)
         }
         if (expanded) ModalBottomSheet(onDismissRequest={expanded=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
             Column(Modifier.fillMaxWidth().heightIn(max=(LocalConfiguration.current.screenHeightDp*.72f).dp)
@@ -147,3 +167,6 @@ internal fun AccountChoice(label: String, accounts: List<FinanceAccountEntity>, 
         }
     }
 }
+
+@Composable
+private fun colorsForAccountChoice() = LocalLifeOsColors.current.line

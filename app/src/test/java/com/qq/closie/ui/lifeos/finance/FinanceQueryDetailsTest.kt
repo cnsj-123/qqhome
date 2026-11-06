@@ -54,15 +54,15 @@ class FinanceQueryDetailsTest : FinanceRoomTest() {
         showQuery(data)
 
         compose.onNodeWithTag("finance-query-cost-" + cost.id).performScrollTo().performClick()
-        compose.onNodeWithText("经济事项详情").assertExists()
-        compose.onNodeWithText("编辑出资与承担").assertExists()
-        compose.onNodeWithText("收起").performClick()
+        compose.onNode(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.PaneTitle,"经济事项详情")).assertExists()
+        compose.onNodeWithContentDescription("编辑出资与承担").assertExists()
+        compose.onNodeWithContentDescription("返回").performClick()
         compose.onNodeWithTag("finance-query-cost-" + cost.id).assertExists()
 
         compose.onNodeWithText("真实资金流水").performScrollTo().performClick()
         compose.onNodeWithTag("finance-query-cash-" + entry.id).performScrollTo().performClick()
-        compose.onNodeWithText("账单详情").assertExists()
-        compose.onNodeWithText("编辑账单").assertExists()
+        compose.onNode(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.PaneTitle,"账单详情")).assertExists()
+        compose.onNodeWithContentDescription("编辑账单").assertExists()
         assertEquals(data, runBlocking { finance.snapshot() })
     }
 
@@ -87,7 +87,7 @@ class FinanceQueryDetailsTest : FinanceRoomTest() {
         assertEquals(0, editRequests)
         assertEquals(data, runBlocking { finance.snapshot() })
 
-        compose.onNodeWithText("编辑出资与承担").performClick()
+        compose.onNodeWithContentDescription("编辑出资与承担").performClick()
         assertEquals(1, editRequests)
         assertEquals(data, runBlocking { finance.snapshot() })
     }
@@ -118,8 +118,8 @@ class FinanceQueryDetailsTest : FinanceRoomTest() {
         compose.onNodeWithText("解释为可见查询条件").performScrollTo().performClick()
 
         compose.onNodeWithTag("finance-query-cost-" + cost.id).performScrollTo().assertHasNoClickAction()
-        compose.onNodeWithText("经济事项详情").assertDoesNotExist()
-        compose.onNodeWithText("账单详情").assertDoesNotExist()
+        compose.onNode(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.PaneTitle,"经济事项详情")).assertDoesNotExist()
+        compose.onNode(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.PaneTitle,"账单详情")).assertDoesNotExist()
         compose.onNodeWithText("范围外的私密事项", substring = true).assertDoesNotExist()
         assertEquals(data, runBlocking { finance.snapshot() })
     }

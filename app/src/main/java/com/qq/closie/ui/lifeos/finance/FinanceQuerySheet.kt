@@ -51,6 +51,7 @@ internal fun FinanceQuerySheet(
     var chooseDates by rememberSaveable { mutableStateOf(false) }
     var dimension by rememberSaveable { mutableStateOf<FinanceFilterDimension?>(null) }
     var amountOpen by rememberSaveable { mutableStateOf(false) }
+    var extraOptions by rememberSaveable {mutableStateOf(false)}
     var saveOpen by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var savedMode by rememberSaveable { mutableStateOf(FinanceQueryMode.CASH_MOVEMENT) }
@@ -114,48 +115,50 @@ internal fun FinanceQuerySheet(
         shape = ManualReceiptShape,
         dragHandle = null
     ) {
-        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .86f).dp)
-            .padding(horizontal = 24.dp).imePadding()) {
+        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .73f).dp)
+            .padding(horizontal = 32.dp).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClose, Modifier.offset(x = (-8).dp)) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "取消查账条件", Modifier.size(19.dp))
                 }
-                Text("查账", Modifier.weight(1f), style = LifeText.title, color = colors.ink)
+                Text("查账", Modifier.weight(1f), style = LedgerText.title, color = colors.ink)
                 TextButton({
                     runCatching { prepared() }.onSuccess { saveOpen = true }.onFailure { error = it.message }
-                }, enabled = state.loaded && validSession) { Text("存为视图", style = LifeText.caption) }
+                }, enabled = state.loaded && validSession) { Text("存为视图", style = LedgerText.caption) }
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    draft.query, { draft = draft.copy(query = it.take(FinanceFilterState.MAX_QUERY)); error = null },
-                    Modifier.fillMaxWidth(), label = { Text("关键词") }, placeholder = { Text("商品 / 商户 / 备注") },
-                    singleLine = true, textStyle = LifeText.body
-                )
+                Row(Modifier.fillMaxWidth().height(40.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text("关键词",style=LedgerText.caption,color=colors.inkSecondary)
+                    androidx.compose.foundation.text.BasicTextField(draft.query,{draft=draft.copy(query=it.take(FinanceFilterState.MAX_QUERY));error=null},
+                        Modifier.weight(1f).padding(start=16.dp),singleLine=true,textStyle=LedgerText.input.copy(color=colors.ink),
+                        decorationBox={field->Box(contentAlignment=Alignment.CenterEnd) {if(draft.query.isEmpty()) Text("商品 / 商户 / 备注",style=LedgerText.caption,color=colors.inkSecondary);field()}})
+                }
+                HorizontalDivider(color=colors.line)
                 QueryLabel("日期范围")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    item { FilterChip(true, { chooseMonth = true }, label = { Text(rangeLabel, style = LifeText.caption) }) }
-                    item { FilterChip(draft.period == FinancePeriod.MONTH, { setPeriod(FinancePeriod.MONTH) }, modifier = Modifier.testTag("query-period-MONTH"), label = { Text("本月", style = LifeText.caption) }) }
-                    item { FilterChip(draft.period == FinancePeriod.YEAR, { setPeriod(FinancePeriod.YEAR) }, modifier = Modifier.testTag("query-period-YEAR"), label = { Text("今年", style = LifeText.caption) }) }
-                    item { FilterChip(draft.period == FinancePeriod.ALL, { setPeriod(FinancePeriod.ALL) }, modifier = Modifier.testTag("query-period-ALL"), label = { Text("全部", style = LifeText.caption) }) }
-                    item { FilterChip(false, { chooseDates = true }, label = { Text("自定义范围", style = LifeText.caption) }) }
+                    item { LedgerFilterChip(true, { chooseMonth = true }, label = { Text(rangeLabel, style = LifeText.caption) }) }
+                    item { LedgerFilterChip(draft.period == FinancePeriod.MONTH, { setPeriod(FinancePeriod.MONTH) }, modifier = Modifier.testTag("query-period-MONTH"), label = { Text("本月", style = LifeText.caption) }) }
+                    item { LedgerFilterChip(draft.period == FinancePeriod.YEAR, { setPeriod(FinancePeriod.YEAR) }, modifier = Modifier.testTag("query-period-YEAR"), label = { Text("今年", style = LifeText.caption) }) }
+                    item { LedgerFilterChip(draft.period == FinancePeriod.ALL, { setPeriod(FinancePeriod.ALL) }, modifier = Modifier.testTag("query-period-ALL"), label = { Text("全部", style = LifeText.caption) }) }
+                    item { LedgerFilterChip(false, { chooseDates = true }, label = { Text("自定义范围", style = LifeText.caption) }) }
                 }
-                if (showCalendarControls) {
+                if (showCalendarControls && extraOptions) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(useCalendar, {
+                        LedgerFilterChip(useCalendar, {
                             useCalendar = true
                             val month = draft.range.startInclusive?.let {
                                 YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))
                             } ?: calendarMonth
                             draft = draft.copy(period = FinancePeriod.CUSTOM, range = FinanceDateRange.month(month.atDay(1)), customLabel = "")
                         }, label = { Text("月历与日期", style = LifeText.caption) })
-                        FilterChip(!useCalendar, { useCalendar = false }, label = { Text("列表与范围", style = LifeText.caption) })
+                        LedgerFilterChip(!useCalendar, { useCalendar = false }, label = { Text("列表与范围", style = LifeText.caption) })
                     }
                 }
 
                 QueryLabel("金额区间")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
+                    LedgerFilterChip(
                         !amountOpen && draft.minimumMinor == null && draft.maximumMinor == null && draft.currencyCode == null,
                         {
                             amountOpen = false
@@ -165,7 +168,7 @@ internal fun FinanceQuerySheet(
                             error = null
                         }, label = { Text("不限", style = LifeText.caption) }
                     )
-                    FilterChip(amountOpen || draft.currencyCode != null, {
+                    LedgerFilterChip(amountOpen || draft.currencyCode != null, {
                         amountOpen = true
                     }, label = { Text("自定义金额与币种", style = LifeText.caption) })
                 }
@@ -197,22 +200,16 @@ internal fun FinanceQuerySheet(
                     it.id to (FinanceProjection.categoryPath(snapshot.categories, it.id) ?: it.name)
                 }, onSelect = { draft = draft.copy(categoryId = it); error = null },
                     onMore = { dimension = FinanceFilterDimension.CATEGORY })
-                QueryChoiceRow("标签", draft.tagId, snapshot.tags.map { it.id to it.name },
+                if(snapshot.tags.isNotEmpty() || draft.tagId!=null) QueryChoiceRow("标签", draft.tagId, snapshot.tags.map { it.id to it.name },
                     onSelect = { draft = draft.copy(tagId = it); error = null },
                     onMore = { dimension = FinanceFilterDimension.TAG })
                 QueryChoiceRow("业务性质", draft.nature?.name, FinanceNature.entries.map { it.name to it.label },
                     onSelect = { draft = draft.copy(nature = it?.let(FinanceNature::valueOf)); error = null },
                     onMore = { dimension = FinanceFilterDimension.NATURE })
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton({ draft = draft.copy(query = ""); error = null }) { Text("清除搜索", style = LifeText.caption) }
-                    TextButton({
-                        draft = FinanceFilter(period = FinancePeriod.ALL, range = FinanceDateRange())
-                        useCalendar = false
-                        amountOpen = false
-                        minimum = ""
-                        maximum = ""
-                        error = null
-                    }) { Text("清除全部条件", style = LifeText.caption) }
+                TextButton({extraOptions=!extraOptions},contentPadding=PaddingValues(0.dp)) {Text(if(extraOptions) "收起更多条件" else "更多条件",style=LedgerText.caption)}
+                if(extraOptions) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                    TextButton({draft=draft.copy(query="");error=null}) {Text("清除搜索",style=LedgerText.caption)}
+                    TextButton({draft=FinanceFilter(period=FinancePeriod.ALL,range=FinanceDateRange());useCalendar=false;amountOpen=false;minimum="";maximum="";error=null}) {Text("清除全部条件",style=LedgerText.caption)}
                 }
                 if (!validSession) Text("数据已恢复，请关闭后重新打开查账。", style = LifeText.caption, color = MaterialTheme.colorScheme.error)
                 error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
@@ -221,8 +218,8 @@ internal fun FinanceQuerySheet(
             }
             Button({
                 runCatching { prepared() }.onSuccess { onApply(it, useCalendar) }.onFailure { error = it.message ?: "请检查查询条件" }
-            }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), enabled = state.loaded && validSession) {
-                Text("查看结果")
+            }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp).height(58.dp), enabled = state.loaded && validSession,shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                Text("查看结果",style=LedgerText.body)
             }
         }
     }
@@ -287,7 +284,7 @@ internal fun FinanceQuerySheet(
             Column {
                 OutlinedTextField(name, { name = it.take(80) }, label = { Text("视图名称") }, singleLine = true, enabled = !state.busy)
                 FinanceQueryMode.entries.forEach { mode ->
-                    FilterChip(savedMode == mode, { savedMode = mode }, enabled = !state.busy,
+                    LedgerFilterChip(savedMode == mode, { savedMode = mode }, enabled = !state.busy,
                         label = { Text(if (mode == FinanceQueryMode.CASH_MOVEMENT) "真实资金流水" else "个人成本") })
                 }
                 Text("只保存查询条件。新记录会按条件进入结果。", style = LifeText.caption)
@@ -329,10 +326,10 @@ private fun QueryChoiceRow(
     QueryLabel(title)
     val visible = (options.filter { it.first == selected } + options.take(3)).distinctBy { it.first }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        item { FilterChip(selected == null, { onSelect(null) }, label = { Text("全部", style = LifeText.caption) }) }
+        item { LedgerFilterChip(selected == null, { onSelect(null) }, label = { Text("全部", style = LifeText.caption) }) }
         items(visible, key = { it.first }) { (id, label) ->
-            FilterChip(selected == id, { onSelect(id) }, label = { Text(label, maxLines = 2, style = LifeText.caption) })
+            LedgerFilterChip(selected == id, { onSelect(id) }, label = { Text(label, maxLines = 2, style = LifeText.caption) })
         }
-        if (options.size > visible.size) item { FilterChip(false, onMore, label = { Text("更多", style = LifeText.caption) }) }
+        if (options.size > visible.size) item { LedgerFilterChip(false, onMore, label = { Text("更多", style = LifeText.caption) }) }
     }
 }

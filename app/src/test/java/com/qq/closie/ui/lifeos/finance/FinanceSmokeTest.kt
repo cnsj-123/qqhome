@@ -66,12 +66,12 @@ class FinanceSmokeTest {
         }
     }
     private fun input(label: String, text: String) {
-        compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
+        compose.onNode(hasSetTextAction() and (hasText(label) or hasContentDescription(label))).performScrollTo().performTextReplacement(text)
     }
     private fun click(text: String) {
         // Receipt content is eagerly composed in a verticalScroll. Lazy pages use their
         // container below; an absent node is an assertion failure, never a scroll fallback.
-        val node = compose.onNodeWithText(text).assertExists()
+        val node = compose.onNode(hasText(text) or hasContentDescription(text)).assertExists()
         if (!node.isDisplayed()) node.performScrollTo()
         node.assertIsDisplayed().performClick()
     }
@@ -108,7 +108,7 @@ class FinanceSmokeTest {
         compose.onNode(confirm).assertIsDisplayed().assertIsEnabled().performClick()
     }
     private fun assertReadOnlyThenEdit() {
-        compose.onNodeWithText("账单详情").assertIsDisplayed()
+        compose.onNodeWithText("正式账单 · 已确认").assertIsDisplayed()
         compose.onAllNodes(hasSetTextAction() and hasAnyAncestor(hasTestTag("finance-receipt"))).assertCountEquals(0)
         val before = snapshot()
         click("编辑账单")
@@ -129,7 +129,7 @@ class FinanceSmokeTest {
     }
     private fun assertViewedMonth(month: YearMonth) {
         val dateControl = hasTestTag("finance-date-control") and
-            hasText("${month.year}年", substring = true) and hasText("${month.monthValue}月", substring = true)
+            hasContentDescription("${month.year}年 ${month.monthValue}月")
         compose.waitUntil(10_000) { compose.onAllNodes(dateControl).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(dateControl).assertIsDisplayed()
     }
@@ -184,7 +184,7 @@ class FinanceSmokeTest {
         compose.onNodeWithTag("finance-add").assertIsNotEnabled()
         click("账户")
         compose.onNodeWithText("账户").assertIsSelected()
-        ledgerRow(hasText("＋ 建立账户")).performClick()
+        compose.onNodeWithTag("finance-new-account").assertIsDisplayed().performClick()
         input("账户名称", "工资卡")
         input("期初余额", "1000.00")
         click("保存账户"); saved()

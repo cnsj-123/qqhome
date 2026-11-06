@@ -60,17 +60,17 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val pager = rememberPagerState { FinanceView.entries.size }
     // Pager pages are lazy. Their scrolling state belongs to the module, not a mounted page.
     val listStates = listOf(rememberLazyListState(), rememberLazyListState(),rememberLazyListState())
-    var collapseProgress by rememberSaveable { mutableFloatStateOf(0f) }
+    var collapseProgress by rememberSaveable { mutableFloatStateOf(.5f) }
     val entryDrafts = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
     val reducedMotion = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
     var collapseAnimation by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    fun setCalendarStop(stop:FinanceCalendarStop) {
+    fun setCalendarStop(stop:FinanceCalendarStop, velocity:Float = 0f) {
         collapseAnimation?.cancel()
         val target = stop.progress
         if (reducedMotion) collapseProgress = target
         else collapseAnimation = scope.launch {
-            androidx.compose.animation.core.animate(collapseProgress, target, animationSpec = androidx.compose.animation.core.tween(180)) { value, _ ->
+            androidx.compose.animation.core.animate(collapseProgress, target, initialVelocity = velocity, animationSpec = LedgerMotion.SpringSpatial) { value, _ ->
                 collapseProgress = value
             }
         }
@@ -80,6 +80,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     LaunchedEffect(pager.settledPage) { vm.activateSpace(FinanceView.entries[pager.settledPage]) }
     fun selectView(target: FinanceView) { scope.launch { if (reducedMotion) pager.scrollToPage(target.ordinal) else pager.animateScrollToPage(target.ordinal) } }
     var accountQuery by rememberSaveable { mutableStateOf("") }
+    var accountSearchOpen by rememberSaveable { mutableStateOf(false) }
     var collapsedAccounts by rememberSaveable { mutableStateOf(listOf<String>()) }
     var detailAccount by rememberSaveable { mutableStateOf<String?>(null) }
     var registerFilter by rememberSaveable(detailAccount,stateSaver=FinanceRegisterFilter.Saver) {mutableStateOf(FinanceRegisterFilter())}
@@ -176,18 +177,26 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     fun back() { if (chartLabel != null) chartLabel = null else if (detailAccount != null) detailAccount = null else onBack() }
     BackHandler((detailAccount != null || chartLabel != null) && !editing && !viewing && !accountEditing) { back() }
     Scaffold(containerColor = colors.paper, topBar = {
-        if (detailAccount == null && chartLabel == null) FinanceToolbar(
-            monthLabel, if (view == FinanceView.ACCOUNTS) accountQuery else requestedFilter.query,
-            if (view == FinanceView.ACCOUNTS) "搜索账户" else "搜索账目",
-            ::back, { monthPicker = true }, { if (view == FinanceView.ACCOUNTS) accountQuery = it else vm.search(it) }) {
-            if (view != FinanceView.ACCOUNTS) {
-                val active = state.filter.accountId != null || state.filter.categoryId != null || state.filter.tagId != null || state.filter.nature != null || state.filter.minimumMinor!=null || state.filter.maximumMinor!=null || state.filter.currencyCode!=null
-                IconButton({ queryMenu = true }) { Icon(Icons.Outlined.FilterList, if (active) "筛选与日期，已筛选" else "筛选与日期",
-                    tint = if (active) colors.accentDeep else colors.ink) }
+        if (detailAccount == null && chartLabel == null) {
+            val actions: @Composable RowScope.() -> Unit = {
+                IconButton({ if (view == FinanceView.ACCOUNTS) accountSearchOpen = true else queryMenu = true }, Modifier.size(32.dp)) {
+                    Icon(Icons.Outlined.FactCheck, if(view == FinanceView.ACCOUNTS) "搜索账户" else "筛选与日期", Modifier.size(19.dp), tint = colors.accentDeep)
+                }
+                if (onFinanceSettings != null) IconButton(onFinanceSettings, Modifier.size(32.dp)) {
+                    Icon(Icons.Outlined.Settings, "账目专项设置", Modifier.size(19.dp), tint = colors.inkSecondary)
+                }
             }
-            if (onFinanceSettings != null) IconButton(onFinanceSettings) {
-                Icon(Icons.Outlined.Settings, "账目专项设置", tint = colors.inkSecondary)
-            }
+            if (view == FinanceView.INSIGHTS) Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 14.dp, start = 32.dp, end = 32.dp).height(48.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                LedgerFilterChip(true, { monthPicker = true }, Modifier.testTag("finance-date-control")) { Text(if(monthlyRange) month.year.toString()+"."+month.monthValue.toString().padStart(2,'0') else rangeLabel, style = LedgerText.caption) }
+                Spacer(Modifier.width(8.dp))
+                LedgerFilterChip(false, { queryMenu = true }) { Text(state.filter.accountId?.let { id -> state.snapshot.accounts.find {it.id==id}?.name } ?: "全部账户", style = LedgerText.caption) }
+                Spacer(Modifier.width(8.dp))
+                LedgerFilterChip(false, { queryMenu = true }, Modifier.weight(1f)) { Text(state.filter.categoryId?.let {id->state.snapshot.categories.find {it.id==id}?.name} ?: "全部分类", style = LedgerText.caption, maxLines=1) }
+                actions()
+            } else FinanceNetHeader(state, view == FinanceView.ACCOUNTS, requestedFilter.query, vm::search,
+                onAccounts = { selectView(FinanceView.ACCOUNTS) },
+                onNewAccount = { accountId = null; accountEditing = true }, actions = actions)
         } else Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
             Text(chartLabel ?: detailAccount?.let { id -> state.snapshot.accounts.find { it.id == id }?.name } ?: "账目",
@@ -197,34 +206,12 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 modifier = Modifier.testTag("finance-add")) { Text("＋记一笔") }
         }
     }, bottomBar = {
-        // This bar belongs to Finance only. The Life OS root has no bottom navigation.
-        Row(Modifier.fillMaxWidth().lifeHorizontalSwipe(onRightDrag = drawerDrag)
-            .background(Brush.verticalGradient(listOf(colors.paper.copy(alpha = .85f), colors.paper)))
-            .padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            NavigationBar(modifier = Modifier.weight(1f), containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                tonalElevation = 0.dp, windowInsets = WindowInsets(0)) {
-                FinanceView.entries.forEach { target ->
-                    NavigationBarItem(selected = view == target, onClick = { detailAccount = null; chartLabel = null; selectView(target) },
-                        icon = { FinanceNavGlyph(target) }, label = { Text(target.label, style = LifeText.caption) },
-                        colors = NavigationBarItemDefaults.colors(indicatorColor = colors.paperTertiary,
-                            selectedIconColor = colors.accentDeep, selectedTextColor = colors.accentDeep))
-                }
-            }
-            if (detailAccount == null && chartLabel == null) {
-                val canAdd = !state.busy && state.snapshot.accounts.any { it.archivedAt == null }
-                val shape = RoundedCornerShape(18.dp)
-                Surface(Modifier.padding(start = 8.dp).size(54.dp), shape = shape,
-                    color = if (canAdd) colors.accent else colors.paperTertiary, shadowElevation = if (canAdd) 6.dp else 0.dp) {
-                    IconButton(
-                        { recordDestination = FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString()) },
-                        enabled = canAdd, modifier = Modifier.testTag("finance-add")
-                    ) {
-                        Icon(painterResource(com.qq.closie.R.drawable.lifeos_home_paw), "记一笔", Modifier.size(26.dp),
-                            tint = if (canAdd) colors.onAccent else colors.muted)
-                    }
-                }
-            }
-        }
+        FinanceBottomNavigation(view,
+            canAdd = !state.busy && state.snapshot.accounts.any {it.archivedAt==null},
+            showAdd = detailAccount==null && chartLabel==null,
+            onSelect = { detailAccount=null; chartLabel=null; selectView(it) },
+            onAdd = {recordDestination=FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString())},
+            drawerDrag = drawerDrag)
     }) { padding ->
         HorizontalPager(pager, Modifier.padding(padding).fillMaxSize(),
             userScrollEnabled = !editing && !viewing && !accountEditing && !dates && !monthPicker && !queryMenu && detailAccount == null && chartLabel == null) { page ->
@@ -251,7 +238,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             override suspend fun onPreFling(available:Velocity):Velocity {
                 if(!calendarVisible || !calendarDragged) return Velocity.Zero
                 calendarDragged=false
-                setCalendarStop(financeCalendarRelease(collapseProgress,available.y / density.density))
+                setCalendarStop(financeCalendarRelease(collapseProgress, available.y), -available.y / collapseDistance)
                 collapseAnimation?.join()
                 return Velocity(0f,available.y)
             }
@@ -261,35 +248,22 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 if(requestedFilter!=state.filter) LinearProgressIndicator(Modifier.fillMaxWidth(),color=colors.accent)
             }
             if(view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null) {
-                Column(Modifier.padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                    val net = remember(state.snapshot) { FinanceAccountProjection.netByCurrency(state.snapshot) }
-                    if (net.isNotEmpty()) {
-                        val policies = state.snapshot.v16?.accountPolicyRows.orEmpty().filter { it.voidedAt == null }.associateBy { it.accountId }
-                        val included = state.snapshot.accounts.filter { it.archivedAt == null && policies[it.id]?.includedInNet != false }
-                        Column(Modifier.fillMaxWidth().clickable { selectView(FinanceView.ACCOUNTS) }.padding(vertical = 6.dp)) {
-                            Text("${included.size} 个账户 · 纳入账户净额", style = LifeText.caption, color = colors.inkSecondary)
-                            net.toSortedMap().forEach { (currency, amount) ->
-                                Text(FinanceMoney.display(amount, currency), style = LifeText.number, color = colors.ink)
-                                if (included.any { it.currencyCode == currency && FinanceAccountProjection.liabilitySignPending(it, policies[it.id]?.liabilityConvention) }) {
-                                    Text("含期初符号待确认的账户 · 暂沿旧口径", style = LifeText.caption, color = colors.inkSecondary)
-                                }
-                            }
-                        }
-                    }
+                Column(Modifier.padding(horizontal=32.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
                     FinancePeriodStrip(state.cashSummary, rangeLabel)
                     if (pendingRelations > 0 || onFinanceSettings == null) {
-                        Row { TextButton(onRelations) { Text(if (pendingRelations > 0) "$pendingRelations 项往来待核对" else "往来") }; Column { secondaryActions() } }
-                    }
-                    Row {
-                        FinanceCalendarStop.entries.forEach { stop ->
-                            TextButton({setCalendarStop(stop)}) { Text(when(stop) {
-                                FinanceCalendarStop.MONTH -> "月历"
-                                FinanceCalendarStop.WEEK -> "周历"
-                                FinanceCalendarStop.COLLAPSED -> "收起"
-                            }) }
+                        Column(Modifier.fillMaxWidth()) {
+                            LedgerDashedRule()
+                            Row(Modifier.fillMaxWidth().heightIn(min=40.dp).clickable(onClick=onRelations),verticalAlignment=Alignment.CenterVertically) {
+                                Text("•", color=colors.warm, style=LedgerText.caption)
+                                Text(if(pendingRelations>0) "  $pendingRelations 项往来待核对" else "往来", style=LedgerText.caption,color=colors.inkSecondary)
+                            }
+                            LedgerDashedRule()
+                            if(onFinanceSettings==null) secondaryActions()
                         }
                     }
                 }
+                FinanceCalendarHeading(month, FinanceCalendarStop.entries.minBy { kotlin.math.abs(it.progress-collapseProgress) },
+                    {monthPicker=true}, {setCalendarStop(it)})
             }
             if (calendarVisible) Box(Modifier.clipToBounds().layout { measurable,constraints ->
                 val content=measurable.measure(constraints)
@@ -306,7 +280,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 !editing && !viewing && !accountEditing && detailAccount==null && chartLabel==null,
                 onRightDrag = drawerDrag)
             .testTag(if (page == pager.currentPage) "finance-ledger" else "finance-ledger-$page"),
-            state = listState, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            state = listState, contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (state.loading) item { Text("正在打开账本……", style = LifeText.body) }
             state.error?.let { message -> item { Text(message, color = colors.accentDeep); TextButton(vm::clearError) { Text("知道了") } } }
             if (detailAccount == null && chartLabel == null && view in setOf(FinanceView.TRANSACTIONS, FinanceView.INSIGHTS) && state.unassignedAdjustments.isNotEmpty()) {
@@ -373,8 +347,6 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }
             } else when (view) {
                 FinanceView.ACCOUNTS -> {
-                    item { FinanceBalanceSummary(state) }
-                    item { FilledTonalButton({ accountId = null; accountEditing = true }) { Text("＋ 建立账户") } }
                     val accounts = state.snapshot.accounts.filter {
                         accountQuery.isBlank() || (it.name + " " + it.kind.label + " " + it.currencyCode).contains(accountQuery, true)
                     }
@@ -392,12 +364,12 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         item(key = "account-group-$label") {
                             TextButton({ collapsedAccounts = if (label in collapsedAccounts) collapsedAccounts - label else collapsedAccounts + label },
                                 modifier = Modifier.fillMaxWidth()) {
-                                Text("$label · ${group.size}", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
-                                Text(if (expanded) "收起" else "展开")
+                                Text(label, Modifier.weight(1f), style=LedgerText.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                                Text(if(label=="已归档") (if(expanded) "收起" else "展开")+"（${group.size}）" else "${group.size} 个",style=LedgerText.caption)
                             }
                         }
                         if (expanded) items(group.chunked(2), key = { it.joinToString { account -> account.id } }) { pair ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 pair.forEach { account ->
                                     FinanceAccountCard(account, state.balances[account.id] ?: 0, account.kind.ordinal,
                                         Modifier.weight(1f), compact = true,
@@ -413,7 +385,14 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                             }
                         }
                     }
-                    if (accounts.isEmpty()) item { Text("没有匹配的账户", style = LifeText.caption) }
+                    if (accounts.isEmpty()) item {
+                        Column(Modifier.fillMaxWidth().padding(top=70.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(18.dp)) {
+                            Icon(painterResource(com.qq.closie.R.drawable.lifeos_home_cat),null,Modifier.size(110.dp),tint=colors.inkSecondary)
+                            Text(if(accountQuery.isBlank()) "还没有账户" else "没有匹配的账户",style=LedgerText.title)
+                            Text("从常用的一个账户开始，把日子慢慢记下来。",style=LedgerText.caption)
+                            Button({accountId=null;accountEditing=true},Modifier.widthIn(max=259.dp).fillMaxWidth().height(42.dp),shape=RoundedCornerShape(10.dp)) {Text("新建账户",style=LedgerText.body)}
+                        }
+                    }
                 }
                 FinanceView.TRANSACTIONS, FinanceView.INSIGHTS -> {
                     if (view == FinanceView.INSIGHTS) {
@@ -435,7 +414,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                                         LocalDate.now().minusDays(1) -> "昨天 · $date"
                                         else -> date.toString()
                                     }
-                                    Text(label, style = LifeText.caption, color = colors.inkSecondary)
+                                    Text(label, style = LedgerText.caption, color = colors.inkSecondary)
                                 }
                                 items(shownDays[date].orEmpty(), key = { it.id }) { row ->
                                     DisposableEffect(row.id){onDispose {
@@ -497,6 +476,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
     }
     if (accountEditing && state.loaded) FinanceAccountSheet(state, state.snapshot.accounts.find { it.id == accountId }, vm) { accountEditing = false }
+    if(accountSearchOpen) AlertDialog(onDismissRequest={accountSearchOpen=false},title={Text("查找账户")},
+        text={OutlinedTextField(accountQuery,{accountQuery=it},label={Text("搜索账户")},singleLine=true)},
+        confirmButton={TextButton({accountSearchOpen=false}){Text("完成")}})
     if (monthPicker) FinanceMonthPicker(month, { selectMonth(it); monthPicker = false }, { monthPicker = false },
         onRange = { monthPicker = false; dates = true })
     if (queryMenu) FinanceQuerySheet(

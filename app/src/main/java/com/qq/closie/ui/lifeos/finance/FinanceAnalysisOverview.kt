@@ -1,6 +1,13 @@
 package com.qq.closie.ui.lifeos.finance
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.AnnotatedString
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.qq.closie.life.finance.*
 import com.qq.closie.life.ui.theme.BundledText as Text
 import com.qq.closie.ui.lifeos.components.SuspendFunctionPageSwipe
@@ -39,6 +47,7 @@ internal fun FinanceAnalysisOverview(
     val colors = LocalLifeOsColors.current
     var page by rememberSaveable { mutableIntStateOf(0) }
     var showIncome by rememberSaveable { mutableStateOf(false) }
+    var pageMenu by remember {mutableStateOf(false)}
     var preferredCurrency by rememberSaveable { mutableStateOf<String?>(null) }
     var editingBudget by rememberSaveable { mutableStateOf<String?>(null) }
     var workspace by rememberSaveable { mutableStateOf<String?>(null) }
@@ -58,24 +67,22 @@ internal fun FinanceAnalysisOverview(
     }
     SuspendFunctionPageSwipe(editingBudget != null || workspace != null || diagnosticId != null)
 
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(rangeLabel, Modifier.weight(1f), style = LifeText.caption, color = colors.inkSecondary)
-            Row(Modifier.background(colors.paperTertiary, RoundedCornerShape(13.dp)).padding(3.dp)) {
-                listOf("分类", "趋势", "预算").forEachIndexed { index, label ->
-                    TextButton({ page = index }, contentPadding = PaddingValues(horizontal = 11.dp, vertical = 3.dp),
-                        modifier = Modifier.heightIn(min = 40.dp)
-                            .background(if (page == index) colors.card else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(10.dp))) {
-                        Text(label, style = LifeText.caption, color = if (page == index) colors.ink else colors.inkSecondary)
-                    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(40.dp),verticalAlignment=Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                TextButton({pageMenu=true},contentPadding=PaddingValues(0.dp)) {Text(listOf("分类构成","收支趋势","预算")[page],style=LedgerText.caption,color=colors.inkSecondary)}
+                DropdownMenu(pageMenu,{pageMenu=false}) {
+                    listOf("分类构成","收支趋势","预算").forEachIndexed {index,label->DropdownMenuItem({Text(label)},{page=index;pageMenu=false})}
+                    DropdownMenuItem({Text("保存视图与查询专题")},{workspace="queries";pageMenu=false})
+                }
+            }
+            Row(Modifier.height(32.dp).background(colors.paperTertiary,RoundedCornerShape(13.dp)).padding(3.dp)) {
+                listOf(false to "支出",true to "收入").forEach {(income,label)->
+                    Box(Modifier.width(46.dp).fillMaxHeight().background(if(showIncome==income) colors.card else androidx.compose.ui.graphics.Color.Transparent,RoundedCornerShape(10.dp))
+                        .clickable {showIncome=income},contentAlignment=Alignment.Center) {Text(label,style=LedgerText.caption,color=colors.ink)}
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            FilterChip(!showIncome, { showIncome = false }, label = { Text("支出") })
-            FilterChip(showIncome, { showIncome = true }, label = { Text("收入") })
-        }
-        Text(if (showIncome) "实际资金流入 · 收付发生日（含退款等到账）" else "个人净支出 · 经济发生日与实际调整日", style = LifeText.caption, color = colors.inkSecondary)
         if(!showIncome && state.undatedCostRows.isNotEmpty()) Text("另有 ${state.undatedCostRows.size} 项成本日期待确认，无法归期；以下为已知期间小计。",style=LifeText.caption,color=colors.inkSecondary)
         if (currencies.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(currencies, key = { it }) { code -> FilterChip(currency == code, { preferredCurrency = code }, label = { Text(code) }) }
@@ -96,7 +103,7 @@ internal fun FinanceAnalysisOverview(
                     AnalysisBudgetLine(progress) { editingBudget = progress.budget.id }
                 }
                 if (relevantBudgets.none { it.budget.currencyCode == currency }) {
-                    TextButton({ workspace = "budgets" }) { Text("设置可选预算", style = LifeText.caption) }
+                    TextButton({ workspace = "budgets" }) { Text("设置可选预算", style = LedgerText.caption) }
                 }
             }
             1 -> {
@@ -113,26 +120,21 @@ internal fun FinanceAnalysisOverview(
             }
             2 -> {
                 Text("预算按各自区间、分类和币种计算", style = LifeText.caption, color = colors.inkSecondary)
-                if (relevantBudgets.isEmpty()) Text("这个范围还没有预算。", style = LifeText.body, color = colors.ink)
+                if (relevantBudgets.isEmpty()) Text("这个范围还没有预算。", style = LedgerText.body, color = colors.ink)
                 relevantBudgets.forEach { progress ->
                     key(progress.budget.id) { AnalysisBudgetLine(progress) { editingBudget = progress.budget.id } }
                 }
                 TextButton({ workspace = "budgets" }) { Text("建立预算与查看全部") }
             }
         }
-        HorizontalDivider(color = colors.line)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("可核查线索", Modifier.weight(1f), style = LifeText.caption, color = colors.inkSecondary)
-            TextButton({ workspace = "budgets" }) { Text(if (diagnostics.isEmpty()) "查看规则" else "全部 " + diagnostics.size + " 项", style = LifeText.caption) }
-        }
         diagnostics.firstOrNull()?.let { diagnostic ->
-            TextButton({ diagnosticId = diagnostic.id }, contentPadding = PaddingValues(0.dp)) {
-                Text(diagnostic.message, style = LifeText.caption, color = colors.inkSecondary)
+            LedgerDashedRule(Modifier.padding(top=12.dp))
+            TextButton({diagnosticId=diagnostic.id},contentPadding=PaddingValues(0.dp)) {
+                Text("•  异常线索 · "+diagnostic.message,style=LedgerText.caption,color=colors.inkSecondary,maxLines=2)
             }
-        } ?: Text("当前没有符合规则的线索。", style = LifeText.caption, color = colors.inkSecondary)
-        TextButton({ workspace = "queries" }) { Text("保存筛选视图与查询专题", style = LifeText.caption) }
-        FinancePeriodStrip(state.cashSummary, rangeLabel)
-        Text("上方资金收支按真实收付日期；转账不计入收支。", style = LifeText.caption, color = colors.inkSecondary)
+            LedgerDashedRule()
+        }
+
     }
     editingBudget?.let { id ->
         state.snapshot.v16?.budgetRows.orEmpty().singleOrNull { it.id == id && it.voidedAt == null }?.let { budget ->
@@ -174,23 +176,43 @@ private fun AnalysisCategoryDistribution(
         Text(if(dateUnknown>0) "此币种目前只有日期待确认的记录。" else if (income) "这个范围还没有实际流入。" else "这个范围还没有个人成本。", style = LifeText.body, color = colors.ink)
         return
     }
-    if (showRing) Box(Modifier.fillMaxWidth().height(222.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(212.dp).semantics {
+    val textMeasurer=rememberTextMeasurer()
+    val reduced=com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    var revealed by remember(currency) {mutableStateOf(false)}
+    LaunchedEffect(currency) {revealed=true}
+    val growth by animateFloatAsState(if(revealed) 1f else 0f,tween(if(reduced) 0 else 500),label="category-sectors")
+    val labelLayouts=remember(ranked,positiveTotal,textMeasurer) {ranked.filter {it.totals.expenseMinor>0}.map {row->
+        textMeasurer.measure(AnnotatedString(row.label+(row.totals.expenseMinor/positiveTotal*100).toInt()+"%"),LedgerText.caption.copy(fontSize=10.sp,lineHeight=13.sp))
+    }}
+    if (showRing) Box(Modifier.fillMaxWidth().height(218.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxWidth().height(218.dp).semantics {
             contentDescription = currency + (if (income) "实际流入" else "个人成本") + "分类构成，明细提供准确金额及账单入口"
         }) {
-            val stroke = 40.dp.toPx()
-            val diameter = size.minDimension - stroke
+            val stroke = 44.dp.toPx()
+            val diameter = 166.dp.toPx() - stroke
+            val center=Offset(size.width/2,size.height/2)
             var angle = -90f
             ranked.filter { it.totals.expenseMinor > 0 }.forEachIndexed { index, row ->
                 val sweep = (row.totals.expenseMinor / positiveTotal * 360).toFloat()
-                drawArc(swatches[index % swatches.size], angle, sweep, false,
-                    Offset(stroke / 2, stroke / 2), Size(diameter, diameter), style = Stroke(stroke))
+                val sectorProgress=((growth*500-index*60)/(500-(index*60).coerceAtMost(300))).coerceIn(0f,1f)
+                drawArc(swatches[index % swatches.size], angle, sweep*sectorProgress, false,
+                    center-Offset(diameter/2,diameter/2), Size(diameter,diameter), style=Stroke(stroke))
+                if(growth>.95f) {
+                    val rad=(angle+sweep/2)*Math.PI.toFloat()/180f
+                    val direction=if(cos(rad)>=0) 1f else -1f
+                    val start=center+Offset(cos(rad),sin(rad))*83.dp.toPx()
+                    val elbow=center+Offset(cos(rad),sin(rad))*104.dp.toPx()
+                    val end=elbow+Offset(direction*12.dp.toPx(),0f)
+                    drawLine(colors.inkSecondary,start,elbow,.5.dp.toPx());drawLine(colors.inkSecondary,elbow,end,.5.dp.toPx())
+                    val layout=labelLayouts[index]
+                    drawText(layout,color=colors.ink,topLeft=Offset(if(direction>0) end.x+3.dp.toPx() else end.x-layout.size.width-3.dp.toPx(),end.y-layout.size.height/2))
+                }
                 angle += sweep
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(if (income) "实际流入" else "个人成本", style = LifeText.caption, color = colors.inkSecondary)
-            Text(FinanceMoney.display(total.confirmedMinor, currency), style = LifeText.body, color = colors.ink)
+            LedgerOdometer(FinanceMoney.display(total.confirmedMinor, currency), LedgerText.rowAmount.copy(fontSize=18.sp), colors.ink)
         }
     } else {
         Text("已确认 " + FinanceMoney.display(total.confirmedMinor, currency), style = LifeText.number, color = colors.ink)
@@ -204,7 +226,7 @@ private fun AnalysisCategoryDistribution(
         val icon = state.snapshot.v16?.categoryIconRows.orEmpty().firstOrNull {
             it.categoryId == root?.id && it.voidedAt == null
         }?.iconKey ?: FinanceCategoryVectors.labels.entries.firstOrNull { it.value == row.label }?.key ?: "other"
-        Column(Modifier.fillMaxWidth().clickable { onCategory(row.label, currency) }.padding(vertical = 9.dp)) {
+        Column(Modifier.fillMaxWidth().clickable { onCategory(row.label, currency) }.padding(vertical = 7.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(FinanceCategoryVectors.get(icon), null, Modifier.size(20.dp), tint = swatches[index % swatches.size])
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -231,7 +253,7 @@ private fun AnalysisBudgetLine(progress: FinanceBudgetProgress, onClick: () -> U
     val dateFormat = DateTimeFormatter.ofPattern("M月d日")
     val first = Instant.ofEpochMilli(budget.startAt).atZone(zone).format(dateFormat)
     val last = Instant.ofEpochMilli(budget.endExclusive - 1).atZone(zone).format(dateFormat)
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(budget.name, Modifier.weight(1f), style = LifeText.caption, color = colors.inkSecondary)

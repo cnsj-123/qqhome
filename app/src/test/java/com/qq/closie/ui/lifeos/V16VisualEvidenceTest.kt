@@ -131,7 +131,7 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("合成咖啡") and hasClickAction())
         capture("finance-ledger")
         compose.onNode(hasText("合成咖啡") and hasClickAction()).performClick()
-        compose.onNodeWithText("账单详情").assertIsDisplayed()
+        compose.onNodeWithText("正式账单 · 已确认").assertIsDisplayed()
         val receipt=compose.onNodeWithTag("finance-receipt").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val windowHeight=compose.runOnIdle {WindowInspector.getGlobalWindowViews().last().height}
         assertTrue("A short receipt must not force an almost-fullscreen blank paper",receipt.height<windowHeight*.7f)

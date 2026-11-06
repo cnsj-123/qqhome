@@ -2,6 +2,7 @@ package com.qq.closie.ui.lifeos.finance
 
 import com.qq.closie.life.ui.theme.BundledText as Text
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -31,28 +32,26 @@ internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: Strin
     actions: @Composable RowScope.() -> Unit) {
     val colors = LocalLifeOsColors.current
     val focus = LocalFocusManager.current
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
-        TextButton(onMonth, modifier = Modifier.testTag("finance-date-control"), contentPadding = PaddingValues(horizontal = 4.dp)) {
-            Text(monthLabel, style = LifeText.caption, maxLines = 2)
-        }
+    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End) {
         BasicTextField(query, onQuery,
-            Modifier.weight(1f).heightIn(min = 44.dp).testTag("finance-search")
+            Modifier.widthIn(min = 94.dp, max = 110.dp).height(28.dp).testTag("finance-search")
                 .semantics { contentDescription = searchHint }
-                .background(colors.card, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp),
-            singleLine = true, textStyle = LifeType.inputFor(query).copy(color = colors.ink),
+                .border(1.dp, colors.line, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp),
+            singleLine = true, textStyle = LedgerText.input.copy(color = colors.ink),
             cursorBrush = SolidColor(colors.accentDeep),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
             decorationBox = { field ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Search, null, Modifier.size(16.dp), tint = colors.muted)
-                    Box(Modifier.weight(1f).padding(start = 4.dp)) {
-                        if (query.isEmpty()) Text(searchHint, style = LifeText.caption, color = colors.muted, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Icon(Icons.Outlined.Search, null, Modifier.size(13.dp), tint = colors.inkSecondary)
+                    Box(Modifier.weight(1f).padding(start = 5.dp)) {
+                        if (query.isEmpty()) Text("搜索", style = LedgerText.caption, color = colors.inkSecondary, maxLines = 1)
                         field()
                     }
                 }
             })
+        Spacer(Modifier.width(8.dp))
         actions()
     }
 }

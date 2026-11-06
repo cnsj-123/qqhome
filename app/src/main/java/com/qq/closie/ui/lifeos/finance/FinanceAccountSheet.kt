@@ -6,11 +6,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 
@@ -25,46 +28,64 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
     var name by rememberSaveable(account?.id) { mutableStateOf(account?.name.orEmpty()) }
     var kindName by rememberSaveable(account?.id) { mutableStateOf(account?.kind?.name ?: FinanceAccountKind.BANK_CARD.name) }
     var balance by rememberSaveable(account?.id) { mutableStateOf(account?.let { FinanceMoney.input(it.openingBalanceMinor, it.currencyCode) } ?: "0.00") }
-    var kindsOpen by remember { mutableStateOf(false) }
     var currenciesOpen by remember { mutableStateOf(false) }
     var currency by rememberSaveable(account?.id) { mutableStateOf(account?.currencyCode ?: "CNY") }
-    var includedInNet by rememberSaveable { mutableStateOf(true) }
+    var includedInNet by rememberSaveable(account?.id) { mutableStateOf(true) }
+    var anchorOptions by rememberSaveable(account?.id) { mutableStateOf(false) }
     // Includes voided entries, matching the repository's accountEntryCount guard.
     val currencyLocked = account != null && state.snapshot.entries.any { it.accountId == account.id }
     var confirmArchive by remember { mutableStateOf(false) }
     val kind = FinanceAccountKind.valueOf(kindName)
-    FinanceReceipt(if (account == null) "建立真实账户" else "编辑账户", state.busy, state.error, onClose, actions = {
-        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency,FinanceOpeningChoice.valueOf(openingChoice),anchorText,expectedVersion,epoch,includedInNet), onClose) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-            Text(if (state.busy) "正在保存……" else "保存账户")
+    FinanceAccountPaperForm(if (account == null) "新建账户" else "编辑账户", state.busy, state.error, onClose, actions = {
+        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency,FinanceOpeningChoice.valueOf(openingChoice),anchorText,expectedVersion,epoch,includedInNet), onClose) }, enabled = !state.busy,
+            shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(if (state.busy) "正在保存……" else "保存账户", style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 17.sp))
         }
     }) {
-        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("账户名称") }, singleLine = true, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(name))
-        Box {
-            TextButton(onClick = { kindsOpen = true }, enabled = !state.busy) { Text("账户类型 · ${kind.label}") }
-            DropdownMenu(kindsOpen, onDismissRequest = { kindsOpen = false }) {
-                FinanceAccountKind.entries.forEach { choice -> DropdownMenuItem(text = { Text(choice.label) },
-                    onClick = { kindName = choice.name; kindsOpen = false }) }
+        FinanceAccountInputRow("名称", "账户名称", name, { name = it }, enabled = !state.busy,
+            placeholder = "例如：建设银行储蓄卡", divider = true)
+        FinanceAccountTypes(kind, name, !state.busy) { value, template ->
+            kindName = value.name
+            if (template != null) name = template
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("币种", Modifier.weight(1f), style = LedgerText.body.copy(fontSize = 13.sp), color = colors.inkSecondary)
+            TextButton({ currenciesOpen = true }, enabled = !state.busy && !currencyLocked, contentPadding = PaddingValues(0.dp)) {
+                Text((if (currency == "CNY") "人民币 " else "") + currency + if (currencyLocked) " · 已锁定" else "⌄",
+                    style = LedgerText.body.copy(fontSize = 13.sp), color = colors.ink)
             }
         }
-        TextButton({ currenciesOpen = true }, enabled = !state.busy && !currencyLocked) { Text("币种 · $currency${if (currencyLocked) " · 已锁定" else " · 选择"}") }
-        Text(if (currencyLocked) "此账户已有流水，币种不可更改。" else "不同币种分别统计；转账仅支持同币种账户。", style = LifeText.caption, color = colors.muted)
-        Text("$currency 金额最多 ${FinanceMoney.fractionDigits(currency)} 位小数", style = LifeText.caption)
+        FinanceAccountInputRow("期初余额", value = balance, onValue = { balance = it },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            enabled = !state.busy && account == null && openingChoice != FinanceOpeningChoice.FROM_ZERO.name)
         if(account==null) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("起算日期", Modifier.weight(1f), style = LedgerText.body.copy(fontSize = 13.sp), color = colors.inkSecondary)
+                TextButton({ anchorOptions = !anchorOptions }, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) {
+                    Text(when (FinanceOpeningChoice.valueOf(openingChoice)) {
+                        FinanceOpeningChoice.SAVE_TIME -> "保存时作为起点"
+                        FinanceOpeningChoice.CUSTOM -> anchorText
+                        FinanceOpeningChoice.FROM_ZERO -> "从零完整记录"
+                    } + "⌄", style = LedgerText.body.copy(fontSize = 13.sp), color = colors.ink)
+                }
+            }
+            if (anchorOptions) {
+                FinanceChoice("起点方式",openingChoice,listOf(FinanceOpeningChoice.SAVE_TIME.name to "保存时作为起点",FinanceOpeningChoice.CUSTOM.name to "明确选择历史起点",FinanceOpeningChoice.FROM_ZERO.name to "从零完整记录")) {
+                    openingChoice=it;if(it==FinanceOpeningChoice.FROM_ZERO.name) balance=FinanceMoney.input(0,currency)
+                }
+                if(openingChoice==FinanceOpeningChoice.CUSTOM.name) FinanceAccountInputRow("起点时间", "已确认起点时间 · 年-月-日 时:分", anchorText, {anchorText=it}, enabled=!state.busy)
+                Text("期初余额以所选起点为准；更早补记仍保留在历史和统计中，不改变起点后的余额。", style = LifeText.caption, color = colors.inkSecondary)
+                if(openingChoice==FinanceOpeningChoice.FROM_ZERO.name) Text("从零不带期初金额，之后需补齐全部历史收付；不会推断缺失流水。",style=LifeText.caption)
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("纳入账户净额", Modifier.weight(1f), style = LifeText.body)
+                Text("计入账簿净额", Modifier.weight(1f), style = LedgerText.body.copy(fontSize = 13.sp), color = colors.inkSecondary)
                 Switch(includedInNet, { includedInNet = it }, enabled = !state.busy)
             }
-            FinanceChoice("起点方式",openingChoice,listOf(FinanceOpeningChoice.SAVE_TIME.name to "保存时作为起点",FinanceOpeningChoice.CUSTOM.name to "明确选择历史起点",FinanceOpeningChoice.FROM_ZERO.name to "从零完整记录")) {
-                openingChoice=it;if(it==FinanceOpeningChoice.FROM_ZERO.name) balance=FinanceMoney.input(0,currency)
-            }
-            if(openingChoice==FinanceOpeningChoice.CUSTOM.name) OutlinedTextField(anchorText,{anchorText=it},label={Text("已确认起点时间 · 年-月-日 时:分")},enabled=!state.busy)
-            if(openingChoice==FinanceOpeningChoice.FROM_ZERO.name) Text("从零不带期初金额，之后需补齐全部历史收付；不会推断缺失流水。",style=LifeText.caption)
         }
-        OutlinedTextField(balance, { balance = it }, Modifier.fillMaxWidth(), label = { Text("期初余额") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), singleLine = true, enabled = !state.busy && account==null && openingChoice!=FinanceOpeningChoice.FROM_ZERO.name, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(balance))
+        if (currencyLocked) Text("此账户已有流水，币种不可更改。", style = LifeText.caption, color = colors.inkSecondary)
         if(account!=null) Text("修改期初金额和起点请从账户核对页进入影响预览。",style=LifeText.caption)
         account?.let { Text("余额起点 · ${FinanceTime.anchorLabel(it.balanceAnchorAt)}", style = LifeText.caption, color = colors.muted) }
-        Text("期初余额以显示的余额起点为准。当前余额仅计入该时刻及之后发生的有效流水；更早的补记仍保留在历史与统计中。", style = LifeText.caption, color = colors.muted)
         if (account?.archivedAt != null) TextButton({ vm.unarchiveAccount(account.id, onClose) }, enabled = !state.busy) { Text("恢复使用此账户") }
         else if (account != null) TextButton(onClick = { confirmArchive = true }, enabled = !state.busy) { Text("归档账户") }
     }

@@ -12,10 +12,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qq.closie.life.finance.*
@@ -100,29 +110,45 @@ internal fun FinanceAccountStrip(state: FinanceUiState, open: (String) -> Unit) 
 internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, index: Int,
     modifier: Modifier = Modifier, flat: Boolean = false, netMinor:Long?=null, signPending:Boolean=false, compact:Boolean=false,onLongClick: (() -> Unit)? = null,onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
-    val swatch = listOf(colors.secondary, colors.soft, colors.warm)[index % 3]
-    Surface(modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick), color = if (flat) Color.Transparent else colors.card,
-        shape = if (flat) RectangleShape else RoundedCornerShape(18.dp)) {
-        if (compact) Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val swatch = accountContentColor(account, colors.accent)
+    val reduced = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed && onLongClick != null && !reduced) 1.03f else 1f,
+        LedgerMotion.SpringSnappy, label = "account-press")
+    var revealed by rememberSaveable(account.id) { mutableStateOf(false) }
+    val appearance = remember(account.id) { Animatable(if (revealed) 1f else 0f) }
+    LaunchedEffect(account.id, reduced) {
+        appearance.animateTo(1f, tween(if (reduced) 150 else LedgerMotion.FAST,
+            delayMillis = if (reduced || revealed) 0 else index.coerceAtLeast(0) * LedgerMotion.STAGGER))
+        revealed = true
+    }
+    Surface(modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale; alpha = appearance.value }
+        .combinedClickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick, onLongClick = onLongClick), color = if (flat) Color.Transparent else colors.card.copy(alpha = .65f),
+        border = if (flat) null else BorderStroke(1.dp, colors.card),
+        shape = if (flat) RectangleShape else RoundedCornerShape(16.dp)) {
+        if (compact) Box(Modifier.fillMaxWidth().heightIn(min = 80.dp)) {
                 val label = when (account.kind) {
                     FinanceAccountKind.WECHAT -> "微"
                     FinanceAccountKind.ALIPAY -> "支"
                     FinanceAccountKind.CASH -> "现"
-                    else -> account.name.take(1)
+                    else -> if (account.currencyCode == "USD") "$" else account.name.take(1)
                 }
-                Box(Modifier.size(30.dp).background(swatch.copy(alpha = .30f), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-                    Text(label, style = LifeText.caption, color = colors.accentDeep)
+                Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(30.dp)
+                    .background(swatch.copy(alpha = .18f), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                    Text(label, style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 17.sp), color = swatch)
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(account.name, style = LifeText.body, color = colors.ink)
-                    Text(account.kind.label + " · " + account.currencyCode, style = LifeText.caption, color = colors.inkSecondary)
+                Column(Modifier.fillMaxWidth().padding(start = 44.dp, end = 12.dp, top = 13.dp, bottom = 12.dp)) {
+                    Text(account.name, style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 16.sp), color = colors.ink,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(account.kind.label + if (account.currencyCode == "CNY") "" else " · " + account.currencyCode,
+                        style = LedgerText.meta.copy(fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 1.sp), color = colors.inkSecondary)
+                    LedgerOdometer(FinanceMoney.display(netMinor ?: balance, account.currencyCode),
+                        modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
+                        style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 18.sp, letterSpacing = .5.sp), color = colors.ink)
+                    if (netMinor != null) Text("旧口径 " + FinanceMoney.display(balance, account.currencyCode), style = LifeText.caption)
+                    if (signPending) Text("期初符号待确认", style = LifeText.caption, color = colors.inkSecondary)
                 }
-            }
-            Text(FinanceMoney.display(netMinor ?: balance, account.currencyCode), Modifier.align(Alignment.End),
-                style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink)
-            if (netMinor != null) Text("旧口径 " + FinanceMoney.display(balance, account.currencyCode), style = LifeText.caption)
-            if (signPending) Text("期初符号待确认", style = LifeText.caption, color = colors.inkSecondary)
         } else
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(3.dp).height(30.dp).background(swatch, RoundedCornerShape(2.dp)))
@@ -141,4 +167,17 @@ internal fun FinanceAccountCard(account: FinanceAccountEntity, balance: Long, in
             }
         }
     }
+}
+
+/** The content colors come from the final institution-badge frame, not account list position. */
+private fun accountContentColor(account: FinanceAccountEntity, fallback: Color): Color = when {
+    account.kind == FinanceAccountKind.WECHAT -> Color(0xFF40936A)
+    account.kind == FinanceAccountKind.ALIPAY -> Color(0xFF467FBF)
+    account.kind == FinanceAccountKind.CASH -> Color(0xFF5D8C64)
+    account.name.contains("建设") -> Color(0xFF3D70AD)
+    account.name.contains("招商") -> Color(0xFFB75C73)
+    account.name.contains("花呗") -> Color(0xFF459BB8)
+    account.name.contains("白条") -> Color(0xFFB06582)
+    account.currencyCode == "USD" -> Color(0xFF5C80A8)
+    else -> fallback
 }

@@ -67,8 +67,8 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
     DiscoverySwitch("可见交易详情识别", "只读取已授权来源的可见交易详情", value.visibleDetailEnabled, { enabled ->
         if (enabled) detailsDisclosure = true else settings.save(settings.read().copy(visibleDetailEnabled = false))
     })
-    Text("系统无障碍 · " + if (accessibilityAllowed) "已允许" else "未允许", style = LifeText.caption, color = colors.muted)
-    Text("详情服务 · " + if (accessibilityAllowed && runtime.connected) "已连接" else "未连接", style = LifeText.caption, color = colors.muted)
+    Text("系统无障碍 · " + if (accessibilityAllowed) "已允许" else "未允许", style = LedgerText.caption, color = colors.muted)
+    Text("详情服务 · " + if (accessibilityAllowed && runtime.connected) "已连接" else "未连接", style = LedgerText.caption, color = colors.muted)
     SettingsLine("管理无障碍权限", trailing = if (accessibilityAllowed) "系统设置" else "去授权") {
         open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), "请在系统设置搜索“无障碍”，选择 Life OS 可见交易详情")
     }
@@ -81,7 +81,7 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
             nativeEntry -> "原生悬浮按钮可用"
             notificationEntry -> "通知入口可用，也可添加快捷设置"
             else -> "通知入口不可用，可添加快捷设置"
-        }, style = LifeText.caption, color = colors.muted)
+        }, style = LedgerText.caption, color = colors.muted)
         if (!notificationEntry) SettingsLine("管理截图入口通知") {
             open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
                 "请在系统设置中检查 Life OS 通知权限")
@@ -89,13 +89,13 @@ internal fun VisibleDetailSettings(value: FinanceDiscoverySettings, settings: Fi
     }
     SettingsLine("最近详情读取", runtime.phase.label, trailing = if (stagesOpen) "收起" else "过程") { stagesOpen = !stagesOpen }
     if (stagesOpen) {
-        if (runtime.recent.isEmpty()) Text("本次运行没有读取记录", style = LifeText.caption, color = colors.muted)
+        if (runtime.recent.isEmpty()) Text("本次运行没有读取记录", style = LedgerText.caption, color = colors.muted)
         runtime.recent.takeLast(8).asReversed().forEach { stage ->
             val time = Instant.ofEpochMilli(stage.timestamp).atZone(ZoneId.systemDefault()).toLocalTime().withNano(0)
-            Text("$time · ${stage.phase.label}", style = LifeText.caption, color = colors.inkSecondary)
+            Text("$time · ${stage.phase.label}", style = LedgerText.caption, color = colors.inkSecondary)
         }
     }
-    error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
+    error?.let { Text(it, style = LedgerText.caption, color = MaterialTheme.colorScheme.error) }
 
     if (detailsDisclosure) AlertDialog(
         onDismissRequest = { detailsDisclosure = false },

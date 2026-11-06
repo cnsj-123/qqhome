@@ -8,6 +8,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -83,6 +86,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     var allocationOpen by remember { mutableStateOf(false) }
     var pickingCategory by remember { mutableStateOf(false) }
     var moreFields by rememberSaveable { mutableStateOf(false) }
+    var businessOpen by rememberSaveable {mutableStateOf(row!=null || initialRelationship!=null)}
     var pickingDate by remember { mutableStateOf(false) }
     val multiple = state.snapshot.v4?.activeLinks.orEmpty().count { it.entryId == row?.entry?.id } > 1
     val recentAccounts = remember(state.snapshot.entries) { state.snapshot.entries.filter { it.voidedAt == null }.sortedByDescending { it.updatedAt }.map { it.accountId }.distinct().take(4) }
@@ -98,12 +102,11 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
         if(row==null) vm.flushDraftOnStop(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch)
     }
-    FinanceReceipt(if (row == null) "记一笔" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, actions = {
-        FinanceAmountKeypad(amount, currency, !state.busy) { amount = it }
+    FinanceEntryContainer(if (row == null) "记一笔" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, actions = {
+        FinanceAmountKeypad(amount, currency, !state.busy, compact = row == null) { amount = it }
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         if (row == null) {
-            Checkbox(continuous, { continuous = it }, enabled = !state.busy)
-            Text("再记一笔", style = LifeText.caption, modifier = Modifier.padding(end = 12.dp))
+            TextButton({continuous=!continuous},enabled=!state.busy,modifier=Modifier.padding(end=32.dp).semantics {selected=continuous}) { Text("再记一笔",style=LedgerText.body) }
         }
         Button(onClick = {
             if(row==null) vm.saveDraftRecord(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch) {
@@ -114,34 +117,38 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             } else vm.saveRecord(row,currentDraft(),onSaved ?: onClose,editorEpoch)
         },
             enabled = !state.busy, interactionSource=saveInteraction,
-            modifier = Modifier.weight(1f).graphicsLayer {scaleX=saveScale;scaleY=saveScale}) { Text(if (state.busy) "正在保存……" else "保存记录") }
+            modifier = Modifier.weight(1f).semantics {contentDescription="保存记录"}.height(46.dp).graphicsLayer {scaleX=saveScale;scaleY=saveScale},shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) { Text(if (state.busy) "正在保存……" else if(row==null) "完成" else "保存记录",style=LedgerText.body) }
         }
     }) {
         if(row==null) {
             if (savedFeedback || savedDraft != null) Text(if(savedFeedback) "已保存，可继续记录" else "已恢复草稿",style=LifeText.caption)
             if(continuous) Text("本轮锁定：${accounts.firstOrNull { it.id==accountId }?.name ?: "待选择账户"} · $occurredAt",style=LifeText.caption)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FinanceEditorKind.entries.forEach { tab ->
-                val editable = row == null || if (row.transfer != null) tab == FinanceEditorKind.TRANSFER else tab != FinanceEditorKind.TRANSFER
-                FilterChip(kind == tab, onClick = { kindName = tab.name; if (row == null) relationship = relationship.copy(role = if (tab == FinanceEditorKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT); vm.clearError() }, enabled = editable && !state.busy,
-                    label = { Text(tab.label) })
-            }
+        FinanceEntryTabs(kind, {tab -> !state.busy && (row==null || if(row.transfer!=null) tab==FinanceEditorKind.TRANSFER else tab!=FinanceEditorKind.TRANSFER)}) {tab->
+            kindName=tab.name
+            if(row==null) relationship=relationship.copy(role=if(tab==FinanceEditorKind.INCOME) FinanceFlowRole.OTHER else FinanceFlowRole.PAYMENT)
+            vm.clearError()
         }
         if (kind != FinanceEditorKind.TRANSFER) {
             FinanceInlineCategories(state.snapshot, selectedCategoryId, state.busy) { selectedCategoryId = it }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        OutlinedTextField(description, { description = it }, Modifier.weight(1f),
-            label = { Text("备注（可留空）") }, enabled = !state.busy, singleLine = true,
-            textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(description))
-        Box(Modifier.weight(.85f)) { FinanceAmountInput(amount,currency,!state.busy,showKeypad = false) { amount=it } }
+        Row(Modifier.padding(top=20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+            if(row==null) {
+                FinanceCompactEntryField(description,{description=it},"备注（可留空）",!state.busy,Modifier.weight(1f))
+                FinanceCompactEntryField(amount,{amount=it},"金额 · "+currency,!state.busy,Modifier.weight(.7f),amount=true)
+                Text(if(currency=="CNY") "¥" else currency,style=LedgerText.meta,color=colors.inkSecondary)
+            } else {
+                OutlinedTextField(description,{description=it},Modifier.weight(1f),label={Text("备注（可留空）")},enabled=!state.busy,singleLine=true)
+                Box(Modifier.weight(.85f)){FinanceAmountInput(amount,currency,!state.busy,showKeypad=false){amount=it}}
+            }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.weight(1f)) {
-        AccountChoice(if (kind == FinanceEditorKind.TRANSFER) "转出账户" else "账户", accounts, accountId, !state.busy && !continuous, recentAccounts) { accountId = it; if (targetId == it) targetId = accounts.firstOrNull { a -> a.id != it && a.archivedAt == null }?.id.orEmpty() }
-        }
-        TextButton({ pickingDate = !pickingDate }, enabled = !state.busy && !continuous) { Text("时间 · $occurredAt", maxLines = 1, style = LifeText.caption) }
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+            item {AccountChoice(if(kind==FinanceEditorKind.TRANSFER) "转出账户" else "账户",accounts,accountId,!state.busy && !continuous,recentAccounts,compact=row==null){accountId=it;if(targetId==it)targetId=accounts.firstOrNull {a->a.id!=it && a.archivedAt==null}?.id.orEmpty()}}
+            item {LedgerFilterChip(pickingDate,{pickingDate=!pickingDate},enabled=!state.busy && !continuous) {Text(occurredAt,style=LedgerText.caption)}}
+            if(row==null && kind!=FinanceEditorKind.TRANSFER) {
+                item {LedgerFilterChip(moreFields,{moreFields=!moreFields},modifier=Modifier.semantics {contentDescription="标签与新分类"},enabled=!state.busy) {Text("标签",style=LedgerText.caption)}}
+                item {LedgerFilterChip(businessOpen,{businessOpen=!businessOpen},enabled=!state.busy) {Text("业务性质",style=LedgerText.caption)}}
+            }
         }
         if (kind == FinanceEditorKind.TRANSFER) {
             AccountChoice("转入账户", accounts.filter { it.id != accountId }, targetId, !state.busy && !continuous, recentAccounts) { targetId = it }
@@ -149,13 +156,13 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         }
         if (pickingDate) FinanceDateTimePanel(occurredAt, !state.busy && !continuous,
             onCancel={pickingDate=false},onApply={occurredAt=it;pickingDate=false})
-        if (kind != FinanceEditorKind.TRANSFER) {
+        if (kind != FinanceEditorKind.TRANSFER && (row!=null || moreFields)) {
             TextButton({ pickingCategory = !pickingCategory }, enabled = !state.busy) {
                 Text("分类 · " + (FinanceProjection.categoryPath(state.snapshot.categories, selectedCategoryId) ?: category.ifBlank { "选择分类" }))
             }
             if (pickingCategory) FinanceCategoryFields(state.snapshot, selectedCategoryId,
                 { selectedCategoryId = it; pickingCategory = false }, state.busy, vm::createCategory)
-            TextButton({ moreFields = !moreFields }, enabled = !state.busy) { Text(if (moreFields) "收起标签与新分类" else "标签与新分类") }
+            if(row!=null) TextButton({ moreFields = !moreFields }, enabled = !state.busy) { Text(if (moreFields) "收起标签与新分类" else "标签与新分类") }
             if (moreFields) {
                 selectedCategoryId?.let { FinanceCategoryIconEditor(state, vm, it) }
                 OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), label = { Text("标签 · 逗号分隔") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(tags))
@@ -170,7 +177,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
                 OutlinedTextField(subcategory, { subcategory = it; selectedCategoryId = null }, Modifier.fillMaxWidth(), label = { Text("新子分类（可留空）") }, enabled = !state.busy, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(subcategory))
             }
         }
-        if (kind != FinanceEditorKind.TRANSFER && !multiple) FinanceRelationshipFields(state.snapshot, relationship, !state.busy) { relationship = it }
+        if (kind != FinanceEditorKind.TRANSFER && !multiple && businessOpen) FinanceRelationshipFields(state.snapshot, relationship, !state.busy) { relationship = it }
         if (row != null && row.transfer == null) TextButton({ allocationOpen = !allocationOpen }, enabled = !state.busy) {
             Text(if (multiple) "查看与修改多个事件分配" else "分配到多个事件")
         }

@@ -19,6 +19,8 @@ import com.qq.closie.life.finance.*
 import com.qq.closie.navigation.modules.PresentationFactory
 import java.time.Instant
 import java.time.ZoneId
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: List<FinanceAccountEntity>, onBack: () -> Unit) {
@@ -39,19 +41,17 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
     fun selectFile() { picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "application/csv", "application/octet-stream", "application/vnd.ms-excel")) }
     BackHandler(enabled=state.busy && state.diagnostic.phase!=ImportPhase.COMMIT) {vm.cancelBeforeCommit()}
     BackHandler(enabled = !state.busy) { if (summary && !completed) summary = false else onBack() }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            TextButton(onBack, enabled = !state.busy) { Text("返回账目") }
-            Text("旧账导入", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            TextButton(::selectFile, enabled = !state.busy) { Text("选择文件") }
+    Scaffold(containerColor = colors.paper, topBar = {
+        FinanceAuxTopBar("导入账单", onBack, enabled = !state.busy) {
+            if (preview != null) TextButton(::selectFile, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) {
+                Text("换文件", style = LedgerText.caption)
+            }
         }
-        Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("文件", "解析", "账户", "检查", if (completed) "完成" else "确认").forEachIndexed { index, label ->
-                Surface(Modifier.weight(1f), color = if (index == step) colors.paperTertiary else colors.paperSecondary,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)) {
-                    Text("${index + 1} $label", Modifier.padding(vertical = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        style = MaterialTheme.typography.labelMedium)
-                }
+    }) { padding -> Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 32.dp).navigationBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("选择文件", "解析", "账户映射", "预览", if (completed) "完成" else "提交").forEachIndexed { index, label ->
+                if (index > 0) Text("→", style = LedgerText.meta, color = colors.inkSecondary)
+                Text(label, style = LedgerText.meta, color = if (index == step) colors.accentDeep else colors.inkSecondary)
             }
         }
         if (state.error != null || state.busy) {
@@ -68,19 +68,19 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
             LinearProgressIndicator(Modifier.fillMaxWidth())
             if(state.diagnostic.phase!=ImportPhase.COMMIT) TextButton(vm::cancelBeforeCommit,enabled=!state.cancelling) {
                 Text(if(state.cancelling) "正在停止当前阶段…" else "取消当前阶段")
-            } else Text("正在原子写入本批记录，请等待完成后查看结果",style=MaterialTheme.typography.bodySmall)
+            } else Text("正在原子写入本批记录，请等待完成后查看结果",style=LedgerText.caption)
         }
-        state.message?.let {Text(it,style=MaterialTheme.typography.bodySmall)}
+        state.message?.let {Text(it,style=LedgerText.caption)}
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (preview == null) {
-                item { FinancePanel {
-                    Text("把过去的账本接过来", style = MaterialTheme.typography.headlineSmall)
-                    Text("选择 XLSX 或 CSV，在本机检查。确认前不会写入账目。", style = MaterialTheme.typography.bodyMedium)
-                    Text("无需先建立账户；预览后可把旧账户关联到已有账户，或在导入中建立。", style = MaterialTheme.typography.bodySmall)
+                item { FinanceImportPaper {
+                    Text("把过去的账本接过来", style = LedgerText.title)
+                    Text("选择 XLSX 或 CSV，在本机检查。确认前不会写入账目。", style = LedgerText.body)
+                    Text("无需先建立账户；预览后可把旧账户关联到已有账户，或在导入中建立。", style = LedgerText.caption)
                     TextButton({ picker.launch(arrayOf("*/*")) }, enabled = !state.busy) { Text("找不到文件？浏览所有文件") }
                     Button(::selectFile, enabled = !state.busy) { Text("选择 XLSX / CSV") }
                 } }
-                if (state.history.isNotEmpty()) item { Text("导入记录", style = MaterialTheme.typography.titleMedium) }
+                if (state.history.isNotEmpty()) item { Text("导入记录", style = LedgerText.body) }
                 items(state.history, key = { it.id }) { batch ->
                     OutlinedButton({ vm.open(batch.id) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                         Text(batch.fileName + " · " + when (batch.status) {
@@ -89,63 +89,63 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                     }
                 }
             } else {
-                item { FinancePanel {
-                    Text(preview.batch.fileName, style = MaterialTheme.typography.titleMedium)
-                    Text("共 ${preview.rows.size} 行 · ${state.mappings.size} 个账户", style = MaterialTheme.typography.bodySmall)
+                item { FinanceImportPaper {
+                    Text(preview.batch.fileName, style = LedgerText.body)
+                    Text("共 ${preview.rows.size} 行 · ${state.mappings.size} 个账户", style = LedgerText.caption)
                     val businessCounts = remember(preview.rows) { preview.rows.groupingBy(LegacyBusinessSemantics::state).eachCount() }
                     LegacyBusinessState.entries.forEach { status ->
-                        Text("${status.label} · ${businessCounts[status] ?: 0} 行", style = MaterialTheme.typography.bodySmall)
+                        Text("${status.label} · ${businessCounts[status] ?: 0} 行", style = LedgerText.caption)
                     }
-                    Text("以上为来源识别数量，不代表已经写入；已报销和需核对记录保留在导入预览。", style = MaterialTheme.typography.bodySmall)
+                    Text("以上为来源识别数量，不代表已经写入；已报销和需核对记录保留在导入预览。", style = LedgerText.caption)
                 } }
                 if (preview.batch.status == FinanceImportStatus.UNDONE) item { Text("此批次已撤销；后来修改或关联的记录仍保留。") }
                 else if (completed) {
-                    item { FinancePanel(color = colors.paperTertiary) {
-                        Text("旧账已收好", style = MaterialTheme.typography.headlineSmall)
+                    item { FinanceImportPaper {
+                        Text("旧账已收好", style = LedgerText.title)
                         state.message?.let { Text(it) }
-                        Text("本批次已导入 ${preview.rows.count { it.status == FinanceRowStatus.COMMITTED }} 条", style = MaterialTheme.typography.titleLarge)
+                        Text("本批次已导入 ${preview.rows.count { it.status == FinanceRowStatus.COMMITTED }} 条", style = LedgerText.title)
                         val remaining = preview.rows.count { it.canonicalId == null }
-                        if (remaining > 0) Text("还有 $remaining 条未导入，包括跳过或待处理的记录。", style = MaterialTheme.typography.bodySmall)
+                        if (remaining > 0) Text("还有 $remaining 条未导入，包括跳过或待处理的记录。", style = LedgerText.caption)
                         if (preview.rows.any(FinanceImportReview::eligible))
                             TextButton(vm::backToAccounts, enabled = !state.busy) { Text("检查未导入记录") }
                     } }
                 } else if (state.stage == ImportStage.ACCOUNTS) {
-                    item { Text("先确认钱的位置", style = MaterialTheme.typography.titleLarge)
-                        Text("每个旧账户可关联已有账户，或新建。展开卡片可调整余额起点。", style = MaterialTheme.typography.bodySmall) }
+                    item { Text("先确认钱的位置", style = LedgerText.title)
+                        Text("每个旧账户可关联已有账户，或新建。展开卡片可调整余额起点。", style = LedgerText.caption) }
                     items(state.mappings, key = { it.source }) { mapping ->
                         var expanded by androidx.compose.runtime.saveable.rememberSaveable(mapping.source) { mutableStateOf(false) }
-                        FinancePanel {
+                        FinanceImportPaper {
                             TextButton({ expanded = !expanded }, enabled = !state.busy) {
                                 Text(mapping.source + " → " + (accounts.find { it.id == mapping.existingId }?.name ?: "新建 · ${mapping.name}") + if (expanded) "  收起" else "  修改")
                             }
                             if (expanded) ImportAccountMapping(mapping, accounts, !state.busy, vm::map)
-                            else Text(if (mapping.existingId != null) "沿用已有账户的余额起点" else if (mapping.fromHistory) "从历史重建余额" else "使用填写的当前余额", style = MaterialTheme.typography.bodySmall)
+                            else Text(if (mapping.existingId != null) "沿用已有账户的余额起点" else if (mapping.fromHistory) "从历史重建余额" else "使用填写的当前余额", style = LedgerText.caption)
                         }
                     }
                 } else if (summary) {
-                    item { FinancePanel(color = colors.paperTertiary) {
-                        Text("最后核对一次", style = MaterialTheme.typography.headlineSmall)
+                    item { FinanceImportPaper {
+                        Text("最后核对一次", style = LedgerText.title)
                         state.message?.let { Text(it) }
-                        Text("本次选中 ${state.selected.size} 条", style = MaterialTheme.typography.titleLarge)
+                        Text("本次选中 ${state.selected.size} 条", style = LedgerText.title)
                         Text("重复候选选中 ${preview.rows.count { it.status == FinanceRowStatus.DUPLICATE && it.id in state.selected }} 条；其他重复候选保持跳过。")
-                        Text("报销、退款只导入真实流水。附属证据保留，不生成额外到账。", style = MaterialTheme.typography.bodySmall)
+                        Text("报销、退款只导入真实流水。附属证据保留，不生成额外到账。", style = LedgerText.caption)
                         TextButton({ summary = false }, enabled = !state.busy) { Text("返回检查") }
                     } }
                 } else {
-                    item { FinancePanel(color = colors.paperSecondary) {
+                    item { FinanceImportPaper {
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Checkbox(state.policy.ready, { vm.policy(FinanceImportGroup.READY, it) }, enabled = !state.busy)
                             Column(Modifier.weight(1f)) {
-                                Text("普通记录 · ${groups[FinanceImportGroup.READY].orEmpty().size} 行", style = MaterialTheme.typography.titleMedium)
-                                Text("默认选中，通常不需要逐条查看。", style = MaterialTheme.typography.bodySmall)
+                                Text("普通记录 · ${groups[FinanceImportGroup.READY].orEmpty().size} 行", style = LedgerText.body)
+                                Text("默认选中，通常不需要逐条查看。", style = LedgerText.caption)
                             }
                         }
                         TextButton({ detailGroup = FinanceImportGroup.READY }) { Text("查看普通记录") }
                     } }
-                    item { Text("留意这些记录", style = MaterialTheme.typography.titleLarge) }
+                    item { Text("留意这些记录", style = LedgerText.title) }
                     FinanceImportGroup.entries.filter { it != FinanceImportGroup.READY }.forEach { group ->
                         val count = groups[group].orEmpty().size
-                        if (count > 0) item(key = "group-${group.name}") { FinancePanel {
+                        if (count > 0) item(key = "group-${group.name}") { FinanceImportPaper {
                             val checked = when(group) {
                                 FinanceImportGroup.REIMBURSEMENT -> state.policy.reimbursement
                                 FinanceImportGroup.REFUND -> state.policy.refund
@@ -156,7 +156,7 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                             }
                             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 if (group !in setOf(FinanceImportGroup.DUPLICATES, FinanceImportGroup.UNSUPPORTED, FinanceImportGroup.SETTLED)) Checkbox(checked, { vm.policy(group, it) }, enabled = !state.busy)
-                                Text("${group.label} · $count 行", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                Text("${group.label} · $count 行", Modifier.weight(1f), style = LedgerText.body)
                                 TextButton({ detailGroup = group }) { Text("查看") }
                             }
                             Text(when(group) {
@@ -165,14 +165,14 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                                 FinanceImportGroup.SETTLED -> "保留旧账已报销证据；到账账户未知，等待业务状态迁移。不会伪造收入或写成待报销。"
                                 FinanceImportGroup.FEES -> "勾选表示确认手续费是转账金额之外的实际支出。"
                                 else -> "勾选后导入真实流水，关系证据保留，之后可继续整理。"
-                            }, style = MaterialTheme.typography.bodySmall)
+                            }, style = LedgerText.caption)
                         } }
                     }
                     item { Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Checkbox(state.splitTags, vm::tags, enabled = !state.busy)
-                        Text("按空格拆分标签", style = MaterialTheme.typography.bodyMedium)
+                        Text("按空格拆分标签", style = LedgerText.body)
                     }
-                        Text("默认保留整个标签单元格。多种问题同时存在时，需要确认各项策略。", style = MaterialTheme.typography.bodySmall)
+                        Text("默认保留整个标签单元格。多种问题同时存在时，需要确认各项策略。", style = LedgerText.caption)
                         TextButton(vm::backToAccounts, enabled = !state.busy) { Text("修改账户映射") }
                     }
                 }
@@ -181,16 +181,16 @@ internal fun FinanceImportScreen(repository: FinanceImportRepository, accounts: 
                 }
             }
         }
-        if (!summary && !completed) state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (!summary && !completed) state.message?.let { Text(it, style = LedgerText.caption) }
         if (preview != null && preview.batch.status != FinanceImportStatus.UNDONE) {
-            if (completed) Button(onBack, enabled = !state.busy, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+            if (completed) Button(onBack, enabled = !state.busy, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                 Text("完成 · 返回账目")
             } else Button({ when { state.stage == ImportStage.ACCOUNTS -> vm.prepare(); !summary -> summary = true; else -> confirmation = "commit" } },
-                enabled = !state.busy && (state.stage == ImportStage.ACCOUNTS || state.selected.isNotEmpty()), modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                enabled = !state.busy && (state.stage == ImportStage.ACCOUNTS || state.selected.isNotEmpty()), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                 Text(when { state.busy -> "正在处理…"; state.stage == ImportStage.ACCOUNTS -> "下一步 · 检查记录"; !summary -> "下一步 · 核对 ${state.selected.size} 条"; else -> "确认导入 ${state.selected.size} 条" })
             }
         }
-    }
+    } }
     detailGroup?.let { group ->
         ImportGroupSheet(group, groups[group].orEmpty(), state, vm, { evidence = it }) { detailGroup = null }
     }
@@ -213,7 +213,7 @@ private fun ImportGroupSheet(group: FinanceImportGroup, rows: List<FinanceImport
     val filtered = remember(rows, query) { rows.filter { query.isBlank() || (it.description + " " + it.sourceAccount + " " + it.rowNumber).contains(query, true) } }
     ModalBottomSheet(onDismissRequest = close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxHeight(.88f).padding(horizontal = 16.dp).imePadding()) {
-            Text("${group.label} · ${rows.size} 行", style = MaterialTheme.typography.titleLarge)
+            Text("${group.label} · ${rows.size} 行", style = LedgerText.title)
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索事由、账户或行号") }, singleLine = true, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(query))
             LazyColumn(Modifier.weight(1f)) {
                 items(filtered, key = { it.id }) { row ->
@@ -221,9 +221,9 @@ private fun ImportGroupSheet(group: FinanceImportGroup, rows: List<FinanceImport
                         Checkbox(row.id in state.selected, { vm.choose(row.id, it) }, enabled = !state.busy && FinanceImportReview.eligible(row))
                         Column(Modifier.weight(1f)) {
                             Text("第 ${row.rowNumber} 行 · ${row.description.ifBlank { "原备注为空" }}")
-                            Text("${row.sourceAccount} · ${row.amountMinor?.let { FinanceMoney.display(it) } ?: "金额待处理"}", style = MaterialTheme.typography.bodySmall)
-                            Text(LegacyBusinessSemantics.state(row).label, style = MaterialTheme.typography.bodySmall)
-                            if (row.issue.isNotBlank()) Text(row.issue, style = MaterialTheme.typography.bodySmall)
+                            Text("${row.sourceAccount} · ${row.amountMinor?.let { FinanceMoney.display(it) } ?: "金额待处理"}", style = LedgerText.caption)
+                            Text(LegacyBusinessSemantics.state(row).label, style = LedgerText.caption)
+                            if (row.issue.isNotBlank()) Text(row.issue, style = LedgerText.caption)
                             TextButton({ evidence(row) }) { Text("查看原始记录") }
                         }
                     }
@@ -242,7 +242,7 @@ private fun ImportAccountMapping(mapping: FinanceAccountMapping, accounts: List<
     }
     var error by remember(mapping.source) { mutableStateOf<String?>(null) }
     Column {
-        Text(mapping.source, style = MaterialTheme.typography.titleMedium)
+        Text(mapping.source, style = LedgerText.body)
         EnumChoice("账户", mapping.existingId ?: "", listOf("" to "新建账户") +
             accounts.filter { it.archivedAt == null && it.currencyCode == "CNY" }.map { it.id to it.name }, enabled) {
             onChange(mapping.copy(existingId = it.ifBlank { null }))
@@ -263,7 +263,7 @@ private fun ImportAccountMapping(mapping: FinanceAccountMapping, accounts: List<
                     } catch (_: Exception) { error = "请输入最多两位小数的余额"; onChange(mapping.copy(openingValid = false)) }
                 }, enabled = enabled, label = { Text("当前余额（欠款填负数）") }, isError = error != null, textStyle = com.qq.closie.life.ui.theme.LifeType.inputFor(opening))
                 error?.let { Text(it) }
-                Text("起点：${Instant.ofEpochMilli(mapping.anchorAt).atZone(ZoneId.systemDefault()).toLocalDateTime()}", style = MaterialTheme.typography.bodySmall)
+                Text("起点：${Instant.ofEpochMilli(mapping.anchorAt).atZone(ZoneId.systemDefault()).toLocalDateTime()}", style = LedgerText.caption)
             }
         }
         HorizontalDivider()
@@ -285,4 +285,10 @@ internal fun <T> EnumChoice(label: String, selected: T, values: List<Pair<T, Str
             }
         }
     }
+}
+
+/** Import inspection is laid out directly on paper, as the supplied workflow frame. */
+@Composable
+private fun FinanceImportPaper(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
 }

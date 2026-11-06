@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.finance
 import com.qq.closie.life.ui.theme.BundledText as Text
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -121,33 +122,33 @@ internal fun MoneySummary(label: String, totals: Map<String, FinanceTotals>, exp
 internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: FinanceSnapshot? = null, balanceAfter: Long? = null, hidden:Boolean=false,
     onPosition:(com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin)->Unit={}, showCashTime: Boolean = true, onClick: () -> Unit) {
     val colors = LocalLifeOsColors.current
-    Surface(color = androidx.compose.ui.graphics.Color.Transparent) {
-    Row(Modifier.fillMaxWidth()
+    val categoryPath = snapshot?.let { FinanceProjection.categoryPath(it.categories,row.entry.categoryId) } ?: row.category
+    val primary = if(row.transfer!=null) row.account.name+" → "+row.targetAccount?.name else categoryPath?.replace(" / "," · ")?.takeIf {it.isNotBlank()}
+        ?: row.entry.description.ifBlank {if(row.entry.direction==FinanceDirection.INFLOW) "收入" else "支出"}
+    Row(Modifier.fillMaxWidth().heightIn(min=48.dp)
         .lifeSurfaceOrigin(androidx.compose.ui.platform.LocalConfiguration.current.orientation,onPosition=onPosition)
         .graphicsLayer {alpha=if(hidden)0f else 1f}
-        .clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(color = androidx.compose.ui.graphics.Color.Transparent, shape = RoundedCornerShape(11.dp)) {
-            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-                Icon(if (snapshot != null && row.entry.categoryId != null) FinanceCategoryGlyph.forCategory(snapshot, row.entry.categoryId, row.category.orEmpty()) else FinanceCategoryGlyph.forName(row.category.orEmpty()), null, Modifier.size(20.dp), tint = colors.accentDeep)
-            }
+        .clickable(onClick = onClick).padding(vertical = 6.dp),verticalAlignment=Alignment.CenterVertically) {
+        Box(Modifier.size(32.dp).background(colors.paperTertiary,RoundedCornerShape(10.dp)),contentAlignment=Alignment.Center) {
+            Icon(if(snapshot!=null && row.entry.categoryId!=null) FinanceCategoryGlyph.forCategory(snapshot,row.entry.categoryId,row.category.orEmpty())
+                else FinanceCategoryGlyph.forName(row.category.orEmpty()),null,Modifier.size(18.dp),tint=colors.accentDeep)
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(if (row.transfer != null) "${row.account.name} → ${row.targetAccount?.name}" else row.entry.description.ifBlank { row.category ?: if(row.entry.direction==FinanceDirection.INFLOW) "收入" else "支出" },
-                style = LifeText.body, color = colors.ink, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            Text(if (row.transfer != null) "转账 · ${row.entry.description.ifBlank { "账户间转移" }}" else
-                listOfNotNull(row.category ?: "未分类", row.account.name).joinToString(" · "),
-                style = LifeText.caption, color = colors.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            if (showCashTime) Text(FinanceTime.input(row.entry.occurredAt).substringAfter(' '), style = LifeText.caption, color = colors.muted)
-            if (role != null) Text(role, style = LifeText.caption, color = colors.accentDeep)
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Text(primary,Modifier.weight(1f,fill=false),style=LedgerText.caption,color=colors.ink,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                if(role!=null) Text(role,Modifier.padding(start=6.dp).background(colors.card,RoundedCornerShape(4.dp)).padding(horizontal=4.dp,vertical=1.dp),style=LedgerText.meta,color=colors.inkSecondary)
+            }
+            val secondary = row.entry.description.takeIf {it.isNotBlank() && it!=primary} ?: if(row.transfer!=null) "账户间转移" else row.account.kind.label
+            Text(secondary,style=LedgerText.meta,color=colors.inkSecondary,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
-        val prefix = if (row.transfer != null) "" else if (row.entry.direction == FinanceDirection.INFLOW) "+" else "−"
-        Column(Modifier.widthIn(max = 136.dp).padding(start = 8.dp), horizontalAlignment = Alignment.End) {
-            Text(prefix + FinanceMoney.display(row.entry.amountMinor, row.currencyCode), style = com.qq.closie.life.ui.theme.LifeType.MoneyCompact, color = colors.ink,
-                textAlign = androidx.compose.ui.text.style.TextAlign.End)
-            if (snapshot != null) Text(balanceAfter?.let { "余额 " + FinanceMoney.display(it, row.currencyCode) } ?: "余额未确定", style = LifeText.caption, color = colors.inkSecondary)
+        val prefix = if(row.transfer!=null) "" else if(row.entry.direction==FinanceDirection.INFLOW) "+" else "−"
+        Column(Modifier.widthIn(max=146.dp).padding(start=8.dp),horizontalAlignment=Alignment.End) {
+            LedgerOdometer(prefix+FinanceMoney.display(row.entry.amountMinor,row.currencyCode),LedgerText.caption,
+                if(row.entry.direction==FinanceDirection.INFLOW) colors.accentDeep else colors.ink)
+            if(snapshot!=null) Text(balanceAfter?.let {row.account.name+" "+FinanceMoney.display(it,row.currencyCode)} ?: "余额未确定",
+                style=LedgerText.meta,color=colors.inkSecondary,maxLines=1)
         }
-    }
     }
 }
 
