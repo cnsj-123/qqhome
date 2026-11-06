@@ -75,7 +75,10 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
         origin, { if (!busy) onClose() }, widthFraction = if (formal) .87f else .92f, compactHeight = true,
         paperShape = if (formal) FormalReceiptShape else null,
         // The torn receipt is warm stock in source node 1931:23203; dark palettes keep their readable surface.
-        paperColor = if (formal && !colors.isDark) androidx.compose.ui.graphics.Color(0xFFFFFCF8) else null
+        paperColor = if (formal && !colors.isDark) androidx.compose.ui.graphics.Color(0xFFFFFCF8) else null,
+        // 1931:23201 combines 0.2 node opacity with a 0.8 fill: 16% violet, without platform dim.
+        scrimColor = if (formal && !colors.isDark) androidx.compose.ui.graphics.Color(0xFF84758F) else null,
+        dismissEnabled = !busy
     ) { close -> contents(close) }
     else ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
         containerColor = colors.card,

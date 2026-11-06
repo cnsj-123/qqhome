@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -22,9 +23,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -54,7 +57,8 @@ internal fun Modifier.lifeSurfaceOrigin(orientation:Int,rotation:Float=0f,onPosi
 @Composable
 internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
     widthFraction:Float=.92f,heightFraction:Float=.80f,corner:Dp=26.dp,compactHeight:Boolean=false,
-    paperShape: Shape? = null, paperColor: Color? = null,
+    paperShape: Shape? = null, paperColor: Color? = null, scrimColor: Color? = null,
+    dismissEnabled: Boolean = true,
     content:@Composable (close:()->Unit)->Unit) {
     val reduced=reducedLifeMotion()
     val reveal=remember {Animatable(if(reduced)1f else 0f)}
@@ -64,11 +68,12 @@ internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
     var closing by remember {mutableStateOf(false)}
     var contentHeight by remember {mutableIntStateOf(0)}
     val colors=LocalLifeOsColors.current
+    val canDismiss by rememberUpdatedState(dismissEnabled)
     LaunchedEffect(reduced) {
         if(reduced)reveal.snapTo(1f) else reveal.animateTo(1f,tween(260))
     }
     fun close() {
-        if(closing)return
+        if(closing || !canDismiss)return
         closing=true
         scope.launch {
             if(!reduced)reveal.animateTo(0f,tween(220))
@@ -76,8 +81,11 @@ internal fun LifeOriginDialog(origin:LifeSurfaceOrigin?,onDismiss:()->Unit,
         }
     }
     Dialog(onDismissRequest=::close,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
+        val window=(LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {window?.setDimAmount(0f)}
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().testTag("life-origin-scrim").clickable(
+            Box(Modifier.fillMaxSize().background((scrimColor ?: colors.shade).copy(alpha=.16f*reveal.value.coerceIn(0f,1f)))
+                .testTag("life-origin-scrim").clickable(
                 interactionSource=remember {MutableInteractionSource()},indication=null,onClick=::close))
             val width=constraints.maxWidth.toFloat();val height=constraints.maxHeight.toFloat()
             val maxHeight=height*heightFraction

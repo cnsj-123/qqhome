@@ -48,4 +48,22 @@ class LifeOriginDismissTest {
         compose.waitForIdle()
         assertEquals(1,dismissed);compose.onNodeWithTag("life-origin-paper").assertDoesNotExist()
     }
+    @Test fun busyReceiptRejectsScrimAndBackBeforeStartingAnyExit() {
+        var shown by mutableStateOf(true);var busy by mutableStateOf(true);var dismissed=0
+        compose.setContent {LifeOsTheme {if(shown)LifeOriginDialog(null,{dismissed++;shown=false},
+            compactHeight=true,dismissEnabled=!busy) {Column(Modifier.height(220.dp)){Text("正在保存")}}}}
+        compose.waitForIdle()
+        val dialog=requireNotNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
+        compose.runOnIdle {assertEquals(0f,dialog.window!!.attributes.dimAmount,0f)}
+        compose.onNodeWithTag("life-origin-scrim").performTouchInput {click(Offset(2f,2f))}
+        compose.runOnIdle {dialog.onBackPressed()}
+        compose.waitForIdle()
+        assertEquals(0,dismissed)
+        compose.onNodeWithTag("life-origin-paper").assertIsDisplayed()
+        compose.runOnIdle {busy=false}
+        compose.onNodeWithTag("life-origin-scrim").performTouchInput {click(Offset(2f,2f))}
+        compose.waitForIdle()
+        assertEquals(1,dismissed)
+        compose.onNodeWithTag("life-origin-paper").assertDoesNotExist()
+    }
 }

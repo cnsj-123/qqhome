@@ -154,8 +154,10 @@ internal fun SettingsPaperPage(
     Scaffold(modifier = Modifier.settingsPaperBounds(key), containerColor = colors.paper) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (showBack) IconButton(onBack, Modifier.width(40.dp).offset(x = (-12).dp)) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回上一页", Modifier.size(19.dp), tint = colors.inkSecondary)
+                if (showBack) IconButton(onBack, Modifier.width(40.dp).offset(x = (-8).dp)) {
+                    // Source 1953:8756 has the same 24px chevron path as 1931:23584.
+                    Icon(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_back),
+                        "返回上一页", Modifier.size(24.dp), tint = colors.inkSecondary)
                 }
                 Text(title, Modifier.weight(1f).settingsPaperTitle(key), style = SettingsText.title, color = colors.ink)
                 actions()
