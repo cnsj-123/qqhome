@@ -226,20 +226,25 @@ internal fun FinanceQuerySheet(
                 if (!validSession) Text("数据已恢复，请关闭后重新打开查账。", style = LifeText.caption, color = MaterialTheme.colorScheme.error)
                 error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
                 state.error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
-                Text("查看结果后，账簿会按这些条件更新。关闭面板会保留原条件。", style = LifeText.caption, color = colors.muted)
             }
             preview?.let { result ->
+                val singleTotal=result.totals.entries.singleOrNull()
+                val totalLabel=if(result.cash.all {it.direction==FinanceDirection.OUTFLOW}) "合计 " else "净流出 "
                 Row(Modifier.fillMaxWidth().padding(top=12.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text("符合当前条件：",style=LedgerText.caption,color=colors.inkSecondary)
                     LedgerOdometer(result.cash.size.toString(),LedgerText.caption,colors.inkSecondary)
                     Text(" 笔",style=LedgerText.caption,color=colors.inkSecondary)
+                    singleTotal?.let {(code,total)->
+                        Text(" · "+totalLabel+FinanceMoney.display(total.confirmedMinor,code),Modifier.weight(1f),
+                            style=LedgerText.caption,color=colors.inkSecondary)
+                    }
                 }
-                result.totals.forEach {(code,total)->Text((if(result.cash.all {it.direction==FinanceDirection.OUTFLOW}) "合计 " else "净流出 ")+FinanceMoney.display(total.confirmedMinor,code),style=LedgerText.caption,color=colors.inkSecondary)}
+                if(singleTotal==null) result.totals.forEach {(code,total)->Text(totalLabel+FinanceMoney.display(total.confirmedMinor,code),style=LedgerText.caption,color=colors.inkSecondary)}
                 if(result.undatedCash.isNotEmpty()) Text("另有 "+result.undatedCash.size+" 笔日期待确认，未计入期间合计",style=LedgerText.caption,color=colors.inkSecondary)
             }
             Button({
                 runCatching { prepared() }.onSuccess { onApply(it, useCalendar) }.onFailure { error = it.message ?: "请检查查询条件" }
-            }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp).height(58.dp), enabled = state.loaded && validSession,shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+            }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp).height(42.dp), enabled = state.loaded && validSession,shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                 Text("查看结果",style=LedgerText.body)
             }
         }
