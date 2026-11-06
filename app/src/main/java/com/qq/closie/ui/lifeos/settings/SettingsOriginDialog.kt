@@ -30,6 +30,24 @@ import com.qq.closie.ui.lifeos.components.reducedLifeMotion
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import kotlinx.coroutines.launch
 
+/** Closing starts before the exit animation. Pending commands must stop at that instant. */
+internal class SettingsDialogDismissal {
+    var closing by mutableStateOf(false)
+        private set
+    private val cancellations=mutableSetOf<()->Unit>()
+    fun register(cancel:()->Unit):()->Unit {
+        cancellations+=cancel
+        if(closing) cancel()
+        return {cancellations-=cancel}
+    }
+    fun beginClose() {
+        closing=true
+        cancellations.toList().forEach {it()}
+    }
+}
+
+internal val LocalSettingsDialogDismissal=staticCompositionLocalOf<SettingsDialogDismissal?> {null}
+
 /** Lay out at the destination once, then unfold from the real pressed control bounds. */
 @Composable
 internal fun SettingsOriginDialog(
@@ -45,17 +63,17 @@ internal fun SettingsOriginDialog(
     val density = LocalDensity.current
     val reveal = remember { Animatable(0f) }
     var measuredHeight by remember { mutableIntStateOf(0) }
-    var closing by remember { mutableStateOf(false) }
+    val dismissal=remember {SettingsDialogDismissal()}
     val scope = rememberCoroutineScope()
     val canDismiss by rememberUpdatedState(dismissEnabled)
     LaunchedEffect(reduced) {
-        if (closing) return@LaunchedEffect
+        if (dismissal.closing) return@LaunchedEffect
         if (reduced) reveal.animateTo(1f, tween(150))
         else reveal.animateTo(1f, spring(dampingRatio = .5f, stiffness = 350f, visibilityThreshold = .015f))
     }
     fun close() {
-        if (closing || !canDismiss) return
-        closing = true
+        if (dismissal.closing || !canDismiss) return
+        dismissal.beginClose()
         scope.launch {
             reveal.animateTo(0f, tween(if (reduced) 150 else 250))
             onDismiss()
@@ -89,7 +107,9 @@ internal fun SettingsOriginDialog(
                     } else alpha = reveal.value.coerceIn(0f, 1f)
                 },
                 shape = if (bottom) RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp) else RoundedCornerShape(20.dp),
-                color = colors.paper, shadowElevation = 6.dp) { content(::close) }
+                color = colors.paper, shadowElevation = 6.dp) {
+                CompositionLocalProvider(LocalSettingsDialogDismissal provides dismissal) {content(::close)}
+            }
         }
     }
 }

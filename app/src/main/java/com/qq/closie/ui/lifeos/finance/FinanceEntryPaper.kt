@@ -2,6 +2,7 @@ package com.qq.closie.ui.lifeos.finance
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -19,11 +20,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.qq.closie.life.ui.theme.BundledText as Text
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
@@ -37,7 +40,7 @@ internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?,
     if (!manualPaper) { FinanceReceipt(title,busy,error,onClose,actions=actions,content=content); return }
     val colors=LocalLifeOsColors.current
     val reduced=reducedLifeMotion()
-    val progress=remember {Animatable(if(reduced) 1f else 0f)}
+    val progress=remember {Animatable(0f)}
     val scope=rememberCoroutineScope()
     val close by rememberUpdatedState(onClose)
     val currentBusy by rememberUpdatedState(busy)
@@ -46,31 +49,38 @@ internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?,
         if(currentBusy) return
         motion?.cancel()
         motion=scope.launch {
-            if(!reduced) progress.animateTo(0f,LedgerMotion.SpringSpatial,initialVelocity=velocity)
-            close()
+            if(reduced) progress.animateTo(0f,tween(150))
+            else progress.animateTo(0f,LedgerMotion.SpringSpatial,initialVelocity=velocity)
+            if(currentBusy) progress.animateTo(1f,if(reduced) tween(150) else LedgerMotion.SpringSpatial)
+            else close()
         }
     }
-    LaunchedEffect(Unit) {if(!reduced) progress.animateTo(1f,LedgerMotion.SpringSpatial)}
+    LaunchedEffect(reduced) {progress.animateTo(1f,if(reduced) tween(150) else LedgerMotion.SpringSpatial)}
     Dialog(onDismissRequest={dismiss()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
+        val window=(LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {window?.setDimAmount(0f)}
         BackHandler {dismiss()}
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val paperHeight=maxHeight*.866f
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.10f*progress.value)).clickable(enabled=!busy){dismiss()})
             Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(paperHeight).imePadding()
                 .testTag("finance-receipt").semantics {paneTitle=title}.graphicsLayer {
-                    alpha=if(reduced) 1f else progress.value.coerceIn(0f,1f)
+                    alpha=progress.value.coerceIn(0f,1f)
                     rotationX=if(reduced) 0f else -12f*(1f-progress.value)
                     translationY=if(reduced) 0f else (1f-progress.value)*28.dp.toPx()
                     cameraDistance=12*density
                 },shape=ManualReceiptShape,color=colors.paper) {
-                Column(Modifier.fillMaxSize().padding(horizontal=32.dp).navigationBarsPadding()) {
+                Column(Modifier.fillMaxSize().padding(horizontal=32.dp)
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets(bottom=24.dp)))) {
                     Row(Modifier.fillMaxWidth().height(52.dp).pointerInput(busy,reduced) {
                         val tracker=VelocityTracker()
-                        detectVerticalDragGestures(onDragStart={tracker.resetTracking();motion?.cancel()},onDragEnd={
-                            val velocity=tracker.calculateVelocity().y/paperHeight.toPx()
-                            if(progress.value<.88f || velocity>.14f) dismiss(-velocity)
-                            else {motion=scope.launch {progress.animateTo(1f,LedgerMotion.SpringSpatial,initialVelocity=-velocity)}}
-                        },onDragCancel={motion=scope.launch {progress.animateTo(1f,LedgerMotion.SpringSpatial)}}) {change,dy->
+                        detectVerticalDragGestures(onDragStart={if(!currentBusy) {tracker.resetTracking();motion?.cancel()}},onDragEnd={
+                            if(!currentBusy) {
+                                val velocity=tracker.calculateVelocity().y/paperHeight.toPx()
+                                if(progress.value<.88f || velocity>.14f) dismiss(-velocity)
+                                else {motion=scope.launch {progress.animateTo(1f,if(reduced) tween(150) else LedgerMotion.SpringSpatial,initialVelocity=if(reduced) 0f else -velocity)}}
+                            }
+                        },onDragCancel={if(!currentBusy) motion=scope.launch {progress.animateTo(1f,if(reduced) tween(150) else LedgerMotion.SpringSpatial)}}) {change,dy->
                             if(!currentBusy) {change.consume();tracker.addPosition(change.uptimeMillis,change.position)
                                 scope.launch {progress.snapTo((progress.value-dy/paperHeight.toPx()).coerceIn(0f,1f))}}
                         }
@@ -79,7 +89,7 @@ internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?,
                     }
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
                     error?.let {Text(it,style=LedgerText.caption,color=MaterialTheme.colorScheme.error)}
-                    Column(Modifier.fillMaxWidth().padding(top=4.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp),content=actions)
+                    Column(Modifier.fillMaxWidth().padding(top=4.dp),verticalArrangement=Arrangement.spacedBy(8.dp),content=actions)
                 }
             }
         }

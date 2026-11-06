@@ -356,7 +356,10 @@ class FinanceSmokeTest {
         assertViewedMonth(month)
         fun awaitHistoricalRows() {
             compose.waitUntil(10_000) {
-                compose.onAllNodes(hasContentDescription("$day，1 笔", substring = true)).fetchSemanticsNodes().isNotEmpty()
+                // Calendar counts span the month independently of the asynchronous list projection.
+                // Wait for the restored Transactions filter as well as the real day facts.
+                model.state.value.filter.range == FinanceDateRange.month(month.atDay(1)) &&
+                    compose.onAllNodes(hasContentDescription("$day，1 笔", substring = true)).fetchSemanticsNodes().isNotEmpty()
             }
         }
         awaitHistoricalRows()

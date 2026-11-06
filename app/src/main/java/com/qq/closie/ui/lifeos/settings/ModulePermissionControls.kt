@@ -55,9 +55,9 @@ internal fun FinanceModulePermissionControl(epoch: Long, loaded: Boolean) {
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val ready = loaded && rules.isNotEmpty()
-    SettingsLine("财务 Finance", "模块 AI 读取策略；仍受具体用途、字段和记录范围限制",
+    SettingsLine("财务 Finance", null,
         Icons.Outlined.AccountBalanceWallet, if (ready) mode.title() else "读取策略",
-        modifier=Modifier.lifeSurfaceOrigin(orientation){rowOrigin=it},
+        modifier=Modifier.height(50.dp).lifeSurfaceOrigin(orientation){rowOrigin=it},
         trailingContent={ModulePermissionStamp(if(ready) mode.title() else "读取策略")},
         onClick = if (ready) { {
             editingEpoch = epoch; editingRevision = stored?.revision ?: 0L

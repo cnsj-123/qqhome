@@ -49,9 +49,12 @@ internal fun FinanceInlineCategories(snapshot: FinanceSnapshot, selectedId: Stri
     LaunchedEffect(selectedRoot){expanded=selectedRoot}
     val colors=LocalLifeOsColors.current
     val reduced=reducedLifeMotion()
-    Spacer(Modifier.height(22.dp))
+    // Own the layout: the caller may wrap this group in a single reset-animation layer.
+    Column(Modifier.fillMaxWidth()) {
+    Spacer(Modifier.height(26.dp))
     if(roots.isEmpty()) Text("尚无分类，可在下方创建。",style=LedgerText.caption,color=colors.inkSecondary)
-    roots.chunked(5).forEach {rootRow->
+    roots.chunked(5).forEachIndexed {rootIndex,rootRow->
+        if(rootIndex>0) Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
             rootRow.forEach {option->
                 FinanceCategoryTile(snapshot,option,selectedRoot==option.key,busy,Modifier.weight(1f)) {
@@ -72,7 +75,7 @@ internal fun FinanceInlineCategories(snapshot: FinanceSnapshot, selectedId: Stri
         }
         AnimatedVisibility(children.isNotEmpty(),enter=if(reduced) fadeIn(tween(150)) else expandVertically(spring(stiffness=380f,dampingRatio=.75f))+fadeIn(tween(150)),
             exit=if(reduced) fadeOut(tween(150)) else shrinkVertically(spring(stiffness=380f,dampingRatio=.75f))+fadeOut(tween(150))) {
-            Column(Modifier.fillMaxWidth().background(colors.card,RoundedCornerShape(14.dp)).padding(5.dp)) {
+            Column(Modifier.fillMaxWidth().padding(top=14.dp,start=10.dp,end=10.dp).background(colors.card,RoundedCornerShape(14.dp)).padding(5.dp)) {
                 children.chunked(5).forEachIndexed {rowIndex,row->
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                         row.forEachIndexed {index,option->
@@ -92,6 +95,7 @@ internal fun FinanceInlineCategories(snapshot: FinanceSnapshot, selectedId: Stri
             }
         }
     }
+    }
 }
 
 @Composable
@@ -105,13 +109,13 @@ private fun FinanceCategoryTile(snapshot:FinanceSnapshot,option:EntryCategoryOpt
     Column(modifier.testTag("entry-category-"+option.key).semantics {this.selected=selected}
         .clickable(enabled=!busy,role=Role.Button,interactionSource=source,indication=null) {
             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove);onClick()
-        }.padding(vertical=5.dp).heightIn(min=if(child) 56.dp else 68.dp),
+        }.heightIn(min=if(child) 58.dp else 68.dp).padding(vertical=if(child) 3.dp else 2.dp),
         horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(if(child) 30.dp else 44.dp).graphicsLayer {scaleX=scale;scaleY=scale}
+        Box(Modifier.size(if(child) 32.dp else 44.dp).graphicsLayer {scaleX=scale;scaleY=scale}
             .background(if(selected) androidx.compose.ui.graphics.lerp(colors.paper,colors.accent,.45f) else colors.paperTertiary,CircleShape),
             contentAlignment=Alignment.Center) {
-            Icon(option.canonical?.let {FinanceCategoryGlyph.forCategory(snapshot,it.id,it.name)} ?: FinanceCategoryGlyph.forName(option.name),
-                null,Modifier.size(21.dp),tint=if(selected) colors.onAccent else colors.accentDeep)
+            FinanceEntryGlyph(snapshot,option.canonical?.id,option.name,
+                Modifier.size(if(child) 18.dp else 21.dp),tint=if(selected) colors.onAccent else colors.accentDeep)
         }
         Text(option.name,maxLines=2,style=LedgerText.caption,color=colors.inkSecondary)
     }

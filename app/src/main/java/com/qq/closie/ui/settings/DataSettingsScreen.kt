@@ -37,9 +37,14 @@ import com.qq.closie.ui.components.ClosieCompactTopBar
 import com.qq.closie.ui.lifeos.settings.SettingsLine
 import com.qq.closie.ui.lifeos.settings.SettingsText
 import com.qq.closie.ui.lifeos.settings.SettingsPaperPrompt
+import com.qq.closie.ui.lifeos.settings.SettingsBackupVerifiedSeal
+import com.qq.closie.ui.lifeos.settings.SettingsHoldToRestore
+import com.qq.closie.ui.lifeos.settings.SettingsPasswordLine
+import androidx.compose.ui.platform.testTag
 import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
 import com.qq.closie.ui.lifeos.settings.SettingsPaperPage
 import com.qq.closie.ui.lifeos.settings.SettingsSection
+import com.qq.closie.ui.lifeos.settings.SettingsStorageControls
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import com.qq.closie.ui.lifeos.theme.LifeText
 import com.qq.closie.ui.quickcapture.QuickCaptureActivity
@@ -92,6 +97,7 @@ fun DataSettingsScreen(
     var restoreOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
     var exportOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
     var historyOpen by rememberSaveable { mutableStateOf(false) }
+    var verifiedEvent by remember {mutableLongStateOf(0L)}
     val backupHistory = remember(context) { context.getSharedPreferences("lifeos_verified_backups", android.content.Context.MODE_PRIVATE) }
     var verifiedTimes by remember { mutableStateOf(backupHistory.getStringSet("verified_times", emptySet()).orEmpty().mapNotNull(String::toLongOrNull).sortedDescending()) }
     var verifiedSources by remember {
@@ -172,6 +178,7 @@ fun DataSettingsScreen(
             scope.launch {
                 val result = EncryptedBackupManager.export(context, repo, uri, lifeDatabase, password)
                 result.onSuccess {
+                    verifiedEvent++
                     val now = System.currentTimeMillis()
                     val previous = verifiedSources
                     verifiedTimes = (listOf(now) + verifiedTimes.filter { previous[it] != uri }).distinct().take(5)
@@ -233,8 +240,11 @@ fun DataSettingsScreen(
                 color = if (lifeSurface) colors.inkSecondary else ClosieColor.InkSecondary
             )
 
-            Text(verifiedTimes.firstOrNull()?.let { "最近验证 · " + verifiedTimeLabel(it) } ?: "尚无验证成功的备份",
-                Modifier.padding(vertical = 8.dp), style = if (lifeSurface) SettingsText.body else MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text(verifiedTimes.firstOrNull()?.let { "最近验证 · " + verifiedTimeLabel(it) } ?: "尚无验证成功的备份",
+                    Modifier.weight(1f),style=if(lifeSurface) SettingsText.body else MaterialTheme.typography.titleMedium)
+                if(lifeSurface) SettingsBackupVerifiedSeal(verifiedEvent,verifiedTimes.isNotEmpty())
+            }
             SettingsRow(Icons.Default.Restore, "历史恢复点", if (verifiedTimes.isEmpty()) "验证成功后才会出现" else "${verifiedTimes.size} 个已验证备份", paper = lifeSurface) {
                 historyOpen = !historyOpen
             }
@@ -303,6 +313,10 @@ fun DataSettingsScreen(
             if (lifeSurface) {
                 SettingsSection("计划中")
                 SettingsLine("自动备份与跨设备同步", "待接入", trailing = "规划中")
+                SettingsStorageControls(
+                    media=remember(lifeDatabase) {com.qq.closie.life.repository.MediaRepository(lifeDatabase)},
+                    enabled=!busy
+                )
             } else Text("自动备份与跨设备同步 · 规划中", style = MaterialTheme.typography.bodySmall, color = ClosieColor.InkSecondary)
 
             if (busy) {
@@ -335,17 +349,16 @@ fun DataSettingsScreen(
 
     if (showBackupPassword) SettingsPaperPrompt(paper=lifeSurface,origin=backupOrigin,busy=busy,
         onDismissRequest = { showBackupPassword = false; backupPassword = ""; repeatedPassword = "" },
-        title = { Text("设置备份口令") },
-        text = { Column {
-            Text("至少 12 个字符。换机恢复需要此口令；丢失后无法解密。未来自动加密同步仍是产品目标，当前仅主动本地备份。")
-            OutlinedTextField(backupPassword, { backupPassword = it }, label = { Text("备份口令") },
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-            OutlinedTextField(repeatedPassword, { repeatedPassword = it }, label = { Text("再次输入") },
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        title = { Text("创建加密备份") },
+        text = { Column(Modifier.testTag("backup-password-fields")) {
+            Text("备份包含当前记录、关系、设置与已备份媒体。请设独立备份口令（至少 12 字符），它与登录密码无关；丢失后无法解密。")
+            Spacer(Modifier.height(5.dp))
+            SettingsPasswordLine(backupPassword,{backupPassword=it},"备份口令","backup-password",enabled=!busy)
+            SettingsPasswordLine(repeatedPassword,{repeatedPassword=it},"再次输入","backup-password-repeat",enabled=!busy,last=true)
         } },
-        confirmButton = { TextButton(enabled = backupPassword.length >= 12 && backupPassword == repeatedPassword,
+        confirmButton = {_,canConfirm->TextButton(enabled = canConfirm && backupPassword.length >= 12 && backupPassword == repeatedPassword,
             onClick = { showBackupPassword = false; exportLauncher.launch("LifeOS-backup-${LocalDate.now()}.lifeos") }) { Text("创建并验证") } },
-        dismissButton = { TextButton({ showBackupPassword = false; backupPassword = ""; repeatedPassword = "" }) { Text("取消") } })
+        dismissButton = { close->TextButton(close) { Text("取消") } })
     if (confirmCsv) AlertDialog(onDismissRequest = { confirmCsv = false }, title = { Text("导出明文 CSV？") },
         text = { Text("CSV 未加密，接收方可以读取全部导出内容。仅导出当前衣橱清单，请自行保管。") },
         confirmButton = { TextButton({ confirmCsv = false; csvLauncher.launch("closie-wardrobe-${LocalDate.now()}.csv") }) { Text("确认导出明文") } },
@@ -355,7 +368,7 @@ fun DataSettingsScreen(
             Text("表格导出为明文，接收方可读取内容。")
             TextButton({ exportCenter = false; confirmCsv = true }, enabled = !busy) { Text("衣橱清单 · CSV") }
             if (finance != null) TextButton({ exportCenter = false; confirmFinanceCsv = true }, enabled = !busy) { Text("完整财务包 · ZIP（含 CSV）") }
-        } }, confirmButton = { TextButton({ exportCenter = false }) { Text("关闭") } })
+        } }, confirmButton = {close,canConfirm->TextButton(close,enabled=canConfirm) {Text("关闭")} })
     if (confirmFinanceCsv) AlertDialog(onDismissRequest = { confirmFinanceCsv = false }, title = { Text("导出明文财务包？") },
         text = { Text("ZIP 包包含当前账本可导出的 CSV、金额、账户和关联 ID。文件未加密，接收者可解压读取。") },
         confirmButton = { TextButton({ confirmFinanceCsv = false; financeCsvLauncher.launch("lifeos-finance-${LocalDate.now()}.zip") }) { Text("确认导出明文") } },
@@ -380,9 +393,10 @@ fun DataSettingsScreen(
                 if (busy) Text("正在检查备份…")
                 message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             } },
-            confirmButton = {
+            confirmButton = {_,canConfirm->
                 val preview = restorePreview
-                TextButton(enabled = (legacyZip || restorePassword.isNotEmpty()) && !busy, onClick = {
+                val enabled=(legacyZip || restorePassword.isNotEmpty()) && !busy && canConfirm
+                val confirm:()->Unit = {
                     val password = if (legacyZip) null else restorePassword.toCharArray()
                     if (preview == null) {
                         localBusy = true; message = null
@@ -397,9 +411,11 @@ fun DataSettingsScreen(
                     }) {
                         restorePassword = ""; confirmRestore = null; restorePreview = null; message = null
                     } else password?.fill('\u0000')
-                }) { Text(if (preview == null) "校验并预览" else "确认恢复", color = if (lifeSurface) LocalLifeOsColors.current.onAccent else ClosieColor.Rose) }
+                }
+                if(lifeSurface && preview!=null) SettingsHoldToRestore(enabled,uri to preview,confirm)
+                else TextButton(enabled=enabled,onClick=confirm) {Text(if(preview==null) "校验并预览" else "确认恢复",color=if(lifeSurface) LocalLifeOsColors.current.onAccent else ClosieColor.Rose)}
             },
-            dismissButton = { TextButton(onClick = { confirmRestore = null; restorePassword = ""; restorePreview = null }, enabled = !busy) { Text("取消") } }
+            dismissButton = {close->TextButton(onClick=close,enabled=!busy) {Text("取消")} }
         )
     }
 }

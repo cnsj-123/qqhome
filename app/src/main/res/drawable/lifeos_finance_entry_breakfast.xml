@@ -1,0 +1,4 @@
+<!-- Figma 1925:12967; unchanged viewport and path geometry; monochrome tint supplied by caller. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="18dp" android:height="18dp" android:viewportWidth="18" android:viewportHeight="18">
+    <path android:pathData="M2.25 12.75H15.75M3.75 15H14.25M4.5 10.5C4.5 9.30653 4.97411 8.16193 5.81802 7.31802C6.66193 6.47411 7.80653 6 9 6C10.1935 6 11.3381 6.47411 12.182 7.31802C13.0259 8.16193 13.5 9.30653 13.5 10.5M9 2.25V3.75M3.225 5.25L4.275 6.3M14.775 5.25L13.725 6.3" android:fillColor="@android:color/transparent" android:strokeColor="#F6F5FC" android:strokeWidth="0.9" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

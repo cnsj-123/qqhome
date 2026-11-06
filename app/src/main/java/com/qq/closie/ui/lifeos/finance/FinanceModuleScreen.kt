@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 import com.qq.closie.ui.lifeos.components.lifeHorizontalSwipe
@@ -52,6 +54,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val colors = LocalLifeOsColors.current
     val requestedFilter by vm.filterInput.collectAsState()
     val rowOrigins=remember {mutableMapOf<String,com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin>()}
+    var ledgerViewport by remember {mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)}
+    var printingRecordId by remember {mutableStateOf<String?>(null)}
+    var landingRecordId by remember {mutableStateOf<String?>(null)}
+    val landingFlash=remember {androidx.compose.animation.core.Animatable(0f)}
     var recordOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
     val gesturePolicy=com.qq.closie.ui.lifeos.components.LocalFunctionPagePolicy.current
     val drawerDrag: ((Float, Boolean?) -> Unit)? = gesturePolicy?.let { policy ->
@@ -64,6 +70,13 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val entryDrafts = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
     val reducedMotion = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    LaunchedEffect(landingRecordId) {
+        if(landingRecordId!=null) {
+            landingFlash.snapTo(if(reducedMotion) 0f else 1f)
+            landingFlash.animateTo(0f,androidx.compose.animation.core.tween(400))
+            landingRecordId=null
+        }
+    }
     var collapseAnimation by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     fun setCalendarStop(stop:FinanceCalendarStop, velocity:Float = 0f) {
         collapseAnimation?.cancel()
@@ -211,7 +224,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             showAdd = detailAccount==null && chartLabel==null,
             onSelect = { detailAccount=null; chartLabel=null; selectView(it) },
             onAdd = {recordDestination=FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString())},
-            drawerDrag = drawerDrag)
+            drawerDrag = drawerDrag, landingEvent = landingRecordId)
     }) { padding ->
         HorizontalPager(pager, Modifier.padding(padding).fillMaxSize(),
             userScrollEnabled = !editing && !viewing && !accountEditing && !dates && !monthPicker && !queryMenu && detailAccount == null && chartLabel == null) { page ->
@@ -276,7 +289,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 }, { day -> selectedDay = day?.toString(); if (day == null) setCollapsed(false); scope.launch { listState.scrollToItem(0) } },
                 collapseProgress = (collapseProgress*2f).coerceIn(0f,1f), onCollapse = ::setCollapsed,
                 onCollapseDistance = { collapseDistance = (it*2f).coerceAtLeast(1f) }, economicDates = state.economicDates) }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth()
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned {
+            if(view==FinanceView.TRANSACTIONS) ledgerViewport=it.boundsInWindow()
+        }
             .lifeHorizontalSwipe(enabled=view==FinanceView.TRANSACTIONS && page==pager.currentPage &&
                 !editing && !viewing && !accountEditing && detailAccount==null && chartLabel==null,
                 onRightDrag = drawerDrag)
@@ -400,7 +415,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         item {
                             FinanceAnalysisOverview(state, vm, rangeLabel,
                                 onCategory = { label, currency, income -> chartLabel = label; chartCurrency = currency; chartIncome = income },
-                                onRange = { start, end -> vm.customRange(start, end); selectedDay = null; calendarMode = false })
+                                onRange = { start, end -> vm.customRange(start, end) })
                         }
                     } else {
                         val shownDays = groupedDays.filterKeys { !calendarMode || selectedDay == null || it.toString() == selectedDay }
@@ -422,13 +437,15 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                                         rowOrigins.remove(row.id)
                                         if(entryId==row.id)recordOrigin=recordOrigin?.copy(rect=androidx.compose.ui.geometry.Rect.Zero)
                                     }}
+                                    Box(Modifier.background(if(landingRecordId==row.id) colors.accent.copy(alpha=.12f*landingFlash.value) else androidx.compose.ui.graphics.Color.Transparent,RoundedCornerShape(8.dp))) {
                                     LedgerLine(row,roles[row.entry.id],state.snapshot,balancesAfter[row.entry.id],
                                         showCashTime = row.entry.id !in unknownCashDateIds,
-                                        hidden=viewing && entryId==row.id && recordOrigin!=null,onPosition={origin->
+                                        hidden=(viewing && entryId==row.id && recordOrigin!=null) || printingRecordId==row.id,onPosition={origin->
                                             rowOrigins[row.id]=origin
                                             if(viewing && entryId==row.id && recordOrigin!=null)recordOrigin=origin
                                         }) {
                                         recordOrigin=rowOrigins[row.id];recordDestination=FinanceRecordDestination.Viewing(row.id)
+                                    }
                                     }
                                 }
                                 items(selectedCosts[date].orEmpty(), key = { it.id }) { cost ->
@@ -473,8 +490,12 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             val draftKey = (destination as? FinanceRecordDestination.Creating)?.draftId ?: entryId ?: "new-entry"
             entryDrafts.SaveableStateProvider(draftKey) {
                 FinanceEntrySheet(state, row, vm,
-                    onSaved = { recordDestination = FinanceRecordDestination.Closed; entryDrafts.removeState(draftKey) },
-                    onTerminalClose = { recordDestination = FinanceRecordDestination.Closed; entryDrafts.removeState(draftKey) }
+                    onSaved = { landingRecordId=printingRecordId;printingRecordId=null;recordDestination = FinanceRecordDestination.Closed; entryDrafts.removeState(draftKey) },
+                    onTerminalClose = { printingRecordId=null;recordDestination = FinanceRecordDestination.Closed; entryDrafts.removeState(draftKey) },
+                    onCommitted = {printingRecordId=it},
+                    printDestination = {id->
+                        rowOrigins[id]?.takeIf {origin->view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null && ledgerViewport.contains(origin.rect.center)}
+                    }
                 ) { recordDestination = FinanceRecordDestination.Closed }
             }
         }
@@ -510,8 +531,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     )
     if (dates) FinanceDateSheet(state.error, { start, end ->
         if (vm.customRange(start, end)) {
-            calendarMonth = YearMonth.from(LocalDate.parse(start)).toString()
-            selectedDay = null; calendarMode = false
+            if (view == FinanceView.TRANSACTIONS) {
+                calendarMonth = YearMonth.from(LocalDate.parse(start)).toString()
+                selectedDay = null; calendarMode = false
+            }
             true
         } else false
     }, { dates = false },

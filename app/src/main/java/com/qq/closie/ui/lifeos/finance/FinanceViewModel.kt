@@ -264,11 +264,14 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
         }
     }
     fun saveDraftRecord(editorId:String,draftId:String,initialRevision:Long?,draft:FinanceEntryDraft,
-        continuous:Boolean,epoch:Long,done:()->Unit) = mutate(done) {
-        draftMutex.withLock {
-            val revision=persistDraftLocked(editorId,draftId,initialRevision,draft,continuous,epoch)
-            editorVersions.confirmLocked(editorId,revision,finish=!continuous) {
-                repository.workspace.commitDraft(token(epoch),draftId,revision,FinanceTime.resolve(draft.occurredAt,draft.preservedOccurredAt))
+        continuous:Boolean,epoch:Long,done:(String)->Unit) {
+        var committedId:String?=null
+        mutate({committedId?.let(done)}) {
+            draftMutex.withLock {
+                val revision=persistDraftLocked(editorId,draftId,initialRevision,draft,continuous,epoch)
+                editorVersions.confirmLocked(editorId,revision,finish=!continuous) {
+                    committedId=repository.workspace.commitDraft(token(epoch),draftId,revision,FinanceTime.resolve(draft.occurredAt,draft.preservedOccurredAt))
+                }
             }
         }
     }

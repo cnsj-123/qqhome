@@ -16,6 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qq.closie.life.finance.FinanceRepository
@@ -35,8 +36,11 @@ fun SettingsPrivacyScreen(finance: FinanceRepository, onBack: () -> Unit) {
     BackHandler(enabled = !financeOpen, onBack = onBack)
     val colors = LocalLifeOsColors.current
     SettingsPaperPage("隐私与 AI 权限", onBack) {
-            Text("数据用途由你决定。授权可撤销，外部 AI 连接尚未接入。", style = LifeText.caption, color = colors.muted)
-            SettingsSection("模块与用途")
+            Text("你能看，不等于 AI 能读；能进首页，不等于能分享。", style = SettingsText.detail, color = colors.inkSecondary)
+            Row(Modifier.fillMaxWidth().padding(top=30.dp,bottom=10.dp),horizontalArrangement=Arrangement.SpaceBetween) {
+                Text("模块的 AI 访问权限",style=SettingsText.caption,color=colors.inkSecondary)
+                Text("点模块查看授权",style=SettingsText.detail,color=colors.inkSecondary)
+            }
             val now = System.currentTimeMillis()
             val activePurposes = state.snapshot.v16?.purposeGrantRows.orEmpty()
                 .filter { it.voidedAt == null && it.expiresAt > now }.map { it.purpose }.distinct().size
@@ -46,21 +50,24 @@ fun SettingsPrivacyScreen(finance: FinanceRepository, onBack: () -> Unit) {
                 else -> "$activePurposes 项已授权"
             }
             FinanceModulePermissionControl(state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L, state.loaded)
-            SettingsLine("财务用途与字段", "首页展示、分享、本地查询与授权记录", Icons.Outlined.FactCheck, status) {
-                financeOpen = true
-            }
-            SettingsLine("健康 Health", "AI 模块访问", Icons.Outlined.FavoriteBorder, "未接入")
-            SettingsLine("资料库 Knowledge", "AI 模块访问", Icons.Outlined.MenuBook, "未接入")
-            SettingsLine("衣橱与物品", "AI 模块访问", Icons.Outlined.Checkroom, "未接入")
-            SettingsLine("兴趣与阅读", "AI 模块访问", Icons.Outlined.StarBorder, "未接入")
-            SettingsSection("授权记录与隐私")
-            SettingsLine("外部 AI", "外部读取及发送能力尚未接入", Icons.Outlined.CloudOff, "关闭")
-            SettingsLine("授权历史与撤销", "查看财务用途、有效期和撤销记录", Icons.Outlined.History) { financeOpen = true }
-            SettingsSection("独立加密区")
-            Surface(color = colors.paperTertiary, shape = MaterialTheme.shapes.medium) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("Creative Vault", style = LifeText.body, color = colors.ink)
-                    Text("独立权限。财务授权不会扩展到 Vault，也不包含在财务明文携出中。", style = LifeText.caption, color = colors.inkSecondary)
+            SettingsLine("健康 Health", icon=Icons.Outlined.FavoriteBorder, trailing="未接入",modifier=Modifier.height(50.dp))
+            SettingsLine("知识库 Knowledge", icon=Icons.Outlined.MenuBook, trailing="未接入",modifier=Modifier.height(50.dp))
+            SettingsLine("衣橱 / 物品", icon=Icons.Outlined.Checkroom, trailing="未接入",modifier=Modifier.height(50.dp))
+            SettingsLine("兴趣 / 阅读", icon=Icons.Outlined.StarBorder, trailing="未接入",modifier=Modifier.height(50.dp))
+            Text("授权记录与隐私",Modifier.padding(top=13.dp,bottom=8.dp),style=SettingsText.body.copy(fontSize=13.sp,lineHeight=18.sp),color=colors.inkSecondary)
+            SettingsLine("AI 辅助搜索", "独立于普通搜索；外部 AI 尚未接入", trailing="未接入")
+            SettingsLine("普通资料后台识别", "Capture / Knowledge 的后台整理尚未接入", trailing="未接入")
+            SettingsLine("单条记录隐私", "AI 可见 / Home 展示 / 分享导出分别控制", trailing=status) {financeOpen=true}
+            SettingsLine("授权历史与撤销", "查看财务用途、有效期与撤销记录") {financeOpen=true}
+            Text("独立加密区",Modifier.padding(top=24.dp,bottom=10.dp),style=SettingsText.body.copy(fontSize=13.sp,lineHeight=18.sp),color=colors.inkSecondary)
+            Surface(color=colors.paperTertiary,shape=androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) {
+                Row(Modifier.fillMaxWidth().padding(14.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    androidx.compose.material3.Icon(Icons.Outlined.Lock,null,Modifier.size(17.dp),tint=colors.accent)
+                    Column {
+                        Text("Creative Vault",style=SettingsText.body.copy(fontSize=16.sp,lineHeight=23.sp),color=colors.ink)
+                        Text("AI 禁止访问 · 固定隔离",Modifier.padding(top=6.dp),style=SettingsText.caption,color=colors.accentDeep)
+                        Text("独立权限。财务授权与明文携出不包含 Vault。",Modifier.padding(top=7.dp),style=SettingsText.caption,color=colors.inkSecondary)
+                    }
                 }
             }
     }

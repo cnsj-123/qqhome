@@ -26,9 +26,14 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 
 @Composable
 internal fun FinanceBottomNavigation(view: FinanceView, canAdd: Boolean, showAdd: Boolean,
-    onSelect: (FinanceView) -> Unit, onAdd: () -> Unit, drawerDrag: ((Float, Boolean?) -> Unit)?) {
+    onSelect: (FinanceView) -> Unit, onAdd: () -> Unit, drawerDrag: ((Float, Boolean?) -> Unit)?, landingEvent:String?=null) {
     val colors = LocalLifeOsColors.current
     val reduced = reducedLifeMotion()
+    val landed=remember {androidx.compose.animation.core.Animatable(1f)}
+    LaunchedEffect(landingEvent,reduced) {
+        if(landingEvent!=null && !reduced) {landed.snapTo(.94f);landed.animateTo(1f,LedgerMotion.SpringBouncy)}
+        else landed.snapTo(1f)
+    }
     Row(Modifier.fillMaxWidth().lifeHorizontalSwipe(onRightDrag = drawerDrag)
         .background(Brush.verticalGradient(listOf(colors.paper.copy(alpha = .85f), colors.paper)))
         .navigationBarsPadding().padding(start = 32.dp, end = 40.dp).height(74.dp).padding(top = 20.dp),
@@ -50,7 +55,7 @@ internal fun FinanceBottomNavigation(view: FinanceView, canAdd: Boolean, showAdd
             val scale by animateFloatAsState(if(pressed && !reduced) .92f else 1f, LedgerMotion.SpringBouncy, label="glass-paw-press")
             val shape = RoundedCornerShape(18.dp)
             Box(Modifier.padding(start=16.dp).size(54.dp).graphicsLayer {
-                scaleX=scale; scaleY=scale; this.shape=shape; shadowElevation=if(canAdd) 9.dp.toPx() else 0f
+                scaleX=scale*landed.value; scaleY=scale*landed.value; this.shape=shape; shadowElevation=if(canAdd) 9.dp.toPx() else 0f
                 ambientShadowColor=colors.accent.copy(alpha=.35f); spotShadowColor=colors.accent.copy(alpha=.35f)
             }.background(Brush.linearGradient(listOf(colors.soft, colors.secondary)),shape)
                 .background(Brush.radialGradient(listOf(Color.White.copy(alpha=.22f),Color.Transparent),center=androidx.compose.ui.geometry.Offset.Zero,radius=110f),shape)

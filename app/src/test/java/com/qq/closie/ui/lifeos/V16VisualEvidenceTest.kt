@@ -41,10 +41,22 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
     @After fun stopReaders(){compose.runOnIdle {models?.clear()};runBlocking {appearanceJob?.let {it.cancel();it.join()}}}
     private fun capture(name:String) {
         compose.waitForIdle()
-        // Robolectric cannot capture a hardware screen. Draw the actual top window on its native Canvas.
+        // Draw the actual attached activity and dialog windows in order. A transparent dialog
+        // alone would lose the real page underneath and misrepresent the supplied design.
         val bitmap=compose.runOnIdle {
-            val view=WindowInspector.getGlobalWindowViews().last {it.isAttachedToWindow && it.width>100 && it.height>100}
-            Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888).also {view.draw(Canvas(it))}
+            val windows=WindowInspector.getGlobalWindowViews().filter {it.isAttachedToWindow && it.width>100 && it.height>100}
+            val base=windows.first()
+            val origin=IntArray(2).also(base::getLocationOnScreen)
+            Bitmap.createBitmap(base.width,base.height,Bitmap.Config.ARGB_8888).also {bitmap->
+                val canvas=Canvas(bitmap)
+                windows.forEach {view->
+                    val position=IntArray(2).also(view::getLocationOnScreen)
+                    canvas.save()
+                    canvas.translate((position[0]-origin[0]).toFloat(),(position[1]-origin[1]).toFloat())
+                    view.draw(canvas)
+                    canvas.restore()
+                }
+            }
         }
         val colors=mutableSetOf<Int>()
         for(x in 0 until bitmap.width step 3)for(y in 0 until bitmap.height step 3)colors.add(bitmap.getPixel(x,y))
@@ -52,7 +64,7 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         assertTrue(bitmap.width>100 && bitmap.height>100)
         val metrics=File(requireNotNull(System.getProperty("lifeos.v16.metricsDir")))
         val output=File(metrics.parentFile,"robolectric-visuals").apply {mkdirs()}
-        File(output,"EVIDENCE-TYPE.txt").writeText("ROBOLECTRIC VIEW.DRAW NATIVE CANVAS / SDK34 shadows / synthetic data / NOT DEVICE VERIFIED")
+        File(output,"EVIDENCE-TYPE.txt").writeText("ROBOLECTRIC ATTACHED WINDOWS VIEW.DRAW NATIVE CANVAS / SDK34 shadows / synthetic data / NOT DEVICE VERIFIED")
         File(output,name+".png").outputStream().use {assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}
     }
     private fun home(state:HomeUiState) {
@@ -87,6 +99,24 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         compose.waitUntil(10_000){compose.onAllNodesWithText("照片载入中").fetchSemanticsNodes().isEmpty()}
         compose.onNodeWithText("原件暂不可用").assertDoesNotExist()
         capture("home-photos")
+        compose.onNode(hasContentDescription("合成照片0") and hasClickAction()).performClick()
+        compose.onNodeWithTag("life-origin-paper").assertIsDisplayed()
+        capture("home-photo-viewer")
+    }
+    @Test fun drawerRendersTheActualMountedHomeAndModuleSurface() {
+        compose.setContent {LifeOsTheme {
+            com.qq.closie.ui.lifeos.components.LifeFunctionPages(open=true,enabled=true,
+                style=com.qq.closie.data.appearance.FunctionPageStyle.DECK,reducedMotion=false,home=true,
+                onOpenChange={},functionPage={com.qq.closie.ui.lifeos.drawer.LifeOsDrawer({},{})}) {
+                androidx.compose.material3.Surface(color=com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current.paper) {
+                    LifeOsHomeScreen(HomeUiState(LocalDate.of(2026,10,12)),{},{},{},{},{})
+                }
+            }
+        }}
+        compose.onNodeWithText("生活的抽屉").assertIsDisplayed()
+        capture("drawer-default")
+        compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
+        capture("drawer-bottom")
     }
     @Config(qualifiers="w320dp-h640dp")
     @Test fun narrowHomeWithLongTextAndLargeFontRemainsScrollable() {
@@ -164,6 +194,25 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         assertEquals(5,runBlocking {finance.snapshot()}.entries.size)
     }
 
+    @Test fun savedTicketRendersCommittedFieldsDuringTheActualPrintMotion() {
+        val row=runBlocking {
+            val account=finance.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,openingBalanceMinor=100_000)
+            finance.saveEntry(accountId=account.id,direction=FinanceDirection.OUTFLOW,amountMinor=3_250,
+                description="合成早餐",category="餐饮",occurredAt=System.currentTimeMillis())
+            FinanceProjection.ledger(finance.snapshot()).single()
+        }
+        compose.mainClock.autoAdvance=false
+        compose.setContent {LifeOsTheme {
+            androidx.compose.material3.Surface(color=com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current.paper) {
+                com.qq.closie.ui.lifeos.finance.FinancePrintedReceipt(row,destination={null},reducedMotion=false) {}
+            }
+        }}
+        compose.mainClock.advanceTimeBy(350)
+        compose.onNodeWithText("合成早餐").assertExists()
+        capture("finance-saved-print")
+        assertEquals(1,runBlocking {finance.snapshot()}.entries.size)
+    }
+
     @Test fun themeAndColorEditorRenderTheActualPreferenceOwnerWithoutSavingADraft() {
         val context:Context=ApplicationProvider.getApplicationContext()
         val job=kotlinx.coroutines.SupervisorJob();appearanceJob=job
@@ -182,6 +231,43 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         compose.waitUntil(10_000){compose.onAllNodesWithContentDescription("HEX 颜色").fetchSemanticsNodes().isNotEmpty()}
         capture("settings-color")
         assertEquals(com.qq.closie.data.appearance.AppearanceSettings(),runBlocking {repo.read()})
+    }
+
+    @Test fun globalSettingsRendersActualPreferenceAndDiscoveryOwners() {
+        val context:Context=ApplicationProvider.getApplicationContext()
+        val job=kotlinx.coroutines.SupervisorJob();appearanceJob=job
+        val scope=kotlinx.coroutines.CoroutineScope(job+kotlinx.coroutines.Dispatchers.IO)
+        val store=androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope=scope) {
+            File(context.cacheDir,"visual-settings-"+java.util.UUID.randomUUID()+".preferences_pb")
+        }
+        val repo=com.qq.closie.data.appearance.AppearanceRepository(store,scope)
+        runBlocking {repo.settings.filterNotNull().first()}
+        val vm=com.qq.closie.ui.lifeos.settings.AppearanceViewModel(repo)
+        models=ViewModelStore().apply {put("appearance",vm)}
+        val automation=FinanceAutomationRepository(db,finance)
+        compose.setContent {LifeOsTheme {
+            com.qq.closie.ui.lifeos.settings.LifeSettingsScreen(vm,automation,{},{},{},{},{},{},{},{})
+        }}
+        compose.onNodeWithText("设置").assertIsDisplayed()
+        capture("settings-global")
+        compose.onNodeWithText("关于 Life OS").performScrollTo()
+        capture("settings-global-bottom")
+    }
+    @Test fun backupPaperAndPasswordPromptRenderWithoutStartingAnExport() {
+        val app:com.qq.closie.ClosieApplication=ApplicationProvider.getApplicationContext()
+        val before=runBlocking {finance.snapshot()}
+        compose.setContent {LifeOsTheme {
+            com.qq.closie.ui.settings.DataSettingsScreen(app.wardrobeRepository,{},db,finance)
+        }}
+        compose.onNodeWithText("数据与备份").assertIsDisplayed()
+        capture("settings-backup")
+        compose.onNodeWithText("创建加密备份").performScrollTo().performClick()
+        compose.onNodeWithTag("backup-password-fields").assertIsDisplayed()
+        compose.onNodeWithText("创建并验证").assertIsNotEnabled()
+        capture("settings-backup-password")
+        compose.onNodeWithText("取消").performClick()
+        compose.waitUntil(10_000) {compose.onAllNodesWithTag("backup-password-fields").fetchSemanticsNodes().isEmpty()}
+        assertEquals(before,runBlocking {finance.snapshot()})
     }
 
     @Test fun modulePermissionPaperUsesTheRealDefaultPolicyAndDisablesUnboundShortGrants() {
