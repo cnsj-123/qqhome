@@ -129,8 +129,9 @@ internal fun FinanceQuerySheet(
         Column(Modifier.fillMaxWidth().testTag("finance-query-sheet").heightIn(max = (LocalConfiguration.current.screenHeightDp * .73f).dp)
             .padding(horizontal = 32.dp).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClose, Modifier.offset(x = (-8).dp)) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "取消查账条件", Modifier.size(19.dp))
+                IconButton(onClose, Modifier.width(40.dp).offset(x = (-8).dp)) {
+                    Icon(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_back),
+                        "取消查账条件", Modifier.size(24.dp))
                 }
                 Text("查账", Modifier.weight(1f), style = LedgerText.title, color = colors.ink)
                 TextButton({

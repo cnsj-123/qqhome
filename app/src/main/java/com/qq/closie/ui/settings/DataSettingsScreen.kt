@@ -45,6 +45,7 @@ import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
 import com.qq.closie.ui.lifeos.settings.SettingsPaperPage
 import com.qq.closie.ui.lifeos.settings.SettingsSection
 import com.qq.closie.ui.lifeos.settings.SettingsStorageControls
+import com.qq.closie.ui.lifeos.settings.SettingsPlannedControl
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import com.qq.closie.ui.lifeos.theme.LifeText
 import com.qq.closie.ui.quickcapture.QuickCaptureActivity
@@ -315,9 +316,9 @@ fun DataSettingsScreen(
                     Text("自动同步与备份",Modifier.weight(1f),style=SettingsText.caption,color=colors.inkSecondary)
                     Text("规划中 · 未接入",style=SettingsText.detail,color=colors.inkSecondary)
                 }
-                SettingsLine("自动备份", "规划中 · 定期生成恢复点",trailingContent={Switch(false,null,enabled=false)})
-                SettingsLine("仅 Wi-Fi 上传", "规划中 · 仅使用 Wi-Fi",trailingContent={Switch(false,null,enabled=false)})
-                SettingsLine("跨设备同步", "规划中 · 同步服务尚未接入",trailingContent={Switch(false,null,enabled=false)})
+                SettingsPlannedControl("自动备份", "规划中 · 定期生成恢复点")
+                SettingsPlannedControl("仅 Wi-Fi 上传", "规划中 · 仅使用 Wi-Fi")
+                SettingsPlannedControl("跨设备同步", "规划中 · 同步服务尚未接入")
                 SettingsStorageControls(
                     media=remember(lifeDatabase) {com.qq.closie.life.repository.MediaRepository(lifeDatabase)},
                     enabled=!busy

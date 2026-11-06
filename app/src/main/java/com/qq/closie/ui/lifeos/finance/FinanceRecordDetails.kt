@@ -64,7 +64,8 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
                 Text(listOfNotNull(row.category, row.entry.description.takeIf(String::isNotBlank)).joinToString(" · "),
                     Modifier.padding(top = 3.dp), style = LedgerText.body.copy(fontSize = 12.sp, lineHeight = 20.sp, letterSpacing = 0.sp), color = colors.inkSecondary)
             }
-            HorizontalDivider(Modifier.padding(top = 13.dp), color = colors.line)
+            // Native UKai uses less extra font leading than the old fallback; source hairline is y313.
+            HorizontalDivider(Modifier.padding(top = 24.dp), color = colors.line)
             ReceiptField("账户", row.account.name + (row.targetAccount?.let { " → " + it.name } ?: ""), height = 42.dp, divider = true)
             ReceiptField("发生时间", economicTime?.let(FinanceTime::input) ?: if (ambiguousEvent) "多项关联，请查看事项" else cashLabel, height = 42.dp)
             ReceiptField(if (row.entry.direction == FinanceDirection.INFLOW) "收款时间" else "支付时间",

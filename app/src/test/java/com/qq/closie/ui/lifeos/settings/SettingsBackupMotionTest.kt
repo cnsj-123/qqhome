@@ -70,7 +70,13 @@ class SettingsBackupMotionTest {
         button.performSemanticsAction(SemanticsActions.OnClick) {assertFalse(it())}
         compose.mainClock.advanceTimeBy(660)
         compose.runOnIdle {assertEquals(0,restores);enabled.value=true}
-        compose.mainClock.advanceTimeBy(32)
+        compose.waitUntil(10_000) {
+            // With a paused clock, let the enabled preference reach the actual accessibility node
+            // before starting another deliberate confirmation. No hold has started during this wait.
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {}
+            !button.fetchSemanticsNode().config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled)
+        }
         button.performSemanticsAction(SemanticsActions.OnClick) {assertTrue(it())}
         compose.mainClock.advanceTimeBy(320)
         compose.runOnIdle {assertEquals(0,restores)}
