@@ -2,6 +2,7 @@ package com.qq.closie.ui.lifeos.components
 
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -37,14 +38,17 @@ fun LifeFunctionPages(
     val context = androidx.compose.ui.platform.LocalContext.current
     val lowRam = remember(context) { (context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice }
     var progress by remember { mutableFloatStateOf(if (open) 1f else 0f) }
+    var settleVelocity by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
     val currentOpen by rememberUpdatedState(open)
     val changeOpen by rememberUpdatedState(onOpenChange)
     val edge = com.qq.closie.ui.lifeos.components.systemBackEdgePx()
         LaunchedEffect(open, dragging, reducedMotion) {
         if (!dragging) {
-            if (reducedMotion) progress = if (open) 1f else 0f
-            else animate(progress, if (open) 1f else 0f, animationSpec = tween(230)) { value, _ -> progress = value }
+            animate(progress, if (open) 1f else 0f, initialVelocity = if (reducedMotion) 0f else settleVelocity,
+                animationSpec = if (reducedMotion) tween(150) else spring(dampingRatio = .9f, stiffness = 380f)) { value, velocity ->
+                progress = value.coerceIn(0f, 1f); settleVelocity = velocity
+            }
         }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -56,6 +60,7 @@ fun LifeFunctionPages(
                 if (settle == null) {
                     if (!currentOpen) {
                         dragging = true
+                        settleVelocity = 0f
                         progress = (distance / travel).coerceIn(0f, 1f)
                     }
                 } else {
@@ -94,6 +99,7 @@ fun LifeFunctionPages(
                             LifeSwipeIntent.Direction.LEFT, LifeSwipeIntent.Direction.RIGHT -> {
                                 if ((!currentOpen && delta.x < 0f) || (currentOpen && delta.x > 0f)) return@awaitEachGesture
                                 dragging = true
+                                settleVelocity = 0f
                                 progress = (progress + delta.x / travel).coerceIn(0f, 1f)
                                 change.consume()
                                 owned = true
@@ -108,6 +114,7 @@ fun LifeFunctionPages(
                                 change.consume()
                         }
                         val velocity = tracker.calculateVelocity().x
+                        settleVelocity = velocity / travel
                         val fling = 650.dp.toPx()
                         val settled = when {
                             velocity > fling -> true
@@ -120,13 +127,14 @@ fun LifeFunctionPages(
                 }
             }) {
             Box(Modifier.width(revealWidth).fillMaxHeight()
-                .zIndex(if (mode == FunctionPageStyle.GLASS) 1f else 0f)
+                .zIndex(if (reducedMotion || mode == FunctionPageStyle.GLASS) 1f else 0f)
                 .then(if (!open) Modifier.clearAndSetSemantics {} else Modifier).graphicsLayer {
-                translationX = when (mode) {
+                translationX = if (reducedMotion) 0f else when (mode) {
                     FunctionPageStyle.FLAT, FunctionPageStyle.GLASS -> -(1f - progress) * travel
                     FunctionPageStyle.DECK -> -(1f - progress) * travel * .24f
                     else -> -(1f - progress) * travel * .08f
                 }
+                alpha = if (reducedMotion) progress else 1f
                 rotationY = if (mode == FunctionPageStyle.DECK) -14f * (1f - progress) else 0f
                 transformOrigin = TransformOrigin(0f, .5f)
                 cameraDistance = 18.dp.toPx()
@@ -134,8 +142,8 @@ fun LifeFunctionPages(
                 LifePaperBackdrop(effects, Modifier.fillMaxSize())
                 functionPage()
             }
-            Box(Modifier.fillMaxSize().zIndex(if (mode == FunctionPageStyle.GLASS) 0f else 1f).graphicsLayer {
-                translationX = progress * travel * if (mode == FunctionPageStyle.GLASS) .18f else 1f
+            Box(Modifier.fillMaxSize().zIndex(if (reducedMotion || mode == FunctionPageStyle.GLASS) 0f else 1f).graphicsLayer {
+                translationX = if (reducedMotion) 0f else progress * travel * if (mode == FunctionPageStyle.GLASS) .18f else 1f
                 scaleX = when (mode) {
                     FunctionPageStyle.LAYERED -> 1f - .085f * progress
                     FunctionPageStyle.DECK -> 1f - .10f * progress

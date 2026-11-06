@@ -68,7 +68,7 @@ fun LifePhotoStack(
     val caption = photos[index].caption?.takeIf(String::isNotBlank)
 
     Column(modifier) {
-        BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1.41f).clipToBounds()) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 6.5.dp).aspectRatio(332f / 240f)) {
             val width = maxWidth.value
             val height = maxHeight.value
             if (width <= 0f || height <= 0f) return@BoxWithConstraints
@@ -169,13 +169,14 @@ fun LifePhotoStack(
                         Surface(
                             Modifier.fillMaxSize(), shape = RoundedCornerShape(1.dp),
                             color = if (colors.isDark) colors.card else Color(0xFFFFFDFA),
-                            shadowElevation = 5.dp
+                            shadowElevation = 6.dp
                         ) {
                             LifeMediaImage(photo, Modifier.fillMaxSize().padding(paperSize), ContentScale.Fit)
                         }
                         if (showTape) Image(
                             painterResource(R.drawable.lifeos_photo_tape), null,
                             Modifier.align(Alignment.TopCenter).offset(y = (-10).dp).size(41.dp, 22.dp)
+                                .graphicsLayer { rotationZ = 50.817f }
                         )
                     }
                 }
@@ -183,7 +184,8 @@ fun LifePhotoStack(
         }
         if (caption != null) Text(
             caption, Modifier.fillMaxWidth().padding(top = 5.dp, end = 18.dp),
-            style = LifeType.journalFor(caption).copy(fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp)),
+            style = LifeType.journalFor(caption).copy(fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp),
+                lineHeight = androidx.compose.ui.unit.TextUnit(16f, androidx.compose.ui.unit.TextUnitType.Sp)),
             color = colors.accentDeep, textAlign = TextAlign.End, maxLines = 2
         )
     }

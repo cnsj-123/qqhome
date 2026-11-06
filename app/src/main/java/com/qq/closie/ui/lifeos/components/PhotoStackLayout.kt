@@ -11,10 +11,11 @@ object PhotoStackLayout {
     data class Pose(val centerX: Float, val centerY: Float, val width: Float,
         val height: Float, val rotation: Float)
     private val slots = listOf(
-        Pose(.40f, .57f, .65f, .73f, -12f),
-        Pose(.69f, .68f, .36f, .57f, 18f),
-        Pose(.72f, .52f, .34f, .65f, -43f),
-        Pose(.59f, .35f, .29f, .65f, 9f)
+        // 415:25086: the 332 × 240 photo group in the current Home frame.
+        Pose(114.096f / 332f, 131.351f / 240f, 190f / 332f, 183f / 240f, -11.307f),
+        Pose(227.470f / 332f, 160.672f / 240f, 99f / 332f, 123f / 240f, 19.890f),
+        Pose(251.691f / 332f, 101.787f / 240f, 92f / 332f, 134f / 240f, -48.680f),
+        Pose(192.014f / 332f, 84.454f / 240f, 86f / 332f, 155f / 240f, 9.345f)
     )
 
     fun pose(id: String, depth: Int, width: Float, height: Float, aspectRatio: Float? = null): Pose {
@@ -26,12 +27,12 @@ object PhotoStackLayout {
                 width = minOf(slot.width, .31f), height = minOf(slot.height, .60f),
                 rotation = (spread - .5f) * 70f)
         }
-        val jitter = Math.floorMod(id.hashCode(), 101) / 100f - .5f
+        val jitter = if (depth < slots.size) 0f else Math.floorMod(id.hashCode(), 101) / 100f - .5f
         val angle = base.rotation + jitter * 3f
         val radians = Math.toRadians(angle.toDouble())
         val c = abs(cos(radians)).toFloat()
         val s = abs(sin(radians)).toFloat()
-        val margin = minOf(12f, width * .04f, height * .04f)
+        val margin = minOf(3f, width * .01f, height * .01f)
         val frame = minOf(14f, width * .07f, height * .07f)
         val maxImageWidth = (width * base.width - frame).coerceAtLeast(width * .04f)
         val maxImageHeight = (height * base.height - frame).coerceAtLeast(height * .04f)

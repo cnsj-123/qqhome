@@ -19,14 +19,20 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -86,6 +92,7 @@ fun LifeOsHomeScreen(
     val visibleViewer = interactive && viewerPhotos.any { it.id == viewer?.id }
     val hasToday = state.eligibleMedia.isNotEmpty() || state.todayFacts.isNotEmpty()
     val colors = LocalLifeOsColors.current
+    val homeDrawing = rememberGraphicsLayer()
     val openDate = { datePopup = true }
     if (interactive) SuspendFunctionPageSwipe(visibleViewer || showTodayText || datePopup || captionPhoto != null)
 
@@ -95,10 +102,16 @@ fun LifeOsHomeScreen(
             CustomAccessibilityAction("找伙伴") { onCompanion(); true }
         )
     } else Modifier)) {
+        Box(Modifier.fillMaxSize().drawWithContent {
+            if (visibleViewer) {
+                homeDrawing.record { this@drawWithContent.drawContent() }
+                drawLayer(homeDrawing)
+            } else drawContent()
+        }) {
         LazyColumn(
             Modifier.fillMaxSize(),
             userScrollEnabled = interactive && !visibleViewer,
-            contentPadding = PaddingValues(start = 32.dp, end = 32.dp, top = 25.dp, bottom = if (hasToday) 91.dp else 30.dp)
+            contentPadding = PaddingValues(start = 30.dp, end = 30.dp, top = 27.dp, bottom = if (hasToday) 91.dp else 30.dp)
         ) {
             item {
                 HomeHeader(state.date, today, interactive, onCapture, onCalendar, onMap, openDate, onToday)
@@ -144,7 +157,7 @@ fun LifeOsHomeScreen(
                                     val photo = memory.photo
                                     var origin by remember { mutableStateOf<LifeSurfaceOrigin?>(null) }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp),
-                                        verticalAlignment = Alignment.CenterVertically) {
+                                        verticalAlignment = Alignment.Top) {
                                         if (photo != null) LifeMediaImage(
                                             photo, Modifier.size(76.dp, 70.dp)
                                                 .lifeSurfaceOrigin(orientation) { origin = it }
@@ -153,16 +166,16 @@ fun LifeOsHomeScreen(
                                                     viewer = HomePhotoSelection(photo.id, true, origin)
                                                 }
                                         )
-                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Text(memory.date.format(homeMemoryFormat), style = LifeType.JournalStamp, color = colors.muted)
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text(memory.date.format(homeMemoryFormat), style = LifeType.DateHero.copy(fontSize = 12.sp, lineHeight = 13.sp, letterSpacing = .6.sp), color = colors.inkSecondary)
                                             memory.title?.takeIf(String::isNotBlank)?.let {
-                                                Text(it, style = LifeType.journalFor(it), color = colors.ink)
+                                                Text(it, style = LifeType.journalFor(it).copy(fontSize = 20.sp, lineHeight = 24.sp, letterSpacing = 4.sp), color = colors.ink)
                                             }
                                             val note = photo?.caption?.takeIf(String::isNotBlank)
                                             if (note != null || (photo != null && memory.title.isNullOrBlank())) {
                                                 Text(note ?: "要不要留下点什么呢",
                                                     Modifier.then(if (interactive && onSavePhotoCaption != null) Modifier.clickable(onClickLabel = "编辑照片备注") { editCaption(photo!!) } else Modifier),
-                                                    style = LifeType.JournalMeta, color = colors.accentDeep)
+                                                    style = LifeType.JournalMeta.copy(fontSize = 13.sp, lineHeight = 15.sp, letterSpacing = 4.sp), color = colors.accentDeep)
                                             }
                                         }
                                     }
@@ -177,9 +190,12 @@ fun LifeOsHomeScreen(
                         state.futureIntents.forEach {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
-                                Text(it.title, Modifier.weight(1f), style = LifeType.journalAheadFor(it.title), color = colors.ink)
+                                Text(it.title, Modifier.weight(1f), style = LifeType.JournalMeta.copy(fontSize = 20.sp, lineHeight = 27.sp, letterSpacing = 4.sp), color = colors.ink)
                                 val date = it.expectedDate?.format(homeDayFormat) ?: "日期未定"
-                                Text("预计 · " + date, style = LifeType.JournalStamp, color = colors.inkSecondary)
+                                Text(buildAnnotatedString {
+                                    withStyle(SpanStyle(fontSize = 12.sp)) { append("预计 · ") }
+                                    withStyle(SpanStyle(fontSize = 14.sp)) { append(date) }
+                                }, style = LifeType.DateHero.copy(lineHeight = 19.sp, letterSpacing = .6.sp), color = colors.inkSecondary)
                             }
                         }
                     }
@@ -192,7 +208,7 @@ fun LifeOsHomeScreen(
                     } else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         state.todayFacts.forEach {
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(it.title, Modifier.weight(1f, fill = false), style = LifeType.journalAheadFor(it.title), color = colors.ink)
+                                Text(it.title, Modifier.weight(1f, fill = false), style = LifeType.DateHero.copy(fontSize = 18.sp, lineHeight = 25.sp, letterSpacing = 2.7.sp), color = colors.ink)
                                 Text(it.domainLabel, style = LifeType.JournalFactMeta, color = colors.muted)
                             }
                         }
@@ -204,13 +220,16 @@ fun LifeOsHomeScreen(
             painterResource(R.drawable.lifeos_home_cat), null,
             Modifier.align(Alignment.BottomEnd).padding(end = 30.dp, bottom = 9.dp).size(80.dp, 85.dp)
         )
+        }
         if (visibleViewer) viewer?.let { selection ->
             LifePhotoViewer(
                 viewerPhotos, selection.id, onDismiss = { viewer = null },
                 onRemove = { onRemovePhoto(it.id); viewer = null }, origin = selection.origin,
                 aspects = aspects, dateFor = { photo ->
                     if (!selection.memory) state.date else state.historyItems.firstOrNull { it.photo?.id == photo.id }?.date
-                }, today = today, onEditCaption = if (onSavePhotoCaption == null) null else ::editCaption
+                }, today = today, onEditCaption = if (onSavePhotoCaption == null) null else ::editCaption,
+                originPaperInset = if (selection.memory) 0.dp else 7.dp,
+                backdropLayer = homeDrawing
             )
         }
     }
@@ -259,13 +278,13 @@ private fun HomeHeader(
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val wrapped = maxWidth < 265.dp || LocalDensity.current.fontScale > 1.3f
         @Composable fun Brand() {
-            Column {
-                Text("Life OS", style = LifeType.Wordmark.copy(fontSize = 40.sp), color = colors.ink)
-                Text("收好自己的日子", Modifier.padding(start = 50.dp), style = LifeType.JournalTagline, color = colors.muted)
+            Box(Modifier.width(168.dp).height(49.dp)) {
+                Text("Life OS", style = LifeType.Wordmark.copy(fontSize = 40.sp, lineHeight = 49.sp, letterSpacing = 2.8.sp), color = colors.ink)
+                Text("收好自己的日子", Modifier.offset(x = 50.dp, y = 36.dp), style = LifeType.JournalTagline.copy(fontSize = 12.sp, lineHeight = 13.sp), color = colors.inkSecondary)
             }
         }
         @Composable fun Actions() {
-            Row {
+            Row(Modifier.offset(x = if (wrapped) 0.dp else 15.dp)) {
                 IconButton(onCapture, enabled = interactive) { Icon(Icons.Outlined.Add, "记一下", Modifier.size(20.dp), tint = colors.accentDeep) }
                 IconButton(onCalendar, enabled = interactive) { Icon(Icons.Outlined.CalendarMonth, "生活日历", Modifier.size(20.dp), tint = colors.inkSecondary) }
                 IconButton(onMap, enabled = interactive) { Icon(Icons.Outlined.Map, "生活地图", Modifier.size(20.dp), tint = colors.inkSecondary) }
@@ -279,11 +298,11 @@ private fun HomeHeader(
                 Box(Modifier.weight(1f)) { Brand() }
                 Actions()
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(20.dp))
             val dateAction = if (interactive) Modifier.clickable(onClickLabel = "选择首页日期", onClick = onDate) else Modifier
-            Column(dateAction.heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
-                Text(date.format(homeDayFormat), style = LifeType.DateHero, color = colors.ink)
-                Text(date.format(homeWeekFormat), style = LifeType.JournalMeta, color = colors.muted)
+            Column(dateAction.heightIn(min = 48.dp)) {
+                Text(date.format(homeDayFormat), style = LifeType.DateHero.copy(fontSize = 24.sp, lineHeight = 27.sp), color = colors.ink)
+                Text(date.format(homeWeekFormat), style = LifeType.JournalMeta.copy(fontSize = 14.sp, lineHeight = 16.sp, letterSpacing = 2.8.sp), color = colors.inkSecondary)
             }
         }
         if (!wrapped || maxWidth >= 230.dp) {
@@ -292,7 +311,7 @@ private fun HomeHeader(
                     contentPadding = PaddingValues(horizontal = 0.dp)) {
                     Text("回到今天", style = LifeType.JournalMeta, color = colors.accentDeep)
                 }
-            } else Text("把今天轻轻收好", Modifier.align(Alignment.BottomEnd), style = LifeType.JournalMeta, color = colors.muted)
+            } else Text("把今天轻轻收好", Modifier.align(Alignment.BottomEnd).padding(bottom = 5.dp), style = LifeType.JournalMeta.copy(fontSize = 14.sp, lineHeight = 16.sp, letterSpacing = 2.8.sp), color = colors.inkSecondary)
         }
     }
 }
@@ -315,7 +334,8 @@ private fun HomeEmptyToday(isToday: Boolean) {
 @Composable
 private fun HomeSectionLabel(title: String) {
     val colors = LocalLifeOsColors.current
-    Text(title, Modifier.padding(top = 22.dp, bottom = 10.dp), style = LifeType.JournalSection, color = colors.muted)
+    Text(title, Modifier.padding(top = if (title == "TODAY") 17.dp else 22.dp, bottom = if (title == "TODAY") 4.dp else 14.dp),
+        style = LifeType.JournalSection.copy(fontSize = 14.sp, lineHeight = 25.sp, letterSpacing = 2.8.sp), color = colors.inkSecondary)
 }
 
 @Composable
@@ -330,11 +350,11 @@ private fun HomeFactHeading(title: String) {
             widths.indices.forEach { i ->
                 Image(painterResource(R.drawable.lifeos_home_paw), null,
                     Modifier.offset(maxWidth * positions[i], heights[i]).size(widths[i])
-                        .graphicsLayer { rotationZ = angles[i]; alpha = if (i == 3) 1f else .70f },
+                         .graphicsLayer { rotationZ = angles[i]; alpha = .70f },
                     colorFilter = ColorFilter.tint(colors.muted))
             }
         }
-        Text(title, Modifier.align(Alignment.TopEnd).padding(top = 10.dp), style = LifeType.JournalMeta, color = colors.muted)
+        Text(title, Modifier.align(Alignment.TopEnd).padding(top = 10.dp), style = LifeType.JournalMeta.copy(fontSize = 14.sp, lineHeight = 16.sp, letterSpacing = 2.8.sp), color = colors.inkSecondary)
     }
 }
 

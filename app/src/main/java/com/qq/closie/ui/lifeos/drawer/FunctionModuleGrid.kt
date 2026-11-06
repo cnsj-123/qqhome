@@ -29,8 +29,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.ui.lifeos.theme.*
 import kotlinx.coroutines.delay
 
@@ -43,6 +46,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     onSaveOrder: (List<String>, () -> Unit, (String) -> Unit) -> Unit = { _, done, _ -> done() },
     interactive: Boolean = true) {
     val colors = LocalLifeOsColors.current
+    val acceptsInput = interactive && active
     val grid = rememberLazyGridState()
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -115,10 +119,10 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     // The shell handles cancellation when hosted there; standalone drawers retain Back.
     BackHandler(enabled = active && lifted != null && !saving && policy == null) { cancel() }
     Box(modifier.fillMaxHeight()) {
-        LazyVerticalGrid(GridCells.Fixed(2), state = grid, userScrollEnabled = interactive,
+        LazyVerticalGrid(GridCells.Fixed(2), state = grid, userScrollEnabled = acceptsInput,
             modifier = Modifier.fillMaxSize().testTag("life-drawer")
             .pointerInput(active, saving) {
-                if (!active || saving) return@pointerInput
+                if (!acceptsInput || saving) return@pointerInput
                 detectDragGesturesAfterLongPress(onDragStart = { point ->
                     val item = grid.layoutInfo.visibleItemsInfo.firstOrNull {
                         point.x >= it.offset.x && point.x < it.offset.x + it.size.width &&
@@ -128,7 +132,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     if (module != null && item != null) {
                         baseline = modules; lifted = module; pointer = point; lastTarget = null
                         grab = point - Offset(item.offset.x.toFloat(), item.offset.y.toFloat())
-                        cellWidth = item.size.width; message = "松手放置 · 返回取消"
+                        cellWidth = item.size.width; message = "松手放置"
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     }
                 }, onDrag = { change, amount ->
@@ -141,31 +145,39 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     }
                 },
                     onDragCancel = { if (lifted != null) cancel() })
-            }, contentPadding = PaddingValues(horizontal = 24.dp, vertical = 22.dp)) {
+            }, contentPadding = PaddingValues(horizontal = 32.dp, top = 33.dp, bottom = 14.dp)) {
             item(key = "brand", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("生活的抽屉", style = LifeText.journal, color = colors.ink)
-                            Text("把日子放回自己的位置", style = LifeText.caption, color = colors.inkSecondary)
+                            Text("生活的抽屉", style = LifeType.JournalMeta.copy(fontSize = 24.sp, lineHeight = 27.sp, letterSpacing = 4.sp), color = colors.ink)
+                            Text("把日子放回自己的位置", Modifier.padding(start = 18.dp),
+                                style = LifeType.DateHero.copy(fontSize = 12.sp, lineHeight = 19.sp), color = colors.inkSecondary)
                         }
-                        if (interactive) IconButton(onClose, enabled = !saving) { Icon(Icons.Outlined.Close, "收起生活的抽屉", Modifier.size(20.dp)) }
+                        // The final draft has no visible X; retain its 48dp accessible close target.
+                        Box(Modifier.size(48.dp).then(if (interactive) Modifier.semantics { contentDescription = "收起生活的抽屉" }
+                            .clickable(enabled = acceptsInput && !saving, onClick = onClose) else Modifier))
                     }
-                    Row(Modifier.fillMaxWidth().padding(top = 16.dp).background(colors.card.copy(alpha = .65f), RoundedCornerShape(12.dp))
-                        .clickable(enabled = interactive) { onOpenModule(LifeModules.find("search")) }.heightIn(min = 48.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), colors.inkSecondary)
-                        Text("找一件东西、一段经历", Modifier.padding(start = 8.dp), style = LifeText.caption)
+                    Box(Modifier.fillMaxWidth().padding(top = 7.dp).height(48.dp)
+                        .clickable(enabled = acceptsInput) { onOpenModule(LifeModules.find("search")) }, contentAlignment = Alignment.Center) {
+                        Row(Modifier.fillMaxWidth().height(32.dp).background(colors.card.copy(alpha = .65f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), colors.accentDeep)
+                            Text("找一件东西、一段经历", Modifier.padding(start = 22.dp),
+                                style = LifeType.JournalMeta.copy(fontSize = 12.sp, lineHeight = 14.sp, letterSpacing = 2.sp), color = colors.ink)
+                        }
                     }
-                    Row(Modifier.padding(top = 20.dp, bottom = 8.dp)) {
-                        Text("手边常用", Modifier.weight(1f), style = LifeText.caption, color = colors.accentDeep)
+                    Row(Modifier.padding(top = 12.dp, bottom = 8.dp)) {
+                        Text("手边常用", Modifier.weight(1f), style = LifeType.JournalMeta.copy(fontSize = 14.sp, lineHeight = 19.sp, letterSpacing = 2.sp), color = colors.accentDeep)
                     }
                 }
             }
             modules.forEachIndexed { index, module ->
                 if (index == 6) item(key = "all", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                    Column(Modifier.padding(top = 12.dp, bottom = 8.dp)) {
+                    Column(Modifier.padding(top = 11.dp, bottom = 10.dp)) {
                         HorizontalDivider(color = colors.line)
-                        Text("生活的一格一格", Modifier.padding(top = 14.dp), style = LifeText.caption, color = colors.inkSecondary)
+                        Text("生活的一格一格", Modifier.padding(top = 13.dp),
+                            style = LifeType.JournalMeta.copy(fontSize = 14.sp, lineHeight = 19.sp, letterSpacing = 2.sp), color = colors.accentDeep)
                     }
                 }
                 item(key = module.id, contentType = "module") {
@@ -174,33 +186,39 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                             customActions = listOf(-1 to "向前移动", 1 to "向后移动").map { (delta, label) ->
                                 CustomAccessibilityAction(label) {
                                     val at = modules.indexOfFirst { it.id == module.id }; val to = at + delta
-                                    if (!saving && lifted == null && to in modules.indices) {
+                                    if (acceptsInput && !saving && lifted == null && to in modules.indices) {
                                         val before = modules; modules = modules.toMutableList().apply { add(to, removeAt(at)) }; persist(before); true
                                     } else false
                                 }
                             }
-                        }.clickable(enabled = interactive && lifted == null && !saving) { onOpenModule(module) })
+                        }.clickable(enabled = acceptsInput && lifted == null && !saving) { onOpenModule(module) })
                 }
             }
             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.padding(top = 20.dp, bottom = 16.dp)) {
-                    Text(message ?: "左滑收起 · 顺序会随你保留", style = LifeText.caption, color = colors.inkSecondary)
-                    undoOrder?.let { original ->
+                Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp)) {
+                    Column {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(message ?: "左滑收起", Modifier.weight(1f),
+                                style = LifeType.DateHero.copy(fontSize = 12.sp, lineHeight = 19.sp, letterSpacing = 1.sp), color = colors.inkSecondary)
                         TextButton({
+                            val original = undoOrder ?: return@TextButton
                             val before = modules
                             modules = original
                             persist(before, rememberUndo = false)
-                        }, enabled = interactive && !saving && lifted == null) { Text("撤销上次排序", style = LifeText.caption) }
+                        }, enabled = acceptsInput && !saving && lifted == null && undoOrder != null) {
+                            Text("撤销", style = LifeType.JournalMeta.copy(fontSize = 12.sp, lineHeight = 19.sp, letterSpacing = 2.sp))
+                        }
                     }
                     TextButton(onClick = {
                         val previous = modules
                         modules = orderedModules(emptyList())
                         persist(previous, restoreDefault = true)
-                    }, enabled = interactive && !saving && lifted == null, modifier = Modifier.testTag("drawer-restore-order")) {
-                        Text("恢复默认顺序", style = LifeText.caption)
+                    }, enabled = acceptsInput && !saving && lifted == null, modifier = Modifier.testTag("drawer-restore-order")) {
+                        Text("恢复默认顺序", style = LifeType.JournalMeta.copy(fontSize = 12.sp, lineHeight = 19.sp, letterSpacing = 2.sp))
+                    }
                     }
                     Image(painterResource(com.qq.closie.R.drawable.lifeos_drawer_cat), null,
-                        Modifier.align(Alignment.End).size(62.dp))
+                        Modifier.align(Alignment.BottomEnd).size(62.dp))
                 }
             }
         }
@@ -217,9 +235,9 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
 @Composable
 private fun ModuleRow(module: LifeModule, modifier: Modifier) {
     val colors = LocalLifeOsColors.current
-    Row(modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("drawer-${module.id}").padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("drawer-${module.id}").padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(module.icon(), null, Modifier.size(20.dp), colors.accentDeep)
-        Text(module.label, Modifier.padding(start = 10.dp), style = LifeText.caption,
+        Text(module.label, Modifier.padding(start = 7.dp), style = LifeType.DateHero.copy(fontSize = 14.sp, lineHeight = 18.sp, letterSpacing = 1.sp),
             color = colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
