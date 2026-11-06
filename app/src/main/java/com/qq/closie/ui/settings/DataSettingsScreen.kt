@@ -311,8 +311,13 @@ fun DataSettingsScreen(
                 onClick = { if (!busy) exportCenter = true }
             )
             if (lifeSurface) {
-                SettingsSection("计划中")
-                SettingsLine("自动备份与跨设备同步", "待接入", trailing = "规划中")
+                Row(Modifier.fillMaxWidth().padding(top=30.dp,bottom=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text("自动同步与备份",Modifier.weight(1f),style=SettingsText.caption,color=colors.inkSecondary)
+                    Text("规划中 · 未接入",style=SettingsText.detail,color=colors.inkSecondary)
+                }
+                SettingsLine("自动备份", "规划中 · 定期生成恢复点",trailingContent={Switch(false,null,enabled=false)})
+                SettingsLine("仅 Wi-Fi 上传", "规划中 · 仅使用 Wi-Fi",trailingContent={Switch(false,null,enabled=false)})
+                SettingsLine("跨设备同步", "规划中 · 同步服务尚未接入",trailingContent={Switch(false,null,enabled=false)})
                 SettingsStorageControls(
                     media=remember(lifeDatabase) {com.qq.closie.life.repository.MediaRepository(lifeDatabase)},
                     enabled=!busy

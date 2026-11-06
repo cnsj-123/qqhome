@@ -52,12 +52,12 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
                     Surface(shape = RoundedCornerShape(5.dp), color = androidx.compose.ui.graphics.Color.Transparent,
                         border = BorderStroke(1.dp, colors.secondary.copy(alpha = .45f))) {
                         Text(formalStatus ?: title, Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                            style = LedgerText.body.copy(fontSize = 10.sp, lineHeight = 12.sp), color = colors.accentDeep)
+                            style = LedgerText.body.copy(fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 0.sp), color = colors.accentDeep)
                     }
                     Spacer(Modifier.weight(1f))
                 } else Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))
                 TextButton(onClick = close, enabled = !busy, contentPadding = PaddingValues(0.dp)) {
-                    Text(if (formal) "关闭 ✕" else "收起", style = if (formal) LedgerText.body.copy(fontSize = 12.sp, lineHeight = 20.sp) else LifeText.body,
+                    Text(if (formal) "关闭 ✕" else "收起", style = if (formal) LedgerText.body.copy(fontSize = 12.sp, lineHeight = 20.sp, letterSpacing = 0.sp) else LifeText.body,
                         color = colors.inkSecondary)
                 }
             }
@@ -66,14 +66,16 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
                 verticalArrangement = Arrangement.spacedBy(if (formal) 0.dp else 12.dp)) { content() }
             error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
             if (actions != null) {
-                if (formal) Spacer(Modifier.height(40.dp)) else HorizontalDivider(color = colors.line)
+                if (formal) Spacer(Modifier.height(34.dp)) else HorizontalDivider(color = colors.line)
                 actions()
             }
         }
     }
     if (origin != null || formal) com.qq.closie.ui.lifeos.components.LifeOriginDialog(
         origin, { if (!busy) onClose() }, widthFraction = if (formal) .87f else .92f, compactHeight = true,
-        paperShape = if (formal) FormalReceiptShape else null
+        paperShape = if (formal) FormalReceiptShape else null,
+        // The torn receipt is warm stock in source node 1931:23203; dark palettes keep their readable surface.
+        paperColor = if (formal && !colors.isDark) androidx.compose.ui.graphics.Color(0xFFFFFCF8) else null
     ) { close -> contents(close) }
     else ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheet,
         containerColor = colors.card,

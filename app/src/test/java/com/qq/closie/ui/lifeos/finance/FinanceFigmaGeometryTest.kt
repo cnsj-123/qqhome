@@ -23,11 +23,11 @@ class FinanceFigmaGeometryTest:FinanceRoomTest() {
     @Test fun measuredHeaderKeepsSearchOnTheAccountLineAndNetInItsOriginalSecondLine() {
         val data=runBlocking {account();finance.snapshot()}
         compose.setContent {LifeOsTheme {FinanceNetHeader(FinanceUiState(snapshot=data,loaded=true,loading=false),false,"",{},{},{}) {}}}
-        val search=compose.onNodeWithTag("finance-search").fetchSemanticsNode().boundsInRoot
+        val search=compose.onNodeWithTag("finance-search-capsule").fetchSemanticsNode().boundsInRoot
         val net=compose.onNodeWithTag("finance-net-value",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
         val density=compose.density.density
         assertEquals(28f,search.height/density,1f)
-        assertTrue("Search must keep the Figma 110dp capsule",search.width/density in 94f..111f)
+        assertEquals("Search must keep the Figma 110dp capsule",110f,search.width/density,1f)
         assertTrue("Net cannot be displaced by an extra app-bar row",(net.top-search.top)/density in 20f..48f)
         assertTrue("The currency and net start at the measured 32dp gutter",net.left/density in 48f..72f)
     }

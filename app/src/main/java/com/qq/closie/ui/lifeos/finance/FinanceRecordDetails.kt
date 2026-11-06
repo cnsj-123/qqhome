@@ -29,10 +29,10 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
     FinanceReceipt("账单详情", onClose = onClose, origin=origin, formal = true,
         formalStatus = when { row == null -> "记录不可用"; row.entry.voidedAt != null -> "正式账单 · 已作废"; else -> "正式账单 · 已确认" }, actions = {
         if (row != null) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Button({ onEdit(row) }, Modifier.weight(1f).heightIn(min = 42.dp).semantics { contentDescription = "编辑账单" },
-                    shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text("编辑", style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 17.sp))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Button({ onEdit(row) }, Modifier.weight(1f).height(36.dp).semantics { contentDescription = "编辑账单" },
+                    shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)) {
+                    Text("编辑", style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 17.sp, letterSpacing = 0.sp))
                 }
                 voidAction?.invoke(row)
             }
@@ -56,15 +56,15 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
             val sign = when {
                 row.transfer != null -> ""
                 row.entry.direction == FinanceDirection.INFLOW -> "+"
-                else -> "−"
+                else -> "-"
             }
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(sign + FinanceMoney.display(row.entry.amountMinor, row.currencyCode),
                     style = LedgerText.body.copy(fontSize = 32.sp, lineHeight = 38.sp, letterSpacing = .5.sp), color = colors.ink)
                 Text(listOfNotNull(row.category, row.entry.description.takeIf(String::isNotBlank)).joinToString(" · "),
-                    Modifier.padding(top = 3.dp), style = LedgerText.body.copy(fontSize = 12.sp, lineHeight = 20.sp), color = colors.inkSecondary)
+                    Modifier.padding(top = 3.dp), style = LedgerText.body.copy(fontSize = 12.sp, lineHeight = 20.sp, letterSpacing = 0.sp), color = colors.inkSecondary)
             }
-            HorizontalDivider(Modifier.padding(top = 15.dp), color = colors.line)
+            HorizontalDivider(Modifier.padding(top = 13.dp), color = colors.line)
             ReceiptField("账户", row.account.name + (row.targetAccount?.let { " → " + it.name } ?: ""), height = 42.dp, divider = true)
             ReceiptField("发生时间", economicTime?.let(FinanceTime::input) ?: if (ambiguousEvent) "多项关联，请查看事项" else cashLabel, height = 42.dp)
             ReceiptField(if (row.entry.direction == FinanceDirection.INFLOW) "收款时间" else "支付时间",
@@ -93,12 +93,12 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
 }
 
 @Composable
-private fun ReceiptField(label: String, value: String, height: Dp = 34.dp, divider: Boolean = false, secondary: Boolean = false) {
+private fun ReceiptField(label: String, value: String, height: Dp = 33.dp, divider: Boolean = false, secondary: Boolean = false) {
     val colors = LocalLifeOsColors.current
     Column {
-        Row(Modifier.fillMaxWidth().heightIn(min = height), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, Modifier.weight(1f), style = LedgerText.body.copy(fontSize = if (secondary) 12.sp else 13.sp, lineHeight = 16.sp), color = colors.inkSecondary)
-            Text(value, Modifier.weight(2f), style = LedgerText.body.copy(fontSize = if (secondary) 12.sp else 13.sp, lineHeight = 16.sp),
+        Row(Modifier.fillMaxWidth().heightIn(min = height - if (divider) 1.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f), style = LedgerText.body.copy(fontSize = if (secondary) 12.sp else 13.sp, lineHeight = 16.sp, letterSpacing = 0.sp), color = colors.inkSecondary)
+            Text(value, Modifier.weight(2f), style = LedgerText.body.copy(fontSize = if (secondary) 12.sp else 13.sp, lineHeight = 16.sp, letterSpacing = 0.sp),
                 color = if (secondary) colors.inkSecondary else colors.ink, textAlign = androidx.compose.ui.text.style.TextAlign.End)
         }
         if (divider) HorizontalDivider(color = colors.line)
@@ -108,7 +108,9 @@ private fun ReceiptField(label: String, value: String, height: Dp = 34.dp, divid
 @Composable
 internal fun FinanceRecordVoidAction(row: FinanceLedgerRow, state: FinanceUiState, vm: FinanceViewModel, onDone: () -> Unit) {
     var preview by remember(row.id, row.entry.revision) { mutableStateOf<FinanceChangePreview?>(null) }
-    TextButton({ vm.previewVoid(entryId = row.entry.id) { preview = it } }, enabled = !state.busy) { Text("作废（可恢复）") }
+    TextButton({ vm.previewVoid(entryId = row.entry.id) { preview = it } }, enabled = !state.busy) {
+        Text("作废（可恢复）", style = LedgerText.caption.copy(letterSpacing = 0.sp))
+    }
     preview?.let { impact ->
         AlertDialog(
             onDismissRequest = { if (!state.busy) preview = null },

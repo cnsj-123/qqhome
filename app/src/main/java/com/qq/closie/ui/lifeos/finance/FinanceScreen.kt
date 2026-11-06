@@ -153,7 +153,7 @@ internal fun LedgerLine(row: FinanceLedgerRow, role: String? = null, snapshot: F
             val secondary = row.entry.description.takeIf {it.isNotBlank() && it!=primary} ?: if(row.transfer!=null) "账户间转移" else row.account.kind.label
             Text(secondary,style=LedgerText.meta,color=colors.inkSecondary,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
-        val prefix = if(row.transfer!=null) "" else if(row.entry.direction==FinanceDirection.INFLOW) "+" else "−"
+        val prefix = if(row.transfer!=null) "" else if(row.entry.direction==FinanceDirection.INFLOW) "+" else "-"
         Column(Modifier.widthIn(max=146.dp).padding(start=8.dp),horizontalAlignment=Alignment.End) {
             LedgerOdometer(prefix+FinanceMoney.display(row.entry.amountMinor,row.currencyCode),LedgerText.caption,
                 if(row.entry.direction==FinanceDirection.INFLOW) colors.accentDeep else colors.ink)

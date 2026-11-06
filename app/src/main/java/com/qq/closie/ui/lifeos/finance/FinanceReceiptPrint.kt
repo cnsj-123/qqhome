@@ -33,7 +33,7 @@ import kotlin.math.sin
 
 /** This ticket is read from the committed ledger row, never from an optimistic editor copy. */
 internal fun financePrintedFields(row: FinanceLedgerRow): List<Pair<String, String>> = listOf(
-    "金额" to ((if(row.transfer!=null) "" else if(row.entry.direction==FinanceDirection.INFLOW) "+" else "−") +
+    "金额" to ((if(row.transfer!=null) "" else if(row.entry.direction==FinanceDirection.INFLOW) "+" else "-") +
         FinanceMoney.display(row.entry.amountMinor,row.currencyCode)),
     "账户" to (row.account.name + (row.targetAccount?.let {" → "+it.name} ?: "")),
     "分类" to (if(row.transfer!=null) "账户转账" else row.category ?: "未分类"),

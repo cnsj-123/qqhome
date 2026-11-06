@@ -91,7 +91,7 @@ internal fun FinanceEconomicDetails(
                             Text((accounts[entry.accountId]?.name ?: "账户") + " · " + link.role.label, style = LedgerText.body, color = colors.ink)
                             Text(time + " · " + entry.description, style = LedgerText.meta, color = colors.inkSecondary)
                         }
-                        LedgerOdometer((if (entry.direction == FinanceDirection.INFLOW) "+" else "−") + FinanceMoney.display(link.allocatedMinor, currency),
+                        LedgerOdometer((if (entry.direction == FinanceDirection.INFLOW) "+" else "-") + FinanceMoney.display(link.allocatedMinor, currency),
                             style = LedgerText.rowAmount, color = if (entry.direction == FinanceDirection.INFLOW) colors.accentDeep else colors.ink)
                     }
                 }

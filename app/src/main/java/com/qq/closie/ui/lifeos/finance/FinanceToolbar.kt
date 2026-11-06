@@ -34,9 +34,9 @@ internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: Strin
     val focus = LocalFocusManager.current
     Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End) {
-        Box(Modifier.width(110.dp).height(28.dp).testTag("finance-search")) {
+        Box(Modifier.width(110.dp).height(28.dp).testTag("finance-search-capsule")) {
         BasicTextField(query, onQuery,
-            Modifier.fillMaxSize()
+            Modifier.fillMaxSize().testTag("finance-search")
                 .semantics { contentDescription = searchHint }
                 .border(1.dp, colors.line, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp),
             singleLine = true, textStyle = LedgerText.input.copy(color = colors.ink),

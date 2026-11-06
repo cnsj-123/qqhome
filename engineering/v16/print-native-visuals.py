@@ -1,6 +1,6 @@
 """Expose bounded synthetic Compose render evidence in CI logs, without downloading artifacts.
 
-These are real production Composables on Robolectric's native Canvas, not device captures.
+These are real production Composables replayed by Robolectric's native HardwareRenderer, not device captures.
 No user data, external screenshots, APKs, or media sources are read by this script.
 """
 import base64
@@ -19,6 +19,11 @@ for name in NAMES:
     if not payload.startswith(b"\x89PNG\r\n\x1a\n") or len(payload) > 1_000_000:
         raise ValueError("Invalid or unbounded native visual evidence: " + name)
     encoded = base64.b64encode(payload).decode("ascii")
+    attributes = DIRECTORY / (name + ".windows.json")
+    if attributes.is_file():
+        import json
+        windows = json.loads(attributes.read_text(encoding="utf-8"))
+        print("V16_NATIVE_WINDOWS " + name + " " + json.dumps(windows, separators=(",", ":")))
     print("V16_NATIVE_VISUAL_BEGIN " + name + " " + hashlib.sha256(payload).hexdigest())
     for offset in range(0, len(encoded), 12000):
         print("V16_NATIVE_VISUAL_DATA " + name + " " + encoded[offset:offset + 12000])

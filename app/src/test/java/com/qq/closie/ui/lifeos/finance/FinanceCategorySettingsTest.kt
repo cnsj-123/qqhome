@@ -58,7 +58,7 @@ class FinanceCategorySettingsTest {
         compose.runOnIdle {
             model = ViewModelProvider(requireNotNull(models), FinancePresentationFactory(repository))[FinanceViewModel::class.java]
         }
-        compose.waitUntil(10_000) { model.state.value.loaded }
+        awaitPresentation("initial category snapshot") { model.state.value.loaded }
         compose.onNodeWithText("分类与图标").performScrollTo().performClick()
         compose.onNodeWithText("没有匹配的分类").assertExists()
         newCategory("餐饮")
@@ -82,8 +82,8 @@ class FinanceCategorySettingsTest {
 
         newCategory("咖啡")
         chooseParent("餐饮")
-        compose.onNodeWithTag("finance-save-category").performScrollTo().performClick()
-        compose.waitUntil(10_000) { !model.state.value.busy && model.state.value.error?.contains("同名子分类") == true }
+        compose.onNodeWithTag("finance-save-category").assertIsEnabled().performScrollTo().performClick()
+        awaitPresentation("duplicate child rejection") { !model.state.value.busy && model.state.value.error?.contains("同名子分类") == true }
         compose.onNodeWithContentDescription("分类名称").assertTextContains("咖啡")
         compose.onNodeWithTag("finance-save-category").assertExists()
         assertEquals(beforeDuplicate, snapshot())
@@ -92,6 +92,7 @@ class FinanceCategorySettingsTest {
     private fun newCategory(name: String) {
         compose.onNodeWithTag("finance-new-category").performScrollTo().performClick()
         compose.onNodeWithContentDescription("分类名称").performTextReplacement(name)
+        compose.onNodeWithContentDescription("分类名称").assertTextContains(name)
     }
 
     @Test fun duplicateRootAndMissingParentLeaveTheCanonicalSnapshotUnchanged() = runBlocking {
@@ -112,12 +113,27 @@ class FinanceCategorySettingsTest {
     }
 
     private fun saveCategory(name: String) {
-        compose.onNodeWithTag("finance-save-category").performScrollTo().performClick()
-        compose.waitUntil(10_000) {
+        compose.onNodeWithTag("finance-save-category").assertIsEnabled().performScrollTo().performClick()
+        awaitPresentation("saved category $name and returned category list") {
             model.state.value.let { !it.busy && it.snapshot.categories.any {category->category.name==name} } &&
                 compose.onAllNodesWithTag("finance-save-category").fetchSemanticsNodes().isEmpty()
         }
         compose.waitForIdle()
+    }
+
+    private fun awaitPresentation(description: String, condition: () -> Boolean) {
+        try {
+            compose.waitUntil(10_000) {
+                // Room completes on its executor and posts the ViewModel continuation to Android's
+                // main looper. A state-only false predicate must not skip draining that looper.
+                compose.runOnIdle {}
+                condition()
+            }
+        } catch (failure: ComposeTimeoutException) {
+            val state = model.state.value
+            throw AssertionError("$description: loaded=${state.loaded}, busy=${state.busy}, error=${state.error}, " +
+                "categories=${state.snapshot.categories.map { it.id to it.name }}", failure)
+        }
     }
 
     private fun snapshot() = runBlocking { repository.snapshot() }

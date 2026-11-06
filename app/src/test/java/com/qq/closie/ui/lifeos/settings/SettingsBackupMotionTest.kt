@@ -3,10 +3,13 @@ package com.qq.closie.ui.lifeos.settings
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +35,11 @@ class SettingsBackupMotionTest {
         compose.mainClock.advanceTimeBy(700)
         compose.runOnIdle {assertEquals(0,restores)}
 
+        // Android performClick is a touch tap: releasing it must never become an accessibility hold.
+        button.performTouchInput {click()}
+        compose.mainClock.advanceTimeBy(660)
+        compose.runOnIdle {assertEquals(0,restores)}
+
         button.performTouchInput {down(center)}
         compose.mainClock.advanceTimeBy(660)
         compose.runOnIdle {assertEquals(1,restores)}
@@ -49,20 +57,24 @@ class SettingsBackupMotionTest {
         compose.waitForIdle()
         compose.mainClock.autoAdvance=false
         val button=compose.onNodeWithTag("backup-restore-hold")
-        button.performClick()
+        button.performSemanticsAction(SemanticsActions.OnClick) {assertTrue(it())}
         compose.mainClock.advanceTimeBy(320)
         compose.runOnIdle {assertEquals(0,restores);source.value="inspected-b"}
         compose.mainClock.advanceTimeBy(700)
         compose.runOnIdle {assertEquals(0,restores)}
 
-        button.performClick()
+        button.performSemanticsAction(SemanticsActions.OnClick) {assertTrue(it())}
         compose.mainClock.advanceTimeBy(320)
         compose.runOnIdle {assertEquals(0,restores);enabled.value=false}
         compose.mainClock.advanceTimeBy(700)
+        button.performSemanticsAction(SemanticsActions.OnClick) {assertFalse(it())}
+        compose.mainClock.advanceTimeBy(660)
         compose.runOnIdle {assertEquals(0,restores);enabled.value=true}
         compose.mainClock.advanceTimeBy(32)
-        button.performClick()
-        compose.mainClock.advanceTimeBy(660)
+        button.performSemanticsAction(SemanticsActions.OnClick) {assertTrue(it())}
+        compose.mainClock.advanceTimeBy(320)
+        compose.runOnIdle {assertEquals(0,restores)}
+        compose.mainClock.advanceTimeBy(340)
         compose.runOnIdle {assertEquals(1,restores)}
         compose.mainClock.autoAdvance=true
     }
@@ -77,7 +89,7 @@ class SettingsBackupMotionTest {
             dismissButton={close->TextButton(close) {Text("取消")}})}}
         compose.waitForIdle()
         compose.mainClock.autoAdvance=false
-        compose.onNodeWithTag("backup-restore-hold").performClick()
+        compose.onNodeWithTag("backup-restore-hold").performSemanticsAction(SemanticsActions.OnClick) {assertTrue(it())}
         compose.mainClock.advanceTimeBy(400)
         compose.onNodeWithText("取消").performClick()
         compose.mainClock.advanceTimeBy(220)

@@ -59,7 +59,7 @@ class FinanceRecordNavigationTest: FinanceRoomTest() {
                 }
             }
         }
-        compose.waitUntil(10_000) {vm.state.value.loaded && !vm.state.value.busy}
+        awaitPresentation("initial record snapshot") {vm.state.value.loaded && !vm.state.value.busy}
     }
 
     private suspend fun prepare(available:Boolean):Pair<FinanceSnapshot,Uri> {
@@ -95,8 +95,8 @@ class FinanceRecordNavigationTest: FinanceRoomTest() {
         show(data.entries.single().id)
         compose.onNodeWithContentDescription("查看账单凭据").performScrollTo().performClick()
         assertReadOnlyEvidence()
-        compose.onNodeWithText("检查并打开凭据").performScrollTo().performClick()
-        compose.waitUntil(10_000) {
+        compose.onNodeWithText("检查并打开凭据").assertIsEnabled().performScrollTo().performClick()
+        awaitPresentation("original receipt verification and open") {
             !vm.state.value.busy && compose.onAllNodesWithText("原件摘要匹配。").fetchSemanticsNodes().isNotEmpty()
         }
         val launched=shadowOf(ApplicationProvider.getApplicationContext<Application>()).nextStartedActivity
@@ -121,7 +121,7 @@ class FinanceRecordNavigationTest: FinanceRoomTest() {
         compose.onNodeWithContentDescription("编辑出资与承担").performClick()
         pane("编辑经济分配").assertExists()
         compose.onNodeWithText("舍弃本次分配草稿，保留正式事实").performClick()
-        compose.waitUntil(10_000) {
+        awaitPresentation("explicit economic draft discard") {
             !vm.state.value.busy && compose.onAllNodes(
                 SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle,"编辑经济分配")).fetchSemanticsNodes().isEmpty()
         }
@@ -145,8 +145,8 @@ class FinanceRecordNavigationTest: FinanceRoomTest() {
         }
         compose.onNodeWithContentDescription("查看账单凭据").performScrollTo().performClick()
         assertReadOnlyEvidence()
-        compose.onNodeWithText("检查并打开凭据").performScrollTo().performClick()
-        compose.waitUntil(10_000) {
+        compose.onNodeWithText("检查并打开凭据").assertIsEnabled().performScrollTo().performClick()
+        awaitPresentation("missing original receipt verification") {
             !vm.state.value.busy && compose.onAllNodesWithText("原件已移除或授权失效，账务已保留，请重新选择原件。").fetchSemanticsNodes().isNotEmpty()
         }
         assertNull(shadowOf(ApplicationProvider.getApplicationContext<Application>()).nextStartedActivity)
@@ -160,6 +160,20 @@ class FinanceRecordNavigationTest: FinanceRoomTest() {
         listOf("选择原件并保留引用","关联同一媒体原件","重新选择同一原件以恢复访问","移除此引用，保留原件")
             .forEach {compose.onAllNodesWithText(it).assertCountEquals(0)}
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle,"编辑经济分配")).assertCountEquals(0)
+    }
+
+    private fun awaitPresentation(description:String,condition:()->Boolean) {
+        try {
+            compose.waitUntil(10_000) {
+                // Source hashing uses IO and Room reads use their executor. Drain the Android main
+                // looper before busy can short-circuit the semantic assertion of their result.
+                compose.runOnIdle {}
+                condition()
+            }
+        } catch(failure:ComposeTimeoutException) {
+            val state=vm.state.value
+            throw AssertionError("$description: loaded=${state.loaded}, busy=${state.busy}, error=${state.error}",failure)
+        }
     }
 
     private fun pane(title:String)=compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle,title))

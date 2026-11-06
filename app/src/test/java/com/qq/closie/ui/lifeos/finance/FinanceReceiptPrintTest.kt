@@ -40,7 +40,7 @@ class FinanceReceiptPrintTest:FinanceRoomTest() {
         compose.onNodeWithText("真实事务合成账户").assertExists()
         compose.onNodeWithText("衣服").assertExists()
         compose.onNodeWithText("合成付款").assertExists()
-        compose.onNodeWithText("−"+FinanceMoney.display(1_280,row.currencyCode)).assertExists()
+        compose.onNodeWithText("-"+FinanceMoney.display(1_280,row.currencyCode)).assertExists()
         compose.runOnIdle {assertEquals(0,completions)}
         compose.mainClock.advanceTimeBy(300)
         compose.runOnIdle {assertEquals(1,completions)}

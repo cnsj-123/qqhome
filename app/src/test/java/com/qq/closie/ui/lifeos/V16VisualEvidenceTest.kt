@@ -41,31 +41,20 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
     @After fun stopReaders(){compose.runOnIdle {models?.clear()};runBlocking {appearanceJob?.let {it.cancel();it.join()}}}
     private fun capture(name:String) {
         compose.waitForIdle()
-        // Draw the actual attached activity and dialog windows in order. A transparent dialog
-        // alone would lose the real page underneath and misrepresent the supplied design.
-        val bitmap=compose.runOnIdle {
-            val windows=WindowInspector.getGlobalWindowViews().filter {it.isAttachedToWindow && it.width>100 && it.height>100}
-            val base=windows.first()
-            val origin=IntArray(2).also(base::getLocationOnScreen)
-            Bitmap.createBitmap(base.width,base.height,Bitmap.Config.ARGB_8888).also {bitmap->
-                val canvas=Canvas(bitmap)
-                windows.forEach {view->
-                    val position=IntArray(2).also(view::getLocationOnScreen)
-                    canvas.save()
-                    canvas.translate((position[0]-origin[0]).toFloat(),(position[1]-origin[1]).toFloat())
-                    view.draw(canvas)
-                    canvas.restore()
-                }
-            }
-        }
+        // Replay actual activity/dialog display lists using Robolectric's native HardwareRenderer,
+        // then composite their pixels with the attached windows' real dim/alpha attributes.
+        val frame=compose.runOnIdle {captureNativeAttachedWindows()}
+        val bitmap=frame.bitmap
         val colors=mutableSetOf<Int>()
         for(x in 0 until bitmap.width step 3)for(y in 0 until bitmap.height step 3)colors.add(bitmap.getPixel(x,y))
         assertTrue("Production window must contain rendered content, not a blank bitmap",colors.size>8)
         assertTrue(bitmap.width>100 && bitmap.height>100)
         val metrics=File(requireNotNull(System.getProperty("lifeos.v16.metricsDir")))
         val output=File(metrics.parentFile,"robolectric-visuals").apply {mkdirs()}
-        File(output,"EVIDENCE-TYPE.txt").writeText("ROBOLECTRIC ATTACHED WINDOWS VIEW.DRAW NATIVE CANVAS / SDK34 shadows / synthetic data / NOT DEVICE VERIFIED")
-        File(output,name+".png").outputStream().use {assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}
+        File(output,"EVIDENCE-TYPE.txt").writeText("ROBOLECTRIC SDK34 NATIVE HARDWARERENDERER / actual attached window display lists and WindowManager dim/alpha attributes / synthetic data / NOT DEVICE VERIFIED")
+        File(output,name+".windows.json").writeText(frame.windowAttributes)
+        try {File(output,name+".png").outputStream().use {assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}}
+        finally {bitmap.recycle()}
     }
     private fun home(state:HomeUiState) {
         compose.setContent {LifeOsTheme {androidx.compose.material3.Surface(color=com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current.paper) {LifeOsHomeScreen(state,{},{},{},{},{})}}}
