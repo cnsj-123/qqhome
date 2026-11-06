@@ -9,8 +9,16 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,11 +33,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qq.closie.data.appearance.*
@@ -37,8 +49,9 @@ import com.qq.closie.life.ui.theme.BundledText as Text
 import com.qq.closie.life.ui.theme.LifeType
 import com.qq.closie.ui.lifeos.components.ColorSwatch
 import com.qq.closie.ui.lifeos.components.reducedLifeMotion
+import com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin
+import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
 import com.qq.closie.ui.lifeos.theme.*
-import kotlinx.coroutines.delay
 
 @Composable
 fun AppearanceSettingsRoute(viewModel: AppearanceViewModel, onBack: () -> Unit) {
@@ -99,6 +112,11 @@ private fun AppearanceSettingsScreen(
     var showCustom by rememberSaveable { mutableStateOf(false) }
     var discard by rememberSaveable { mutableStateOf(false) }
     var editingColor by rememberSaveable { mutableStateOf<ThemeField?>(null) }
+    var colorOrigin by remember { mutableStateOf<LifeSurfaceOrigin?>(null) }
+    var libraryOrigin by remember { mutableStateOf<LifeSurfaceOrigin?>(null) }
+    var inkEvent by rememberSaveable { mutableLongStateOf(0L) }
+    val colorOrigins = remember { mutableMapOf<ThemeField, LifeSurfaceOrigin>() }
+    val orientation = LocalConfiguration.current.orientation
     val palette = state.preview.selectedColors()
     val fields = ThemeField.entries.zip(listOf(state.accent, state.paper, state.secondary, state.soft, state.warm))
     val title = ThemePreset.fromId(state.selectedId)?.displayName ?: state.themeName.ifBlank { "未命名主题" }
@@ -110,32 +128,49 @@ private fun AppearanceSettingsScreen(
         }
     }
     BackHandler(onBack = back)
+    Box(Modifier.fillMaxSize()) {
     SettingsPaperPage("主题", back, actions = {
-        if (dirty && !state.isSaving) Text("未保存", Modifier.padding(end = 8.dp), style = LifeText.caption, color = colors.accentDeep)
+        if (dirty && !state.isSaving) Text("未保存", Modifier.padding(end = 8.dp), style = SettingsText.detail, color = colors.accentDeep)
         FilledTonalButton(
             onSave,
+            modifier = Modifier.height(28.dp), shape = RoundedCornerShape(10.dp),
             enabled = dirty && editable && state.validationError == null && state.themeName.isNotBlank(),
-            contentPadding = PaddingValues(horizontal = 12.dp)
-        ) { Text(if (state.isSaving) "保存中" else "保存主题", style = LifeText.caption) }
+            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 0.dp)
+        ) { Text(if (state.isSaving) "保存中" else "保存主题", style = SettingsText.tiny) }
     }) {
-        Text("主题与配色", style = LifeText.caption, color = colors.muted)
-        Column(Modifier.padding(top = 14.dp, bottom = 8.dp)) {
-            PaletteInk(palette, reduced) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    fields.forEach { (field, value) ->
-                        TextButton(
-                            { editingColor = field },
-                            enabled = editable,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(0.dp)
-                        ) { ColorSwatch(value, Modifier.size(32.dp)) }
+        Text("主题与配色", style = SettingsText.caption, color = colors.inkSecondary)
+        Column(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
+            SettingsPaletteSeal(state.saveEvent, palette, reduced) { collapse ->
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val compact = maxWidth < 320.dp || LocalDensity.current.fontScale > 1.2f
+                    @Composable fun Swatches() {
+                        Row(Modifier.width(205.dp)) {
+                            fields.forEachIndexed { index, (field, value) ->
+                                Column(Modifier.width(41.dp).height(58.dp).graphicsLayer {
+                                    translationX = (maxWidth.value / 2f - (index * 41f + 17f)).dp.toPx() * collapse
+                                    scaleX = 1f - collapse; scaleY = scaleX; alpha = 1f - collapse
+                                }.clickable(enabled = editable) { colorOrigin = colorOrigins[field]; editingColor = field },
+                                    horizontalAlignment = Alignment.Start) {
+                                    SettingsColorSwatch(value, Modifier.size(34.dp).lifeSurfaceOrigin(orientation) { colorOrigins[field] = it })
+                                    Text(when (field) { ThemeField.ACCENT -> "主"; ThemeField.PAPER -> "纸"; ThemeField.SECONDARY -> "辅助"; ThemeField.SOFT -> "柔和"; ThemeField.WARM -> "暖" },
+                                        Modifier.width(34.dp).padding(top = 4.dp), style = SettingsText.detail, color = colors.inkSecondary, textAlign = TextAlign.Center)
+                                }
+                            }
+                        }
                     }
+                    @Composable fun PaletteName() {
+                        Column(Modifier.padding(top = 1.dp)) {
+                            Text(title, style = SettingsText.body, color = colors.accentDeep)
+                            Text("点按色块进行编辑", Modifier.padding(top = 4.dp), style = SettingsText.detail, color = colors.inkSecondary)
+                        }
+                    }
+                    if (compact) Column { Swatches(); PaletteName() }
+                    else Row(horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.Top) { Swatches(); PaletteName() }
                 }
             }
-            Text(title, style = LifeText.body, color = colors.ink, modifier = Modifier.padding(top = 4.dp))
-            Text("长按以外的点击可编辑对应颜色", style = LifeText.caption, color = colors.muted)
-            OutlinedButton({ showLibrary = true }, enabled = editable) { Text("更多主题色", style = LifeText.caption) }
-            SettingsSaveStamp(state.saveEvent, reduced)
+            OutlinedButton({ showLibrary = true }, enabled = editable,
+                modifier = Modifier.height(34.dp).lifeSurfaceOrigin(orientation) { libraryOrigin = it }, shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 13.dp, vertical = 0.dp)) { Text("更多主题色", style = SettingsText.caption) }
         }
         AppearanceGroup("首页背景", "背景虚化 · 渐变强度") {
             AppearanceLivePreviews(state.preview, home = true, function = false)
@@ -155,31 +190,36 @@ private fun AppearanceSettingsScreen(
             }
             FunctionEffectControls(state.preview.functionEffects, onEffects, editable)
         }
-        SettingsLine("自定义主题色", "默认收起 · 主色 / 纸色 / 辅助 / 柔和 / 暖色", trailing = if (showCustom) "收起" else "展开") {
-            showCustom = !showCustom
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).clickable { showCustom = !showCustom }) {
+                Text("自定义主题色", style = SettingsText.body, color = colors.ink)
+                Text(if (showCustom) "主色 / 纸色 / 辅助 / 柔和 / 暖色" else "默认收起 · 主色 / 纸色 / 辅助 / 柔和 / 暖色",
+                    style = SettingsText.detail, color = colors.inkSecondary)
+            }
+            OutlinedButton(onImage, enabled = editable, modifier = Modifier.height(34.dp), shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+                Text(if (state.extracting) "正在取色…" else "从照片取色", style = SettingsText.caption)
+            }
         }
-        AnimatedVisibility(showCustom, enter = fadeIn(tween(if (reduced) 0 else 150)), exit = fadeOut(tween(if (reduced) 0 else 100))) {
+        AnimatedVisibility(showCustom, enter = fadeIn(tween(150)), exit = fadeOut(tween(150))) {
             Column {
-                OutlinedButton(onImage, enabled = editable) { Text(if (state.extracting) "正在取色…" else "从照片取色", style = LifeText.caption) }
-                TextButton(onDuplicate, enabled = editable) { Text("复制当前主题", style = LifeText.caption) }
-                OutlinedTextField(
-                    state.themeName, onName, Modifier.fillMaxWidth(), label = { Text("主题名称") }, singleLine = true,
-                    enabled = editable, textStyle = LifeType.inputFor(state.themeName)
-                )
+                Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("主题名称", Modifier.weight(1f), style = SettingsText.body, color = colors.inkSecondary)
+                    BasicTextField(state.themeName, onName, Modifier.weight(1f), singleLine = true, enabled = editable,
+                        textStyle = SettingsText.body.copy(color = colors.ink, textAlign = TextAlign.End))
+                }
+                HorizontalDivider(color = colors.line)
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val columns = if (maxWidth >= 330.dp && LocalDensity.current.fontScale <= 1.2f) 5 else 3
                     Column {
                         fields.chunked(columns).forEach { row ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 row.forEach { (field, value) ->
-                                    TextButton(
-                                        { editingColor = field }, enabled = editable, modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp)
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            ColorSwatch(value)
-                                            Text(field.label, style = LifeText.caption, modifier = Modifier.padding(top = 6.dp))
-                                        }
+                                    Column(Modifier.width(55.dp).clickable(enabled = editable) { colorOrigin = colorOrigins[field]; editingColor = field },
+                                        horizontalAlignment = Alignment.CenterHorizontally) {
+                                        SettingsColorSwatch(value, Modifier.size(55.dp).lifeSurfaceOrigin(orientation) { colorOrigins[field] = it }, large = true)
+                                        Text(field.shortLabel(), style = SettingsText.detail, modifier = Modifier.padding(top = 6.dp), color = colors.ink)
+                                        Text(value.removePrefix("#").uppercase(), style = SettingsText.tiny.copy(fontSize = 9.sp), color = colors.inkSecondary)
                                     }
                                 }
                                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
@@ -187,6 +227,8 @@ private fun AppearanceSettingsScreen(
                         }
                     }
                 }
+                Text("点色块编辑 HSV / HEX · 文字与按钮自动调整以保持可读", Modifier.padding(top = 12.dp), style = SettingsText.detail, color = colors.inkSecondary)
+                TextButton(onDuplicate, enabled = editable) { Text("复制当前主题", style = SettingsText.caption) }
                 TextButton({ onPreset(ThemePreset.ORIGINAL) }, enabled = editable) { Text("还原为默认主题") }
             }
         }
@@ -195,8 +237,11 @@ private fun AppearanceSettingsScreen(
             Text(it, Modifier.padding(top = 10.dp), style = LifeText.caption, color = colors.inkSecondary)
         }
     }
+    SettingsInkWipe(inkEvent, palette, reduced, Modifier.matchParentSize())
+    }
     editingColor?.let { field ->
-        LocalColorEditor(field.label, fields.first { it.first == field }.second,
+        LocalColorEditor(field.shortLabel(), fields.first { it.first == field }.second, origin = colorOrigin,
+            roles = fields, activeRole = field, onColors = { selected -> selected.forEach { (role, hex) -> onField(role, hex) } },
             onColor = { onField(field, it) }, onDismiss = { editingColor = null })
     }
     if (showLibrary) ThemeLibraryDialog(
@@ -204,9 +249,9 @@ private fun AppearanceSettingsScreen(
         preview = state.preview,
         savedThemes = namedThemes,
         enabled = editable,
-        onChoose = { id -> ThemePreset.fromId(id)?.let(onPreset) ?: onNamed(id) },
+        onChoose = { id -> ThemePreset.fromId(id)?.let(onPreset) ?: onNamed(id); inkEvent++ },
         onDelete = onDelete,
-        onDismiss = { showLibrary = false }
+        onDismiss = { showLibrary = false }, origin = libraryOrigin, inkEvent = inkEvent
     )
     if (discard) AlertDialog(
         onDismissRequest = { discard = false },
@@ -221,9 +266,16 @@ private fun AppearanceSettingsScreen(
 private fun AppearanceGroup(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val reduced = reducedLifeMotion()
+    val unfold by animateFloatAsState(if (expanded) 1f else 0f,
+        if (reduced) tween(150) else spring(dampingRatio = .6f, stiffness = 420f), label = "settings-unfold")
     SettingsLine(title, subtitle, trailing = if (expanded) "收起" else "展开") { expanded = !expanded }
-    AnimatedVisibility(expanded, enter = fadeIn(tween(if (reduced) 0 else 170)), exit = fadeOut(tween(if (reduced) 0 else 120))) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), content = content)
+    AnimatedVisibility(expanded,
+        enter = fadeIn(tween(150)) + if (reduced) androidx.compose.animation.EnterTransition.None else expandVertically(spring(dampingRatio = .6f, stiffness = 420f)),
+        exit = fadeOut(tween(150)) + if (reduced) androidx.compose.animation.ExitTransition.None else shrinkVertically(spring(dampingRatio = .6f, stiffness = 420f))) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).graphicsLayer {
+            transformOrigin = TransformOrigin(.5f, 0f)
+            rotationX = if (reduced) 0f else 2f * (1f - unfold)
+        }, content = content)
     }
 }
 
@@ -235,119 +287,55 @@ private fun ThemeLibraryDialog(
     enabled: Boolean,
     onChoose: (String) -> Unit,
     onDelete: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    origin: LifeSurfaceOrigin?,
+    inkEvent: Long
 ) {
     val colors = LocalLifeOsColors.current
+    val reduced = reducedLifeMotion()
     val library = ThemePreset.entries.map { NamedTheme(it.id, it.displayName,
         CustomTheme(it.accent, it.paper, it.secondary, it.soft, it.warm)) } + savedThemes
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(24.dp), color = colors.paper, modifier = Modifier.widthIn(max = 480.dp)) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("更多主题色", Modifier.weight(1f), style = LifeText.title, color = colors.ink)
-                    TextButton(onDismiss) { Text("完成", style = LifeText.caption) }
-                }
+    SettingsOriginDialog(origin, onDismiss) { _ ->
+        Box {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 28.dp, end = 28.dp, top = 46.dp, bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 library.chunked(2).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         row.forEach { theme ->
                             val chosen = theme.id == selectedId
                             Column(Modifier.weight(1f)) {
-                                Surface(
-                                    onClick = { onChoose(theme.id) }, enabled = enabled,
-                                    modifier = Modifier.fillMaxWidth().semantics { selected = chosen },
-                                    shape = RoundedCornerShape(12.dp), color = colors.card,
-                                    border = BorderStroke(1.dp, if (chosen) colors.accent else colors.line)
-                                ) {
-                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        Text(theme.name, style = LifeText.caption, color = colors.ink)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Surface(onClick = { onChoose(theme.id) }, enabled = enabled,
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).semantics { selected = chosen },
+                                    shape = RoundedCornerShape(15.dp), color = colors.paper,
+                                    shadowElevation = 2.dp,
+                                    border = BorderStroke(if (chosen) 1.4.dp else 1.dp,
+                                        if (chosen) colors.accent else colors.accent.copy(alpha = .18f))) {
+                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        Text(theme.name, style = SettingsText.caption, color = colors.ink)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             with(theme.colors) {
                                                 listOf(accent, paper, secondary, soft, warm).forEach {
-                                                    ColorSwatch(it, Modifier.weight(1f).height(16.dp))
+                                                    SettingsColorSwatch(it, Modifier.weight(1f).aspectRatio(1f), corner = 4.dp, edge = 0.dp, elevation = 1.dp)
                                                 }
                                             }
                                         }
                                     }
                                 }
                                 if (theme.id.startsWith("palette-")) TextButton({ onDelete(theme.id) }, enabled = enabled) {
-                                    Text("移出主题集", style = LifeText.caption)
+                                    Text("移出主题集", style = SettingsText.caption)
                                 }
                             }
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
-                Text("应用预览", style = LifeText.caption, color = colors.muted)
-                AppearanceLivePreviews(preview, sideBySide = true)
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("应用预览", style = SettingsText.caption, color = colors.ink)
+                    Text("首页 / 功能页", style = SettingsText.detail, color = colors.inkSecondary)
+                }
+                AppearanceLivePreviews(preview, sideBySide = true, compact = true)
             }
+            SettingsInkWipe(inkEvent, preview.selectedColors(), reduced, Modifier.matchParentSize())
         }
-    }
-}
-
-@Composable
-private fun PaletteInk(palette: CustomTheme, reduced: Boolean, content: @Composable () -> Unit) {
-    val progress = remember { Animatable(1f) }
-    var previous by remember { mutableStateOf(palette) }
-    var from by remember { mutableStateOf(palette) }
-    LaunchedEffect(palette, reduced) {
-        val changed = palette != previous
-        if (changed) {
-            from = previous
-            previous = palette
-        }
-        if (!changed || reduced) progress.snapTo(1f)
-        else {
-            progress.snapTo(0f)
-            progress.animateTo(1f, tween(620))
-        }
-    }
-    Box(Modifier.clipToBounds()) {
-        content()
-        val ink = remember(from) {
-            with(from) { listOf(accent, paper, secondary, soft, warm).map { Color(0xFF000000L or it.substring(1).toLong(16)) } }
-        }
-        if (!reduced) Canvas(Modifier.matchParentSize()) {
-            val step = size.width / ink.size
-            val height = 32.dp.toPx().coerceAtMost(size.height)
-            ink.forEachIndexed { index, color ->
-                val reveal = ((progress.value - index * .055f) / .78f).coerceIn(0f, 1f)
-                if (reveal < 1f) drawRoundRect(
-                    color = color.copy(alpha = (1f - reveal) * .78f),
-                    topLeft = Offset(step * (index + reveal * .78f) + 4.dp.toPx(), (size.height - height) / 2),
-                    size = Size((step - 8.dp.toPx()).coerceAtLeast(0f) * (1f - reveal), height),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx())
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsSaveStamp(event: Long, reduced: Boolean) {
-    var consumed by rememberSaveable { mutableLongStateOf(0L) }
-    var visible by remember { mutableStateOf(false) }
-    val scale = remember { Animatable(1f) }
-    LaunchedEffect(event, reduced) {
-        if (event == 0L || event <= consumed) return@LaunchedEffect
-        consumed = event
-        visible = true
-        if (!reduced) {
-            scale.snapTo(1.12f)
-            scale.animateTo(1f, tween(220))
-        }
-        delay(700)
-        visible = false
-    }
-    AnimatedVisibility(visible, enter = fadeIn(tween(if (reduced) 0 else 120)), exit = fadeOut(tween(if (reduced) 0 else 120))) {
-        val colors = LocalLifeOsColors.current
-        Surface(
-            modifier = Modifier.padding(top = 4.dp).graphicsLayer {
-                scaleX = if (reduced) 1f else scale.value
-                scaleY = scaleX
-                rotationZ = if (reduced) 0f else -5f
-            },
-            shape = RoundedCornerShape(8.dp), color = colors.paper,
-            border = BorderStroke(1.dp, colors.accent)
-        ) { Text("主题已保存", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = LifeText.caption, color = colors.accentDeep) }
     }
 }

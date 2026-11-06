@@ -1,6 +1,10 @@
+@file:OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+
 package com.qq.closie.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.SharedTransitionLayout
+import com.qq.closie.ui.lifeos.settings.SettingsMotionScopeProvider
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
@@ -39,12 +43,14 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
     onSavePhotoCaption: (suspend (String, String, String?, Long) -> Unit)? = null) {
     val reducedMotion = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
     val paperOrigin = TransformOrigin(.5f, 0f)
+    SharedTransitionLayout {
+    val settingsSharedScope=this
     NavHost(navController = nav, startDestination = LifeOsRoute.DEFAULT, route = LifeOsRoute.GRAPH,
         enterTransition = {
             when {
                 reducedMotion || isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route) -> EnterTransition.None
                 initialState.destination.route in settingsHubs && targetState.destination.route in settingsPaperRoutes ->
-                    scaleIn(tween(480), initialScale = .95f, transformOrigin = paperOrigin) + fadeIn(tween(180))
+                    fadeIn(tween(500))
                 else -> fadeIn(tween(140))
             }
         },
@@ -60,7 +66,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
             when {
                 reducedMotion || isFastLifeModuleSwitch(initialState.destination.route, targetState.destination.route) -> ExitTransition.None
                 initialState.destination.route in settingsPaperRoutes && targetState.destination.route in settingsHubs ->
-                    scaleOut(tween(220), targetScale = .95f, transformOrigin = paperOrigin) + fadeOut(tween(170))
+                    fadeOut(tween(250))
                 else -> fadeOut(tween(140))
             }
         }) {
@@ -70,7 +76,7 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
                 onCapture = onCapture, onToday = { onHomeDateSelected(LocalDate.now()) }, onDateSelected = onHomeDateSelected,
                 onRemovePhoto = onRemoveHomePhoto, onSavePhotoCaption = onSavePhotoCaption)
         }
-        closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed)
+        closetRoutes(nav, repository, container, externalCommand, onExternalCommandConsumed, settingsSharedScope)
         captureRoutes(nav, container, onCapture, onFileToLibrary)
         referenceRoutes(nav, container, onCapture)
         planRoutes(nav, container)
@@ -86,26 +92,37 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
         }
         composable(LifeOsRoute.MAP) { LifeMapScreen { nav.returnToLifeHome() } }
         composable(LifeOsRoute.COMPANION) { CompanionShellScreen { nav.returnToLifeHome() } }
-        composable(LifeOsRoute.APPEARANCE) { AppearanceSettingsRoute(appearanceViewModel) { nav.returnWithinLifeModule() } }
+        composable(LifeOsRoute.APPEARANCE) {
+            SettingsMotionScopeProvider(settingsSharedScope,this) { AppearanceSettingsRoute(appearanceViewModel) { nav.returnWithinLifeModule() }
+            }}
         composable(LifeOsRoute.FINANCE_AUTOMATION) {
+            SettingsMotionScopeProvider(settingsSharedScope,this) {
             com.qq.closie.ui.lifeos.finance.FinanceAutomationScreen(container.financeAutomationRepository, container.financeRepository) { nav.returnWithinLifeModule() }
-        }
+
+            }}
         composable(LifeOsRoute.FINANCE_REVIEW) {
+            SettingsMotionScopeProvider(settingsSharedScope,this) {
             com.qq.closie.ui.lifeos.finance.FinanceAutomationScreen(container.financeAutomationRepository,
                 container.financeRepository, com.qq.closie.ui.lifeos.finance.FinanceAutomationSection.REVIEW) { nav.returnWithinLifeModule() }
-        }
+
+            }}
         composable(LifeOsRoute.SETTINGS_PRIVACY) {
+            SettingsMotionScopeProvider(settingsSharedScope,this) {
             com.qq.closie.ui.lifeos.settings.SettingsPrivacyScreen(container.financeRepository) { nav.returnWithinLifeModule() }
-        }
+
+            }}
         composable(LifeOsRoute.FINANCE_SETTINGS) {
+            SettingsMotionScopeProvider(settingsSharedScope,this) {
             com.qq.closie.ui.lifeos.finance.FinanceSettingsRoute(container.financeRepository, container.financeImportRepository,
                 onDiscovery = { nav.navigate(LifeOsRoute.FINANCE_AUTOMATION) },
                 onReview = { nav.navigate(LifeOsRoute.FINANCE_REVIEW) },
                 onPrivacy = { nav.navigate(LifeOsRoute.SETTINGS_PRIVACY) },
                 onBackup = { nav.navigate(LifeOsRoute.BACKUP) },
                 onBack = { nav.returnWithinLifeModule() })
-        }
+
+            }}
         composable(LifeOsRoute.SETTINGS) {
+            SettingsMotionScopeProvider(settingsSharedScope,this) {
             LifeSettingsScreen(appearanceViewModel, container.financeAutomationRepository,
                 onBack = { nav.returnToLifeHome() }, onAppearance = { nav.navigate(LifeOsRoute.APPEARANCE) },
                 onBackup = { nav.navigate(LifeOsRoute.BACKUP) },
@@ -114,11 +131,13 @@ fun LifeOsNavHost(repository: WardrobeRepository, container: LifeContainer,
                 onFinanceSettings = { nav.navigate(LifeOsRoute.FINANCE_SETTINGS) },
                 onPrivacy = { nav.navigate(LifeOsRoute.SETTINGS_PRIVACY) },
                 onExport = { nav.navigate(LifeOsRoute.SETTINGS_EXPORT) })
-        }
+
+            }}
         composable(LifeOsRoute.MODULE, arguments = listOf(navArgument("moduleId") { type = NavType.StringType })) { entry ->
             ModuleLandingScreen(entry.arguments?.getString("moduleId").orEmpty()) { nav.returnToLifeHome() }
         }
     }
+}
 }
 
 private val settingsHubs = setOf(LifeOsRoute.SETTINGS, LifeOsRoute.FINANCE_SETTINGS)

@@ -33,14 +33,15 @@ private val previewHome = HomeUiState(
 
 @Composable
 internal fun AppearanceLivePreviews(
-    settings: AppearanceSettings, home: Boolean = true, function: Boolean = true, sideBySide: Boolean = false
+    settings: AppearanceSettings, home: Boolean = true, function: Boolean = true, sideBySide: Boolean = false,
+    compact: Boolean = false
 ) {
     LifeOsTheme(settings) {
         CompositionLocalProvider(LocalFunctionPagePolicy provides null) {
             if (sideBySide) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (home) PreviewCard(settings, drawer = false, Modifier.weight(1f))
-                    if (function) PreviewCard(settings, drawer = true, Modifier.weight(1f))
+                    if (home) PreviewCard(settings, drawer = false, Modifier.weight(1f), compact)
+                    if (function) PreviewCard(settings, drawer = true, Modifier.weight(1f), compact)
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -53,14 +54,15 @@ internal fun AppearanceLivePreviews(
 }
 
 @Composable
-private fun PreviewCard(settings: AppearanceSettings, drawer: Boolean, modifier: Modifier = Modifier) {
+private fun PreviewCard(settings: AppearanceSettings, drawer: Boolean, modifier: Modifier = Modifier, compact: Boolean = false) {
     Column(modifier) {
-        Text(if (drawer) "功能页预览" else "首页预览", style = LifeText.caption)
+        if (!compact) Text(if (drawer) "功能页预览" else "首页预览", style = SettingsText.caption)
         Surface(shape = RoundedCornerShape(12.dp)) {
-            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(405f / 550f).clipToBounds().clearAndSetSemantics {}) {
+            val sourceHeight = if (compact) 320.dp else 550.dp
+            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(405f / sourceHeight.value).clipToBounds().clearAndSetSemantics {}) {
                 val scale = maxWidth / 405.dp
                 val preview = Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
-                    .requiredSize(405.dp, 550.dp).graphicsLayer {
+                    .requiredSize(405.dp, sourceHeight).graphicsLayer {
                         scaleX = scale
                         scaleY = scale
                         transformOrigin = TransformOrigin(0f, 0f)

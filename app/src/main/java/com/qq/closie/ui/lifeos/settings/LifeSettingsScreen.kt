@@ -2,6 +2,10 @@ package com.qq.closie.ui.lifeos.settings
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,12 +19,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qq.closie.BuildConfig
 import com.qq.closie.data.appearance.ThemePreset
@@ -104,9 +111,10 @@ fun LifeSettingsScreen(
             label = { Text("搜索设置") }, singleLine = true
         )
         if (query.isBlank() && (disconnected || pending != null)) {
+            Spacer(Modifier.height(8.dp))
             SettingsDashedRule()
-            if (disconnected) SettingsLine("自动发现尚未连接", trailing = "去设置", onClick = onFinanceAutomation)
-            pending?.let { SettingsLine("${it} 条账目候选等待确认", trailing = "去确认", onClick = onReviewInbox) }
+            if (disconnected) SettingsNoticeLine("自动发现尚未连接", "去设置", onFinanceAutomation)
+            pending?.let { SettingsNoticeLine("${it} 条账目候选等待确认", "去确认", onReviewInbox) }
             SettingsDashedRule()
         }
         val filtered = rows.map { group -> group.copy(rows = group.rows.filter {
@@ -141,13 +149,14 @@ internal fun SettingsPaperPage(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colors = LocalLifeOsColors.current
-    Scaffold(containerColor = colors.paper) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (showBack) IconButton(onBack, Modifier.offset(x = (-8).dp)) {
+    val key = settingsPaperKey(title)
+    Scaffold(modifier = Modifier.settingsPaperBounds(key), containerColor = colors.paper) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (showBack) IconButton(onBack, Modifier.width(40.dp).offset(x = (-12).dp)) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回上一页", Modifier.size(19.dp), tint = colors.inkSecondary)
                 }
-                Text(title, Modifier.weight(1f), style = LifeText.title, color = colors.ink)
+                Text(title, Modifier.weight(1f).settingsPaperTitle(key), style = SettingsText.title, color = colors.ink)
                 actions()
             }
             content()
@@ -158,7 +167,7 @@ internal fun SettingsPaperPage(
 
 @Composable
 internal fun SettingsSection(title: String) {
-    Text(title, Modifier.padding(top = 22.dp, bottom = 5.dp), style = LifeText.caption, color = LocalLifeOsColors.current.muted)
+    Text(title, Modifier.padding(top = 30.dp, bottom = 10.dp), style = SettingsText.caption, color = LocalLifeOsColors.current.inkSecondary)
 }
 
 @Composable
@@ -170,19 +179,40 @@ internal fun SettingsLine(
     onClick: (() -> Unit)? = null
 ) {
     val colors = LocalLifeOsColors.current
+    val reduced = com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val press by animateFloatAsState(if (pressed && !reduced) 1f else 0f,
+        spring(dampingRatio = .75f, stiffness = 500f), label = "settings-row-press")
     val interaction = if (onClick == null) Modifier.semantics { disabled() }
-        else Modifier.clickable(role = Role.Button, onClick = onClick)
+        else Modifier.clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
     Row(
-        Modifier.fillMaxWidth().then(interaction).heightIn(min = 48.dp).padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().settingsPaperBounds(if (onClick != null) settingsPaperKey(title) else null)
+            .graphicsLayer { scaleX = 1f - .02f * press; scaleY = scaleX; translationY = 2.dp.toPx() * press }
+            .then(interaction).heightIn(min = if (icon == null) 48.dp else 52.dp).padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (icon != null) Icon(icon, null, Modifier.padding(end = 12.dp).size(18.dp), tint = colors.accent)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, style = LifeText.body, color = if (onClick == null) colors.inkSecondary else colors.ink)
-            subtitle?.let { Text(it, style = LifeText.caption, color = colors.muted) }
+        if (icon != null) Icon(icon, null, Modifier.padding(start = 4.dp, end = 13.dp).size(19.dp), tint = colors.accent)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (icon == null) 0.dp else 4.dp)) {
+            Text(title, Modifier.settingsPaperTitle(if (onClick != null) settingsPaperKey(title) else null),
+                style = SettingsText.body, color = if (onClick == null) colors.inkSecondary else colors.ink)
+            subtitle?.let { Text(it, style = SettingsText.detail, color = colors.inkSecondary) }
         }
-        trailing?.let { Text(it, Modifier.widthIn(max = 102.dp).padding(start = 8.dp), style = LifeText.caption, color = colors.muted) }
+        trailing?.let { Text(it, Modifier.widthIn(max = 102.dp).padding(start = 8.dp), style = SettingsText.detail, color = colors.inkSecondary) }
         if (onClick != null) Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 7.dp).size(14.dp), tint = colors.muted)
+    }
+}
+
+@Composable
+private fun SettingsNoticeLine(title: String, action: String, onClick: () -> Unit) {
+    val colors = LocalLifeOsColors.current
+    val statusInk = if (colors.isDark) Color(0xFFC39A6B) else Color(0xFF926430)
+    Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).clickable(role = Role.Button, onClick = onClick)
+        .padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.padding(end = 10.dp).size(7.dp)) { drawCircle(statusInk) }
+        Text(title, Modifier.weight(1f), style = SettingsText.body.copy(fontSize = 13.sp, lineHeight = 19.sp), color = colors.ink)
+        Text(action, style = SettingsText.caption, color = statusInk)
+        Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 12.dp).size(14.dp), tint = colors.inkSecondary)
     }
 }
 

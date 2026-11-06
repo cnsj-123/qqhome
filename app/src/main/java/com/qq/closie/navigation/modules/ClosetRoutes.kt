@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+
 package com.qq.closie.navigation.modules
 
 import androidx.navigation.NavGraphBuilder
@@ -10,7 +12,8 @@ import com.qq.closie.ui.settings.DataSettingsScreen
 import com.qq.closie.ui.theme.ClosieTheme
 
 fun NavGraphBuilder.closetRoutes(nav: NavHostController, repository: WardrobeRepository,
-    container: LifeContainer, command: ExternalNavCommand?, onConsumed: (Long) -> Unit) {
+    container: LifeContainer, command: ExternalNavCommand?, onConsumed: (Long) -> Unit,
+    sharedScope: androidx.compose.animation.SharedTransitionScope? = null) {
     composable(LifeOsRoute.CLOSET) {
         ClosieTheme {
             ClosieNavHost(repository = repository, externalCommand = command,
@@ -20,11 +23,13 @@ fun NavGraphBuilder.closetRoutes(nav: NavHostController, repository: WardrobeRep
         }
     }
     composable(LifeOsRoute.BACKUP) {
-        DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
-            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository)
+        val body:@androidx.compose.runtime.Composable ()->Unit = { DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
+            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository) }
+        if(sharedScope==null) body() else com.qq.closie.ui.lifeos.settings.SettingsMotionScopeProvider(sharedScope,this,body)
     }
     composable(LifeOsRoute.SETTINGS_EXPORT) {
-        DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
-            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository, openExportCenter = true)
+        val body:@androidx.compose.runtime.Composable ()->Unit = { DataSettingsScreen(repo = repository, lifeDatabase = container.lifeDatabase,
+            back = { nav.returnWithinLifeModule() }, finance = container.financeRepository, openExportCenter = true) }
+        if(sharedScope==null) body() else com.qq.closie.ui.lifeos.settings.SettingsMotionScopeProvider(sharedScope,this,body)
     }
 }
