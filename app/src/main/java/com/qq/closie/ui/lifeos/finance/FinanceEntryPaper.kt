@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -35,12 +39,13 @@ import kotlinx.coroutines.launch
 /** New-entry paper leaves the real ledger visible above it, unlike a generic full-height sheet. */
 @Composable
 internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?, onClose: () -> Unit,
-    manualPaper: Boolean, actions: @Composable ColumnScope.() -> Unit,
+    manualPaper: Boolean, reducedMotion:Boolean=reducedLifeMotion(),onPaperMotion:((Float)->Unit)?=null, actions: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit) {
     if (!manualPaper) { FinanceReceipt(title,busy,error,onClose,actions=actions,content=content); return }
     val colors=LocalLifeOsColors.current
-    val reduced=reducedLifeMotion()
+    val reduced=reducedMotion
     val progress=remember {Animatable(0f)}
+    ReportFinancePaperMotion(onPaperMotion) {progress.value.coerceIn(0f,1f)}
     val scope=rememberCoroutineScope()
     val close by rememberUpdatedState(onClose)
     val currentBusy by rememberUpdatedState(busy)
@@ -62,14 +67,33 @@ internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?,
         BackHandler {dismiss()}
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val paperHeight=maxHeight*.866f
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.10f*progress.value)).clickable(enabled=!busy){dismiss()})
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=if(onPaperMotion!=null) 0f else .08f*progress.value.coerceIn(0f,1f))).clickable(enabled=!busy){dismiss()})
+            if(!reduced) Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(paperHeight)) {
+                val p=progress.value.coerceIn(0f,1f)
+                val front=(p/.8f).coerceIn(0f,1f)
+                val lineAlpha=(1f-(p-.8f)/.2f).coerceIn(0f,1f)
+                if(front>0f && lineAlpha>0f) {
+                    val left=size.width*(1f-front)/2f;val right=size.width-left
+                    val path=Path().apply {
+                        moveTo(left,0f)
+                        manualTearEdge(size.width,8.dp.toPx(),p).filter {it.x in left..right}.forEach {lineTo(it.x,it.y)}
+                        lineTo(right,0f)
+                    }
+                    drawPath(path,colors.inkSecondary.copy(alpha=.5f*lineAlpha),style=Stroke(1.dp.toPx()))
+                }
+            }
             Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(paperHeight).imePadding()
                 .testTag("finance-receipt").semantics {paneTitle=title}.graphicsLayer {
-                    alpha=progress.value.coerceIn(0f,1f)
-                    rotationX=if(reduced) 0f else -12f*(1f-progress.value)
-                    translationY=if(reduced) 0f else (1f-progress.value)*28.dp.toPx()
+                    // The spatial spring first opens the seam, then takes the exposed paper with it.
+                    // Its small physical overshoot becomes the specified ~2dp landing bounce.
+                    val unfold=if(reduced) progress.value else ((progress.value-.6f)/.4f).coerceAtLeast(0f)
+                    alpha=unfold.coerceIn(0f,1f)
+                    rotationX=if(reduced) 0f else -12f*(1f-unfold)
+                    translationY=if(reduced) 0f else (1f-unfold)*28.dp.toPx()
                     cameraDistance=12*density
-                },shape=ManualReceiptShape,color=colors.paper) {
+                    shape=if(reduced) ManualReceiptShape else GrowingManualReceiptShape(progress.value)
+                    clip=true
+                },shape=RectangleShape,color=colors.paper) {
                 Column(Modifier.fillMaxSize().padding(horizontal=32.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets(bottom=24.dp)))) {
                     Row(Modifier.fillMaxWidth().height(52.dp).pointerInput(busy,reduced) {
@@ -85,7 +109,9 @@ internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?,
                                 scope.launch {progress.snapTo((progress.value-dy/paperHeight.toPx()).coerceIn(0f,1f))}}
                         }
                     },verticalAlignment=Alignment.CenterVertically) {
-                        IconButton({dismiss()},Modifier.offset(x=(-12).dp),enabled=!busy) {Icon(Icons.AutoMirrored.Outlined.ArrowBack,"收起",Modifier.size(20.dp),tint=colors.inkSecondary)}
+                        IconButton({dismiss()},Modifier.offset(x=(-12).dp),enabled=!busy) {
+                            Icon(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_back),"收起",Modifier.size(24.dp),tint=colors.inkSecondary)
+                        }
                     }
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
                     error?.let {Text(it,style=LedgerText.caption,color=MaterialTheme.colorScheme.error)}

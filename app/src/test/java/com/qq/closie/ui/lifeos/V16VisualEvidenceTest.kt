@@ -163,6 +163,11 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         financeScene()
         compose.onNodeWithTag("finance-ledger").performScrollToNode(hasText("合成咖啡") and hasClickAction())
         capture("finance-ledger")
+        compose.onNodeWithContentDescription("筛选与日期").performClick()
+        compose.onNodeWithTag("finance-query-sheet").assertIsDisplayed()
+        capture("finance-query")
+        compose.onNodeWithContentDescription("取消查账条件").performClick()
+        compose.waitUntil(10_000) {compose.onAllNodesWithTag("finance-query-sheet").fetchSemanticsNodes().isEmpty()}
         compose.onNode(hasText("合成咖啡") and hasClickAction()).performClick()
         compose.onNodeWithText("正式账单 · 已确认").assertIsDisplayed()
         val receipt=compose.onNodeWithTag("finance-receipt").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
@@ -170,6 +175,12 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         assertTrue("A short receipt must not force an almost-fullscreen blank paper",receipt.height<windowHeight*.7f)
         capture("finance-receipt")
         assertEquals(1,runBlocking {finance.snapshot()}.entries.size)
+    }
+    @Test fun emptyLedgerUsesTheProductionEmptyStateWithoutInventingAnAccount() {
+        financeScene()
+        compose.onNodeWithText("快来记一笔账吧").assertIsDisplayed()
+        capture("finance-ledger-empty")
+        assertTrue(runBlocking {finance.snapshot()}.accounts.isEmpty())
     }
     @Test fun entryAndAnalysisRenderActualCanonicalSyntheticFactsAtTheFigmaViewport() {
         runBlocking {

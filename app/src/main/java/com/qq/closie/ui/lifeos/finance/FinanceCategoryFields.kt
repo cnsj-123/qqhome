@@ -5,16 +5,20 @@ import com.qq.closie.life.ui.theme.BundledText as Text
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.LifeText
+import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 
 /** User icon keys are typed configuration; names supply a presentation default. */
 internal object FinanceCategoryGlyph {
@@ -62,7 +66,7 @@ internal fun FinanceCategoryFields(snapshot: FinanceSnapshot, selected: String?,
             row.forEach { category ->
                 FilterChip(selected == category.id, {
                     if (query.isBlank() && tree.children(category.id).isNotEmpty()) parentId = category.id else onSelect(category.id)
-                }, modifier = Modifier.weight(1f), enabled = !busy,
+                }, modifier = Modifier.weight(1f).testTag("finance-category-option-" + category.id), enabled = !busy,
                     leadingIcon = { Icon(FinanceCategoryGlyph.forCategory(snapshot,category.id,category.name), null, Modifier.size(18.dp)) },
                     label = { Text(if (query.isBlank()) category.name else tree.fullPath(category.id).orEmpty(), maxLines = 2) })
             }
@@ -84,4 +88,33 @@ internal fun FinanceCategoryFields(snapshot: FinanceSnapshot, selected: String?,
         }
     }
     Text("分类记录消费内容；报销、代付、分账在业务性质中选择。", style = LifeText.caption)
+}
+
+/** Plain category form: nullable parent is an explicit top-level choice, never a synthetic record. */
+@Composable
+internal fun FinanceNewCategoryFields(snapshot: FinanceSnapshot, busy: Boolean,
+    onCreate: (String?, String, (String) -> Unit) -> Unit, onCreated: (String) -> Unit) {
+    val colors = LocalLifeOsColors.current
+    val tree = remember(snapshot.categories) { FinanceCategoryTree(snapshot.categories) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var parentId by rememberSaveable { mutableStateOf<String?>(null) }
+    var choosingParent by rememberSaveable { mutableStateOf(false) }
+    FinanceAccountInputRow("分类名称", value = name, onValue = { name = it }, enabled = !busy,
+        placeholder = "例如：咖啡")
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("finance-new-category-parent")
+        .clickable(enabled = !busy) { choosingParent = true }, verticalAlignment = Alignment.CenterVertically) {
+        Text("父分类", Modifier.weight(1f), style = LedgerText.caption, color = colors.inkSecondary)
+        Text(parentId?.let(tree::fullPath) ?: "无 · 顶层分类", style = LedgerText.caption, color = colors.inkSecondary)
+        Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.padding(start = 6.dp).size(14.dp), tint = colors.inkSecondary)
+    }
+    HorizontalDivider(color = colors.line)
+    Button({ onCreate(parentId, name, onCreated) }, enabled = !busy && FinanceCategoryTree.singleName(name) != null,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 24.dp).heightIn(min = 42.dp).testTag("finance-save-category")) {
+        Text(if (busy) "保存中…" else "保存分类", style = LedgerText.body, color = colors.onAccent)
+    }
+    if (choosingParent) FinanceChoiceSheet("父分类", parentId.orEmpty(),
+        listOf("" to "无 · 顶层分类") + snapshot.categories.filter { tree.hasValidAncestry(it.id) }
+            .map { it.id to tree.fullPath(it.id).orEmpty() },
+        onSelect = { parentId = it.takeIf(String::isNotBlank) }, onClose = { choosingParent = false })
 }

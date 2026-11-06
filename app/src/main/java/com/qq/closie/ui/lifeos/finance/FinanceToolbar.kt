@@ -45,7 +45,7 @@ internal fun FinanceToolbar(monthLabel: String, query: String, searchHint: Strin
             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
             decorationBox = { field ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    Icon(Icons.Outlined.Search, null, Modifier.size(13.dp), tint = colors.inkSecondary)
+                    Icon(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_search), null, Modifier.size(14.dp), tint = colors.inkSecondary)
                     Box(Modifier.weight(1f).padding(start = 5.dp)) {
                         if (query.isEmpty()) Text("搜索", style = LedgerText.caption, color = colors.inkSecondary, maxLines = 1)
                         field()

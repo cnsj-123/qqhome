@@ -27,7 +27,7 @@ import com.qq.closie.ui.lifeos.components.reducedLifeMotion
 import com.qq.closie.ui.lifeos.theme.*
 
 private val entryRootNames=listOf("餐饮","交通","购物","居家","咖啡","园艺","人情","医疗","学习")
-private val entryFoodNames=listOf("早餐","午餐","晚餐","下午茶","宵夜")
+private val entryFoodNames=listOf("早餐","午餐","晚餐","下午茶","夜宵")
 private data class EntryCategoryOption(val key:String,val name:String,val canonical:FinanceCategoryEntity?)
 
 /** Template choices are draft input strings, never invented canonical IDs or financial records. */

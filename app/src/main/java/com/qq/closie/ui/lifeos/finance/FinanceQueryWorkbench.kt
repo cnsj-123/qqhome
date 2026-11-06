@@ -151,7 +151,7 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     if(!useLocal) {
         viewingEvent?.let {id->
             if(editingEvent) FinanceEconomicEditor(state,vm,id){editingEvent=false}
-            else FinanceEconomicDetails(s,id,onEdit={editingEvent=true},onOpenCash={viewingCash=it},onClose={viewingEvent=null})
+            else FinanceEconomicDetailNavigation(state,vm,id,onEdit={editingEvent=true},onOpenCash={viewingCash=it},onClose={viewingEvent=null})
         }
         viewingCash?.let {id->FinanceCanonicalRecordSheet(state,vm,id){viewingCash=null}}
     }

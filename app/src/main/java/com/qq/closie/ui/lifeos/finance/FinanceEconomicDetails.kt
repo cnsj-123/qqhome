@@ -30,7 +30,7 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 @Composable
 internal fun FinanceEconomicDetails(
     snapshot: FinanceSnapshot, eventId: String, onEdit: () -> Unit,
-    onOpenCash: (String) -> Unit, onClose: () -> Unit
+    onOpenCash: (String) -> Unit, onOpenEvidence: ((List<FinanceMediaLinkEntity>)->Unit)?=null, onClose: () -> Unit
 ) {
     val event = snapshot.v4?.events.orEmpty().singleOrNull { it.id == eventId && it.voidedAt == null }
     val v = snapshot.v16
@@ -134,19 +134,14 @@ internal fun FinanceEconomicDetails(
                 if (row.openMinor == 0L) Text(if (row.cashEvidenceComplete) "已结清，真实现金证据完整"
                     else "工作已结束，历史现金证据仍不完整", style = LedgerText.caption, color = colors.inkSecondary)
             }
-            val entryIds = cash.map { it.second.id }.toSet()
-            val canonicalIds = entryIds + snapshot.transfers.filter {
-                it.outflowEntryId in entryIds || it.inflowEntryId in entryIds
-            }.map { it.id }
-            val proposalIds = snapshot.v4?.proposals.orEmpty().filter { it.canonicalId in canonicalIds }.map { it.id }.toSet()
-            val lineIds = v?.purchaseAllocationRows.orEmpty().filter { it.eventId == event.id && it.voidedAt == null }.map { it.lineId }.toSet()
-            val purchaseIds = v?.purchaseLineRows.orEmpty().filter { it.id in lineIds }.map { it.purchaseId }.toSet()
-            val attachments = v?.mediaLinkRows.orEmpty().filter { it.voidedAt == null &&
-                (it.eventId == event.id || it.proposalId in proposalIds || it.purchaseId in purchaseIds) }
+            val attachments = financeEventEvidence(snapshot,event.id)
             HorizontalDivider(color = colors.line)
             Text("凭据", style = LedgerText.body)
             if (attachments.isEmpty()) Text("暂无凭据", style = LedgerText.body)
-            attachments.forEach { Text(it.label.ifBlank { "凭据附件" }, style = LedgerText.body) }
+            if(attachments.isNotEmpty() && onOpenEvidence!=null) TextButton({onOpenEvidence(attachments)},
+                contentPadding=PaddingValues(0.dp),modifier=Modifier.semantics {contentDescription="查看事项凭据"}) {
+                Text(attachments.joinToString("、"){it.label.ifBlank {"凭据附件"}},style=LedgerText.body)
+            } else attachments.forEach { Text(it.label.ifBlank { "凭据附件" }, style = LedgerText.body) }
         }
     }
 }

@@ -53,13 +53,16 @@ internal fun Modifier.financeResetPrint(progress:Float,index:Int,reduced:Boolean
 
 /** 0–150 press/line, 150–390 field print, 400–600 real-row return (or an honest fade). */
 @Composable
-internal fun FinancePrintedReceipt(row:FinanceLedgerRow?, destination:()->LifeSurfaceOrigin?, reducedMotion:Boolean=reducedLifeMotion(), onClose:()->Unit) {
+internal fun FinancePrintedReceipt(row:FinanceLedgerRow?, destination:()->LifeSurfaceOrigin?, reducedMotion:Boolean=reducedLifeMotion(),onPaperMotion:((Float)->Unit)?=null,onClose:()->Unit) {
     val colors=LocalLifeOsColors.current
     val reduced=reducedMotion
     val configuration=LocalConfiguration.current
     val close by rememberUpdatedState(onClose)
     val currentDestination by rememberUpdatedState(destination)
     val progress=remember(row?.id) {Animatable(0f)}
+    ReportFinancePaperMotion(onPaperMotion) {
+        if(reduced) 1f-progress.value else 1f-((progress.value*600f-400f)/200f).coerceIn(0f,1f)
+    }
     LaunchedEffect(row?.id,reduced) {
         if(row==null) return@LaunchedEffect
         progress.animateTo(1f,tween(if(reduced) 150 else 600,easing=LinearEasing))
@@ -72,7 +75,7 @@ internal fun FinancePrintedReceipt(row:FinanceLedgerRow?, destination:()->LifeSu
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val width=constraints.maxWidth.toFloat();val height=constraints.maxHeight.toFloat()
             val source=Rect(0f,height*.134f,width,height)
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.10f*(1f-progress.value)))
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=if(onPaperMotion!=null) 0f else .08f*(1f-progress.value)))
                 .clickable {close()})
             Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(maxHeight*.866f)
                 .testTag("finance-printed-receipt").semantics {paneTitle="记账完成"}.graphicsLayer {

@@ -38,7 +38,7 @@ import com.qq.closie.ui.lifeos.settings.SettingsLine
 import com.qq.closie.ui.lifeos.settings.SettingsText
 import com.qq.closie.ui.lifeos.settings.SettingsPaperPrompt
 import com.qq.closie.ui.lifeos.settings.SettingsBackupVerifiedSeal
-import com.qq.closie.ui.lifeos.settings.SettingsHoldToRestore
+import com.qq.closie.ui.lifeos.settings.SettingsRestorePreviewPrompt
 import com.qq.closie.ui.lifeos.settings.SettingsPasswordLine
 import androidx.compose.ui.platform.testTag
 import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
@@ -374,7 +374,31 @@ fun DataSettingsScreen(
         confirmButton = { TextButton({ confirmFinanceCsv = false; financeCsvLauncher.launch("lifeos-finance-${LocalDate.now()}.zip") }) { Text("确认导出明文") } },
         dismissButton = { TextButton({ confirmFinanceCsv = false }) { Text("取消") } })
     confirmRestore?.let { uri ->
-        SettingsPaperPrompt(paper=lifeSurface,origin=restoreOrigin,busy=busy,
+        fun confirmCurrentSource(preview:BackupRestorePreview?) {
+            // A queued click must still refer to the source and preview currently shown by this owner.
+            if(confirmRestore!=uri || preview!==restorePreview || localBusy || restoreOwner.state.value.running ||
+                (!legacyZip && restorePassword.isEmpty())) return
+            val password=if(legacyZip) null else restorePassword.toCharArray()
+            if(preview==null) {
+                localBusy=true;message=null
+                scope.launch {
+                    EncryptedBackupManager.inspect(context,uri,password).fold(
+                        {restorePreview=it},{message=failureMessage("检查失败",it)})
+                    localBusy=false
+                }
+            } else if(restoreOwner.start("恢复成功") {
+                EncryptedBackupManager.restoreInspected(context.applicationContext,repo,uri,lifeDatabase,password,preview)
+            }) {
+                restorePassword="";confirmRestore=null;restorePreview=null;message=null
+            } else password?.fill('\u0000')
+        }
+        val inspected=restorePreview
+        if(lifeSurface && inspected!=null) SettingsRestorePreviewPrompt(
+            preview=inspected,confirmationKey=uri,enabled=legacyZip || restorePassword.isNotEmpty(),busy=busy,
+            origin=restoreOrigin,message=message,
+            onDismissRequest={if(!busy) {confirmRestore=null;restorePassword="";restorePreview=null}},
+            onConfirm=::confirmCurrentSource
+        ) else SettingsPaperPrompt(paper=lifeSurface,origin=restoreOrigin,busy=busy,
             onDismissRequest = { if (!busy) { confirmRestore = null; restorePassword = ""; restorePreview = null } },
             title = { Text(if (restorePreview == null) "检查备份" else "确认恢复范围") },
             text = { Column {
@@ -396,24 +420,7 @@ fun DataSettingsScreen(
             confirmButton = {_,canConfirm->
                 val preview = restorePreview
                 val enabled=(legacyZip || restorePassword.isNotEmpty()) && !busy && canConfirm
-                val confirm:()->Unit = {
-                    val password = if (legacyZip) null else restorePassword.toCharArray()
-                    if (preview == null) {
-                        localBusy = true; message = null
-                        scope.launch {
-                            EncryptedBackupManager.inspect(context, uri, password).fold(
-                                { restorePreview = it }, { message = failureMessage("检查失败", it) }
-                            )
-                            localBusy = false
-                        }
-                    } else if (restoreOwner.start("恢复成功") {
-                        EncryptedBackupManager.restoreInspected(context.applicationContext, repo, uri, lifeDatabase, password, preview)
-                    }) {
-                        restorePassword = ""; confirmRestore = null; restorePreview = null; message = null
-                    } else password?.fill('\u0000')
-                }
-                if(lifeSurface && preview!=null) SettingsHoldToRestore(enabled,uri to preview,confirm)
-                else TextButton(enabled=enabled,onClick=confirm) {Text(if(preview==null) "校验并预览" else "确认恢复",color=if(lifeSurface) LocalLifeOsColors.current.onAccent else ClosieColor.Rose)}
+                TextButton(enabled=enabled,onClick={confirmCurrentSource(preview)}) {Text(if(preview==null) "校验并预览" else "确认恢复",color=if(lifeSurface) LocalLifeOsColors.current.onAccent else ClosieColor.Rose)}
             },
             dismissButton = {close->TextButton(onClick=close,enabled=!busy) {Text("取消")} }
         )

@@ -54,8 +54,11 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val colors = LocalLifeOsColors.current
     val requestedFilter by vm.filterInput.collectAsState()
     val rowOrigins=remember {mutableMapOf<String,com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin>()}
-    var ledgerViewport by remember {mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)}
+    val rowCoordinates=remember {mutableMapOf<String,androidx.compose.ui.layout.LayoutCoordinates>()}
+    var ledgerCoordinates by remember {mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null)}
+    val orientation=androidx.compose.ui.platform.LocalConfiguration.current.orientation
     var printingRecordId by remember {mutableStateOf<String?>(null)}
+    var entryPaperProgress by remember {mutableFloatStateOf(0f)}
     var landingRecordId by remember {mutableStateOf<String?>(null)}
     val landingFlash=remember {androidx.compose.animation.core.Animatable(0f)}
     var recordOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
@@ -189,14 +192,14 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     }
     fun back() { if (chartLabel != null) chartLabel = null else if (detailAccount != null) detailAccount = null else onBack() }
     BackHandler((detailAccount != null || chartLabel != null) && !editing && !viewing && !accountEditing) { back() }
-    Scaffold(containerColor = colors.paper, topBar = {
+    Scaffold(modifier=Modifier.financePaperBackdrop {entryPaperProgress},containerColor = colors.paper, topBar = {
         if (detailAccount == null && chartLabel == null) {
             val actions: @Composable RowScope.() -> Unit = {
                 IconButton({ if (view == FinanceView.ACCOUNTS) accountSearchOpen = true else queryMenu = true }, Modifier.size(32.dp)) {
-                    Icon(Icons.Outlined.FactCheck, if(view == FinanceView.ACCOUNTS) "搜索账户" else "筛选与日期", Modifier.size(19.dp), tint = colors.accentDeep)
+                    Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_review), if(view == FinanceView.ACCOUNTS) "搜索账户" else "筛选与日期", Modifier.size(24.dp), tint = colors.accentDeep)
                 }
                 if (onFinanceSettings != null) IconButton(onFinanceSettings, Modifier.size(32.dp)) {
-                    Icon(Icons.Outlined.Settings, "账目专项设置", Modifier.size(19.dp), tint = colors.inkSecondary)
+                    Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_settings), "账目专项设置", Modifier.size(24.dp), tint = colors.inkSecondary)
                 }
             }
             if (view == FinanceView.INSIGHTS) Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 14.dp, start = 32.dp, end = 32.dp).height(48.dp),
@@ -290,7 +293,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                 collapseProgress = (collapseProgress*2f).coerceIn(0f,1f), onCollapse = ::setCollapsed,
                 onCollapseDistance = { collapseDistance = (it*2f).coerceAtLeast(1f) }, economicDates = state.economicDates) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned {
-            if(view==FinanceView.TRANSACTIONS) ledgerViewport=it.boundsInWindow()
+            if(view==FinanceView.TRANSACTIONS) ledgerCoordinates=it
         }
             .lifeHorizontalSwipe(enabled=view==FinanceView.TRANSACTIONS && page==pager.currentPage &&
                 !editing && !viewing && !accountEditing && detailAccount==null && chartLabel==null,
@@ -435,9 +438,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                                 items(shownDays[date].orEmpty(), key = { it.id }) { row ->
                                     DisposableEffect(row.id){onDispose {
                                         rowOrigins.remove(row.id)
+                                        rowCoordinates.remove(row.id)
                                         if(entryId==row.id)recordOrigin=recordOrigin?.copy(rect=androidx.compose.ui.geometry.Rect.Zero)
                                     }}
-                                    Box(Modifier.background(if(landingRecordId==row.id) colors.accent.copy(alpha=.12f*landingFlash.value) else androidx.compose.ui.graphics.Color.Transparent,RoundedCornerShape(8.dp))) {
+                                    Box(Modifier.onGloballyPositioned {rowCoordinates[row.id]=it}.background(if(landingRecordId==row.id) colors.accent.copy(alpha=.12f*landingFlash.value) else androidx.compose.ui.graphics.Color.Transparent,RoundedCornerShape(8.dp))) {
                                     LedgerLine(row,roles[row.entry.id],state.snapshot,balancesAfter[row.entry.id],
                                         showCashTime = row.entry.id !in unknownCashDateIds,
                                         hidden=(viewing && entryId==row.id && recordOrigin!=null) || printingRecordId==row.id,onPosition={origin->
@@ -474,10 +478,9 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
         }
     }
-    if (viewing && state.loaded) FinanceRecordDetails(allRows.find { it.id == entryId }, state.snapshot,
+    if (viewing && state.loaded) FinanceRecordDetailNavigation(state,vm,allRows.find { it.id == entryId },
         origin=recordOrigin,
         onEdit = { recordDestination = FinanceRecordDestination.Editing(it.id, it.entry.revision) },
-        voidAction = { FinanceRecordVoidAction(it, state, vm) { recordDestination = FinanceRecordDestination.Closed } },
         onClose = { recordDestination = FinanceRecordDestination.Closed })
     if (editing && state.loaded) {
         val destination = recordDestination
@@ -493,8 +496,17 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     onSaved = { landingRecordId=printingRecordId;printingRecordId=null;recordDestination = FinanceRecordDestination.Closed; entryDrafts.removeState(draftKey) },
                     onTerminalClose = { printingRecordId=null;recordDestination = FinanceRecordDestination.Closed; entryDrafts.removeState(draftKey) },
                     onCommitted = {printingRecordId=it},
+                    onPaperMotion = {entryPaperProgress=it},
                     printDestination = {id->
-                        rowOrigins[id]?.takeIf {origin->view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null && ledgerViewport.contains(origin.rect.center)}
+                        // Transform already measured coordinates; never measure/scroll or guess a row during the flight.
+                        val coordinates=rowCoordinates[id]?.takeIf {it.isAttached}
+                        val viewport=ledgerCoordinates?.takeIf {it.isAttached}?.boundsInWindow()
+                        if(coordinates!=null && viewport!=null && view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null) {
+                            val top=coordinates.localToWindow(Offset.Zero)
+                            val bottom=coordinates.localToWindow(Offset(coordinates.size.width.toFloat(),coordinates.size.height.toFloat()))
+                            com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin(androidx.compose.ui.geometry.Rect(top,bottom),0f,orientation)
+                                .takeIf {viewport.contains(it.rect.center)}
+                        } else null
                     }
                 ) { recordDestination = FinanceRecordDestination.Closed }
             }

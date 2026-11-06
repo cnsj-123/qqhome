@@ -27,6 +27,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     initialRelationship: FinanceRelationshipDraft? = null, initialKind: FinanceEditorKind = FinanceEditorKind.EXPENSE, onSaved: (() -> Unit)? = null,
     onTerminalClose:(()->Unit)?=null,initialAccountId:String?=null,initialTargetAccountId:String?=null,
     onCommitted: (String)->Unit = {},
+    onPaperMotion: ((Float)->Unit)?=null,
     printDestination: (String)->com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin? = {null},
     onClose: () -> Unit) {
     if(!state.loaded) {FinanceReceipt("正在打开账本",error=state.error,onClose=onClose) {Text("账本快照读取完成后可继续编辑。")};return}
@@ -45,7 +46,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     printedId?.let { id ->
         if(editorEpoch==(state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L)) {
             FinancePrintedReceipt(FinanceProjection.ledger(state.snapshot).singleOrNull {it.id==id},
-                destination={printDestination(id)},onClose=finish)
+                destination={printDestination(id)},onPaperMotion=onPaperMotion,onClose=finish)
         } else {
             FinanceReceipt("此编辑器已结束",onClose=onTerminalClose ?: onClose) {Text("恢复代际已改变，请重新打开账簿。")}
         }
@@ -115,7 +116,7 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
         if(row==null) vm.flushDraftOnStop(editorId,persistentDraftId,initialDraftRevision,currentDraft(),continuous,editorEpoch)
     }
-    FinanceEntryContainer(if (row == null) "记一笔" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, actions = {
+    FinanceEntryContainer(if (row == null) "记一笔" else "修改这笔记录", state.busy, state.error, ::leave, manualPaper = row == null, onPaperMotion=onPaperMotion, actions = {
         FinanceAmountKeypad(amount, currency, !state.busy, compact = row == null) { amount = it }
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
         if (row == null) {
@@ -149,6 +150,9 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
         }
         Row(Modifier.padding(top=20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
             if(row==null) {
+                Box(Modifier.width(24.dp).height(36.dp),contentAlignment=androidx.compose.ui.Alignment.CenterEnd) {
+                    Icon(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_note),null,Modifier.size(16.dp),tint=colors.inkSecondary)
+                }
                 FinanceCompactEntryField(description,{description=it},"备注（可留空）",!state.busy,Modifier.weight(1f).financeResetPrint(resetPrint.value,4,reducedSaveMotion))
                 FinanceCompactEntryField(amount,{amount=it},"金额 · "+currency,!state.busy,Modifier.weight(.7f).financeResetPrint(resetPrint.value,0,reducedSaveMotion),amount=true)
                 Text(if(currency=="CNY") "¥" else currency,style=LedgerText.meta,color=colors.inkSecondary)

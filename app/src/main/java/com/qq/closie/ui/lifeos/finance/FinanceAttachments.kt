@@ -22,13 +22,16 @@ internal fun retainFinanceUri(context:Context,uri:Uri):Boolean=runCatching {
 }.getOrDefault(false)
 
 @Composable
-internal fun FinanceAttachments(s:FinanceSnapshot,target:FinanceMediaTarget,busy:Boolean,error:String?,action:FinanceMediaAction) {
-    key(target) {FinanceAttachmentsContent(s,target,busy,error,action)}
+internal fun FinanceAttachments(s:FinanceSnapshot,target:FinanceMediaTarget,busy:Boolean,error:String?,
+    readOnly:Boolean=false,initialOpen:Boolean=false,providedLinks:List<FinanceMediaLinkEntity>?=null,
+    onClose:(()->Unit)?=null,action:FinanceMediaAction) {
+    key(target,readOnly) {FinanceAttachmentsContent(s,target,busy,error,readOnly,initialOpen,providedLinks,onClose,action)}
 }
 
 @Composable
-private fun FinanceAttachmentsContent(s:FinanceSnapshot,target:FinanceMediaTarget,busy:Boolean,error:String?,action:FinanceMediaAction) {
-    var open by rememberSaveable {mutableStateOf(false)}
+private fun FinanceAttachmentsContent(s:FinanceSnapshot,target:FinanceMediaTarget,busy:Boolean,error:String?,
+    readOnly:Boolean,initialOpen:Boolean,providedLinks:List<FinanceMediaLinkEntity>?,onClose:(()->Unit)?,action:FinanceMediaAction) {
+    var open by rememberSaveable {mutableStateOf(initialOpen)}
     var label by rememberSaveable {mutableStateOf("")}
     var reconnect by rememberSaveable {mutableStateOf<String?>(null)}
     var reconnectRevision by rememberSaveable {mutableLongStateOf(0L)}
@@ -42,9 +45,12 @@ private fun FinanceAttachmentsContent(s:FinanceSnapshot,target:FinanceMediaTarge
         val entries=s.v4?.links.orEmpty().filter {it.eventId==target.eventId && it.voidedAt==null}.map {it.entryId}.toSet()
         s.v4?.proposals.orEmpty().filter {it.canonicalId in entries}.map {it.id}.toSet()
     }
-    val rows=(direct+v?.mediaLinkRows.orEmpty().filter {it.voidedAt==null && it.proposalId in sourceProposals}).distinctBy {it.id}
+    val rows=if(providedLinks!=null) {
+        val ids=providedLinks.map {it.id}.toSet()
+        v?.mediaLinkRows.orEmpty().filter {it.voidedAt==null && it.id in ids}
+    } else (direct+v?.mediaLinkRows.orEmpty().filter {it.voidedAt==null && it.proposalId in sourceProposals}).distinctBy {it.id}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->
-        if(uri!=null) {
+        if(uri!=null && !readOnly) {
             val linkId=reconnect;val expected=reconnectRevision
             action {repo,token->
                 val document=FinanceSelectedMediaIO.inspect(context,uri)
@@ -56,18 +62,21 @@ private fun FinanceAttachmentsContent(s:FinanceSnapshot,target:FinanceMediaTarge
             }
         } else reconnect=null
     }
-    TextButton({open=true}) {Text("凭据与附件 · ${rows.size}")}
-    if(open) FinanceReceipt("凭据与附件",busy,error,{open=false}) {
-        Text("只引用所选原件，支持图片和 PDF。删除本引用保留原件和账务；换机或权限撤销后可重新选择同一原件。")
+    if(!initialOpen) TextButton({open=true}) {Text("凭据与附件 · ${rows.size}")}
+    if(open) FinanceReceipt("凭据与附件",busy,error,{open=false;onClose?.invoke()}) {
+        Text(if(readOnly) "查看原有凭据，打开前检查原件摘要与访问权限。" else "只引用所选原件，支持图片和 PDF。删除本引用保留原件和账务；换机或权限撤销后可重新选择同一原件。")
         message?.let {Text(it)}
-        OutlinedTextField(label,{label=it.take(100)},label={Text("凭据名称（选填）")})
-        TextButton({reconnect=null;picker.launch(arrayOf("image/*","application/pdf"))},enabled=!busy) {Text("选择原件并保留引用")}
-        val reusable=v?.mediaLinkRows.orEmpty().filter {it.voidedAt==null}.distinctBy {it.mediaAssetId to it.sourceHash}.take(100)
-        FinanceChoice("复用已有凭据",reuse,listOf("" to "请选择")+reusable.map {it.id to it.label}) {reuse=it}
-        TextButton({
-            val selected=reusable.singleOrNull {it.id==reuse}
-            if(selected!=null) action {repo,token->repo.linkSharedAsset(token,target,selected.mediaAssetId,selected.sourceHash,label.ifBlank {selected.label})}
-        },enabled=!busy && reuse.isNotBlank()) {Text("关联同一媒体原件")}
+        if(!readOnly) {
+            OutlinedTextField(label,{label=it.take(100)},label={Text("凭据名称（选填）")})
+            TextButton({reconnect=null;picker.launch(arrayOf("image/*","application/pdf"))},enabled=!busy) {Text("选择原件并保留引用")}
+            val reusable=v?.mediaLinkRows.orEmpty().filter {it.voidedAt==null}.distinctBy {it.mediaAssetId to it.sourceHash}.take(100)
+            FinanceChoice("复用已有凭据",reuse,listOf("" to "请选择")+reusable.map {it.id to it.label}) {reuse=it}
+            TextButton({
+                val selected=reusable.singleOrNull {it.id==reuse}
+                if(selected!=null) action {repo,token->repo.linkSharedAsset(token,target,selected.mediaAssetId,selected.sourceHash,label.ifBlank {selected.label})}
+            },enabled=!busy && reuse.isNotBlank()) {Text("关联同一媒体原件")}
+        }
+        if(rows.isEmpty()) Text("当前没有可查看的凭据，原账务记录保留。")
         rows.take(shown).forEach {link->
             HorizontalDivider();Text(link.label)
             if(link.proposalId in sourceProposals) Text("来自已确认的来源小票")
@@ -84,8 +93,10 @@ private fun FinanceAttachmentsContent(s:FinanceSnapshot,target:FinanceMediaTarge
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 })
             }},enabled=!busy){Text("检查并打开凭据")}
-            TextButton({reconnect=link.id;reconnectRevision=link.revision;picker.launch(arrayOf("image/*","application/pdf"))},enabled=!busy){Text("重新选择同一原件以恢复访问")}
-            TextButton({action {repo,token->repo.unlink(token,link.id,link.revision)}},enabled=!busy){Text("移除此引用，保留原件")}
+            if(!readOnly) {
+                TextButton({reconnect=link.id;reconnectRevision=link.revision;picker.launch(arrayOf("image/*","application/pdf"))},enabled=!busy){Text("重新选择同一原件以恢复访问")}
+                TextButton({action {repo,token->repo.unlink(token,link.id,link.revision)}},enabled=!busy){Text("移除此引用，保留原件")}
+            }
         }
         if(rows.size>shown) TextButton({shown+=20}) {Text("再显示 20 个凭据")}
     }

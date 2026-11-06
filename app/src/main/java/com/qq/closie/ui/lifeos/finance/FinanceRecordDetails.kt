@@ -1,6 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +21,9 @@ import com.qq.closie.ui.lifeos.theme.*
 @Composable
 internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnapshot,
     onEdit: (FinanceLedgerRow) -> Unit, origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?=null,
-    voidAction: (@Composable (FinanceLedgerRow) -> Unit)? = null, onClose: () -> Unit) {
+    voidAction: (@Composable (FinanceLedgerRow) -> Unit)? = null,
+    onOpenEvent: ((String)->Unit)? = null, onOpenEvidence: ((List<FinanceMediaLinkEntity>)->Unit)? = null,
+    onClose: () -> Unit) {
     val colors = LocalLifeOsColors.current
     var expandedEvent by remember(row?.id) { mutableStateOf<String?>(null) }
     FinanceReceipt("账单详情", onClose = onClose, origin=origin, formal = true,
@@ -49,9 +52,7 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
             val cashLabel = cashTime?.let(FinanceTime::input)?.let {
                 if (timing?.cashPrecision == FinanceTimePrecision.DATE) it.substringBefore(' ') else it
             } ?: "未知"
-            val credentials = snapshot.v16?.mediaLinkRows.orEmpty().filter {
-                it.voidedAt == null && ((source != null && it.proposalId == source.id) || events.any { event -> event.id == it.eventId })
-            }
+            val credentials = financeRecordEvidence(snapshot,row)
             val sign = when {
                 row.transfer != null -> ""
                 row.entry.direction == FinanceDirection.INFLOW -> "+"
@@ -69,10 +70,14 @@ internal fun FinanceRecordDetails(row: FinanceLedgerRow?, snapshot: FinanceSnaps
             ReceiptField(if (row.entry.direction == FinanceDirection.INFLOW) "收款时间" else "支付时间",
                 cashLabel, height = 32.dp, secondary = true)
             ReceiptField("标签", row.tags.joinToString("、").ifBlank { "无" })
-            ReceiptField("凭据", credentials.joinToString("、") { it.label.ifBlank { "附件" } }.ifBlank { "无" })
+            if(credentials.isNotEmpty() && onOpenEvidence!=null) Box(Modifier.fillMaxWidth()
+                .clickable(role=androidx.compose.ui.semantics.Role.Button) {onOpenEvidence(credentials)}
+                .semantics {contentDescription="查看账单凭据"}) {
+                ReceiptField("凭据", credentials.joinToString("、") { it.label.ifBlank { "附件" } })
+            } else ReceiptField("凭据", credentials.joinToString("、") { it.label.ifBlank { "附件" } }.ifBlank { "无" })
             if (events.isEmpty()) ReceiptField("关联事项", "无")
             events.forEach { event ->
-                TextButton({ expandedEvent = if (expandedEvent == event.id) null else event.id }) {
+                TextButton({ if(onOpenEvent!=null) onOpenEvent(event.id) else expandedEvent = if (expandedEvent == event.id) null else event.id }) {
                     Text("关联事项 · " + event.description.ifBlank { event.nature.label })
                 }
                 if (expandedEvent == event.id) {

@@ -77,12 +77,23 @@ internal fun FinanceSettingsRoute(
     when (section) {
         "import" -> FinanceImportScreen(importRepository, state.snapshot.accounts, closeSection)
         "relations" -> FinanceRelationsScreen(state, vm, closeSection)
-        "categories" -> com.qq.closie.ui.lifeos.settings.SettingsPaperPage("分类与图标", closeSection) {
-            androidx.activity.compose.BackHandler(onBack = closeSection)
+        "categories" -> {
             var selected by rememberSaveable { mutableStateOf<String?>(null) }
-            FinanceCategoryFields(state.snapshot, selected, { selected = it }, state.busy, vm::createCategory)
-            selected?.let { FinanceCategoryIconEditor(state, vm, it) }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            var creating by rememberSaveable { mutableStateOf(false) }
+            val back: () -> Unit = { if (!state.busy) { if (creating) creating = false else closeSection() } }
+            com.qq.closie.ui.lifeos.settings.SettingsPaperPage(if (creating) "新建分类" else "分类与图标", back) {
+                androidx.activity.compose.BackHandler(onBack = back)
+                if (creating) FinanceNewCategoryFields(state.snapshot, state.busy, vm::createCategory) {
+                    selected = it
+                    creating = false
+                } else {
+                    TextButton({ vm.clearError(); creating = true }, enabled = state.loaded && !state.busy,
+                        modifier = Modifier.testTag("finance-new-category")) { Text("＋ 新建分类") }
+                    FinanceCategoryFields(state.snapshot, selected, { selected = it }, state.busy, vm::createCategory)
+                    selected?.let { FinanceCategoryIconEditor(state, vm, it) }
+                }
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
         }
         "events" -> FinanceWorkspaceScreen(state, vm, close = closeSection)
         "queries" -> FinanceWorkspaceScreen(state, vm, initialPage = 2, close = closeSection)

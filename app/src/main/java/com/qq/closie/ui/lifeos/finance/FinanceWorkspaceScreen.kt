@@ -90,7 +90,7 @@ internal fun FinanceWorkspaceScreen(state:FinanceUiState,vm:FinanceViewModel,ini
         }}
     }}
     viewingEvent?.let { id ->
-        if (!economicOpen) FinanceEconomicDetails(s, id, onEdit = {
+        if (!economicOpen) FinanceEconomicDetailNavigation(state,vm, id, onEdit = {
             eventId=id;resumeDraft=null;freshEconomic=false;economicOpen=true
         }, onOpenCash = {viewingCash=it}, onClose = {viewingEvent=null})
     }

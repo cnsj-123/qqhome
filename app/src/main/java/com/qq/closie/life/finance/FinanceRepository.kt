@@ -234,12 +234,14 @@ class FinanceRepository(private val database: LifeDatabase, private val clock: (
         return parentId
     }
 
-    /** One explicit user-created child under an existing node, at any depth. */
-    suspend fun createCategory(name: String, parentId: String): FinanceCategoryEntity = transaction {
+    /** One explicit user-created category; null parent creates a root without requiring a cash record. */
+    suspend fun createCategory(name: String, parentId: String?): FinanceCategoryEntity = transaction {
         val normalized = requireNotNull(FinanceCategoryTree.singleName(name)) { "请填写单个分类名称，不含 / 或 ›" }
         val tree = FinanceCategoryTree(dao.categories())
-        require(tree.hasValidAncestry(parentId)) { "父分类已不存在或层级无效，请重新选择" }
-        require(tree.matchingChildren(parentId, normalized).isEmpty()) { "此分类下已有同名子分类，请选择已有分类" }
+        require(parentId == null || tree.hasValidAncestry(parentId)) { "父分类已不存在或层级无效，请重新选择" }
+        require(tree.matchingChildren(parentId, normalized).isEmpty()) {
+            if (parentId == null) "已有同名顶层分类，请选择已有分类" else "此分类下已有同名子分类，请选择已有分类"
+        }
         val row = FinanceCategoryEntity(newId(), normalized, parentId)
         dao.insertCategory(row)
         journal(row.id, "CATEGORY_CREATE")
