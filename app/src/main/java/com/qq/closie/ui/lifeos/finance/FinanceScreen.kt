@@ -90,8 +90,8 @@ internal fun FinanceSettingsRoute(
         "voided" -> FinanceWorkspaceScreen(state, vm, initialPage = 4, close = closeSection)
         else -> com.qq.closie.ui.lifeos.settings.SettingsPaperPage("账目专项设置", onBack) {
             com.qq.closie.ui.lifeos.settings.SettingsSection("发现与复核")
-            com.qq.closie.ui.lifeos.settings.SettingsLine("自动发现", "通知、可见详情与主动截图", onClick = onDiscovery)
-            com.qq.closie.ui.lifeos.settings.SettingsLine("待确认记录", "修正候选，确认后写入账目", onClick = onReview)
+            com.qq.closie.ui.lifeos.settings.SettingsLine("自动发现", "通知、可见详情与主动截图", motionKey="discovery", onClick = onDiscovery)
+            com.qq.closie.ui.lifeos.settings.SettingsLine("待确认记录", "修正候选，确认后写入账目", motionKey="review", onClick = onReview)
             com.qq.closie.ui.lifeos.settings.SettingsSection("账簿")
             com.qq.closie.ui.lifeos.settings.SettingsLine("分类与图标", "管理分类树与 SVG 图标", onClick = { section = "categories" })
             com.qq.closie.ui.lifeos.settings.SettingsLine("往来工作区", "查看应收应付与结算", onClick = { section = "relations" })
@@ -102,7 +102,7 @@ internal fun FinanceSettingsRoute(
             com.qq.closie.ui.lifeos.settings.SettingsLine("隐私授权", "管理首页、分享与 AI 的用途授权", motionKey = "privacy", onClick = onPrivacy)
             com.qq.closie.ui.lifeos.settings.SettingsLine("导入账目", "预览、映射与去重", onClick = { section = "import" })
             com.qq.closie.ui.lifeos.settings.SettingsLine("作废箱", "核对影响与恢复记录", onClick = { section = "voided" })
-            com.qq.closie.ui.lifeos.settings.SettingsLine("数据与备份", onClick = onBackup)
+            com.qq.closie.ui.lifeos.settings.SettingsLine("数据与备份", motionKey="backup", onClick = onBackup)
         }
     }
 }

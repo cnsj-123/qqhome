@@ -90,7 +90,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     fun targetAtPointer(): String? = grid.layoutInfo.visibleItemsInfo.firstOrNull { item ->
             modules.any { it.id == item.key } &&
                 pointer.x >= item.offset.x && pointer.x < item.offset.x + item.size.width &&
-                pointer.y >= item.offset.y && pointer.y < item.offset.y + item.size.height
+                pointer.y >= item.offset.y - grid.layoutInfo.viewportStartOffset && pointer.y < item.offset.y - grid.layoutInfo.viewportStartOffset + item.size.height
         }?.key as? String
     fun moveAtPointer() {
         val id = lifted?.id ?: return
@@ -106,7 +106,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
     val edge = with(density) { 56.dp.toPx() }
     LaunchedEffect(lifted?.id) {
         while (lifted != null) {
-            val end = grid.layoutInfo.viewportEndOffset
+            val end = grid.layoutInfo.viewportEndOffset - grid.layoutInfo.viewportStartOffset
             val speed = when {
                 pointer.y < edge -> -((edge - pointer.y) / edge).coerceIn(0f, 1f)
                 pointer.y > end - edge -> ((pointer.y - end + edge) / edge).coerceIn(0f, 1f)
@@ -126,12 +126,12 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                 detectDragGesturesAfterLongPress(onDragStart = { point ->
                     val item = grid.layoutInfo.visibleItemsInfo.firstOrNull {
                         point.x >= it.offset.x && point.x < it.offset.x + it.size.width &&
-                            point.y >= it.offset.y && point.y < it.offset.y + it.size.height
+                            point.y >= it.offset.y - grid.layoutInfo.viewportStartOffset && point.y < it.offset.y - grid.layoutInfo.viewportStartOffset + it.size.height
                     }
                     val module = modules.firstOrNull { it.id == item?.key }
                     if (module != null && item != null) {
                         baseline = modules; lifted = module; pointer = point; lastTarget = null
-                        grab = point - Offset(item.offset.x.toFloat(), item.offset.y.toFloat())
+                        grab = point - Offset(item.offset.x.toFloat(), (item.offset.y - grid.layoutInfo.viewportStartOffset).toFloat())
                         cellWidth = item.size.width; message = "松手放置"
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     }

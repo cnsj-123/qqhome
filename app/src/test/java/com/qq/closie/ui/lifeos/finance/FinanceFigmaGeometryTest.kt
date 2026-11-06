@@ -24,7 +24,7 @@ class FinanceFigmaGeometryTest:FinanceRoomTest() {
         val data=runBlocking {account();finance.snapshot()}
         compose.setContent {LifeOsTheme {FinanceNetHeader(FinanceUiState(snapshot=data,loaded=true,loading=false),false,"",{},{},{}) {}}}
         val search=compose.onNodeWithTag("finance-search").fetchSemanticsNode().boundsInRoot
-        val net=compose.onNodeWithTag("finance-net-value").fetchSemanticsNode().boundsInRoot
+        val net=compose.onNodeWithTag("finance-net-value",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
         val density=compose.density.density
         assertEquals(28f,search.height/density,1f)
         assertTrue("Search must keep the Figma 110dp capsule",search.width/density in 94f..111f)

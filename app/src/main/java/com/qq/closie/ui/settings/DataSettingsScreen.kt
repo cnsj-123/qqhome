@@ -35,6 +35,9 @@ import com.qq.closie.life.data.database.LifeDatabase
 import com.qq.closie.life.finance.FinanceRepository
 import com.qq.closie.ui.components.ClosieCompactTopBar
 import com.qq.closie.ui.lifeos.settings.SettingsLine
+import com.qq.closie.ui.lifeos.settings.SettingsText
+import com.qq.closie.ui.lifeos.settings.SettingsPaperPrompt
+import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
 import com.qq.closie.ui.lifeos.settings.SettingsPaperPage
 import com.qq.closie.ui.lifeos.settings.SettingsSection
 import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
@@ -85,6 +88,9 @@ fun DataSettingsScreen(
     var confirmCsv by remember { mutableStateOf(false) }
     var confirmFinanceCsv by remember { mutableStateOf(false) }
     var exportCenter by rememberSaveable { mutableStateOf(openExportCenter) }
+    var backupOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
+    var restoreOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
+    var exportOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
     var historyOpen by rememberSaveable { mutableStateOf(false) }
     val backupHistory = remember(context) { context.getSharedPreferences("lifeos_verified_backups", android.content.Context.MODE_PRIVATE) }
     var verifiedTimes by remember { mutableStateOf(backupHistory.getStringSet("verified_times", emptySet()).orEmpty().mapNotNull(String::toLongOrNull).sortedDescending()) }
@@ -217,15 +223,18 @@ fun DataSettingsScreen(
     val lifeSurface = finance != null
     val content: @Composable ColumnScope.() -> Unit = {
             val colors = LocalLifeOsColors.current
-            if (lifeSurface) SettingsSection("本地加密备份")
-            Text(
+            if(lifeSurface) {
+                Text("本地优先，同步、历史备份、缓存是三件不同的事。",style=SettingsText.detail,color=colors.inkSecondary)
+                SettingsSection("当前状态")
+            }
+            if(!lifeSurface) Text(
                 "完整备份覆盖衣橱、账本、关系、草稿与应用内管理的媒体。外部附件只保存引用，换机可能需要重新选择原件。系统权限、采集会话与云授权不会恢复。恢复会替换当前本地数据。",
                 style = if (lifeSurface) LifeText.caption else MaterialTheme.typography.bodyMedium,
                 color = if (lifeSurface) colors.inkSecondary else ClosieColor.InkSecondary
             )
 
             Text(verifiedTimes.firstOrNull()?.let { "最近验证 · " + verifiedTimeLabel(it) } ?: "尚无验证成功的备份",
-                Modifier.padding(vertical = 8.dp), style = if (lifeSurface) LifeText.body else MaterialTheme.typography.titleMedium)
+                Modifier.padding(vertical = 8.dp), style = if (lifeSurface) SettingsText.body else MaterialTheme.typography.titleMedium)
             SettingsRow(Icons.Default.Restore, "历史恢复点", if (verifiedTimes.isEmpty()) "验证成功后才会出现" else "${verifiedTimes.size} 个已验证备份", paper = lifeSurface) {
                 historyOpen = !historyOpen
             }
@@ -266,9 +275,11 @@ fun DataSettingsScreen(
                 }
             )
 
+            if(lifeSurface) SettingsSection("手动操作")
             SettingsRow(
                 icon = Icons.Default.CloudUpload,
                 title = "创建加密备份",
+                onOrigin={backupOrigin=it},
                 subtitle = "衣橱、Finance、关系、草稿和媒体；使用独立口令并验证恢复",
                 paper = lifeSurface,
                 onClick = { if (!busy) showBackupPassword = true }
@@ -276,6 +287,7 @@ fun DataSettingsScreen(
             SettingsRow(
                 icon = Icons.Default.Restore,
                 title = "恢复备份",
+                onOrigin={restoreOrigin=it},
                 subtitle = "恢复加密备份；旧 ZIP 可在确认页单独选择",
                 paper = lifeSurface,
                 onClick = { if (!busy) restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
@@ -283,6 +295,7 @@ fun DataSettingsScreen(
             SettingsRow(
                 icon = Icons.Default.Download,
                 title = "导出中心",
+                onOrigin={exportOrigin=it},
                 subtitle = "选择表格范围并检查明文风险",
                 paper = lifeSurface,
                 onClick = { if (!busy) exportCenter = true }
@@ -320,7 +333,7 @@ fun DataSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 
-    if (showBackupPassword) AlertDialog(
+    if (showBackupPassword) SettingsPaperPrompt(paper=lifeSurface,origin=backupOrigin,busy=busy,
         onDismissRequest = { showBackupPassword = false; backupPassword = ""; repeatedPassword = "" },
         title = { Text("设置备份口令") },
         text = { Column {
@@ -337,7 +350,7 @@ fun DataSettingsScreen(
         text = { Text("CSV 未加密，接收方可以读取全部导出内容。仅导出当前衣橱清单，请自行保管。") },
         confirmButton = { TextButton({ confirmCsv = false; csvLauncher.launch("closie-wardrobe-${LocalDate.now()}.csv") }) { Text("确认导出明文") } },
         dismissButton = { TextButton({ confirmCsv = false }) { Text("取消") } })
-    if (exportCenter) AlertDialog(onDismissRequest = { exportCenter = false }, title = { Text("导出中心") },
+    if (exportCenter) SettingsPaperPrompt(paper=lifeSurface,origin=exportOrigin,busy=busy,onDismissRequest = { exportCenter = false }, title = { Text("导出中心") },
         text = { Column {
             Text("表格导出为明文，接收方可读取内容。")
             TextButton({ exportCenter = false; confirmCsv = true }, enabled = !busy) { Text("衣橱清单 · CSV") }
@@ -348,7 +361,7 @@ fun DataSettingsScreen(
         confirmButton = { TextButton({ confirmFinanceCsv = false; financeCsvLauncher.launch("lifeos-finance-${LocalDate.now()}.zip") }) { Text("确认导出明文") } },
         dismissButton = { TextButton({ confirmFinanceCsv = false }) { Text("取消") } })
     confirmRestore?.let { uri ->
-        AlertDialog(
+        SettingsPaperPrompt(paper=lifeSurface,origin=restoreOrigin,busy=busy,
             onDismissRequest = { if (!busy) { confirmRestore = null; restorePassword = ""; restorePreview = null } },
             title = { Text(if (restorePreview == null) "检查备份" else "确认恢复范围") },
             text = { Column {
@@ -384,7 +397,7 @@ fun DataSettingsScreen(
                     }) {
                         restorePassword = ""; confirmRestore = null; restorePreview = null; message = null
                     } else password?.fill('\u0000')
-                }) { Text(if (preview == null) "校验并预览" else "确认恢复", color = if (lifeSurface) LocalLifeOsColors.current.accentDeep else ClosieColor.Rose) }
+                }) { Text(if (preview == null) "校验并预览" else "确认恢复", color = if (lifeSurface) LocalLifeOsColors.current.onAccent else ClosieColor.Rose) }
             },
             dismissButton = { TextButton(onClick = { confirmRestore = null; restorePassword = ""; restorePreview = null }, enabled = !busy) { Text("取消") } }
         )
@@ -426,10 +439,12 @@ private fun SettingsRow(
     title: String,
     subtitle: String,
     paper: Boolean = false,
+    onOrigin: ((com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin)->Unit)? = null,
     onClick: () -> Unit
 ) {
     if (paper) {
-        SettingsLine(title, subtitle, icon, onClick = onClick)
+        val originModifier=if(onOrigin==null) Modifier else Modifier.lifeSurfaceOrigin(androidx.compose.ui.platform.LocalConfiguration.current.orientation,onPosition=onOrigin)
+        SettingsLine(title,subtitle,icon=null,trailing=if(title=="恢复备份") "高风险" else null,modifier=originModifier,motionKey=null,onClick=onClick)
         return
     }
     Surface(

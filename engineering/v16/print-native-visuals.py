@@ -9,7 +9,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DIRECTORY = ROOT / "app/build/reports/v16/robolectric-visuals"
-NAMES = ("home-empty", "home-photos", "finance-accounts", "finance-ledger", "finance-receipt", "finance-entry", "finance-analysis", "settings-theme", "settings-color")
+NAMES = ("home-empty", "home-photos", "finance-accounts", "finance-ledger", "finance-receipt", "finance-entry", "finance-analysis", "settings-theme", "settings-color", "settings-privacy", "settings-permission")
 
 for name in NAMES:
     path = DIRECTORY / (name + ".png")

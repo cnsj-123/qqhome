@@ -176,7 +176,7 @@ class FinanceSmokeTest {
         compose.waitForIdle()
         openFilters()
         val month=YearMonth.now()
-        compose.onNodeWithText("${month.year}.${month.monthValue.toString().padStart(2, '0')}").assertIsDisplayed()
+        compose.onNode(hasText("${month.year}.${month.monthValue.toString().padStart(2, '0')}") and hasAnyAncestor(hasTestTag("finance-query-sheet"))).assertIsDisplayed()
     }
 
     @Test fun establishAccountRecordCorrectSearchAndVoidThroughReceiptSheets() {
@@ -210,7 +210,7 @@ class FinanceSmokeTest {
         assertEquals(FinancePeriod.ALL, model.state.value.filter.period)
         assertEquals(FinanceDateRange(), model.state.value.filter.range)
         assertEquals(listOf(original.id), model.state.value.ledger.map { it.id })
-        val cashRow = hasText("早餐豆浆") and hasText("餐饮 · 工资卡") and hasClickAction()
+        val cashRow = hasText("早餐豆浆") and hasText("餐饮") and hasText("工资卡",substring=true) and hasClickAction()
         ledgerRow(cashRow).performClick()
         assertReadOnlyThenEdit()
         input("金额 · CNY", "10.00")

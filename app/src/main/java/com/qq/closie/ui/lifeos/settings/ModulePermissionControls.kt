@@ -12,6 +12,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.outlined.Check
+import com.qq.closie.ui.lifeos.components.lifeSurfaceOrigin
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qq.closie.ClosieApplication
 import com.qq.closie.life.permissions.*
@@ -39,6 +45,8 @@ internal fun FinanceModulePermissionControl(epoch: Long, loaded: Boolean) {
     val stored = rules[ReadModule.FINANCE]
     val mode = stored?.takeIf { it.epoch == epoch }?.mode ?: ModuleReadMode.ASK
     var open by remember { mutableStateOf(false) }
+    var rowOrigin by remember {mutableStateOf<com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?>(null)}
+    val orientation=androidx.compose.ui.platform.LocalConfiguration.current.orientation
     var editingEpoch by remember { mutableLongStateOf(epoch) }
     var editingRevision by remember { mutableLongStateOf(0L) }
     var editingGeneration by remember { mutableLongStateOf(0L) }
@@ -49,6 +57,8 @@ internal fun FinanceModulePermissionControl(epoch: Long, loaded: Boolean) {
     val ready = loaded && rules.isNotEmpty()
     SettingsLine("财务 Finance", "模块 AI 读取策略；仍受具体用途、字段和记录范围限制",
         Icons.Outlined.AccountBalanceWallet, if (ready) mode.title() else "读取策略",
+        modifier=Modifier.lifeSurfaceOrigin(orientation){rowOrigin=it},
+        trailingContent={ModulePermissionStamp(if(ready) mode.title() else "读取策略")},
         onClick = if (ready) { {
             editingEpoch = epoch; editingRevision = stored?.revision ?: 0L
             editingGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
@@ -57,7 +67,7 @@ internal fun FinanceModulePermissionControl(epoch: Long, loaded: Boolean) {
         } } else null)
     error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
     message?.let { Text(it, style = LifeText.caption, color = LocalLifeOsColors.current.accentDeep) }
-    if (open) ModuleReadPermissionDialog(mode, request, busy, error, onClose = { if (!busy) open = false }) { selected, duration ->
+    if (open) ModuleReadPermissionDialog(mode, request, busy, error, rowOrigin, onClose = { if (!busy) open = false }) { selected, duration ->
         busy = true; error = null
         scope.launch {
             try {
@@ -77,44 +87,77 @@ internal fun FinanceModulePermissionControl(epoch: Long, loaded: Boolean) {
 
 @Composable
 private fun ModuleReadPermissionDialog(initial: ModuleReadMode, request: ModuleReadRequest?, busy: Boolean, error: String?,
+    origin:com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin?,
     onClose: () -> Unit, onConfirm: (ModuleReadMode, ModuleGrantDuration) -> Unit) {
-    var selected by rememberSaveable { mutableStateOf(initial) }
-    var duration by rememberSaveable { mutableStateOf(ModuleGrantDuration.LONG_TERM) }
-    val colors = LocalLifeOsColors.current
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, containerColor = colors.paper,
-        title = { Text("财务模块授权", style = LifeText.title) }, text = {
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("当前权限 · ${initial.title()}", style = LifeText.caption)
-                ModuleReadMode.entries.forEach { mode ->
-                    FilterChip(selected == mode, { selected = mode }, enabled = !busy,
-                        label = { Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                            Text(mode.title())
-                            Text(when (mode) {
-                                ModuleReadMode.ALLOW -> "允许已授权用途的模块读取，不扩大记录范围。"
-                                ModuleReadMode.ASK -> "每次读取都需要对应请求的明确确认。"
-                                ModuleReadMode.DENY -> "AI 不能通过读取工具访问此模块。"
-                            }, style = LifeText.caption)
-                        } })
-                }
-                Text("授权有效期", style = LifeText.body)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ModuleGrantDuration.entries.forEach { item ->
-                        val enabled = !busy && when (item) {
-                            ModuleGrantDuration.ONCE -> request != null
-                            ModuleGrantDuration.CONVERSATION -> request?.conversationId != null
-                            ModuleGrantDuration.LONG_TERM -> true
+    var selected by rememberSaveable {mutableStateOf(initial)}
+    var duration by rememberSaveable {mutableStateOf(ModuleGrantDuration.LONG_TERM)}
+    val colors=LocalLifeOsColors.current
+    SettingsOriginDialog(origin,onClose,dismissEnabled=!busy) {close->
+        Column(Modifier.fillMaxWidth().heightIn(max=(androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp*.88f).dp)
+            .verticalScroll(rememberScrollState()).padding(start=23.dp,end=23.dp,top=49.dp,bottom=48.dp)) {
+            Text("财务模块授权",style=SettingsText.title.copy(fontSize=23.sp,lineHeight=33.sp),color=colors.ink)
+            Text("当前权限 · "+initial.title(),Modifier.padding(top=5.dp),style=SettingsText.caption.copy(fontSize=13.sp,lineHeight=18.sp),color=colors.inkSecondary)
+            Column(Modifier.padding(top=17.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                ModuleReadMode.entries.forEach {mode->
+                    Surface(onClick={selected=mode},enabled=!busy,shape=androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                        border=androidx.compose.foundation.BorderStroke(1.dp,if(selected==mode) colors.accentDeep else colors.line),
+                        color=if(selected==mode) colors.paperTertiary else colors.paper) {
+                        Row(Modifier.fillMaxWidth().heightIn(min=64.dp).padding(horizontal=14.dp,vertical=10.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                Text(mode.title(),style=SettingsText.body.copy(fontSize=16.sp,lineHeight=23.sp),color=colors.ink)
+                                Text(when(mode) {
+                                    ModuleReadMode.ALLOW->"有效期内允许读取已授权范围。"
+                                    ModuleReadMode.ASK->"每次读取前请求确认。"
+                                    ModuleReadMode.DENY->"AI 无法读取该模块。"
+                                },style=SettingsText.caption.copy(lineHeight=17.sp),color=colors.inkSecondary)
+                            }
+                            if(selected==mode) Icon(Icons.Outlined.Check,null,Modifier.size(16.dp),tint=colors.accentDeep)
                         }
-                        FilterChip(duration == item, { duration = item }, enabled = enabled, label = { Text(when (item) {
-                            ModuleGrantDuration.ONCE -> "仅本次"
-                            ModuleGrantDuration.CONVERSATION -> "本次对话"
-                            ModuleGrantDuration.LONG_TERM -> "长期"
-                        }, style = LifeText.caption) })
                     }
                 }
-                if (request == null) Text("仅本次与本次对话需先发起真实读取请求。", style = LifeText.caption, color = colors.muted)
-                Text("当前无真实 AI 连接，不会因允许访问而启动网络或发送数据。写入财务仍须人工确认。", style = LifeText.caption, color = colors.muted)
-                error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
             }
-        }, confirmButton = { TextButton({ onConfirm(selected, duration) }, enabled = !busy) { Text(if (busy) "保存中…" else "确认更新") } },
-        dismissButton = { TextButton(onClose, enabled = !busy) { Text("取消") } })
+            Text("授权有效期",Modifier.padding(top=20.dp),style=SettingsText.body.copy(fontSize=15.sp,lineHeight=21.sp),color=colors.ink)
+            Row(Modifier.padding(top=7.dp,start=3.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(21.dp)) {
+                ModuleGrantDuration.entries.forEach {item->
+                    val enabled=!busy && when(item) {
+                        ModuleGrantDuration.ONCE->request!=null
+                        ModuleGrantDuration.CONVERSATION->request?.conversationId!=null
+                        ModuleGrantDuration.LONG_TERM->true
+                    }
+                    Surface(onClick={duration=item},enabled=enabled,modifier=Modifier.width(if(item==ModuleGrantDuration.CONVERSATION) 94.dp else 72.dp).graphicsLayer {alpha=if(enabled) 1f else .45f},shape=androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                        color=if(duration==item) colors.accent else colors.paperTertiary) {
+                        Box(Modifier.height(28.dp).fillMaxWidth(),contentAlignment=androidx.compose.ui.Alignment.Center) {
+                            Text(when(item) {ModuleGrantDuration.ONCE->"仅本次";ModuleGrantDuration.CONVERSATION->"本次对话";else->"长期"},
+                                style=SettingsText.caption,color=if(duration==item) colors.onAccent else colors.inkSecondary)
+                        }
+                    }
+                }
+            }
+            if(request==null) Text("仅本次与本次对话需先发起真实读取请求。",Modifier.padding(top=8.dp),style=SettingsText.detail,color=colors.inkSecondary)
+            error?.let {Text(it,style=SettingsText.caption,color=MaterialTheme.colorScheme.error)}
+            Row(Modifier.padding(top=if(request==null) 16.dp else 31.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
+                FilledTonalButton(close,enabled=!busy,modifier=Modifier.weight(1f).height(50.dp),shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {Text("取消",style=SettingsText.body.copy(fontSize=15.sp))}
+                Button({onConfirm(selected,duration)},enabled=!busy,modifier=Modifier.weight(1f).height(50.dp),shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {Text(if(busy) "保存中…" else "确认更新",style=SettingsText.body.copy(fontSize=15.sp))}
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModulePermissionStamp(value:String) {
+    val reduced=com.qq.closie.ui.lifeos.components.reducedLifeMotion()
+    androidx.compose.animation.AnimatedContent(value,transitionSpec={
+        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(if(reduced) 150 else 125))
+            .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(if(reduced) 150 else 125)))
+    },label="permission-word") {label->
+        val flip by transition.animateFloat(transitionSpec={androidx.compose.animation.core.tween(if(reduced) 150 else 250)},label="permission-flip") {state->
+            if(reduced) 0f else when(state) {
+                androidx.compose.animation.EnterExitState.PreEnter->90f
+                androidx.compose.animation.EnterExitState.Visible->0f
+                androidx.compose.animation.EnterExitState.PostExit->-90f
+            }
+        }
+        Text(label,Modifier.widthIn(max=102.dp).graphicsLayer {rotationX=flip;cameraDistance=12*density},
+            style=SettingsText.caption,color=LocalLifeOsColors.current.inkSecondary)
+    }
 }

@@ -109,7 +109,7 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         capture("home-narrow-font150-long")
     }
     private fun financeScene() {
-        compose.setContent {models=LocalViewModelStoreOwner.current?.viewModelStore;LifeOsTheme {FinanceRoute(finance,{})}}
+        compose.setContent {models=LocalViewModelStoreOwner.current?.viewModelStore;LifeOsTheme {FinanceRoute(finance,null,null,onFinanceSettings={}) {}}}
         compose.waitUntil(10_000){compose.onAllNodesWithText("正在打开账本……").fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("账簿").fetchSemanticsNodes().isNotEmpty()}
     }
@@ -179,9 +179,22 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         compose.waitUntil(10_000){compose.onAllNodesWithText("主题与配色").fetchSemanticsNodes().isNotEmpty()}
         capture("settings-theme")
         compose.onNodeWithText("纸").performClick()
-        compose.waitUntil(10_000){compose.onAllNodesWithText("HEX",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        compose.waitUntil(10_000){compose.onAllNodesWithContentDescription("HEX 颜色").fetchSemanticsNodes().isNotEmpty()}
         capture("settings-color")
         assertEquals(com.qq.closie.data.appearance.AppearanceSettings(),runBlocking {repo.read()})
+    }
+
+    @Test fun modulePermissionPaperUsesTheRealDefaultPolicyAndDisablesUnboundShortGrants() {
+        compose.setContent {models=LocalViewModelStoreOwner.current?.viewModelStore;LifeOsTheme {com.qq.closie.ui.lifeos.settings.SettingsPrivacyScreen(finance){}}}
+        val financeRow=hasText("财务 Finance") and hasClickAction() and isEnabled()
+        compose.waitUntil(15_000){compose.onAllNodes(financeRow).fetchSemanticsNodes().isNotEmpty()}
+        capture("settings-privacy")
+        compose.onNode(financeRow).performClick()
+        compose.onNodeWithText("财务模块授权").assertIsDisplayed()
+        compose.onNodeWithText("仅本次").assertIsNotEnabled()
+        compose.onNodeWithText("本次对话").assertIsNotEnabled()
+        capture("settings-permission")
+        assertTrue(runBlocking {finance.snapshot()}.entries.isEmpty())
     }
 
 }

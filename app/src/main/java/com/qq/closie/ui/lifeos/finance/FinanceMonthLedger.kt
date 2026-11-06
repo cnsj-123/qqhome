@@ -98,7 +98,6 @@ internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, 
                     val date = if (inMonth || (week == selectedWeek && progress >= .5f)) month.atDay(1).plusDays(number.toLong() - 1) else null
                     val day = days[date]
                     Column(Modifier.weight(1f).heightIn(min = 48.dp)
-                        .background(if (date != null && date == selected) colors.paperTertiary else Color.Transparent, RoundedCornerShape(6.dp))
                         .then(if (date != null && fraction > 0f) Modifier.clickable {
                             val next = if (date == selected) null else date
                             if (next != null && YearMonth.from(next) != month) onMonth(YearMonth.from(next))
@@ -107,7 +106,9 @@ internal fun FinanceMonthLedger(month: YearMonth, rows: List<FinanceLedgerRow>, 
                             .semantics { contentDescription = "$date，${day?.count ?: 0} 笔，$currency 支出 ${day?.let { amount(it.spending) } ?: "0"}，收入 ${day?.let { amount(it.income) } ?: "0"}" } else Modifier)
                         .padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (date != null) {
-                            Text(date.dayOfMonth.toString(), style = LedgerText.caption, color = if (date == LocalDate.now()) colors.accentDeep else if (inMonth) colors.ink else colors.muted)
+                            Box(Modifier.size(22.dp).background(if(date==selected || date==LocalDate.now()) colors.paperTertiary else Color.Transparent,androidx.compose.foundation.shape.CircleShape),contentAlignment=Alignment.Center) {
+                                Text(date.dayOfMonth.toString(),style=LedgerText.caption,color=if(date==LocalDate.now()) colors.accentDeep else if(inMonth) colors.ink else colors.inkSecondary)
+                            }
                             if (day != null) {
                                 if (day.spending.signum() > 0) Text("−${amount(day.spending)}", style = com.qq.closie.life.ui.theme.LifeType.MoneyCalendar, color = colors.inkSecondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 if (day.income.signum() > 0) Text("+${amount(day.income)}", style = com.qq.closie.life.ui.theme.LifeType.MoneyCalendar, color = colors.accentDeep, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)

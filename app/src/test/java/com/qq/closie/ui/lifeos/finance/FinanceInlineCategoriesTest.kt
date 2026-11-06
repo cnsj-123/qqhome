@@ -54,4 +54,19 @@ class FinanceInlineCategoriesTest {
         compose.onNodeWithTag("entry-category-breakfast").assertDoesNotExist()
         assertEquals("food", selection)
     }
+
+    @Test fun equalChildNamesRetainEveryCanonicalIdInsteadOfChoosingOneByName() {
+        val snapshot=FinanceSnapshot(categories=listOf(FinanceCategoryEntity("food","餐饮"),
+            FinanceCategoryEntity("breakfast-a","早餐","food"),FinanceCategoryEntity("breakfast-b","早餐","food")))
+        var result:String?=null
+        compose.setContent {LifeOsTheme {
+            var selected by remember {mutableStateOf<String?>("breakfast-b")}
+            Column {FinanceInlineCategories(snapshot,selected,false,onTemplate={_,_->error("Must not guess an ambiguous canonical name")}) {
+                selected=it;result=it
+            }}
+        }}
+        compose.onNodeWithTag("entry-category-breakfast-b").assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithTag("entry-category-breakfast-a").assertIsDisplayed().performClick()
+        assertEquals("breakfast-a",result)
+    }
 }

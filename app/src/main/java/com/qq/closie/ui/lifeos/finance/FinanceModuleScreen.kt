@@ -262,6 +262,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         }
                     }
                 }
+                if(state.cashSummary.isEmpty() && pendingRelations==0) Spacer(Modifier.height(8.dp))
                 FinanceCalendarHeading(month, FinanceCalendarStop.entries.minBy { kotlin.math.abs(it.progress-collapseProgress) },
                     {monthPicker=true}, {setCalendarStop(it)})
             }
@@ -387,7 +388,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     }
                     if (accounts.isEmpty()) item {
                         Column(Modifier.fillMaxWidth().padding(top=70.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(18.dp)) {
-                            Icon(painterResource(com.qq.closie.R.drawable.lifeos_home_cat),null,Modifier.size(110.dp),tint=colors.inkSecondary)
+                            Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_ledger_empty_cat),null,Modifier.size(110.dp,96.dp),tint=colors.inkSecondary)
                             Text(if(accountQuery.isBlank()) "还没有账户" else "没有匹配的账户",style=LedgerText.title)
                             Text("从常用的一个账户开始，把日子慢慢记下来。",style=LedgerText.caption)
                             Button({accountId=null;accountEditing=true},Modifier.widthIn(max=259.dp).fillMaxWidth().height(42.dp),shape=RoundedCornerShape(10.dp)) {Text("新建账户",style=LedgerText.body)}
@@ -444,7 +445,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                             }
                         }
                         if (state.loaded && shownDays.isEmpty() && selectedCosts.isEmpty() && (selectedDay != null || undatedRows.isEmpty())) {
-                            item { Text("这一天或范围还没有流水。", style = LifeText.body) }
+                            item { Column(Modifier.fillMaxWidth().padding(top=72.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                                Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_ledger_empty_cat),null,Modifier.size(110.dp,96.dp),tint=colors.secondary)
+                                Text("快来记一笔账吧",style=LedgerText.body,color=colors.inkSecondary)
+                            } }
                         }
                     }
                 }

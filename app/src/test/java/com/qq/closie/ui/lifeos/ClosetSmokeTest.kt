@@ -216,7 +216,7 @@ class ClosetSmokeTest {
         compose.onNodeWithTag("drawer-finance").performClick()
         assertFinanceLedger()
         compose.onNodeWithContentDescription("收起生活的抽屉").assertIsNotDisplayed()
-        compose.onNodeWithContentDescription("返回").assertIsDisplayed().performClick()
+        pressBack()
         compose.waitUntil(10_000) {
             (compose.onAllNodes(hasText("Life OS")).fetchSemanticsNodes().isNotEmpty() &&
                 compose.onAllNodes(hasContentDescription("生活日历")).fetchSemanticsNodes().isNotEmpty()) &&

@@ -66,7 +66,7 @@ internal fun FinanceInlineCategories(snapshot: FinanceSnapshot, selectedId: Stri
             val real=root?.canonical?.let {tree.children(it.id)}.orEmpty()
             val options=real.map {EntryCategoryOption(it.id,it.name,it)}
             if(root?.name=="餐饮" && onTemplate!=null && tree.roots().count {it.name==root.name}<=1)
-                entryFoodNames.map {name->options.firstOrNull {it.name==name} ?: EntryCategoryOption("template:餐饮/"+name,name,null)}+
+                entryFoodNames.flatMap {name->options.filter {it.name==name}.ifEmpty {listOf(EntryCategoryOption("template:餐饮/"+name,name,null))}}+
                     options.filter {it.name !in entryFoodNames}
             else options
         }

@@ -36,6 +36,7 @@ internal fun SettingsOriginDialog(
     origin: LifeSurfaceOrigin?,
     onDismiss: () -> Unit,
     bottom: Boolean = false,
+    dismissEnabled: Boolean = true,
     content: @Composable (close: () -> Unit) -> Unit
 ) {
     val colors = LocalLifeOsColors.current
@@ -46,13 +47,14 @@ internal fun SettingsOriginDialog(
     var measuredHeight by remember { mutableIntStateOf(0) }
     var closing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val canDismiss by rememberUpdatedState(dismissEnabled)
     LaunchedEffect(reduced) {
         if (closing) return@LaunchedEffect
         if (reduced) reveal.animateTo(1f, tween(150))
         else reveal.animateTo(1f, spring(dampingRatio = .5f, stiffness = 350f, visibilityThreshold = .015f))
     }
     fun close() {
-        if (closing) return
+        if (closing || !canDismiss) return
         closing = true
         scope.launch {
             reveal.animateTo(0f, tween(if (reduced) 150 else 250))

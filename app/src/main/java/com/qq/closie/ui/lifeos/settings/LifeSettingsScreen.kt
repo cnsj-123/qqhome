@@ -123,7 +123,7 @@ fun LifeSettingsScreen(
         if (filtered.isEmpty()) Text("没有找到相关设置", Modifier.padding(top = 20.dp), style = LifeText.caption, color = colors.muted)
         filtered.forEach { group ->
             SettingsSection(group.title)
-            group.rows.forEach { row -> SettingsLine(row.title, row.subtitle, row.icon, row.trailing, onClick = row.action) }
+            group.rows.forEach { row -> SettingsLine(row.title, row.subtitle, row.icon, row.trailing, motionKey=settingsPaperKey(row.title), onClick = row.action) }
         }
     }
     if (about) AlertDialog(
@@ -177,7 +177,9 @@ internal fun SettingsLine(
     subtitle: String? = null,
     icon: ImageVector? = null,
     trailing: String? = null,
-    motionKey: String? = settingsPaperKey(title),
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null,
+    motionKey: String? = null,
     onClick: (() -> Unit)? = null
 ) {
     val colors = LocalLifeOsColors.current
@@ -189,7 +191,7 @@ internal fun SettingsLine(
     val interaction = if (onClick == null) Modifier.semantics { disabled() }
         else Modifier.clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
     Row(
-        Modifier.fillMaxWidth().settingsPaperBounds(if (onClick != null) motionKey else null)
+        modifier.fillMaxWidth().settingsPaperBounds(if (onClick != null) motionKey else null)
             .graphicsLayer { scaleX = 1f - .02f * press; scaleY = scaleX; translationY = 2.dp.toPx() * press }
             .then(interaction).heightIn(min = if (icon == null) 48.dp else 52.dp).padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -200,7 +202,7 @@ internal fun SettingsLine(
                 style = SettingsText.body, color = if (onClick == null) colors.inkSecondary else colors.ink)
             subtitle?.let { Text(it, style = SettingsText.detail, color = colors.inkSecondary) }
         }
-        trailing?.let { Text(it, Modifier.widthIn(max = 102.dp).padding(start = 8.dp), style = SettingsText.detail, color = colors.inkSecondary) }
+        if(trailingContent!=null) trailingContent() else trailing?.let { Text(it, Modifier.widthIn(max = 102.dp).padding(start = 8.dp), style = SettingsText.detail, color = colors.inkSecondary) }
         if (onClick != null) Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 7.dp).size(14.dp), tint = colors.muted)
     }
 }

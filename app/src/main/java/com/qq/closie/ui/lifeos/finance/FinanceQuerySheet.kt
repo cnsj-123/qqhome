@@ -126,7 +126,7 @@ internal fun FinanceQuerySheet(
         shape = ManualReceiptShape,
         dragHandle = null
     ) {
-        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .73f).dp)
+        Column(Modifier.fillMaxWidth().testTag("finance-query-sheet").heightIn(max = (LocalConfiguration.current.screenHeightDp * .73f).dp)
             .padding(horizontal = 32.dp).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClose, Modifier.offset(x = (-8).dp)) {
