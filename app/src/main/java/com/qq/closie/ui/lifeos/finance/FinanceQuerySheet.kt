@@ -108,6 +108,17 @@ internal fun FinanceQuerySheet(
             else -> "${first ?: "不限"} — ${last ?: "不限"}"
         }
     }
+    val previewSpec=remember(snapshot,draft,amountOpen,currency,minimum,maximum,validSession) {
+        runCatching { val f=prepared(); FinanceQuerySpec(version=if(f.nature==null) 1 else 2,nature=f.nature,
+            mode=FinanceQueryMode.CASH_MOVEMENT,startInclusive=f.range.startInclusive,endExclusive=f.range.endExclusive,
+            accountIds=setOfNotNull(f.accountId),categoryIds=setOfNotNull(f.categoryId),tagIds=setOfNotNull(f.tagId),
+            currencyCode=f.currencyCode,minimumMinor=f.minimumMinor,maximumMinor=f.maximumMinor,text=f.query) }.getOrNull()
+    }
+    val previewData by produceState<Pair<FinanceSnapshot,FinanceQueryResult>?>(null,snapshot,previewSpec) {
+        value=null
+        if(previewSpec!=null) value=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {snapshot to FinanceQueryEngine.execute(snapshot,previewSpec)}
+    }
+    val preview=previewData?.takeIf {it.first===snapshot && it.second.spec==previewSpec}?.second
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -215,6 +226,15 @@ internal fun FinanceQuerySheet(
                 error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
                 state.error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
                 Text("查看结果后，账簿会按这些条件更新。关闭面板会保留原条件。", style = LifeText.caption, color = colors.muted)
+            }
+            preview?.let { result ->
+                Row(Modifier.fillMaxWidth().padding(top=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text("符合当前条件：",style=LedgerText.caption,color=colors.inkSecondary)
+                    LedgerOdometer(result.cash.size.toString(),LedgerText.caption,colors.inkSecondary)
+                    Text(" 笔",style=LedgerText.caption,color=colors.inkSecondary)
+                }
+                result.totals.forEach {(code,total)->Text((if(result.cash.all {it.direction==FinanceDirection.OUTFLOW}) "合计 " else "净流出 ")+FinanceMoney.display(total.confirmedMinor,code),style=LedgerText.caption,color=colors.inkSecondary)}
+                if(result.undatedCash.isNotEmpty()) Text("另有 "+result.undatedCash.size+" 笔日期待确认，未计入期间合计",style=LedgerText.caption,color=colors.inkSecondary)
             }
             Button({
                 runCatching { prepared() }.onSuccess { onApply(it, useCalendar) }.onFailure { error = it.message ?: "请检查查询条件" }

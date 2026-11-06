@@ -52,7 +52,7 @@ internal fun FinanceReceipt(title: String, busy: Boolean = false, error: String?
                     Surface(shape = RoundedCornerShape(5.dp), color = androidx.compose.ui.graphics.Color.Transparent,
                         border = BorderStroke(1.dp, colors.secondary.copy(alpha = .45f))) {
                         Text(formalStatus ?: title, Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                            style = LedgerText.body.copy(fontSize = 10.sp, lineHeight = 12.sp), color = colors.secondary)
+                            style = LedgerText.body.copy(fontSize = 10.sp, lineHeight = 12.sp), color = colors.accentDeep)
                     }
                     Spacer(Modifier.weight(1f))
                 } else Text(title, style = LifeText.title, color = colors.ink, modifier = Modifier.weight(1f))

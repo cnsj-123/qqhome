@@ -21,6 +21,20 @@ import org.robolectric.annotation.GraphicsMode
 class FinanceInlineCategoriesTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun anEmptyLedgerUsesDraftTemplateNamesWithoutInventingCanonicalCategoryIds() {
+        var draftRoot="";var draftChild="";var canonicalCalls=0
+        compose.setContent {LifeOsTheme {
+            var root by remember {mutableStateOf("")};var child by remember {mutableStateOf("")}
+            Column {FinanceInlineCategories(FinanceSnapshot(),null,false,selectedName=root,selectedChild=child,
+                onTemplate={parent,leaf->root=parent;child=leaf.orEmpty();draftRoot=root;draftChild=child}) {canonicalCalls++}}
+        }}
+        compose.onNodeWithTag("entry-category-template:餐饮").performClick()
+        compose.onNodeWithTag("entry-category-template:餐饮/早餐").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("entry-category-template:餐饮/早餐").assertIsSelected()
+        compose.onNodeWithTag("entry-category-template:学习").assertIsDisplayed()
+        assertEquals("餐饮",draftRoot);assertEquals("早餐",draftChild);assertEquals(0,canonicalCalls)
+    }
+
     @Test fun childSelectionKeepsTheRootGridAndUsesTheSameTypedCategoryId() {
         val snapshot = FinanceSnapshot(categories = listOf(FinanceCategoryEntity("food", "餐饮"),
             FinanceCategoryEntity("breakfast", "早餐", "food"), FinanceCategoryEntity("transport", "交通")))

@@ -99,7 +99,7 @@ internal fun FinanceSettingsRoute(
             com.qq.closie.ui.lifeos.settings.SettingsLine("查账与保存视图", onClick = { section = "queries" })
             com.qq.closie.ui.lifeos.settings.SettingsLine("预算与专题", onClick = { section = "budget" })
             com.qq.closie.ui.lifeos.settings.SettingsSection("数据与隐私")
-            com.qq.closie.ui.lifeos.settings.SettingsLine("隐私授权", "管理首页、分享与 AI 的用途授权", onClick = onPrivacy)
+            com.qq.closie.ui.lifeos.settings.SettingsLine("隐私授权", "管理首页、分享与 AI 的用途授权", motionKey = "privacy", onClick = onPrivacy)
             com.qq.closie.ui.lifeos.settings.SettingsLine("导入账目", "预览、映射与去重", onClick = { section = "import" })
             com.qq.closie.ui.lifeos.settings.SettingsLine("作废箱", "核对影响与恢复记录", onClick = { section = "voided" })
             com.qq.closie.ui.lifeos.settings.SettingsLine("数据与备份", onClick = onBackup)

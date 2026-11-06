@@ -64,7 +64,7 @@ internal fun FinanceEntryContainer(title: String, busy: Boolean, error: String?,
                     cameraDistance=12*density
                 },shape=ManualReceiptShape,color=colors.paper) {
                 Column(Modifier.fillMaxSize().padding(horizontal=32.dp).navigationBarsPadding()) {
-                    Row(Modifier.fillMaxWidth().height(44.dp).pointerInput(busy,reduced) {
+                    Row(Modifier.fillMaxWidth().height(52.dp).pointerInput(busy,reduced) {
                         val tracker=VelocityTracker()
                         detectVerticalDragGestures(onDragStart={tracker.resetTracking();motion?.cancel()},onDragEnd={
                             val velocity=tracker.calculateVelocity().y/paperHeight.toPx()

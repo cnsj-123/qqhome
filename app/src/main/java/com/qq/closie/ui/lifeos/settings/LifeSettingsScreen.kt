@@ -123,7 +123,7 @@ fun LifeSettingsScreen(
         if (filtered.isEmpty()) Text("没有找到相关设置", Modifier.padding(top = 20.dp), style = LifeText.caption, color = colors.muted)
         filtered.forEach { group ->
             SettingsSection(group.title)
-            group.rows.forEach { row -> SettingsLine(row.title, row.subtitle, row.icon, row.trailing, row.action) }
+            group.rows.forEach { row -> SettingsLine(row.title, row.subtitle, row.icon, row.trailing, onClick = row.action) }
         }
     }
     if (about) AlertDialog(
@@ -145,11 +145,12 @@ internal fun SettingsPaperPage(
     title: String,
     onBack: () -> Unit,
     showBack: Boolean = true,
+    motionKey: String? = settingsPaperKey(title),
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colors = LocalLifeOsColors.current
-    val key = settingsPaperKey(title)
+    val key = motionKey
     Scaffold(modifier = Modifier.settingsPaperBounds(key), containerColor = colors.paper) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -176,6 +177,7 @@ internal fun SettingsLine(
     subtitle: String? = null,
     icon: ImageVector? = null,
     trailing: String? = null,
+    motionKey: String? = settingsPaperKey(title),
     onClick: (() -> Unit)? = null
 ) {
     val colors = LocalLifeOsColors.current
@@ -187,14 +189,14 @@ internal fun SettingsLine(
     val interaction = if (onClick == null) Modifier.semantics { disabled() }
         else Modifier.clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
     Row(
-        Modifier.fillMaxWidth().settingsPaperBounds(if (onClick != null) settingsPaperKey(title) else null)
+        Modifier.fillMaxWidth().settingsPaperBounds(if (onClick != null) motionKey else null)
             .graphicsLayer { scaleX = 1f - .02f * press; scaleY = scaleX; translationY = 2.dp.toPx() * press }
             .then(interaction).heightIn(min = if (icon == null) 48.dp else 52.dp).padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) Icon(icon, null, Modifier.padding(start = 4.dp, end = 13.dp).size(19.dp), tint = colors.accent)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (icon == null) 0.dp else 4.dp)) {
-            Text(title, Modifier.settingsPaperTitle(if (onClick != null) settingsPaperKey(title) else null),
+            Text(title, Modifier.settingsPaperTitle(if (onClick != null) motionKey else null),
                 style = SettingsText.body, color = if (onClick == null) colors.inkSecondary else colors.ink)
             subtitle?.let { Text(it, style = SettingsText.detail, color = colors.inkSecondary) }
         }

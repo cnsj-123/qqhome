@@ -313,7 +313,7 @@ fun DataSettingsScreen(
                 Text(it, color = if (isError) MaterialTheme.colorScheme.error else if (lifeSurface) colors.accentDeep else ClosieColor.RosePressed)
             }
     }
-    if (lifeSurface) SettingsPaperPage("数据与备份", back, content = content)
+    if (lifeSurface) SettingsPaperPage("数据与备份", back, motionKey = if(openExportCenter) "export" else "backup", content = content)
     else Scaffold(containerColor = ClosieColor.Canvas,
         topBar = { ClosieCompactTopBar(title = "数据与备份", onBack = back) }) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 16.dp, vertical = 12.dp).verticalScroll(rememberScrollState()),

@@ -143,11 +143,12 @@ private fun AppearanceSettingsScreen(
             SettingsPaletteSeal(state.saveEvent, palette, reduced) { collapse ->
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val compact = maxWidth < 320.dp || LocalDensity.current.fontScale > 1.2f
+                    val paletteRowWidth=maxWidth
                     @Composable fun Swatches() {
                         Row(Modifier.width(205.dp)) {
                             fields.forEachIndexed { index, (field, value) ->
                                 Column(Modifier.width(41.dp).height(58.dp).graphicsLayer {
-                                    translationX = (maxWidth.value / 2f - (index * 41f + 17f)).dp.toPx() * collapse
+                                    translationX = (paletteRowWidth.value / 2f - (index * 41f + 17f)).dp.toPx() * collapse
                                     scaleX = 1f - collapse; scaleY = scaleX; alpha = 1f - collapse
                                 }.clickable(enabled = editable) { colorOrigin = colorOrigins[field]; editingColor = field },
                                     horizontalAlignment = Alignment.Start) {

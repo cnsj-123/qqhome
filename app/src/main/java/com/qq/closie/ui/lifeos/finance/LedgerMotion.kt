@@ -21,6 +21,12 @@ internal object LedgerMotion {
     const val STAGGER = 30
 }
 
+/** All categories reach a complete sector at the terminal frame, including long category lists. */
+internal fun ledgerSectorProgress(progress: Float, index: Int): Float {
+    val delay = (index * LedgerMotion.STAGGER * 2).coerceIn(0, 300)
+    return ((progress.coerceIn(0f, 1f) * 500f - delay) / (500f - delay)).coerceIn(0f, 1f)
+}
+
 /** Measured finance roles in page 1226:39231. Numeric editing still uses the bundled Sans. */
 internal object LedgerText {
     val body = TextStyle(fontFamily = LifeFonts.Journal, fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = .8.sp)

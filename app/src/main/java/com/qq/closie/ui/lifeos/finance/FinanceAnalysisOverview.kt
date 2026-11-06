@@ -194,7 +194,7 @@ private fun AnalysisCategoryDistribution(
             var angle = -90f
             ranked.filter { it.totals.expenseMinor > 0 }.forEachIndexed { index, row ->
                 val sweep = (row.totals.expenseMinor / positiveTotal * 360).toFloat()
-                val sectorProgress=((growth*500-index*60)/(500-(index*60).coerceAtMost(300))).coerceIn(0f,1f)
+                val sectorProgress=ledgerSectorProgress(growth,index)
                 drawArc(swatches[index % swatches.size], angle, sweep*sectorProgress, false,
                     center-Offset(diameter/2,diameter/2), Size(diameter,diameter), style=Stroke(stroke))
                 if(growth>.95f) {

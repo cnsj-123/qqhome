@@ -33,7 +33,7 @@ internal fun FinanceAmountInput(value:String,currency:String,enabled:Boolean,sho
         }
         keypad = !keypad
     }, enabled = enabled) { Text(if(keypad) "收起金额键盘" else "展开金额键盘与计算器") }
-    if(showKeypad && keypad) FinanceAmountKeypad(value, currency, enabled, onChange)
+    if(showKeypad && keypad) FinanceAmountKeypad(value, currency, enabled, onChange = onChange)
     calculationError?.let { Text(it,color=MaterialTheme.colorScheme.error,style=LifeText.caption) }
 }
 

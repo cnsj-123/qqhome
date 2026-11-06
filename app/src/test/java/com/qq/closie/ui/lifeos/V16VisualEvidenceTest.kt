@@ -18,6 +18,8 @@ import com.qq.closie.ui.lifeos.home.*
 import com.qq.closie.ui.lifeos.media.LifeMediaUi
 import com.qq.closie.ui.lifeos.theme.LifeOsTheme
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -30,12 +32,13 @@ import java.time.LocalDate
 /** Rendered Compose code with synthetic data; this is explicitly NOT device/IME/projection evidence. */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[34],qualifiers="w393dp-h852dp")
+@Config(sdk=[34],qualifiers="w405dp-h880dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class V16VisualEvidenceTest:FinanceRoomTest() {
     @get:Rule val compose=createComposeRule()
     private var models:ViewModelStore?=null
-    @After fun stopReaders(){compose.runOnIdle {models?.clear()}}
+    private var appearanceJob:kotlinx.coroutines.Job?=null
+    @After fun stopReaders(){compose.runOnIdle {models?.clear()};runBlocking {appearanceJob?.let {it.cancel();it.join()}}}
     private fun capture(name:String) {
         compose.waitForIdle()
         // Robolectric cannot capture a hardware screen. Draw the actual top window on its native Canvas.
@@ -68,9 +71,9 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
     }
     @Test fun homePhotoStackRendersStableIrregularFramesAndMemory() {
         val context:Context=ApplicationProvider.getApplicationContext()
-        val photos=(0..2).map {index->
+        val photos=(0..3).map {index->
             val bitmap=Bitmap.createBitmap(360,440,Bitmap.Config.ARGB_8888)
-            val canvas=Canvas(bitmap);canvas.drawColor(listOf(0xffcbd6c4,0xffcbd6e8,0xffe3cccf)[index].toInt())
+            val canvas=Canvas(bitmap);canvas.drawColor(listOf(0xffcbd6c4,0xffcbd6e8,0xffe3cccf,0xffd8c8e3)[index].toInt())
             val paint=Paint(Paint.ANTI_ALIAS_FLAG)
             paint.color=0xfff7f3e9.toInt();canvas.drawRect(40f,80f,320f,360f,paint)
             paint.color=0xff5c576e.toInt();paint.textSize=30f;canvas.drawText("SYNTHETIC "+index,60f,230f,paint)
@@ -138,4 +141,47 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         capture("finance-receipt")
         assertEquals(1,runBlocking {finance.snapshot()}.entries.size)
     }
+    @Test fun entryAndAnalysisRenderActualCanonicalSyntheticFactsAtTheFigmaViewport() {
+        runBlocking {
+            val a=finance.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,openingBalanceMinor=500_000)
+            listOf("餐饮" to 98_600L,"购物" to 84_200L,"交通" to 40_200L,"居家" to 35_000L,"其他" to 60_000L).forEach {(category,amount)->
+                finance.saveEntry(accountId=a.id,direction=FinanceDirection.OUTFLOW,amountMinor=amount,
+                    description="合成"+category,category=category,occurredAt=System.currentTimeMillis())
+            }
+            val month=java.time.YearMonth.now()
+            finance.workspace.saveBudget(finance.economics.token(),"本月预算","CNY",400_000,null,
+                month.atDay(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                month.plusMonths(1).atDay(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
+        }
+        financeScene();compose.onNodeWithText("分析").performClick()
+        compose.waitUntil(10_000) {compose.onAllNodesWithText("分类构成").fetchSemanticsNodes().isNotEmpty()}
+        capture("finance-analysis")
+        compose.onNodeWithTag("finance-add").performClick()
+        val food=runBlocking {finance.snapshot()}.categories.single {it.name=="餐饮" && it.parentId==null}
+        compose.onNodeWithTag("entry-category-"+food.id).performScrollTo().performClick()
+        compose.onNodeWithTag("entry-category-template:餐饮/早餐").performScrollTo().performClick()
+        capture("finance-entry")
+        assertEquals(5,runBlocking {finance.snapshot()}.entries.size)
+    }
+
+    @Test fun themeAndColorEditorRenderTheActualPreferenceOwnerWithoutSavingADraft() {
+        val context:Context=ApplicationProvider.getApplicationContext()
+        val job=kotlinx.coroutines.SupervisorJob();appearanceJob=job
+        val scope=kotlinx.coroutines.CoroutineScope(job+kotlinx.coroutines.Dispatchers.IO)
+        val store=androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope=scope) {
+            File(context.cacheDir,"visual-appearance-"+java.util.UUID.randomUUID()+".preferences_pb")
+        }
+        val repo=com.qq.closie.data.appearance.AppearanceRepository(store,scope)
+        runBlocking {repo.settings.filterNotNull().first()}
+        val vm=com.qq.closie.ui.lifeos.settings.AppearanceViewModel(repo)
+        models=ViewModelStore().apply {put("appearance",vm)}
+        compose.setContent {LifeOsTheme {com.qq.closie.ui.lifeos.settings.AppearanceSettingsRoute(vm){}}}
+        compose.waitUntil(10_000){compose.onAllNodesWithText("主题与配色").fetchSemanticsNodes().isNotEmpty()}
+        capture("settings-theme")
+        compose.onNodeWithText("纸").performClick()
+        compose.waitUntil(10_000){compose.onAllNodesWithText("HEX",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        capture("settings-color")
+        assertEquals(com.qq.closie.data.appearance.AppearanceSettings(),runBlocking {repo.read()})
+    }
+
 }

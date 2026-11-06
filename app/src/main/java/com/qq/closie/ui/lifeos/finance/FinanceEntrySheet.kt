@@ -130,7 +130,8 @@ internal fun FinanceEntrySheet(state: FinanceUiState, row: FinanceLedgerRow?, vm
             vm.clearError()
         }
         if (kind != FinanceEditorKind.TRANSFER) {
-            FinanceInlineCategories(state.snapshot, selectedCategoryId, state.busy) { selectedCategoryId = it }
+            FinanceInlineCategories(state.snapshot,selectedCategoryId,state.busy,selectedName=category,selectedChild=subcategory,
+                onTemplate={root,child->selectedCategoryId=null;category=root;subcategory=child.orEmpty()}) {selectedCategoryId=it;category="";subcategory=""}
         }
         Row(Modifier.padding(top=20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
             if(row==null) {

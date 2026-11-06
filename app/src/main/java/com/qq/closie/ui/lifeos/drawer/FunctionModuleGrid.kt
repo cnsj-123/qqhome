@@ -145,7 +145,7 @@ fun LifeOsDrawer(onOpenModule: (LifeModule) -> Unit, onClose: () -> Unit, modifi
                     }
                 },
                     onDragCancel = { if (lifted != null) cancel() })
-            }, contentPadding = PaddingValues(horizontal = 32.dp, top = 33.dp, bottom = 14.dp)) {
+            }, contentPadding = PaddingValues(start = 32.dp, end = 32.dp, top = 33.dp, bottom = 14.dp)) {
             item(key = "brand", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
