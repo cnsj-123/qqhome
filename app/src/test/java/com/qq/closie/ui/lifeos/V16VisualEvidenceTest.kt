@@ -93,9 +93,10 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         capture("home-photo-viewer")
     }
     @Test fun drawerRendersTheActualMountedHomeAndModuleSurface() {
+        val style=mutableStateOf(com.qq.closie.data.appearance.FunctionPageStyle.DECK)
         compose.setContent {LifeOsTheme {
             com.qq.closie.ui.lifeos.components.LifeFunctionPages(open=true,enabled=true,
-                style=com.qq.closie.data.appearance.FunctionPageStyle.DECK,reducedMotion=false,home=true,
+                style=style.value,reducedMotion=false,home=true,
                 onOpenChange={},functionPage={com.qq.closie.ui.lifeos.drawer.LifeOsDrawer({},{})}) {
                 androidx.compose.material3.Surface(color=com.qq.closie.ui.lifeos.theme.LocalLifeOsColors.current.paper) {
                     LifeOsHomeScreen(HomeUiState(LocalDate.of(2026,10,12)),{},{},{},{},{})
@@ -103,6 +104,7 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
             }
         }}
         compose.onNodeWithText("生活的抽屉").assertIsDisplayed()
+        compose.runOnIdle {style.value=com.qq.closie.data.appearance.AppearanceSettings().functionPageStyle}
         capture("drawer-default")
         compose.onNodeWithTag("life-drawer").performScrollToNode(hasTestTag("drawer-restore-order"))
         capture("drawer-bottom")
@@ -202,14 +204,17 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
             assertEquals("验收第一笔咖啡",committed.description)
             val ledgerRow=compose.onNodeWithTag("finance-ledger-row-${committed.id}",useUnmergedTree=true)
             ledgerRow.assertIsDisplayed()
+            fun SemanticsNodeInteraction.screenBounds()=fetchSemanticsNode().let {node->
+                node.boundsInWindow.translate(node.positionOnScreen-node.positionInWindow)
+            }
             compose.mainClock.advanceTimeBy(368)
             compose.runOnIdle {}
-            val printedBounds=paper.fetchSemanticsNode().boundsInRoot
+            val printedBounds=paper.screenBounds()
             capture("finance-print-visible-before")
             compose.mainClock.advanceTimeBy(128)
             compose.runOnIdle {}
-            val inFlight=paper.fetchSemanticsNode().boundsInRoot
-            val target=ledgerRow.fetchSemanticsNode().boundsInRoot.center
+            val inFlight=paper.screenBounds()
+            val target=ledgerRow.screenBounds().center
             assertTrue("A real destination must shrink the printed paper; fallback only fades it",
                 inFlight.height < printedBounds.height * .9f)
             assertTrue("The flight must approach the new canonical row",

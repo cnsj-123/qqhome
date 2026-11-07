@@ -53,7 +53,7 @@ internal class FinanceNativeReceiptEditor(
         }
         override fun dispatchKeyEvent(event:KeyEvent)=route(event)||super.dispatchKeyEvent(event)
         override fun dispatchKeyEventPreIme(event:KeyEvent)=route(event)||super.dispatchKeyEventPreIme(event)
-    }.apply {isFocusableInTouchMode=true;isFillViewport=false;addView(pages)}
+    }.apply {isFocusableInTouchMode=true;isFillViewport=false;isVerticalScrollBarEnabled=false;addView(pages)}
     private val reviewActions=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(8),dp(22),dp(22))}
     private val fieldActions=LinearLayout(context).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(22),dp(8),dp(22),dp(14));visibility=View.GONE}
     val view:LinearLayout=LinearLayout(context).apply {

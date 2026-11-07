@@ -52,17 +52,22 @@ internal fun rememberFunctionPageVisuals(effects: FunctionPageEffects, home: Boo
 internal fun LifePaperBackdrop(effects: FunctionPageEffects, modifier: Modifier = Modifier, home: Boolean = false,drawer:Boolean=false) {
     val visuals = rememberFunctionPageVisuals(effects, home)
     val colors = LocalLifeOsColors.current
+    val leafTint = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted)
     Box(modifier.graphicsLayer { clip = true }) {
         Box(Modifier.fillMaxSize().graphicsLayer { renderEffect = visuals.backdropBlur }.background(visuals.surface)) {
-            if (home || drawer) {
+            if (home) {
                 androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_top), null,
-                    Modifier.align(androidx.compose.ui.Alignment.TopEnd)
-                        .offset(x=if(drawer)10.dp else 28.dp,y=if(drawer)(-33).dp else (-26).dp).size(190.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
-                if(home) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_bottom), null,
+                    Modifier.align(androidx.compose.ui.Alignment.TopEnd).offset(x = 28.dp, y = (-26).dp).size(190.dp),
+                    colorFilter = leafTint)
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_bottom), null,
                     Modifier.align(androidx.compose.ui.Alignment.BottomStart).offset(x = (-70).dp, y = 28.dp).size(190.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
+                    colorFilter = leafTint)
             }
         }
+        // This asset already has the opacity of the drawer's decorative shadow.
+        if (drawer) androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_top), null,
+            Modifier.align(androidx.compose.ui.Alignment.TopEnd).offset(x = 10.dp, y = (-33).dp).size(190.dp),
+            colorFilter = leafTint)
     }
 }
