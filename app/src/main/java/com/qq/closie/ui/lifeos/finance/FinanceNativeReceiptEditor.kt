@@ -43,7 +43,7 @@ internal class FinanceNativeReceiptEditor(
     private val body=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(30),dp(22),0)}
     private val panel=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE;setPadding(dp(22),dp(24),dp(22),dp(8))}
     private val pages=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;addView(body);addView(panel)}
-    val scroll=object:ScrollView(context) {
+    val scroll:ScrollView=object:ScrollView(context) {
         private fun route(event:KeyEvent):Boolean {
             if(event.keyCode!=KeyEvent.KEYCODE_BACK)return false
             if(!interactionCurrent())return true
@@ -56,7 +56,7 @@ internal class FinanceNativeReceiptEditor(
     }.apply {isFocusableInTouchMode=true;isFillViewport=false;addView(pages)}
     private val reviewActions=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(8),dp(22),dp(14))}
     private val fieldActions=LinearLayout(context).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(22),dp(8),dp(22),dp(14));visibility=View.GONE}
-    val view=LinearLayout(context).apply {
+    val view:LinearLayout=LinearLayout(context).apply {
         orientation=LinearLayout.VERTICAL
         addView(scroll,LinearLayout.LayoutParams(-1,0,1f));addView(reviewActions);addView(fieldActions)
     }
