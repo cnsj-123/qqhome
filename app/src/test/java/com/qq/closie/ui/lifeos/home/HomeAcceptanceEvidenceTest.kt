@@ -210,7 +210,7 @@ class HomeAcceptanceEvidenceTest : FinanceRoomTest() {
             })
         }
         photoButton(0).performClick()
-        val actions = compose.onNodeWithTag("life-origin-paper").fetchSemanticsNode().config[SemanticsProperties.CustomActions]
+        val actions = compose.onNodeWithTag("life-origin-paper").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
         assertFalse(actions.any { it.label == "下一张照片" })
         viewerAction("从首页移除照片")
         compose.onNodeWithText("移除").performClick()
@@ -262,7 +262,7 @@ class HomeAcceptanceEvidenceTest : FinanceRoomTest() {
 
     private fun viewerAction(label: String) {
         val action = compose.onNodeWithTag("life-origin-paper").fetchSemanticsNode()
-            .config[SemanticsProperties.CustomActions].single { it.label == label }
+            .config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].single { it.label == label }
         compose.runOnIdle { assertTrue(action.action()) }
     }
 
