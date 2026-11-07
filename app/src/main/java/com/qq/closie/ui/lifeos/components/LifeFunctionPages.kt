@@ -139,7 +139,7 @@ fun LifeFunctionPages(
                 transformOrigin = TransformOrigin(0f, .5f)
                 cameraDistance = 18.dp.toPx()
             }) {
-                LifePaperBackdrop(effects, Modifier.fillMaxSize())
+                LifePaperBackdrop(effects, Modifier.fillMaxSize(),drawer=true)
                 functionPage()
             }
             Box(Modifier.fillMaxSize().zIndex(if (reducedMotion || mode == FunctionPageStyle.GLASS) 0f else 1f).graphicsLayer {

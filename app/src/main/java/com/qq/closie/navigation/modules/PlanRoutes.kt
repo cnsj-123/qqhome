@@ -27,9 +27,14 @@ fun NavGraphBuilder.planRoutes(nav: NavHostController, container: LifeContainer)
         val vm: PlanViewModel = viewModel(owner, key = "plans", factory = PlanViewModelFactory(container))
         val id = entry.arguments?.getString("id").orEmpty()
         val item by remember(id) { vm.observeItem(id) }.collectAsStateWithLifecycle(initialValue = null)
-        PlanEditScreen(plan = item, onSave = { title, note, date, clearDate ->
-            if (id == LifeOsRoute.NEW_ID) vm.create(title, note, date)
-            else item?.let { vm.update(it, title, note, date, clearDate) }
+        val homeVisible: Boolean? by remember(id) {vm.observeHomeVisible(id)}.collectAsStateWithLifecycle(initialValue=null)
+        if(id!=LifeOsRoute.NEW_ID && homeVisible==null) {
+            com.qq.closie.ui.lifeos.components.LifeEmptyState("正在读取计划的首页展示设置…")
+            return@composable
+        }
+        PlanEditScreen(plan = item, initialHomeVisible=homeVisible==true,onSave = { title, note, date, clearDate,showOnHome ->
+            if (id == LifeOsRoute.NEW_ID) vm.create(title, note, date,showOnHome)
+            else item?.let { vm.update(it, title, note, date, clearDate,showOnHome) }
             nav.returnWithinLifeModule()
         }, onBack = { nav.returnWithinLifeModule() })
     }

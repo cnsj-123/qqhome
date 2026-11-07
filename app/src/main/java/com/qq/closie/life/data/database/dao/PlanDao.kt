@@ -38,6 +38,18 @@ interface PlanDao {
     @Query("SELECT * FROM plan_items ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<PlanItemEntity>>
 
+    /** Explicit presentation consent on the existing identity graph, never another plan copy. */
+    @Query("SELECT p.* FROM plan_items p JOIN life_entities e ON e.id=p.lifeEntityId " +
+        "JOIN life_relations r ON r.fromEntityId=e.id AND r.toEntityId=e.id " +
+        "AND r.relationType='home-plan-display' WHERE e.deletedAt IS NULL AND e.entityType='PLAN' " +
+        "ORDER BY p.dueAt IS NULL ASC,p.dueAt ASC,p.sortOrder ASC,p.createdAt ASC")
+    fun observeHomeVisible(): Flow<List<PlanItemEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM plan_items p JOIN life_entities e ON e.id=p.lifeEntityId " +
+        "JOIN life_relations r ON r.fromEntityId=e.id AND r.toEntityId=e.id " +
+        "WHERE p.id=:id AND e.deletedAt IS NULL AND e.entityType='PLAN' AND r.relationType='home-plan-display')")
+    fun observeHomeVisibility(id: String): Flow<Boolean>
+
     /** 今天: due inside the given window and not yet done. */
     @Query(
         "SELECT * FROM plan_items " +

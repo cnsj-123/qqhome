@@ -48,6 +48,10 @@ import com.qq.closie.navigation.navigateLifeTopLevel
 import com.qq.closie.navigation.LifeOsRoute
 import com.qq.closie.ui.theme.ClosieColor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import com.qq.closie.data.backup.RestoreStartupGate
+import com.qq.closie.ui.lifeos.home.HomeUiState
 
 /** Product root. Closet is a destination inside this shell, with its original storage owner. */
 @Composable
@@ -67,7 +71,13 @@ fun LifeOsRoot(
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val legacySurface = entry?.destination?.route in setOf(LifeOsRoute.CLOSET, LifeOsRoute.BACKUP)
-        val home by shellViewModel.home.collectAsStateWithLifecycle()
+        val projectedHome by shellViewModel.home.collectAsStateWithLifecycle()
+        val homeGate = remember { RestoreStartupGate.state.map { it.status to it.restoreGeneration }.distinctUntilChanged() }
+        val gate by homeGate.collectAsStateWithLifecycle(
+            initialValue = RestoreStartupGate.state.value.let { it.status to it.restoreGeneration }
+        )
+        val home = if (gate.first == RestoreStartupGate.Status.READY && projectedHome.restoreGeneration == gate.second)
+            projectedHome else HomeUiState(projectedHome.date, isLoading = true, restoreGeneration = gate.second)
         var companionProgress by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
         var drawerOpen by rememberSaveable { mutableStateOf(false) }
         val reduced = reducedLifeMotion()

@@ -31,7 +31,8 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 @Composable
 internal fun SettingsPaperPrompt(paper:Boolean,origin:LifeSurfaceOrigin?=null,busy:Boolean=false,
     onDismissRequest:()->Unit,title:@Composable ()->Unit,text:@Composable ()->Unit,
-    confirmButton:@Composable (close:()->Unit,canConfirm:Boolean)->Unit,dismissButton:(@Composable (close:()->Unit)->Unit)?=null) {
+    confirmButton:@Composable (close:()->Unit,canConfirm:Boolean)->Unit,scrimColor:androidx.compose.ui.graphics.Color?=null,
+    dismissButton:(@Composable (close:()->Unit)->Unit)?=null) {
     if(!paper) {
         val legacyDismiss:(@Composable ()->Unit)?=if(dismissButton==null) null else ({dismissButton(onDismissRequest)})
         AlertDialog(onDismissRequest=onDismissRequest,title=title,text=text,
@@ -39,7 +40,7 @@ internal fun SettingsPaperPrompt(paper:Boolean,origin:LifeSurfaceOrigin?=null,bu
         return
     }
     val colors=LocalLifeOsColors.current
-    SettingsOriginDialog(origin,onDismissRequest,dismissEnabled=!busy) {close->
+    SettingsOriginDialog(origin,onDismissRequest,dismissEnabled=!busy,scrimColor=scrimColor) {close->
         val canConfirm=!busy && LocalSettingsDialogDismissal.current?.closing!=true
         Column(Modifier.fillMaxWidth().heightIn(max=(androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp*.88f).dp)
             .padding(start=34.dp,end=34.dp,top=28.dp,bottom=24.dp)) {

@@ -40,6 +40,7 @@ jobs:
           python3 engineering/v16/verify-product-baseline.py | tee engineering/v16/ci-logs/product-baseline-source.json
           python3 engineering/v16/verify-product-baseline.py --review-round2 | tee engineering/v16/ci-logs/round2-baseline-source.json
           python3 engineering/v16/verify-product-baseline.py --review-round3 | tee engineering/v16/ci-logs/round3-baseline-source.json
+          python3 engineering/v16/verify-product-baseline.py --ci103-acceptance | tee engineering/v16/ci-logs/ci103-baseline-source.json
           python3 engineering/v16/check-source.py 2>&1 | tee engineering/v16/ci-logs/source.log
           python3 engineering/v16/check-migration.py 2>&1 | tee engineering/v16/ci-logs/sqlite.log
           python3 engineering/v16/verify-room-schema.py --history-only --report engineering/v16/ci-logs/room-history.json
@@ -62,9 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew :app:testDebugUnitTest --stacktrace 2>&1 | tee engineering/v16/ci-logs/unit-tests.log
-      - name: Record synthetic native Compose visuals for fidelity review
+      - name: Record synthetic native Android visuals for fidelity review
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
-        run: python3 engineering/v16/print-native-visuals.py
+        run: python3 engineering/v16/print-native-visuals.py ${{ steps.tests.outcome == 'success' && '--require-all' || '' }}
       - name: Require actual JUnit coverage and 2000-row metrics
         if: ${{ !cancelled() && steps.tests.outcome == 'success' }}
         run: |
@@ -75,6 +76,7 @@ jobs:
           python3 engineering/v16/verify-product-baseline.py --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/product-baseline-junit.json
           python3 engineering/v16/verify-product-baseline.py --review-round2 --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/round2-baseline-junit.json
           python3 engineering/v16/verify-product-baseline.py --review-round3 --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/round3-baseline-junit.json
+          python3 engineering/v16/verify-product-baseline.py --ci103-acceptance --junit app/build/test-results/testDebugUnitTest | tee engineering/v16/ci-logs/ci103-baseline-junit.json
       - name: Assemble CI debug APK
         id: assemble
         run: |

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,7 +37,8 @@ import com.qq.closie.ui.lifeos.theme.LocalLifeOsColors
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -59,22 +61,27 @@ internal data class SettingsMediaStorage(
 )
 
 /** A read-only projection of the existing media owner, never a second media index. */
-internal suspend fun readSettingsMediaStorage(media: MediaRepository): SettingsMediaStorage =
-    RestoreStartupGate.withBusinessAccessSuspending {
-        val count = media.countAssets()
-        val assets = if (count == 0) emptyList() else media.observeRecentAssets(count).first()
-        val originals = assets.flatMap { media.getResourcesForAsset(it.id) }.filter {
-            it.role in setOf(MediaResourceRole.ORIGINAL, MediaResourceRole.PRIMARY_IMAGE,
-                MediaResourceRole.ORIGINAL_CONTAINER, MediaResourceRole.PAIRED_VIDEO, MediaResourceRole.AUDIO)
-        }
+internal suspend fun readSettingsMediaStorage(media: MediaRepository, fileExists:(String)->Boolean = {File(it).isFile}): SettingsMediaStorage =
+    media.storageSnapshot().let { snapshot ->
+        val assets = snapshot.assets
+        val ids = assets.map {it.id}.toHashSet()
+        val originalRoles=setOf(MediaResourceRole.ORIGINAL, MediaResourceRole.PRIMARY_IMAGE,
+            MediaResourceRole.ORIGINAL_CONTAINER, MediaResourceRole.PAIRED_VIDEO, MediaResourceRole.AUDIO)
+        val originals = snapshot.resources.filter { it.mediaAssetId in ids && it.role in originalRoles }
         val local = originals.mapNotNull { it.managedPath }.distinct()
         val external = originals.mapNotNull { it.contentUri }.distinct()
-        SettingsMediaStorage(assets.size, local.count { File(it).isFile }, external.size,
-            local.count { !File(it).isFile } + assets.count { asset -> originals.none { it.mediaAssetId == asset.id } },
+        val localPresence = local.associateWith {currentCoroutineContext().ensureActive();fileExists(it)}
+        val represented = originals.map {it.mediaAssetId}.toHashSet()
+        check(RestoreStartupGate.isReady && RestoreStartupGate.state.value.restoreGeneration==snapshot.restoreGeneration) {
+            "媒体来源已因恢复而变化，请重读"
+        }
+        SettingsMediaStorage(assets.size, localPresence.values.count {it}, external.size,
+            localPresence.values.count {!it} + assets.count {it.id !in represented},
             external)
     }
 
-private fun readableReferences(context: Context, uris: List<String>): Int = uris.count { source ->
+private suspend fun readableReferences(context: Context, uris: List<String>): Int = uris.count { source ->
+    currentCoroutineContext().ensureActive()
     try {
         context.contentResolver.openFileDescriptor(Uri.parse(source), "r")?.use { true } ?: false
     } catch (_: Exception) { false }
@@ -89,14 +96,15 @@ internal fun SettingsStorageControls(media: MediaRepository, enabled: Boolean = 
     val loader = context.imageLoader
     val cache = remember(loader) { SettingsImageCache(loader.memoryCache, loader.diskCache) }
     val scope = rememberCoroutineScope()
+    val gate by RestoreStartupGate.state.collectAsState()
     var refresh by remember { mutableIntStateOf(0) }
     var bytes by remember { mutableStateOf<Long?>(null) }
     var clearing by remember { mutableStateOf(false) }
     var cacheResult by remember { mutableStateOf<String?>(null) }
-    var mediaSummary by remember(media) { mutableStateOf<SettingsMediaStorage?>(null) }
+    var mediaSummary by remember(media,gate.restoreGeneration) { mutableStateOf<SettingsMediaStorage?>(null) }
     var mediaFailure by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
-    var readable by remember { mutableStateOf<Int?>(null) }
+    var readable by remember(media,gate.restoreGeneration) { mutableStateOf<Int?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
 
     LaunchedEffect(cache, refresh, enabled) {
@@ -106,8 +114,8 @@ internal fun SettingsStorageControls(media: MediaRepository, enabled: Boolean = 
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { bytes = null; cacheResult = "缓存大小暂不可读取" }
     }
-    LaunchedEffect(media, refresh, enabled) {
-        if (!enabled) { mediaSummary = null; readable = null; return@LaunchedEffect }
+    LaunchedEffect(media, refresh, enabled, gate.restoreGeneration, gate.canAcquireBusinessLease) {
+        if (!enabled || !gate.canAcquireBusinessLease) { mediaSummary = null; readable = null; return@LaunchedEffect }
         mediaFailure = false
         readable = null
         try {
@@ -115,10 +123,10 @@ internal fun SettingsStorageControls(media: MediaRepository, enabled: Boolean = 
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { mediaSummary = null; mediaFailure = true }
     }
-    LaunchedEffect(mediaSummary, expanded, enabled) {
+    LaunchedEffect(mediaSummary, expanded, enabled, gate.restoreGeneration, gate.canAcquireBusinessLease) {
         readable = null
         val summary = mediaSummary ?: return@LaunchedEffect
-        if (expanded && enabled) readable = withContext(Dispatchers.IO) {
+        if (expanded && enabled && gate.canAcquireBusinessLease) readable = withContext(Dispatchers.IO) {
             readableReferences(context, summary.externalUris)
         }
     }
@@ -150,17 +158,17 @@ internal fun SettingsStorageControls(media: MediaRepository, enabled: Boolean = 
         }
     }
     cacheResult?.let { Text(it, style = SettingsText.detail, color = colors.inkSecondary) }
-    val summary = mediaSummary
+    val summary = mediaSummary.takeIf {enabled && gate.canAcquireBusinessLease}
     SettingsLine("相册引用与媒体备份",
         subtitle = when {
-            !enabled -> "操作完成后可查看媒体状态"
+            !enabled || !gate.canAcquireBusinessLease -> "操作完成后可查看媒体状态"
             mediaFailure -> "媒体状态暂不可读取，请重新进入本页"
             summary == null -> "正在读取本地媒体…"
             summary.assets == 0 -> "尚未添加媒体 · 不上传系统相册"
             else -> "${summary.localOriginals} 份应用内原件 · ${summary.externalReferences} 份外部引用"
         },
         trailing = if ((summary?.missingOriginals ?: 0) > 0) "待处理" else "查看",
-        onClick = if (summary != null && enabled) ({ expanded = !expanded }) else null)
+        onClick = if (summary != null && enabled && gate.canAcquireBusinessLease) ({ expanded = !expanded }) else null)
     if (expanded && summary != null) {
         Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             if (summary.missingOriginals > 0) Text("${summary.missingOriginals} 份原件暂不可用",

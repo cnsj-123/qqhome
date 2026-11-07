@@ -4,6 +4,7 @@ import com.qq.closie.life.ui.theme.BundledText as Text
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.qq.closie.life.plan.PlanItemEntity
@@ -62,14 +65,16 @@ import java.time.ZoneId
 @Composable
 fun PlanEditScreen(
     plan: PlanItemEntity?,
-    onSave: (title: String, note: String?, dueAt: Long?, clearDue: Boolean) -> Unit,
+    onSave: (title: String, note: String?, dueAt: Long?, clearDue: Boolean, homeVisible:Boolean) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialHomeVisible:Boolean=false
 ) {
     val zone = remember { ZoneId.systemDefault() }
     var title by remember(plan?.id) { mutableStateOf(plan?.title.orEmpty()) }
     var note by remember(plan?.id) { mutableStateOf(plan?.note.orEmpty()) }
     var dueAt by remember(plan?.id) { mutableStateOf(plan?.dueAt) }
+    var homeVisible by remember(plan?.id,initialHomeVisible) {mutableStateOf(initialHomeVisible)}
 
     PlanEditContent(
         title = title,
@@ -82,14 +87,16 @@ fun PlanEditScreen(
         onSave = {
             onSave(
                 title.trim(),
-                note.trim().takeIf { it.isNotEmpty() },
+                note.trim(),
                 dueAt,
-                dueAt == null && plan?.dueAt != null
+                dueAt == null && plan?.dueAt != null,
+                homeVisible
             )
         },
         onBack = onBack,
         zone = zone,
-        modifier = modifier
+        modifier = modifier,
+        homeVisible=homeVisible,onHomeVisibilityChange={homeVisible=it}
     )
 }
 
@@ -105,7 +112,9 @@ internal fun PlanEditContent(
     onSave: () -> Unit,
     onBack: () -> Unit,
     zone: ZoneId = ZoneId.systemDefault(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    homeVisible:Boolean=false,
+    onHomeVisibilityChange:((Boolean)->Unit)?=null
 ) {
     val dims = rememberLifeDimensions()
     val today = remember(zone) { LocalDate.now(zone) }
@@ -126,7 +135,6 @@ internal fun PlanEditContent(
         }
 
         item { LifeGap(dims.blockGap) }
-
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 FieldLabel("要做什么")
@@ -180,7 +188,14 @@ internal fun PlanEditContent(
         }
 
         item { LifeGap(dims.blockGap) }
-
+        if(onHomeVisibilityChange!=null) item {
+            Row(Modifier.fillMaxWidth().heightIn(min=48.dp)
+                .toggleable(homeVisible,role=Role.Checkbox,onValueChange=onHomeVisibilityChange),
+                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Checkbox(homeVisible,onCheckedChange=null)
+                Text("在首页展示此计划与备注",style=LifeType.BodySecondary)
+            }
+        }
         item {
             LifePrimaryAction(
                 label = "保存",

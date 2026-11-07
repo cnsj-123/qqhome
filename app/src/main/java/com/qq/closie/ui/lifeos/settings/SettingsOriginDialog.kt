@@ -55,6 +55,7 @@ internal fun SettingsOriginDialog(
     onDismiss: () -> Unit,
     bottom: Boolean = false,
     dismissEnabled: Boolean = true,
+    scrimColor: androidx.compose.ui.graphics.Color? = null,
     content: @Composable (close: () -> Unit) -> Unit
 ) {
     val colors = LocalLifeOsColors.current
@@ -85,7 +86,7 @@ internal fun SettingsOriginDialog(
         BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
             val width = constraints.maxWidth.toFloat()
             val height = constraints.maxHeight.toFloat()
-            Box(Modifier.fillMaxSize().background(colors.shade.copy(alpha = .16f * reveal.value.coerceIn(0f, 1f)))
+            Box(Modifier.fillMaxSize().background((scrimColor ?: colors.shade).copy(alpha = .16f * reveal.value.coerceIn(0f, 1f)))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = ::close))
             val targetWidth = if (bottom) width else minOf(width - with(density) { 40.dp.toPx() }, with(density) { 360.dp.toPx() })
             val targetHeight = measuredHeight.toFloat().takeIf { it > 0 } ?: height * .6f

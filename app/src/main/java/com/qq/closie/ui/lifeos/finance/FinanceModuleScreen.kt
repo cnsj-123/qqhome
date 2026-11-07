@@ -15,6 +15,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -38,6 +39,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import com.qq.closie.life.finance.*
+import com.qq.closie.data.backup.RestoreStartupGate
 import com.qq.closie.ui.lifeos.theme.*
 import com.qq.closie.ui.lifeos.components.lifeHorizontalSwipe
 import java.time.Instant
@@ -116,7 +118,22 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     }
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
     var accountEditing by rememberSaveable { mutableStateOf(false) }
+    var firstAccountGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    val hasActiveAccount = state.snapshot.accounts.any { it.archivedAt == null }
+    val restoreGate by remember { RestoreStartupGate.state.map { it.restoreGeneration to it.canAcquireBusinessLease } }
+        .collectAsState(initial = RestoreStartupGate.state.value.let { it.restoreGeneration to it.canAcquireBusinessLease })
+    LaunchedEffect(firstAccountGeneration, accountEditing, hasActiveAccount, restoreGate) {
+        val generation = firstAccountGeneration ?: return@LaunchedEffect
+        if (!restoreGate.second || generation != restoreGate.first) {
+            firstAccountGeneration = null
+        } else if (!accountEditing && hasActiveAccount) {
+            // Account save publishes Room first. Wait for the same presentation snapshot the editor reads.
+            firstAccountGeneration = null
+            recordDestination = FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString())
+        }
+    }
     var calendarMode by rememberSaveable { mutableStateOf(true) }
+    var ledgerQueryApplied by rememberSaveable { mutableStateOf(false) }
     // Independent of Insights/list range filters, and restored with the module's UI state.
     var calendarMonth by rememberSaveable { mutableStateOf(state.filter.range.startInclusive?.let {
         YearMonth.from(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())).toString()
@@ -170,18 +187,25 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     val allRows = state.allRows
     val balancesAfter = remember(state.snapshot) { state.snapshot.accounts.flatMap { FinanceAccountProjection.register(state.snapshot, it.id) }.associate { it.entry.id to it.balanceMinor } }
     val unknownCashDateIds = state.unknownCashDateIds
-    val datedRows = remember(state.calendarRows, state.economicDates, unknownCashDateIds) {
-        state.calendarRows.filter { it.entry.id !in unknownCashDateIds || it.entry.id in state.economicDates }
+    val ledgerDates = state.economicDates
+    val datedRows = remember(ledgerQueryApplied, state.ledgerQuery, state.calendarRows, ledgerDates, unknownCashDateIds) {
+        val candidates = if (ledgerQueryApplied) state.ledgerQuery?.rows.orEmpty() else state.calendarRows
+        candidates.filter { it.entry.id !in unknownCashDateIds || it.entry.id in ledgerDates }
     }
-    val groupedDays = remember(datedRows, state.economicDates, state.filter.range) {
-        datedRows.filter { state.filter.range.contains(state.economicDates[it.entry.id] ?: it.entry.occurredAt) }
-            .groupBy { it.localDay(state.economicDates) }
+    val groupedDays = remember(datedRows, ledgerDates, state.filter.range) {
+        datedRows.filter { state.filter.range.contains(ledgerDates[it.entry.id] ?: it.entry.occurredAt) }
+            .groupBy { it.localDay(ledgerDates) }
     }
-    val undatedRows = remember(state.calendarRows, state.economicDates, unknownCashDateIds) {
-        state.calendarRows.filter { it.entry.id in unknownCashDateIds && it.entry.id !in state.economicDates }
+    val undatedRows = remember(ledgerQueryApplied, state.ledgerQuery, state.calendarRows, ledgerDates, unknownCashDateIds) {
+        if (ledgerQueryApplied) {
+            val query=state.ledgerQuery
+            (query?.undatedRows.orEmpty() + query?.rows.orEmpty().filter {
+                it.entry.id in unknownCashDateIds && it.entry.id !in ledgerDates
+            }).distinctBy { it.id }
+        } else state.calendarRows.filter { it.entry.id in unknownCashDateIds && it.entry.id !in ledgerDates }
     }
-    val noncashDays = remember(state.costRows, state.snapshot.v4, datedRows, state.economicDates) {
-        unrepresentedEconomicCosts(state.costRows, state.snapshot, datedRows, state.economicDates)
+    val noncashDays = remember(ledgerQueryApplied, state.costRows, state.snapshot.v4, datedRows, ledgerDates) {
+        if (ledgerQueryApplied) emptyMap() else unrepresentedEconomicCosts(state.costRows, state.snapshot, datedRows, ledgerDates)
             .groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
     }
     val roles = remember(state.snapshot.v4) { state.snapshot.v4?.activeLinks.orEmpty().groupBy { it.entryId }.mapValues { (_, links) ->
@@ -223,7 +247,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         }
     }, bottomBar = {
         FinanceBottomNavigation(view,
-            canAdd = !state.busy && state.snapshot.accounts.any {it.archivedAt==null},
+            canAdd = !state.busy && hasActiveAccount,
             showAdd = detailAccount==null && chartLabel==null,
             onSelect = { detailAccount=null; chartLabel=null; selectView(it) },
             onAdd = {recordDestination=FinanceRecordDestination.Creating(java.util.UUID.randomUUID().toString())},
@@ -265,7 +289,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             }
             if(view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null) {
                 Column(Modifier.padding(horizontal=32.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                    FinancePeriodStrip(state.cashSummary, rangeLabel)
+                    if (ledgerQueryApplied) state.ledgerQuery?.let { result ->
+                        FinanceQueryPreviewSummary(FinanceQueryPreview.fromLedger(state.filter.querySpec(),result),
+                            label="查账结果：",tag="finance-query-result")
+                    } else FinancePeriodStrip(state.cashSummary, rangeLabel)
                     if (pendingRelations > 0 || onFinanceSettings == null) {
                         Column(Modifier.fillMaxWidth()) {
                             LedgerDashedRule()
@@ -291,7 +318,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                     selectMonth(month)
                 }, { day -> selectedDay = day?.toString(); if (day == null) setCollapsed(false); scope.launch { listState.scrollToItem(0) } },
                 collapseProgress = (collapseProgress*2f).coerceIn(0f,1f), onCollapse = ::setCollapsed,
-                onCollapseDistance = { collapseDistance = (it*2f).coerceAtLeast(1f) }, economicDates = state.economicDates) }
+                onCollapseDistance = { collapseDistance = (it*2f).coerceAtLeast(1f) }, economicDates = ledgerDates) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned {
             if(view==FinanceView.TRANSACTIONS) ledgerCoordinates=it
         }
@@ -441,7 +468,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                                         rowCoordinates.remove(row.id)
                                         if(entryId==row.id)recordOrigin=recordOrigin?.copy(rect=androidx.compose.ui.geometry.Rect.Zero)
                                     }}
-                                    Box(Modifier.onGloballyPositioned {rowCoordinates[row.id]=it}.background(if(landingRecordId==row.id) colors.accent.copy(alpha=.12f*landingFlash.value) else androidx.compose.ui.graphics.Color.Transparent,RoundedCornerShape(8.dp))) {
+                                    Box(Modifier.testTag("finance-ledger-row-${row.id}").onGloballyPositioned {rowCoordinates[row.id]=it}.background(if(landingRecordId==row.id) colors.accent.copy(alpha=.12f*landingFlash.value) else androidx.compose.ui.graphics.Color.Transparent,RoundedCornerShape(8.dp))) {
                                     LedgerLine(row,roles[row.entry.id],state.snapshot,balancesAfter[row.entry.id],
                                         showCashTime = row.entry.id !in unknownCashDateIds,
                                         hidden=(viewing && entryId==row.id && recordOrigin!=null) || printingRecordId==row.id,onPosition={origin->
@@ -466,9 +493,28 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                             }
                         }
                         if (state.loaded && shownDays.isEmpty() && selectedCosts.isEmpty() && (selectedDay != null || undatedRows.isEmpty())) {
+                            val unfiltered = FinanceFilter(period=FinancePeriod.ALL,range=FinanceDateRange())
+                            val filteredEmpty = selectedDay != null || (requestedFilter != FinanceFilter() && requestedFilter != unfiltered) ||
+                                (allRows.isNotEmpty() && requestedFilter.range != unfiltered.range)
                             item { Column(Modifier.fillMaxWidth().padding(top=72.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
                                 Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_ledger_empty_cat),null,Modifier.size(110.dp,96.dp),tint=colors.secondary)
-                                Text("快来记一笔账吧",style=LedgerText.body,color=colors.inkSecondary)
+                                Text(if(filteredEmpty) "没有符合当前条件的流水" else "快来记一笔账吧",style=LedgerText.body,color=colors.inkSecondary)
+                                if(filteredEmpty) TextButton({
+                                    selectedDay=null
+                                    calendarMode=false
+                                    ledgerQueryApplied=false
+                                    vm.applyFilter(unfiltered)
+                                },Modifier.testTag("finance-clear-conditions"),enabled=!state.busy) {
+                                    Text("清除条件",style=LedgerText.body)
+                                } else if(!hasActiveAccount) Button({
+                                    if(!RestoreStartupGate.isReady)return@Button
+                                    accountId=null
+                                    firstAccountGeneration=RestoreStartupGate.state.value.restoreGeneration
+                                    accountEditing=true
+                                },Modifier.heightIn(min=42.dp).testTag("finance-create-first-account"),
+                                    enabled=!state.busy && restoreGate.second && firstAccountGeneration==null,shape=RoundedCornerShape(12.dp)) {
+                                    Text(if(state.snapshot.accounts.isEmpty()) "创建第一个账户" else "新建可用账户",style=LedgerText.body)
+                                }
                             } }
                         }
                     }
@@ -512,7 +558,11 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
             }
         }
     }
-    if (accountEditing && state.loaded) FinanceAccountSheet(state, state.snapshot.accounts.find { it.id == accountId }, vm) { accountEditing = false }
+    if (accountEditing && state.loaded) FinanceAccountSheet(state, state.snapshot.accounts.find { it.id == accountId }, vm,
+        onSaved = {accountEditing=false}) {
+        firstAccountGeneration=null
+        accountEditing=false
+    }
     if(accountSearchOpen) AlertDialog(onDismissRequest={accountSearchOpen=false},title={Text("查找账户")},
         text={OutlinedTextField(accountQuery,{accountQuery=it},label={Text("搜索账户")},singleLine=true)},
         confirmButton={TextButton({accountSearchOpen=false}){Text("完成")}})
@@ -527,6 +577,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
         onApply = { filter, useCalendar ->
             vm.applyFilter(filter)
             if (view == FinanceView.TRANSACTIONS) {
+                ledgerQueryApplied = true
                 calendarMode = useCalendar
                 selectedDay = null
                 filter.range.startInclusive?.let {

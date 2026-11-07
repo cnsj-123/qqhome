@@ -79,8 +79,10 @@ fun LifeOsApp(app: ClosieApplication, external: ExternalCommandViewModel, onCont
             container.captureRepository)
     })
     val shell: LifeOsShellViewModel = viewModel(factory=PresentationFactory(LifeOsShellViewModel::class.java) {
-        LifeOsShellViewModel(com.qq.closie.ui.lifeos.home.MediaHomeStateProvider(
-            com.qq.closie.ui.lifeos.home.FinanceHomeStateProvider(container.financeRepository), container.homePhotoRepository))
+        LifeOsShellViewModel(com.qq.closie.ui.lifeos.home.PlanHomeStateProvider(
+            com.qq.closie.ui.lifeos.home.MediaHomeStateProvider(
+                com.qq.closie.ui.lifeos.home.FinanceHomeStateProvider(container.financeRepository), container.homePhotoRepository),
+            container.planRepository))
     })
     val command by external.command.collectAsStateWithLifecycle()
     LifeOsRoot(resources.second, container, settings, shell, appearance, intake,

@@ -19,11 +19,45 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import androidx.room.Room
+import androidx.room.withTransaction
+import com.qq.closie.life.data.database.LifeDatabase
+import com.qq.closie.data.backup.RestoreStartupGate
+import com.qq.closie.life.media.MediaAssetEntity
+import com.qq.closie.life.media.MediaResourceEntity
+import java.util.concurrent.Executor
 
 @OptIn(ExperimentalCoilApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SettingsStorageControlsTest : FinanceRoomTest() {
+    @Test fun largeGalleryUsesTwoBatchReadsAndReleasesRestoreLeaseBeforeInspectingFiles() = runBlocking {
+        val queries=mutableListOf<String>()
+        val context:Context=ApplicationProvider.getApplicationContext()
+        val gallery=Room.inMemoryDatabaseBuilder(context,LifeDatabase::class.java).allowMainThreadQueries()
+            .setQueryCallback({sql,_->if(sql.trimStart().startsWith("SELECT",ignoreCase=true)) queries+=sql},Executor {it.run()}).build()
+        try {
+            gallery.withTransaction {
+                repeat(1000) {index->
+                    val id="gallery-$index"
+                    gallery.mediaDao().insertAsset(MediaAssetEntity(id,MediaType.IMAGE,createdAt=1,updatedAt=1))
+                    if(index<800) gallery.mediaDao().insertResource(MediaResourceEntity("original-$index",id,
+                        MediaResourceRole.ORIGINAL,"image/jpeg",managedPath="synthetic-shared-original",createdAt=1))
+                }
+            }
+            queries.clear()
+            var inspected=0
+            val summary=readSettingsMediaStorage(MediaRepository(gallery)) {
+                org.junit.Assert.assertEquals("Filesystem checks must not hold a restore lease",0,RestoreStartupGate.activeBusinessOps)
+                inspected++;true
+            }
+            assertEquals(1000,summary.assets)
+            assertEquals(1,summary.localOriginals)
+            assertEquals(200,summary.missingOriginals)
+            assertEquals(1,inspected)
+            assertEquals("Storage summary must not query each asset individually",2,queries.size)
+        } finally {gallery.close()}
+    }
     @Test fun clearingTheActualImageCachePreservesBackupScratchAndOriginals() {
         val context: Context = ApplicationProvider.getApplicationContext()
         val root = File(context.cacheDir, "settings-cache-test-${UUID.randomUUID()}").apply { mkdirs() }

@@ -49,7 +49,10 @@ internal class FinanceProjectionReview(private val activity:ComponentActivity,
             onClosed=::close,embeddedHost=root)
         paper=surface
         val permitted={live && current() && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)}
-        return surface.show(id,true,epoch,canContinue=permitted,canPresent=permitted)
+        return surface.show(id,true,epoch,canContinue=permitted,canPresent=permitted).also {shown->
+            // Figma 1871:22740. The Activity draws this over the still-visible payment host.
+            if(shown)root.setBackgroundColor(0x521F1928)
+        }
     }
     fun back(){paper?.back() ?: close()}
     fun close() {

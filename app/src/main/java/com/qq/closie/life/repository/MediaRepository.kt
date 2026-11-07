@@ -13,6 +13,8 @@ import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import com.qq.closie.data.backup.gateAwareFlow
 
+data class MediaStorageSnapshot(val assets: List<MediaAssetEntity>, val resources: List<MediaResourceEntity>, val restoreGeneration: Long)
+
 /**
  * Repository for the media foundation: assets, resources, and links.
  *
@@ -72,6 +74,13 @@ class MediaRepository(
 
     suspend fun countAssets(): Int =
         RestoreStartupGate.withBusinessAccessSuspending { mediaDao.countAssets() }
+
+    /** Two batch reads under one snapshot; filesystem/URI inspection must run after releasing this lease. */
+    suspend fun storageSnapshot(): MediaStorageSnapshot = RestoreStartupGate.withBusinessAccessSuspending {
+        database.withTransaction {
+            MediaStorageSnapshot(mediaDao.getAllAssets(), mediaDao.getAllResources(), RestoreStartupGate.state.value.restoreGeneration)
+        }
+    }
 
     // ------------------------------------------------------------------
     //  MediaResource

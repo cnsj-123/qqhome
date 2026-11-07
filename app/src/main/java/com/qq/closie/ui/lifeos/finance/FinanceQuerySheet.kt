@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -30,6 +31,9 @@ private val queryFilterSaver = Saver<FinanceFilter, Bundle>(
     save = { FinanceFilterState.encode(it) },
     restore = { FinanceFilterState.decode(it) }
 )
+
+private data class QueryPreviewLoad(val snapshot:FinanceSnapshot,val spec:FinanceQuerySpec,val dateBasis:FinanceLedgerDateBasis,
+    val result:Result<FinanceQueryPreview>)
 
 /** A disposable filter draft over the module's existing query state. Apply publishes it once. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,21 +112,26 @@ internal fun FinanceQuerySheet(
             else -> "${first ?: "不限"} — ${last ?: "不限"}"
         }
     }
-    val previewSpec=remember(snapshot,draft,amountOpen,currency,minimum,maximum,validSession) {
-        runCatching { val f=prepared(); FinanceQuerySpec(version=if(f.nature==null) 1 else 2,nature=f.nature,
-            mode=FinanceQueryMode.CASH_MOVEMENT,startInclusive=f.range.startInclusive,endExclusive=f.range.endExclusive,
-            accountIds=setOfNotNull(f.accountId),categoryIds=setOfNotNull(f.categoryId),tagIds=setOfNotNull(f.tagId),
-            currencyCode=f.currencyCode,minimumMinor=f.minimumMinor,maximumMinor=f.maximumMinor,text=f.query) }.getOrNull()
+    val previewMode=if(saveOpen) savedMode else FinanceQueryMode.CASH_MOVEMENT
+    val previewBasis=if(saveOpen) FinanceLedgerDateBasis.CASH_MOVEMENT else FinanceLedgerDateBasis.ECONOMIC_LEDGER
+    val previewSpec=remember(snapshot,draft,amountOpen,currency,minimum,maximum,validSession,previewMode) {
+        runCatching {prepared().querySpec(previewMode)}.getOrNull()
     }
-    val previewData by produceState<Pair<FinanceSnapshot,FinanceQueryResult>?>(null,snapshot,previewSpec) {
+    val previewData by produceState<QueryPreviewLoad?>(null,snapshot,previewSpec,previewBasis) {
         value=null
-        if(previewSpec!=null) value=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {snapshot to FinanceQueryEngine.execute(snapshot,previewSpec)}
+        if(previewSpec!=null) value=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            QueryPreviewLoad(snapshot,previewSpec,previewBasis,runCatching {financeQueryPreview(snapshot,previewSpec,previewBasis)})
+        }
     }
-    val preview=previewData?.takeIf {it.first===snapshot && it.second.spec==previewSpec}?.second
+    val currentPreview=previewData?.takeIf {it.snapshot===snapshot && it.spec==previewSpec && it.dateBasis==previewBasis}?.result
+    val preview=currentPreview?.getOrNull()
+    val previewError=currentPreview?.exceptionOrNull()?.message
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colors.paper,
+        // Figma 1929:20344 uses the same violet overlay sample as the formal receipt.
+        scrimColor = if(colors.isDark) BottomSheetDefaults.ScrimColor else Color(0xFF84758F).copy(alpha=.16f),
         shape = ManualReceiptShape,
         dragHandle = null
     ) {
@@ -143,11 +152,11 @@ internal fun FinanceQuerySheet(
                 Row(Modifier.fillMaxWidth().height(40.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text("关键词",style=LedgerText.caption,color=colors.inkSecondary)
                     androidx.compose.foundation.text.BasicTextField(draft.query,{draft=draft.copy(query=it.take(FinanceFilterState.MAX_QUERY));error=null},
-                        Modifier.weight(1f).padding(start=16.dp),singleLine=true,textStyle=LedgerText.input.copy(color=colors.ink),
+                        Modifier.weight(1f).padding(start=16.dp).testTag("finance-query-keyword"),singleLine=true,textStyle=LedgerText.input.copy(color=colors.ink),
                         decorationBox={field->Box(contentAlignment=Alignment.CenterEnd) {if(draft.query.isEmpty()) Text("商品 / 商户 / 备注",style=LedgerText.caption,color=colors.inkSecondary);field()}})
                 }
                 HorizontalDivider(color=colors.line)
-                QueryLabel("日期范围")
+                QueryLabel("发生日期范围")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     item { LedgerFilterChip(true, { chooseMonth = true }, label = { Text(rangeLabel, style = LifeText.caption) }) }
                     item { LedgerFilterChip(draft.period == FinancePeriod.MONTH, { setPeriod(FinancePeriod.MONTH) }, modifier = Modifier.testTag("query-period-MONTH"), label = { Text("本月", style = LifeText.caption) }) }
@@ -227,20 +236,9 @@ internal fun FinanceQuerySheet(
                 error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
                 state.error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
             }
-            preview?.let { result ->
-                val singleTotal=result.totals.entries.singleOrNull()
-                val totalLabel=if(result.cash.all {it.direction==FinanceDirection.OUTFLOW}) "合计 " else "净流出 "
-                Row(Modifier.fillMaxWidth().padding(top=12.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Text("符合当前条件：",style=LedgerText.caption,color=colors.inkSecondary)
-                    LedgerOdometer(result.cash.size.toString(),LedgerText.caption,colors.inkSecondary)
-                    Text(" 笔",style=LedgerText.caption,color=colors.inkSecondary)
-                    singleTotal?.let {(code,total)->
-                        Text(" · "+totalLabel+FinanceMoney.display(total.confirmedMinor,code),Modifier.weight(1f),
-                            style=LedgerText.caption,color=colors.inkSecondary)
-                    }
-                }
-                if(singleTotal==null) result.totals.forEach {(code,total)->Text(totalLabel+FinanceMoney.display(total.confirmedMinor,code),style=LedgerText.caption,color=colors.inkSecondary)}
-                if(result.undatedCash.isNotEmpty()) Text("另有 "+result.undatedCash.size+" 笔日期待确认，未计入期间合计",style=LedgerText.caption,color=colors.inkSecondary)
+            if(!saveOpen) {
+                preview?.let {FinanceQueryPreviewSummary(it)}
+                previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
             }
             Button({
                 runCatching { prepared() }.onSuccess { onApply(it, useCalendar) }.onFailure { error = it.message ?: "请检查查询条件" }
@@ -305,14 +303,18 @@ internal fun FinanceQuerySheet(
     }
     if (saveOpen) AlertDialog(
         onDismissRequest = { if (!state.busy) saveOpen = false },
+        modifier = Modifier.testTag("finance-query-save-dialog"),
         title = { Text("存为查账视图") },
         text = {
             Column {
-                OutlinedTextField(name, { name = it.take(80) }, label = { Text("视图名称") }, singleLine = true, enabled = !state.busy)
+                OutlinedTextField(name, { name = it.take(80) }, Modifier.testTag("finance-query-view-name"), label = { Text("视图名称") }, singleLine = true, enabled = !state.busy)
                 FinanceQueryMode.entries.forEach { mode ->
-                    LedgerFilterChip(savedMode == mode, { savedMode = mode }, enabled = !state.busy,
+                    LedgerFilterChip(savedMode == mode, { savedMode = mode }, modifier=Modifier.testTag("finance-query-save-mode-"+mode.name), enabled = !state.busy,
                         label = { Text(if (mode == FinanceQueryMode.CASH_MOVEMENT) "真实资金流水" else "个人成本") })
                 }
+                Text(if(savedMode==FinanceQueryMode.CASH_MOVEMENT) "按真实收付日期查询" else "按经济日期查询本人承担",style=LifeText.caption)
+                preview?.let {FinanceQueryPreviewSummary(it)}
+                previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
                 Text("只保存查询条件。新记录会按条件进入结果。", style = LifeText.caption)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = LifeText.caption) }
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = LifeText.caption) }

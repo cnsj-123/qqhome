@@ -79,21 +79,14 @@ class PlanViewModel(
         }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    fun create(title: String, note: String?, dueAt: Long?) {
+    fun create(title: String, note: String?, dueAt: Long?, homeVisible:Boolean=false) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.create(title = title, note = note, dueAt = dueAt) }
+        viewModelScope.launch { repository.create(title = title, note = note, dueAt = dueAt,homeVisible=homeVisible) }
     }
 
-    fun update(item: PlanItemEntity, title: String, note: String?, dueAt: Long?, clearDue: Boolean) {
+    fun update(item: PlanItemEntity, title: String, note: String?, dueAt: Long?, clearDue: Boolean,homeVisible:Boolean?=null) {
         viewModelScope.launch {
-            if (clearDue) {
-                // Clear the date first, then apply the rest — clearDueAt is the only path that can
-                // distinguish "remove the date" from "leave it alone".
-                repository.clearDueAt(item.id)
-                repository.update(id = item.id, title = title, note = note)
-            } else {
-                repository.update(id = item.id, title = title, note = note, dueAt = dueAt)
-            }
+            repository.update(id=item.id,title=title,note=note,dueAt=dueAt,clearDue=clearDue,homeVisible=homeVisible)
         }
     }
 
@@ -110,4 +103,5 @@ class PlanViewModel(
     }
 
     fun observeItem(id: String): Flow<PlanItemEntity?> = repository.observeById(id)
+    fun observeHomeVisible(id:String):Flow<Boolean> = repository.observeHomeVisibility(id)
 }

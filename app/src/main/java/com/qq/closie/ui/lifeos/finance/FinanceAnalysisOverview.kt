@@ -8,6 +8,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.AnnotatedString
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -170,7 +171,23 @@ private fun AnalysisCategoryDistribution(
     }.toDouble()
     val dateUnknown=if(income) total?.unknownCount ?: 0 else state.undatedCostRows.count {it.currencyCode==currency}
     val complete = total?.complete == true && rows.none { it.unknownCount > 0 } && dateUnknown==0
-    val showRing = complete && positiveTotal > 0 && rows.none { it.totals.expenseMinor < 0 }
+    val incomeRows=remember(state.ledger,currency) {state.ledger.filter {
+        it.currencyCode==currency && it.transfer==null && it.entry.direction==FinanceDirection.INFLOW &&
+            it.entry.statPolicy!=FinanceStatPolicy.EXCLUDE
+    }}
+    val costRows=remember(state.costRows,currency) {state.costRows.filter {it.currencyCode==currency}}
+    val includesReductions=rows.any {it.totals.expenseMinor<0} || if(income) incomeRows.any {it.entry.amountMinor<0}
+        else costRows.any {it.adjustment || (it.amountMinor ?: 0L)<0L}
+    val showRing = complete && positiveTotal > 0 && !includesReductions
+    val categoryCounts=remember(showRing,income,incomeRows,costRows,state.snapshot.categories) {
+        if(!showRing) emptyMap() else {
+            val tree=FinanceCategoryTree(state.snapshot.categories)
+            if(income) incomeRows.groupingBy {FinanceProjection.parentCategoryLabel(it,tree)}.eachCount()
+            else costRows.groupBy {tree.root(it.categoryId)?.name ?: "未分类"}.mapValues {(_,group)->
+                group.distinctBy {it.eventId?.let {id->"event:$id"} ?: it.entryId?.let {id->"cash:$id"} ?: it.id}.size
+            }
+        }
+    }
     val swatches = listOf(colors.accent, colors.soft, colors.warm, colors.secondary, colors.inkSecondary)
     if (currency == null || total == null) {
         Text(if(dateUnknown>0) "此币种目前只有日期待确认的记录。" else if (income) "这个范围还没有实际流入。" else "这个范围还没有个人成本。", style = LifeText.body, color = colors.ink)
@@ -182,7 +199,7 @@ private fun AnalysisCategoryDistribution(
     LaunchedEffect(currency) {revealed=true}
     val growth by animateFloatAsState(if(revealed) 1f else 0f,tween(if(reduced) 0 else 500),label="category-sectors")
     val labelLayouts=remember(ranked,positiveTotal,textMeasurer) {ranked.filter {it.totals.expenseMinor>0}.map {row->
-        textMeasurer.measure(AnnotatedString(row.label+(row.totals.expenseMinor/positiveTotal*100).toInt()+"%"),LedgerText.caption.copy(fontSize=10.sp,lineHeight=13.sp))
+        textMeasurer.measure(AnnotatedString(row.label+(row.totals.expenseMinor/positiveTotal*100).roundToInt()+"%"),LedgerText.caption.copy(fontSize=10.sp,lineHeight=13.sp))
     }}
     if (showRing) Box(Modifier.fillMaxWidth().height(218.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxWidth().height(218.dp).semantics {
@@ -219,7 +236,7 @@ private fun AnalysisCategoryDistribution(
         if (income && dateUnknown>0) Text("另有 $dateUnknown 笔收付日期待确定",style=LifeText.caption,color=colors.inkSecondary)
         if (!income && total.unknownCount>0) Text("另有 ${total.unknownCount} 项承担待确认",style=LifeText.caption,color=colors.inkSecondary)
         if (!income && dateUnknown>0) Text("另有 $dateUnknown 项成本日期待确认，未计算完整期间构成。",style=LifeText.caption,color=colors.inkSecondary)
-        if (rows.any { it.totals.expenseMinor < 0 }) Text("含本期退款或返利冲减，分类保留正负金额。", style = LifeText.caption, color = colors.inkSecondary)
+        if (includesReductions) Text("含本期退款或返利冲减，分类保留正负金额。", style = LifeText.caption, color = colors.inkSecondary)
     }
     ranked.forEachIndexed { index, row ->
         val root = state.snapshot.categories.firstOrNull { it.parentId == null && it.name == row.label }
@@ -230,7 +247,13 @@ private fun AnalysisCategoryDistribution(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(FinanceCategoryVectors.get(icon), null, Modifier.size(20.dp), tint = swatches[index % swatches.size])
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(row.label, style = LifeText.body, color = colors.ink)
+                    Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text(row.label, style = LedgerText.body, color = colors.ink)
+                        if(showRing && row.totals.expenseMinor>0) categoryCounts[row.label]?.let {count->
+                            val proportion=(row.totals.expenseMinor/positiveTotal*100).roundToInt()
+                            Text("$proportion%  共 $count ${if(income) "笔" else "项"}",style=LedgerText.meta.copy(letterSpacing=.2.sp),color=colors.inkSecondary)
+                        }
+                    }
                     if (showRing && row.totals.expenseMinor > 0) Box(
                         Modifier.fillMaxWidth().height(4.dp).background(colors.paperTertiary, RoundedCornerShape(2.dp))
                     ) {
@@ -239,7 +262,7 @@ private fun AnalysisCategoryDistribution(
                     }
                     if (row.unknownCount > 0) Text("另有 " + row.unknownCount + " 项待确认", style = LifeText.caption, color = colors.inkSecondary)
                 }
-                Text(FinanceMoney.display(row.totals.expenseMinor, currency), style = LifeText.body, color = colors.ink)
+                Text(FinanceMoney.display(row.totals.expenseMinor, currency), style = LedgerText.rowAmount, color = colors.ink)
             }
         }
     }

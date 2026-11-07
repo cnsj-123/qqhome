@@ -46,7 +46,7 @@ class FinanceProjectionReviewTest:FinanceRoomTest() {
         assertTrue(views.filterIsInstance<EditText>().isNotEmpty())
         views.filterIsInstance<EditText>().first().setText("23.45")
         for(label in listOf("收付/转出账户","分类")) {
-            val button=all(activity.window.decorView).filterIsInstance<Button>().first {it.text.toString().startsWith(label)}
+            val button=all(activity.window.decorView).filterIsInstance<Button>().first {it.contentDescription==label}
             button.performClick()
             assertTrue(all(activity.window.decorView).filterIsInstance<Button>().any {it.text.toString().startsWith("返回小票")})
             review.back();assertTrue(FinanceReceiptOverlay.occupied)

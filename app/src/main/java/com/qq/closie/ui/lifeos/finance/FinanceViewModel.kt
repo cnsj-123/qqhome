@@ -25,6 +25,13 @@ data class FinanceFilter(val query: String = "", val period: FinancePeriod = Fin
     val accountId: String? = null, val categoryId: String? = null, val tagId: String? = null,
     val nature: FinanceNature? = null, val minimumMinor:Long?=null,val maximumMinor:Long?=null,
     val currencyCode:String?=null)
+/** Shared conversion for the ledger result and its cancellable query draft. */
+internal fun FinanceFilter.querySpec(mode:FinanceQueryMode=FinanceQueryMode.CASH_MOVEMENT)=FinanceQuerySpec(
+    version=if(nature==null) 1 else 2,nature=nature,mode=mode,
+    startInclusive=range.startInclusive,endExclusive=range.endExclusive,
+    accountIds=setOfNotNull(accountId),categoryIds=setOfNotNull(categoryId),tagIds=setOfNotNull(tagId),
+    currencyCode=currencyCode,minimumMinor=minimumMinor,maximumMinor=maximumMinor,text=query)
+
 data class FinanceUiState(
     val snapshot: FinanceSnapshot = FinanceSnapshot(), val filter: FinanceFilter = FinanceFilter(),
     val ledger: List<FinanceLedgerRow> = emptyList(), val balances: Map<String, Long> = emptyMap(),
@@ -42,7 +49,8 @@ data class FinanceUiState(
     val unknownCashDateIds: Set<String> = emptySet(),
     val unknownCashDateCount: Int = 0,
     val costRows:List<PersonalCostRow> = emptyList(),val loaded:Boolean=false,
-    val undatedCostRows:List<PersonalCostRow> = emptyList(),val previousUndatedCostRows:List<PersonalCostRow> = emptyList()
+    val undatedCostRows:List<PersonalCostRow> = emptyList(),val previousUndatedCostRows:List<PersonalCostRow> = emptyList(),
+    val ledgerQuery:FinanceLedgerQueryResult? = null
 )
 data class FinanceEntryDraft(val kind: FinanceEditorKind, val amount: String, val accountId: String,
     val targetAccountId: String, val occurredAt: String, val description: String,
@@ -72,7 +80,6 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
         if (data == null) FinanceUiState(filter = selection, loading = message == null, busy = saving, error = message)
         else {
             val allRows = FinanceProjection.ledger(data)
-            val tagEntries = data.entryTags.filter { it.tagId == selection.tagId }.map { it.entryId }.toSet()
             val natureEvents = data.v4?.events.orEmpty().filter { it.nature == selection.nature }.map { it.id }.toSet()
             val natureEntries = data.v4?.activeLinks.orEmpty().filter { it.eventId in natureEvents }.map { it.entryId }.toSet()
             val linkedEntries = data.v4?.activeLinks.orEmpty().map { it.entryId }.toSet()
@@ -86,27 +93,22 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
             fun cashAmountMatches(row:FinanceLedgerRow)=(selection.currencyCode==null || row.currencyCode==selection.currencyCode) &&
                 (selection.minimumMinor==null || row.entry.amountMinor>=selection.minimumMinor) &&
                 (selection.maximumMinor==null || row.entry.amountMinor<=selection.maximumMinor)
-            val filteredRows = baseFor(FinanceDateRange()).filter {
-                categoryMatches(it) && (selection.tagId == null || it.entry.id in tagEntries) && cashAmountMatches(it)
-            }
-            val unknownCashDateIds = data.v16?.entryTimingRows.orEmpty()
+            val ledgerQuery=FinanceLedgerQuery.execute(data,selection.querySpec(),allRows,FinanceLedgerDateBasis.ECONOMIC_LEDGER)
+            val filteredRows=ledgerQuery.matchingRows
+            val unknownLegDates = data.v16?.entryTimingRows.orEmpty()
                 .filter { it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN }
                 .map { it.entryId }.toSet()
-            val boundedCashRange = selection.range.startInclusive != null || selection.range.endExclusive != null
-            val rows = filteredRows.filter {
-                (!boundedCashRange || it.entry.id !in unknownCashDateIds) && selection.range.contains(it.entry.occurredAt)
-            }
+            val unknownCashDateIds=unknownLegDates+allRows.filter {row->row.transfer?.let {
+                it.outflowEntryId in unknownLegDates || it.inflowEntryId in unknownLegDates
+            }==true}.map {it.entry.id}
+            val rows=ledgerQuery.cashDatedRows
             // Apply dimension filters after attribution, so a refund follows its payment category/tag.
             fun personalFor(range:FinanceDateRange)=FinancePersonalProjection.rows(data, baseFor(range)).filter {
                 categoryMatches(it) && (selection.tagId == null || selection.tagId in it.tagIds) && cashAmountMatches(it)
             }
             val personal=personalFor(selection.range)
-            fun costQueryFor(range:FinanceDateRange):FinanceQueryResult = FinanceQueryEngine.execute(data,FinanceQuerySpec(
-                version=if(selection.nature==null)1 else 2,nature=selection.nature,
-                startInclusive=range.startInclusive,endExclusive=range.endExclusive,
-                accountIds=setOfNotNull(selection.accountId),categoryIds=setOfNotNull(selection.categoryId),
-                tagIds=setOfNotNull(selection.tagId),currencyCode=selection.currencyCode,
-                minimumMinor=selection.minimumMinor,maximumMinor=selection.maximumMinor,text=selection.query))
+            fun costQueryFor(range:FinanceDateRange):FinanceQueryResult = FinanceQueryEngine.execute(data,
+                selection.copy(range=range).querySpec(FinanceQueryMode.PERSONAL_COST))
             val costQuery=costQueryFor(selection.range)
             val costRows=costQuery.costs
             fun costTotals(costs: List<PersonalCostRow>) = costs.groupBy { it.currencyCode }
@@ -131,8 +133,10 @@ class FinanceViewModel(private val repository: FinanceRepository,private val sav
                 calendarRows = filteredRows,
                 economicDates = FinanceProjection.economicDates(data),
                 unknownCashDateIds = unknownCashDateIds,
-                unknownCashDateCount = if (boundedCashRange) filteredRows.count { it.entry.id in unknownCashDateIds } else 0,
-                costRows=costRows,undatedCostRows=costQuery.undatedCosts,previousUndatedCostRows=previousCostQuery?.undatedCosts.orEmpty())
+                unknownCashDateCount = if(selection.range.startInclusive!=null || selection.range.endExclusive!=null)
+                    filteredRows.count {it.entry.id in unknownCashDateIds} else 0,
+                costRows=costRows,undatedCostRows=costQuery.undatedCosts,previousUndatedCostRows=previousCostQuery?.undatedCosts.orEmpty(),
+                ledgerQuery=ledgerQuery)
         }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
     // Busy/error are main-thread presentation state. A large financial projection must never delay

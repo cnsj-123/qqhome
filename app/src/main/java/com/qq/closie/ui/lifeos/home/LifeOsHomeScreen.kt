@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -52,7 +54,10 @@ private val homeDayFormat = DateTimeFormatter.ofPattern("M月d日", Locale.CHINA
 private val homeWeekFormat = DateTimeFormatter.ofPattern("yyyy 年 · EEEE", Locale.CHINA)
 private val homeMemoryFormat = DateTimeFormatter.ofPattern("MM.dd")
 
-private data class HomePhotoSelection(val id: String, val memory: Boolean, val origin: LifeSurfaceOrigin?)
+private data class HomePhotoSelection(
+    val id: String, val memory: Boolean, val origin: LifeSurfaceOrigin?,
+    val initialId: String = id, val sourceKey: String? = null
+)
 
 @Composable
 fun LifeOsHomeScreen(
@@ -70,11 +75,11 @@ fun LifeOsHomeScreen(
     today: LocalDate = LocalDate.now(),
     onSavePhotoCaption: (suspend (String, String, String?, Long) -> Unit)? = null
 ) {
-    var datePopup by rememberSaveable(state.date) { mutableStateOf(false) }
-    var showTodayText by rememberSaveable(state.date) { mutableStateOf(false) }
+    var datePopup by rememberSaveable(state.date,state.restoreGeneration) { mutableStateOf(false) }
+    var showTodayText by rememberSaveable(state.date,state.restoreGeneration) { mutableStateOf(false) }
     var truncatedToday by remember(state.date) { mutableStateOf(false) }
-    var viewer by remember(state.date) { mutableStateOf<HomePhotoSelection?>(null) }
-    var captionPhoto by remember(state.date) { mutableStateOf<LifeMediaUi?>(null) }
+    var viewer by remember(state.date,state.restoreGeneration) { mutableStateOf<HomePhotoSelection?>(null) }
+    var captionPhoto by remember(state.date,state.restoreGeneration) { mutableStateOf<LifeMediaUi?>(null) }
     var captionText by remember { mutableStateOf("") }
     var captionGeneration by remember { mutableLongStateOf(0L) }
     var captionBusy by remember { mutableStateOf(false) }
@@ -85,11 +90,18 @@ fun LifeOsHomeScreen(
         captionGeneration = com.qq.closie.data.backup.RestoreStartupGate.state.value.restoreGeneration
     }
     val memoryPhotos = remember(state.historyItems) { state.historyItems.mapNotNull { it.photo }.distinctBy { it.id } }
+    var stackPhotoId by remember(state.date,state.restoreGeneration) {mutableStateOf<String?>(null)}
+    val todayOrigins = remember(state.date, state.restoreGeneration) { LiveHomePhotoOrigins() }
+    val memoryOrigins = remember(state.date, state.restoreGeneration) { LiveHomePhotoOrigins() }
+    val orientation = LocalConfiguration.current.orientation
     val allPhotos = remember(state.eligibleMedia, memoryPhotos) { (state.eligibleMedia + memoryPhotos).distinctBy { it.id } }
     val aspects by rememberPhotoAspects(allPhotos)
     val todayText = remember(state.todayFacts) { state.todayFacts.joinToString("\n") { it.title } }
     val viewerPhotos = if (viewer?.memory == true) memoryPhotos else state.eligibleMedia
     val visibleViewer = interactive && viewerPhotos.any { it.id == viewer?.id }
+    LaunchedEffect(viewerPhotos, viewer?.id) {
+        if (viewer != null && viewerPhotos.none { it.id == viewer?.id }) viewer = null
+    }
     val hasToday = state.eligibleMedia.isNotEmpty() || state.todayFacts.isNotEmpty()
     val colors = LocalLifeOsColors.current
     val homeDrawing = rememberGraphicsLayer()
@@ -109,12 +121,20 @@ fun LifeOsHomeScreen(
             } else drawContent()
         }) {
         LazyColumn(
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize().testTag("home-scroll"),
             userScrollEnabled = interactive && !visibleViewer,
             contentPadding = PaddingValues(start = 30.dp, end = 30.dp, top = 27.dp, bottom = if (hasToday) 91.dp else 30.dp)
         ) {
             item {
                 HomeHeader(state.date, today, interactive, onCapture, onCalendar, onMap, openDate, onToday)
+            }
+            if(state.failedSources.isNotEmpty() || state.loadingSources.isNotEmpty()) item {
+                Column(Modifier.padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    if(state.failedSources.isNotEmpty()) Text(state.failedSources.joinToString("、")+"暂时无法读取，其他内容仍可查看",
+                        style=LifeType.JournalMeta,color=colors.inkSecondary)
+                    if(state.loadingSources.isNotEmpty()) Text("正在读取"+state.loadingSources.joinToString("、"),
+                        style=LifeType.JournalMeta,color=colors.inkSecondary)
+                }
             }
             if (state.isLoading || state.loadFailed) item {
                 HomeSectionLabel("TODAY")
@@ -126,11 +146,16 @@ fun LifeOsHomeScreen(
                     when {
                         state.eligibleMedia.isNotEmpty() -> LifePhotoStack(
                             photos = state.eligibleMedia,
+                            modifier = Modifier.testTag("home-today-stack"),
                             onPhotoClick = { viewer = HomePhotoSelection(it.id, false, null) },
                             hiddenPhotoId = viewer?.takeIf { visibleViewer && !it.memory }?.id,
                             onPhotoOrigin = { photo, origin -> viewer = HomePhotoSelection(photo.id, false, origin) },
                             interactive = interactive,
-                            aspects = aspects
+                            aspects = aspects,
+                            selectedPhotoId=stackPhotoId,onSelectionChange={stackPhotoId=it},
+                            onPhotoLayout = { id, coordinates, rotation ->
+                                todayOrigins.update(id, id, coordinates, orientation, rotation)
+                            }
                         )
                         state.todayFacts.isNotEmpty() -> {
                             Text(todayText, style = LifeType.journalFor(todayText), color = colors.ink, maxLines = 7,
@@ -150,20 +175,28 @@ fun LifeOsHomeScreen(
                         Text("以后，这里会慢慢留下以前的日子。", Modifier.padding(top = 10.dp),
                             style = LifeType.journalFor("以后，这里会慢慢留下以前的日子。"), color = colors.ink)
                     } else {
-                        val orientation = LocalConfiguration.current.orientation
                         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             state.historyItems.take(6).forEach { memory ->
                                 key(memory.sourceId) {
                                     val photo = memory.photo
-                                    var origin by remember { mutableStateOf<LifeSurfaceOrigin?>(null) }
+                                    val sourceKey = memory.sourceId
+                                    if (photo != null) DisposableEffect(sourceKey, photo.id, memoryOrigins) {
+                                        onDispose { memoryOrigins.update(sourceKey, photo.id, null, orientation) }
+                                    }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp),
                                         verticalAlignment = Alignment.Top) {
                                         if (photo != null) LifeMediaImage(
                                             photo, Modifier.size(76.dp, 70.dp)
-                                                .lifeSurfaceOrigin(orientation) { origin = it }
-                                                .graphicsLayer { alpha = if (visibleViewer && viewer?.id == photo.id) 0f else 1f }
+                                                .testTag("home-memory-photo-" + sourceKey)
+                                                .onGloballyPositioned {
+                                                    memoryOrigins.update(sourceKey, photo.id, it, orientation)
+                                                }
+                                                .graphicsLayer {
+                                                    alpha = if (visibleViewer && viewer?.memory == true && viewer?.id == photo.id) 0f else 1f
+                                                }
                                                 .clickable(enabled = interactive, onClickLabel = "查看回忆照片") {
-                                                    viewer = HomePhotoSelection(photo.id, true, origin)
+                                                    viewer = HomePhotoSelection(photo.id, true,
+                                                        memoryOrigins.current(photo.id, orientation, sourceKey), sourceKey = sourceKey)
                                                 }
                                         )
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -188,14 +221,20 @@ fun LifeOsHomeScreen(
                     HomeSectionLabel("AHEAD")
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         state.futureIntents.forEach {
+                            Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Text(it.title, Modifier.weight(1f), style = LifeType.JournalMeta.copy(fontSize = 20.sp, lineHeight = 27.sp, letterSpacing = 4.sp), color = colors.ink)
-                                val date = it.expectedDate?.format(homeDayFormat) ?: "日期未定"
                                 Text(buildAnnotatedString {
-                                    withStyle(SpanStyle(fontSize = 12.sp)) { append("预计 · ") }
-                                    withStyle(SpanStyle(fontSize = 14.sp)) { append(date) }
+                                    if(it.expectedDate!=null) {
+                                        withStyle(SpanStyle(fontSize = 12.sp)) { append("预计 · ") }
+                                        withStyle(SpanStyle(fontSize = 14.sp)) { append(it.expectedDate.format(homeDayFormat)) }
+                                    } else append("日期未定")
                                 }, style = LifeType.DateHero.copy(lineHeight = 19.sp, letterSpacing = .6.sp), color = colors.inkSecondary)
+                            }
+                            it.note?.takeIf(String::isNotBlank)?.let {note->
+                                Text(note,style=LifeType.JournalMeta,color=colors.accentDeep)
+                            }
                             }
                         }
                     }
@@ -223,13 +262,21 @@ fun LifeOsHomeScreen(
         }
         if (visibleViewer) viewer?.let { selection ->
             LifePhotoViewer(
-                viewerPhotos, selection.id, onDismiss = { viewer = null },
+                viewerPhotos, selection.initialId, onDismiss = { viewer = null },
                 onRemove = { onRemovePhoto(it.id); viewer = null }, origin = selection.origin,
                 aspects = aspects, dateFor = { photo ->
                     if (!selection.memory) state.date else state.historyItems.firstOrNull { it.photo?.id == photo.id }?.date
                 }, today = today, onEditCaption = if (onSavePhotoCaption == null) null else ::editCaption,
                 originPaperInset = if (selection.memory) 0.dp else 7.dp,
-                backdropLayer = homeDrawing
+                backdropLayer = homeDrawing,
+                currentOrigin = { id ->
+                    if (selection.memory) memoryOrigins.current(id, orientation, selection.sourceKey)
+                    else todayOrigins.current(id, orientation)
+                },
+                onPhotoChanged={id->
+                    if(!selection.memory) stackPhotoId=id
+                    viewer=viewer?.copy(id=id)
+                }
             )
         }
     }

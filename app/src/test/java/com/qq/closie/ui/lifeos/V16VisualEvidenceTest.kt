@@ -171,6 +171,77 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         capture("finance-ledger-empty")
         assertTrue(runBlocking {finance.snapshot()}.accounts.isEmpty())
     }
+
+    @Test fun firstAccountAndFirstEntryPrintTowardTheActualVisibleLedgerRow() {
+        financeScene()
+        compose.onNodeWithTag("finance-add").assertIsNotEnabled()
+        val firstAccount=compose.onNodeWithTag("finance-create-first-account").assertIsDisplayed()
+        firstAccount.performClick()
+        val accountName=compose.onNode(hasSetTextAction() and hasContentDescription("账户名称"))
+        accountName.performTextReplacement("验收合成旅行卡")
+        capture("finance-first-account-form")
+        compose.onNode(hasText("保存账户") and hasClickAction()).performClick()
+        val amount=hasSetTextAction() and hasContentDescription("金额 · CNY")
+        compose.waitUntil(10_000){compose.onAllNodes(amount).fetchSemanticsNodes().isNotEmpty()}
+        assertEquals("验收合成旅行卡",runBlocking {finance.snapshot()}.accounts.single().name)
+        compose.onNode(amount).performScrollTo().performTextReplacement("32.50")
+        compose.onNode(hasSetTextAction() and hasContentDescription("备注（可留空）"))
+            .performScrollTo().performTextReplacement("验收第一笔咖啡")
+        capture("finance-first-account-entry")
+        compose.mainClock.autoAdvance=false
+        try {
+            compose.onNodeWithContentDescription("保存记录").assertIsEnabled().performClick()
+            val paper=compose.onNodeWithTag("finance-printed-receipt")
+            compose.waitUntil(10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.runOnIdle {}
+                compose.onAllNodesWithTag("finance-printed-receipt").fetchSemanticsNodes().isNotEmpty()
+            }
+            val committed=runBlocking {finance.snapshot()}.entries.single()
+            assertEquals(3250L,committed.amountMinor)
+            assertEquals("验收第一笔咖啡",committed.description)
+            val ledgerRow=compose.onNodeWithTag("finance-ledger-row-${committed.id}",useUnmergedTree=true)
+            ledgerRow.assertIsDisplayed()
+            val fullHeight=paper.fetchSemanticsNode().boundsInRoot.height
+            capture("finance-print-visible-before")
+            compose.mainClock.advanceTimeBy(496)
+            compose.runOnIdle {}
+            assertTrue("A real destination must shrink the printed paper; fallback only fades it",
+                paper.fetchSemanticsNode().boundsInRoot.height < fullHeight * .9f)
+            capture("finance-print-visible-flight")
+            compose.mainClock.advanceTimeBy(224)
+            compose.runOnIdle {}
+            paper.assertDoesNotExist()
+            ledgerRow.assertIsDisplayed()
+            capture("finance-print-visible-landed")
+            assertEquals(committed,runBlocking {finance.snapshot()}.entries.single())
+        } finally {compose.mainClock.autoAdvance=true}
+        compose.onNodeWithTag("finance-search").performTextReplacement("没有这一笔")
+        compose.waitUntil(10_000){compose.onAllNodesWithTag("finance-clear-conditions").fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithTag("finance-clear-conditions").assertIsDisplayed().performClick()
+        compose.waitUntil(10_000){compose.onAllNodes(hasText("验收第一笔咖啡") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithTag("finance-create-first-account").assertDoesNotExist()
+    }
+
+    @Test fun accountNameQueryRendersTheSameRealLedgerRowBeforeAndAfterApply() {
+        runBlocking {
+            val account=finance.saveAccount(name="旅行卡",kind=FinanceAccountKind.BANK_CARD,openingBalanceMinor=80_000)
+            finance.saveEntry(accountId=account.id,direction=FinanceDirection.OUTFLOW,amountMinor=3200,
+                description="咖啡",occurredAt=System.currentTimeMillis(),category="餐饮")
+        }
+        financeScene()
+        compose.onNodeWithContentDescription("筛选与日期").performClick()
+        compose.onNodeWithTag("finance-query-keyword").performTextReplacement("旅行卡")
+        compose.waitUntil(10_000){compose.onAllNodesWithText("资金流出 ¥32.00",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithTag("finance-query-preview-count").assertTextContains("1")
+        capture("finance-query-account-preview")
+        compose.onNodeWithText("查看结果").performClick()
+        compose.waitUntil(10_000){compose.onAllNodesWithTag("finance-query-sheet").fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithTag("finance-query-result-count").fetchSemanticsNodes().isNotEmpty() &&
+            compose.onAllNodes(hasText("咖啡") and hasClickAction()).fetchSemanticsNodes().size==1}
+        compose.onNodeWithTag("finance-query-result-count").assertTextContains("1")
+        capture("finance-query-account-applied")
+    }
     @Test fun entryAndAnalysisRenderActualCanonicalSyntheticFactsAtTheFigmaViewport() {
         runBlocking {
             val a=finance.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,openingBalanceMinor=500_000)
@@ -185,6 +256,7 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
         }
         financeScene();compose.onNodeWithText("分析").performClick()
         compose.waitUntil(10_000) {compose.onAllNodesWithText("分类构成").fetchSemanticsNodes().isNotEmpty()}
+        compose.onAllNodesWithText("共 1 项",substring=true).assertCountEquals(5)
         capture("finance-analysis")
         compose.onNodeWithTag("finance-add").performClick()
         val food=runBlocking {finance.snapshot()}.categories.single {it.name=="餐饮" && it.parentId==null}

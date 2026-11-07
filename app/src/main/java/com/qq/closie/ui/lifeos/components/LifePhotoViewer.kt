@@ -84,7 +84,9 @@ fun LifePhotoViewer(
     today: LocalDate = LocalDate.now(),
     onEditCaption: ((LifeMediaUi) -> Unit)? = null,
     originPaperInset: Dp = 0.dp,
-    backdropLayer: GraphicsLayer? = null
+    backdropLayer: GraphicsLayer? = null,
+    currentOrigin:((String)->LifeSurfaceOrigin?)?=null,
+    onPhotoChanged:((String)->Unit)?=null
 ) {
     if (photos.isEmpty()) return
     var selectedId by rememberSaveable(initialPhotoId) { mutableStateOf(initialPhotoId) }
@@ -127,8 +129,10 @@ fun LifePhotoViewer(
     }
 
     fun step(direction: Int): Boolean {
+        if (closing) return false
         val next = photos.getOrNull(current + direction) ?: return false
         selectedId = next.id
+        onPhotoChanged?.invoke(next.id)
         return true
     }
 
@@ -149,7 +153,7 @@ fun LifePhotoViewer(
 
     BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { windowOffset = it.positionInWindow() }) {
         val viewport = Rect(0f, 0f, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
-        val source = origin?.takeIf { photo.id == initialPhotoId }?.let {
+        val source = (if(currentOrigin!=null) currentOrigin(photo.id) else origin?.takeIf { photo.id == initialPhotoId })?.let {
             it.copy(rect = it.rect.translate(-windowOffset))
         }?.takeIf { it.usable(orientation, viewport) }
         val panelWidth = minOf(370.dp, (maxWidth - 32.dp).coerceAtLeast(1.dp))
@@ -311,7 +315,7 @@ fun LifePhotoViewer(
                     scaleX = transform.scale; scaleY = transform.scale
                     rotationZ = transform.rotation + if (reduced) 0f else (dragOffset.x / 150f).coerceIn(-1.5f, 1.5f) * reveal
                     alpha = if (source == null || reduced) reveal else 1f
-                }.drawBehind {
+                }.testTag("life-photo-shared-image").drawBehind {
                     val edge = if (source == null || reduced) 0f else inset * (1f - reveal) / transform.scale.coerceAtLeast(.01f)
                     if (edge > 0f) drawRoundRect(if (colors.isDark) colors.card else Color(0xFFFFFDFA),
                         Offset(-edge, -edge), androidx.compose.ui.geometry.Size(size.width + 2 * edge, size.height + 2 * edge), CornerRadius(1.dp.toPx()))

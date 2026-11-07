@@ -3,6 +3,7 @@ package com.qq.closie.ui.lifeos.home
 import com.qq.closie.life.ui.theme.BundledText as Text
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
@@ -13,15 +14,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.qq.closie.life.ui.theme.LifeType
@@ -48,30 +56,39 @@ internal fun HomeDatePopup(
     var monthValue by rememberSaveable { mutableIntStateOf(selected.monthValue) }
     val month = YearMonth.parse(monthText)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 36.dp),
+        val window=(LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {window?.setDimAmount(0f)}
+        Box(Modifier.fillMaxSize()) {
+        val dim=if(colors.isDark)Color.Black.copy(alpha=.32f) else Color(0xFF84758F).copy(alpha=.16f)
+        Box(Modifier.fillMaxSize().background(dim)
+            .testTag("home-date-scrim").clickable(onClickLabel="关闭日期选择",onClick=onDismiss))
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = if(choosingMonth)30.dp else 28.dp, vertical = 36.dp),
             contentAlignment = Alignment.TopStart) {
-            Surface(Modifier.padding(top = minOf(76.dp, maxHeight * .10f))
-                .widthIn(max = if (choosingMonth) 260.dp else 350.dp).fillMaxWidth()
-                .heightIn(max = maxHeight * .88f),
-                shape = RoundedCornerShape(32.dp), color = colors.card,
+            Surface(Modifier.padding(top = minOf(80.dp, maxHeight * .10f))
+                .widthIn(max = if (choosingMonth) 210.dp else 350.dp).fillMaxWidth().testTag("home-date-paper")
+                .heightIn(max = maxHeight * .88f).pointerInput(Unit) {detectTapGestures(onTap={})},
+                shape = RoundedCornerShape(if(choosingMonth)35.dp else 40.dp), color = colors.card.copy(alpha=.97f),
                 border = BorderStroke(1.dp, colors.line), shadowElevation = 8.dp) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal=if(choosingMonth)29.dp else 24.dp,vertical=24.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (choosingMonth) "选择年月" else "${month.year}年${month.monthValue}月",
-                            Modifier.weight(1f).clickable(enabled = !choosingMonth) {
-                                year = month.year; monthValue = month.monthValue; choosingMonth = true
-                            }.padding(vertical = 10.dp), style = LifeType.DateHero, color = colors.ink)
-                        IconButton(onDismiss) { Icon(Icons.Outlined.Close, "关闭日期选择", Modifier.size(18.dp)) }
+                            Modifier.weight(1f).clickable {
+                                if(choosingMonth) {monthText=YearMonth.of(year,monthValue).toString();choosingMonth=false}
+                                else {year = month.year; monthValue = month.monthValue; choosingMonth = true}
+                            }.padding(vertical = if(choosingMonth)6.dp else 10.dp), style = LifeType.DateHero.copy(fontSize=20.sp), color = colors.ink,
+                            textAlign=if(choosingMonth) androidx.compose.ui.text.style.TextAlign.Start else androidx.compose.ui.text.style.TextAlign.Center)
                     }
                     if (choosingMonth) {
+                        Box(Modifier.fillMaxWidth().height(210.dp)) {
+                        Box(Modifier.align(Alignment.Center).fillMaxWidth().height(26.dp).background(
+                            Brush.verticalGradient(listOf(Color.Transparent,colors.accent.copy(alpha=.13f),Color.Transparent))))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             HomeDateWheel((minOf(1900, selected.year)..maxOf(2100, selected.year)).toList(),
-                                year, { year = it }, { "${it}年" }, "年份", Modifier.weight(1f))
-                            HomeDateWheel((1..12).toList(), monthValue, { monthValue = it },
+                                year, { year = it;monthText=YearMonth.of(year,monthValue).toString() }, { it.toString() }, "年份", Modifier.weight(1f))
+                            HomeDateWheel((1..12).toList(), monthValue, { monthValue = it;monthText=YearMonth.of(year,monthValue).toString() },
                                 { "${it}月" }, "月份", Modifier.weight(1f))
                         }
-                        TextButton({ monthText = YearMonth.of(year, monthValue).toString(); choosingMonth = false },
-                            Modifier.align(Alignment.End)) { Text("查看这个月") }
+                        }
                     } else {
                         val previous = { monthText = month.minusMonths(1).toString() }
                         val next = { monthText = month.plusMonths(1).toString() }
@@ -81,7 +98,7 @@ internal fun HomeDatePopup(
                         }) {
                             Row(Modifier.fillMaxWidth()) {
                                 listOf("日", "一", "二", "三", "四", "五", "六").forEach {
-                                    Box(Modifier.weight(1f).height(40.dp), contentAlignment = Alignment.Center) {
+                                    Box(Modifier.weight(1f).height(36.dp), contentAlignment = Alignment.Center) {
                                         Text(it, style = LifeText.caption, color = colors.muted)
                                     }
                                 }
@@ -94,36 +111,55 @@ internal fun HomeDatePopup(
                                     week.forEach { date ->
                                         val day = days[date]
                                         val inMonth = YearMonth.from(date) == month
-                                        Box(Modifier.weight(1f).heightIn(min = 48.dp)
+                                        Box(Modifier.weight(1f).heightIn(min = 46.dp)
                                             .clickable(onClickLabel = "查看${date}的首页") { onSelect(date); onDismiss() }
                                             .semantics {
                                                 contentDescription = date.toString() + if (day?.hasContent == true) "，有记录" else ""
                                                 this.selected = date == selected
                                             }, contentAlignment = Alignment.Center) {
                                             if (day?.photos?.isNotEmpty() == true)
-                                                LifeMediaImage(day.photos.first(), Modifier.size(32.dp))
+                                                LifeMediaImage(day.photos.first(), Modifier.size(32.dp).testTag("home-photo-"+date))
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 Text(date.dayOfMonth.toString(),
                                                     Modifier.background(if (date == selected) colors.accentDeep.copy(alpha = .10f) else androidx.compose.ui.graphics.Color.Transparent,
                                                         CircleShape).padding(6.dp),
                                                     style = LifeText.caption,
                                                     color = if (inMonth) colors.ink else colors.muted.copy(alpha = .7f))
-                                                if (day?.events?.isNotEmpty() == true)
-                                                    Box(Modifier.size(3.dp).background(colors.accentDeep, CircleShape))
+                                                Row(horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+                                                    if (day?.events?.isNotEmpty() == true || day?.intents?.isNotEmpty()==true)
+                                                        Box(Modifier.size(8.dp).testTag("home-important-"+date)
+                                                            .border(BorderStroke(1.dp,colors.accent),CircleShape))
+                                                    if(day?.timedContent?.isNotEmpty()==true)
+                                                        Box(Modifier.size(3.dp).testTag("home-writing-"+date).background(colors.accent, CircleShape))
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            TextButton({ onSelect(LocalDate.now()); onDismiss() }) { Text("回到今天") }
-                            Text("have a good day ♡", Modifier.align(Alignment.CenterVertically),
-                                style = LifeType.JournalMeta, color = colors.muted)
+                        Row(Modifier.fillMaxWidth().padding(top=12.dp), horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment=Alignment.CenterVertically) {
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                val firstPhoto=days.values.firstNotNullOfOrNull {it.photos.firstOrNull()}
+                                if(firstPhoto!=null) LifeMediaImage(firstPhoto,Modifier.size(16.dp))
+                                else Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_note),null,Modifier.size(14.dp),tint=colors.secondary)
+                                Text("有照片",style=LifeText.caption,color=colors.inkSecondary)
+                            }
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                Box(Modifier.size(8.dp).border(BorderStroke(1.dp,colors.accent),CircleShape))
+                                Text("重要日子",style=LifeText.caption,color=colors.inkSecondary)
+                            }
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                Box(Modifier.size(3.dp).background(colors.accent,CircleShape))
+                                Text("文字记录",style=LifeText.caption,color=colors.inkSecondary)
+                            }
                         }
+                        Text("Have a good day ♡",Modifier.align(Alignment.End).padding(top=10.dp),style=LifeType.JournalMeta,color=colors.muted)
                     }
                 }
             }
+        }
         }
     }
 }
@@ -161,7 +197,7 @@ private fun HomeDateWheel(values: List<Int>, selected: Int, onSelect: (Int) -> U
             Box(Modifier.fillMaxWidth().height(42.dp).clickable {
                 scope.launch { if (reduced) state.scrollToItem(index) else state.animateScrollToItem(index) }
             }, contentAlignment = Alignment.Center) {
-                Text(label(value), style = LifeText.body,
+                Text(label(value), style = LifeType.DateHero.copy(fontSize=if(value==selected)20.sp else 14.sp,letterSpacing=1.sp),
                     color = if (value == selected) colors.accentDeep else colors.muted.copy(alpha = .62f))
             }
         }

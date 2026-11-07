@@ -92,24 +92,43 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
     val grantActive=grants.any {it.id==grant}
     val result=remember(s,spec,useLocal,grant,grantActive) {runCatching {
-        if(useLocal) FinancePurposeRead.query(s,spec,requireNotNull(grant){"请选择本次查询授权"},now) else FinanceQueryEngine.execute(s,spec)
+        when {
+            useLocal -> FinancePurposeRead.query(s,spec,requireNotNull(grant){"请选择本次查询授权"},now) to null
+            spec.mode==FinanceQueryMode.CASH_MOVEMENT -> {
+                val ledger=FinanceLedgerQuery.execute(s,spec)
+                FinanceQueryResult(spec,emptyList(),ledger.cash,ledger.totals,undatedCash=ledger.undatedCash) to ledger
+            }
+            else -> FinanceQueryEngine.execute(s,spec) to null
+        }
     }}
+    val accountCurrencies=remember(s.accounts) {s.accounts.associate {it.id to it.currencyCode}}
     val unknownCashDateIds = remember(s.v16?.entryTimingRows) {
         s.v16?.entryTimingRows.orEmpty().filter {
             it.voidedAt == null && it.cashPrecision == FinanceTimePrecision.UNKNOWN
         }.map { it.entryId }.toSet()
     }
-    result.onSuccess {value->
-        value.totals.forEach {(code,total)->Text((if(spec.mode==FinanceQueryMode.PERSONAL_COST) "个人成本 " else "真实流出减流入 ")+FinanceMoney.display(total.confirmedMinor,code)+if(total.complete) "" else " · ${total.unknownCount} 项金额未知")}
+    fun hasUnknownCashDate(row:FinanceLedgerRow)=row.entry.id in unknownCashDateIds ||
+        row.transfer?.inflowEntryId in unknownCashDateIds
+    result.onSuccess {(value,visibleCash)->
+        val summary=FinanceQueryPreview(spec,visibleCash?.rows?.size ?: if(spec.mode==FinanceQueryMode.PERSONAL_COST) value.costs.size else value.cash.size,
+            value.totals,visibleCash?.undatedRows?.size ?: value.undatedCash.size,
+            visibleCash?.directions ?: value.cash.groupBy {accountCurrencies.getValue(it.accountId)}
+                .mapValues {(_,entries)->entries.map {it.direction}.toSet()},
+            confirmedCostCurrencies=value.costs.filter {it.amountMinor!=null}.map {it.currencyCode}.toSet())
+        value.totals.forEach {(code,total)->Text(summary.totalLabel(code,total))}
+        if(spec.mode==FinanceQueryMode.CASH_MOVEMENT) Text(
+            (if(useLocal) "授权收付明细 · " else "资金记录 · ")+summary.count+" 笔",style=LifeText.caption)
         if (useLocal) Text("受限结果仅展示本次授权的查询内容。", style=LifeText.caption)
         val undatedCostCount = (value.undatedCosts + value.costs.filter {
             FinanceCostProjection.hasUnknownDate(it,unknownCashDateIds)
         }).distinctBy { it.id }.size
-        val undatedCashCount = (value.undatedCash + value.cash.filter {
+        val undatedCashCount = if(visibleCash!=null) visibleCash.undatedRows.size+visibleCash.rows.count(::hasUnknownCashDate)
+            else (value.undatedCash + value.cash.filter {
             it.id in unknownCashDateIds
         }).distinctBy { it.id }.size
         if (undatedCostCount > 0 || undatedCashCount > 0) {
-            Text("日期待确认 · $undatedCostCount 项成本 / $undatedCashCount 笔资金流水", style = LifeText.caption)
+            Text("日期待确认 · $undatedCostCount 项成本 / $undatedCashCount 笔"+
+                if(useLocal) "收付明细" else "资金记录", style = LifeText.caption)
             if (spec.startInclusive != null || spec.endExclusive != null)
                 Text("未归期记录单独列示，未纳入本次期间合计。", style = LifeText.caption)
         }
@@ -130,18 +149,30 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
         fun CashResult(row: FinanceEntryEntity, undated: Boolean = false) {
             val date = if (undated || row.id in unknownCashDateIds) "收付日期待确认" else FinanceTime.input(row.occurredAt)
             val label = date + " · " + row.description.ifBlank { "资金流水" } + " · " + row.direction.name + " " +
-                FinanceMoney.display(row.amountMinor, s.accounts.single { it.id == row.accountId }.currencyCode)
+                FinanceMoney.display(row.amountMinor,accountCurrencies.getValue(row.accountId))
             val marker = Modifier.testTag("finance-query-cash-" + row.id)
             if (useLocal) Text(label, marker)
             else TextButton({ viewingCash = row.id }, modifier = marker.fillMaxWidth()) { Text(label) }
         }
+        @Composable
+        fun LedgerResult(row:FinanceLedgerRow,undated:Boolean=false) {
+            val date=if(undated || hasUnknownCashDate(row)) "收付日期待确认" else FinanceTime.input(row.entry.occurredAt)
+            val detail=if(row.transfer!=null) "账户转账 · "+row.account.name+" → "+row.targetAccount?.name
+                else (if(row.entry.direction==FinanceDirection.INFLOW) "流入 · " else "流出 · ")+
+                    row.entry.description.ifBlank {"资金流水"}
+            TextButton({viewingCash=row.id},Modifier.testTag("finance-query-cash-"+row.id).fillMaxWidth()) {
+                Text(date+" · "+detail+" · "+FinanceMoney.display(row.entry.amountMinor,row.currencyCode))
+            }
+        }
         key(spec,useLocal,grant) {
             FinancePagedItems(value.costs,"query-costs",{it.id}) { CostResult(it) }
-            FinancePagedItems(value.cash,"query-cash",{it.id}) { CashResult(it) }
+            if(visibleCash!=null) FinancePagedItems(visibleCash.rows,"query-cash",{it.id}) {LedgerResult(it)}
+            else FinancePagedItems(value.cash,"query-cash",{it.id}) { CashResult(it) }
             if (value.undatedCosts.isNotEmpty() || value.undatedCash.isNotEmpty()) {
                 Text("未归期记录", style = LifeText.title)
                 FinancePagedItems(value.undatedCosts, "query-undated-costs", { it.id }) { CostResult(it, undated = true) }
-                FinancePagedItems(value.undatedCash, "query-undated-cash", { it.id }) { CashResult(it, undated = true) }
+                if(visibleCash!=null) FinancePagedItems(visibleCash.undatedRows,"query-undated-cash",{it.id}) {LedgerResult(it,undated=true)}
+                else FinancePagedItems(value.undatedCash, "query-undated-cash", { it.id }) { CashResult(it, undated = true) }
             }
         }
         if(value.costs.isEmpty() && value.cash.isEmpty() && value.undatedCosts.isEmpty() && value.undatedCash.isEmpty())

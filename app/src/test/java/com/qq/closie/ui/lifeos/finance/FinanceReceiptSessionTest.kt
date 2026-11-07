@@ -44,11 +44,12 @@ class FinanceReceiptSessionTest {
         edits.cancel()
         FinanceScreenshotPreference.set(context,false);container.lifeDatabase.close();RestoreStartupGate.resetForTesting()
     }
-    private suspend fun attach() {
+    private suspend fun attach(at:Long?=null):String {
         val id=container.financeRepository.media.createScreenshotCandidate(container.financeRepository.economics.token(),
-            FinanceOcrFields(1234,null,FinanceProposalKind.EXPENSE,null,"合成",currencyCode="CNY")){true}
+            FinanceOcrFields(1234,at,FinanceProposalKind.EXPENSE,null,"合成",currencyCode="CNY")){true}
         assertTrue(FinanceReceiptOverlay.beginCapture())
         assertTrue(overlay.show(id,true,canContinue={lease.editorCurrent(snapshot)},canPresent={lease.captureCurrent(snapshot)}))
+        return id
     }
     private fun views():List<View> {
         fun all(v:View):List<View> = listOf(v)+(if(v is ViewGroup)(0 until v.childCount).flatMap {all(v.getChildAt(it))} else emptyList())
@@ -61,11 +62,10 @@ class FinanceReceiptSessionTest {
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2500))
         assertTrue(FinanceReceiptOverlay.occupied)
         val inputs=views().filterIsInstance<EditText>();inputs.first().setText("23.45")
-        val flattened=views();val label=flattened.indexOfFirst {it is TextView && it.text.toString()=="备注（可留空）"}
-        flattened.drop(label+1).filterIsInstance<EditText>().first().setText("合成编辑")
+        views().filterIsInstance<EditText>().single {it.contentDescription=="备注（可留空）"}.setText("合成编辑")
         for(label in listOf("收付/转出账户","分类","实际发生时间")) {
             val button=if(label=="实际发生时间")views().filterIsInstance<EditText>().firstOrNull {!it.isFocusable}
-                else views().filterIsInstance<Button>().firstOrNull {it.text.toString().startsWith(label)}
+                else views().filterIsInstance<Button>().firstOrNull {it.contentDescription==label}
             assertNotNull(label,button);button!!.performClick()
             val back=views().filterIsInstance<Button>().firstOrNull {it.text.toString().startsWith("返回小票")}
             assertNotNull("same-window subpanel must open",back);back!!.performClick()
@@ -84,5 +84,169 @@ class FinanceReceiptSessionTest {
         attach();assertTrue(FinanceReceiptOverlay.occupancyChanges.value)
         FinanceReceiptOverlay.endCapture();assertTrue(FinanceReceiptOverlay.occupancyChanges.value)
         overlay.close(false);assertFalse(FinanceReceiptOverlay.occupancyChanges.value)
+    }
+
+    private val repository get()=container.financeRepository
+    private fun control(label:String)=views().filterIsInstance<Button>().single {it.contentDescription==label}
+    private fun button(label:String)=views().filterIsInstance<Button>().single {it.text.toString()==label}
+    private fun dateField()=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("实际发生时间")}
+    private fun choose(option:String) {
+        views().filterIsInstance<Button>().single {it.contentDescription==null && it.text.toString().removePrefix("✓ ")==option}.performClick()
+    }
+    private fun applyField(){control("应用字段编辑").performClick()}
+    private fun updatePicker() {
+        views().filterIsInstance<DatePicker>().single().updateDate(2026,10,3)
+        views().filterIsInstance<TimePicker>().single().apply {hour=10;minute=44}
+    }
+    private suspend fun await(description:String, condition:suspend ()->Boolean) {
+        val deadline=System.nanoTime()+java.time.Duration.ofSeconds(10).toNanos()
+        do {
+            shadowOf(Looper.getMainLooper()).idle()
+            if(condition())return
+            Thread.yield()
+        } while(System.nanoTime()<deadline)
+        fail(description)
+    }
+    private fun advanceDebounce(){shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300))}
+    private suspend fun session(id:String)=repository.snapshot().v16?.reviewSessionRows.orEmpty().singleOrNull {it.proposalId==id}
+
+    @Test fun datePanelRejectsStaleOuterClickCancelsAndAppliesBeforeExactlyOneCanonicalCommit()=runBlocking {
+        val old=FinanceTime.parse("2026-10-12 14:32")
+        val new=FinanceTime.parse("2026-11-03 10:44")
+        val account=repository.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,balanceAnchorAt=0L)
+        val id=attach(old)
+        control("收付/转出账户").performClick();choose("合成零钱 · CNY");applyField()
+        val confirm=control("确认记账")
+        dateField().performClick();updatePicker()
+        assertFalse(confirm.isEnabled)
+        assertEquals(View.GONE,(confirm.parent as View).visibility)
+        confirm.performClick() // A retained listener cannot bypass the actual editor state either.
+        advanceDebounce()
+        await("applied draft saved during date panel") {session(id)?.accountId==account.id}
+        assertEquals(FinanceTime.input(old),session(id)?.occurredText)
+        assertTrue(repository.snapshot().entries.isEmpty())
+        button("取消").performClick()
+        assertEquals(FinanceTime.input(old),dateField().text.toString())
+        assertTrue(confirm.isEnabled)
+        dateField().performClick();updatePicker();applyField()
+        assertEquals(FinanceTime.input(new),dateField().text.toString())
+        confirm.performClick();confirm.performClick()
+        await("single applied-date canonical confirmation") {repository.snapshot().entries.size==1 && !overlay.isShowing}
+        val entry=repository.snapshot().entries.single()
+        assertEquals(new,entry.occurredAt);assertEquals(1234L,entry.amountMinor);assertEquals(account.id,entry.accountId)
+        assertEquals(FinanceReviewState.COMPLETED,session(id)?.state)
+    }
+
+    @Test fun accountCategoryAndNatureUseExplicitApplyAndCancelWithRealDraftPersistence()=runBlocking {
+        val a=repository.saveAccount(name="合成钱包",kind=FinanceAccountKind.CASH)
+        val b=repository.saveAccount(name="合成旅行卡",kind=FinanceAccountKind.BANK_CARD)
+        val category=repository.createCategory("合成咖啡",null)
+        val id=attach()
+        control("收付/转出账户").performClick();choose("合成钱包 · CNY");applyField()
+        control("收付/转出账户").performClick();choose("合成旅行卡 · CNY");button("取消").performClick()
+        assertEquals("合成钱包",control("收付/转出账户").text.toString())
+        control("分类").performClick();choose("合成咖啡");overlay.back()
+        assertEquals("未分类/自定义",control("分类").text.toString())
+        control("业务性质 · 分账").performClick();button("取消").performClick()
+        assertTrue(control("业务性质 · 普通消费").isSelected)
+        advanceDebounce();await("only applied account saved") {session(id)?.accountId==a.id}
+        assertNull(session(id)?.categoryId);assertEquals(FinanceNature.PERSONAL,session(id)?.nature)
+        control("收付/转出账户").performClick();choose("合成旅行卡 · CNY");applyField()
+        control("分类").performClick();choose("合成咖啡");applyField()
+        control("业务性质 · 分账").performClick();applyField()
+        assertTrue(control("业务性质 · 分账").isSelected)
+        advanceDebounce();await("applied fields saved together") {
+            session(id)?.let {it.accountId==b.id && it.categoryId==category.id && it.nature==FinanceNature.SPLIT}==true
+        }
+        assertTrue(repository.snapshot().entries.isEmpty())
+    }
+
+    @Test fun failedConfirmationRetainsAppliedInputAndCanRetryWithoutDuplicate()=runBlocking {
+        val account=repository.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,balanceAnchorAt=0L)
+        val id=attach()
+        control("收付/转出账户").performClick();choose("合成零钱 · CNY");applyField()
+        val amount=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("金额 ·")}
+        amount.setText("0");val confirm=control("确认记账");confirm.performClick()
+        await("rejected zero amount retains real draft and restores controls") {session(id)?.amountText=="0" && confirm.isEnabled}
+        assertTrue(overlay.isShowing);assertEquals("0",amount.text.toString());assertTrue(repository.snapshot().entries.isEmpty())
+        assertEquals(account.id,session(id)?.accountId)
+        amount.setText("23.45");confirm.performClick();confirm.performClick()
+        await("retry commits one entry") {repository.snapshot().entries.size==1 && !overlay.isShowing}
+        assertEquals(2345L,repository.snapshot().entries.single().amountMinor)
+    }
+
+    @Test fun screenshotPermissionRevocationInvalidatesRetainedConfirmAndDiscardsPendingDate()=runBlocking {
+        val old=FinanceTime.parse("2026-10-12 14:32")
+        val id=attach(old);val retained=control("确认记账")
+        dateField().performClick();updatePicker()
+        FinanceScreenshotPreference.set(context,false)
+        FinanceScreenshotPreference.set(context,true) // The old generation must never revive.
+        retained.performClick()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(501))
+        await("revoked paper closes and flushes only applied draft") { !overlay.isShowing && session(id)?.state==FinanceReviewState.LATER }
+        assertEquals(FinanceTime.input(old),session(id)?.occurredText)
+        assertTrue(repository.snapshot().entries.isEmpty())
+    }
+
+    @Test fun lockScreenClosesFieldEditorAndRetainsOnlyTheAppliedDate()=runBlocking {
+        val old=FinanceTime.parse("2026-10-12 14:32")
+        val id=attach(old)
+        dateField().performClick();updatePicker()
+        val lock=shadowOf(context.getSystemService(android.app.KeyguardManager::class.java))
+        lock.setKeyguardLocked(true)
+        try {
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(501))
+            await("screen lock closes the attached editor and flushes applied data") {
+                !overlay.isShowing && session(id)?.state==FinanceReviewState.LATER
+            }
+            assertEquals(FinanceTime.input(old),session(id)?.occurredText)
+            assertTrue(repository.snapshot().entries.isEmpty())
+        } finally {lock.setKeyguardLocked(false)}
+    }
+
+    @Test fun detachedFieldListenersCannotWriteOrLaunchAfterAnotherCandidateMounts()=runBlocking {
+        val oldDate=FinanceTime.parse("2026-10-12 14:32")
+        val oldId=attach(oldDate)
+        val oldConfirm=control("确认记账")
+        val oldAccount=control("收付/转出账户")
+        val oldHandoff=button("应用内接力")
+        val oldLater=button("稍后处理 · 进入待确认")
+        val oldAmount=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("金额 ·")}
+        dateField().performClick();updatePicker()
+        val oldApply=control("应用字段编辑")
+        overlay.close()
+        await("old applied draft flushed on close") {session(oldId)?.state==FinanceReviewState.LATER}
+        assertEquals(FinanceTime.input(oldDate),session(oldId)?.occurredText)
+
+        val nextId=attach(oldDate)
+        advanceDebounce();await("new mounted draft is durable") {session(nextId)!=null}
+        val nextConfirm=control("确认记账")
+        dateField().performClick();updatePicker()
+        val nextApply=control("应用字段编辑")
+        val before=repository.portableSnapshot()
+        assertFalse(oldConfirm.isEnabled);assertFalse(oldApply.isEnabled)
+        oldApply.performClick();oldAccount.performClick();oldApply.performClick()
+        oldAmount.setText("999.99")
+        oldConfirm.performClick();oldLater.performClick();oldHandoff.performClick()
+        advanceDebounce()
+        assertEquals(before,repository.portableSnapshot())
+        assertTrue(overlay.isShowing);assertFalse(nextConfirm.isEnabled)
+        assertEquals(FinanceTime.input(oldDate),dateField().text.toString())
+        assertNull(shadowOf(context.applicationContext as android.app.Application).nextStartedActivity)
+        nextApply.performClick()
+        assertEquals("2026-11-03 10:44",dateField().text.toString())
+        assertTrue(nextConfirm.isEnabled);assertTrue(repository.snapshot().entries.isEmpty())
+    }
+
+    @Test fun handoffFinishingAfterHostCloseDoesNotLaunchAnActivityOrCloseANewPaper()=runBlocking {
+        val id=attach()
+        button("应用内接力").performClick()
+        overlay.close()
+        await("handoff draft is preserved by the close-only flush") {session(id)?.state==FinanceReviewState.LATER}
+        val nextId=attach()
+        advanceDebounce();await("replacement receipt remains mounted") {session(nextId)!=null}
+        assertTrue(overlay.isShowing)
+        assertNull(shadowOf(context.applicationContext as android.app.Application).nextStartedActivity)
+        assertTrue(repository.snapshot().entries.isEmpty())
     }
 }

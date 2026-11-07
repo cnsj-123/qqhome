@@ -19,6 +19,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -50,7 +52,11 @@ fun LifePhotoStack(
     hiddenPhotoId: String? = null,
     onPhotoOrigin: ((LifeMediaUi, LifeSurfaceOrigin) -> Unit)? = null,
     interactive: Boolean = true,
-    aspects: Map<String, Float> = emptyMap()
+    aspects: Map<String, Float> = emptyMap(),
+    selectedPhotoId:String?=null,
+    onSelectionChange:((String)->Unit)?=null,
+    onSelectedOrigin:((String,LifeSurfaceOrigin)->Unit)?=null,
+    onPhotoLayout:((String,LayoutCoordinates?,Float)->Unit)?=null
 ) {
     if (photos.isEmpty()) return
     val colors = LocalLifeOsColors.current
@@ -58,9 +64,14 @@ fun LifePhotoStack(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val reduced = reducedLifeMotion()
+    val currentPhotoLayout by rememberUpdatedState(onPhotoLayout)
     val photoIds = remember(photos) { photos.map { it.id } }
-    var selectedId by rememberSaveable { mutableStateOf(photos.first().id) }
+    var storedSelectedId by rememberSaveable { mutableStateOf(photos.first().id) }
+    val selectedId=selectedPhotoId ?: storedSelectedId
     val index = photoIds.indexOf(selectedId).coerceAtLeast(0)
+    LaunchedEffect(photoIds,selectedPhotoId) {
+        if(selectedId !in photoIds) {storedSelectedId=photos.first().id;onSelectionChange?.invoke(storedSelectedId)}
+    }
     var fraction by remember(photoIds) { mutableFloatStateOf(0f) }
     var settlement by remember(photoIds) { mutableStateOf<Job?>(null) }
     DisposableEffect(photoIds) { onDispose { settlement?.cancel() } }
@@ -83,7 +94,8 @@ fun LifePhotoStack(
                         fraction, -step.toFloat(), velocity / travel,
                         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
                     ) { value, _ -> fraction = value.coerceIn(-1f, 1f) }
-                    selectedId = photos[PhotoStackInteraction.nextIndex(index, step, photos.size)].id
+                    storedSelectedId = photos[PhotoStackInteraction.nextIndex(index, step, photos.size)].id
+                    onSelectionChange?.invoke(storedSelectedId)
                     fraction = 0f
                 }
             }
@@ -105,6 +117,9 @@ fun LifePhotoStack(
             for (photoIndex in activeIndices) {
                 val photo = photos[photoIndex]
                 key(photo.id) {
+                    DisposableEffect(photo.id) {
+                        onDispose { currentPhotoLayout?.invoke(photo.id, null, 0f) }
+                    }
                     val oldDepth = Math.floorMod(photoIndex - index, photos.size)
                     val newDepth = Math.floorMod(photoIndex - next, photos.size)
                     val ratio = aspects[photo.id] ?: photo.aspectRatio
@@ -160,7 +175,11 @@ fun LifePhotoStack(
                         Modifier.size(pose.width.dp, pose.height.dp)
                             .offset((pose.centerX - pose.width / 2 + excursion).dp, (pose.centerY - pose.height / 2).dp)
                             .zIndex(-depth.toFloat())
-                            .lifeSurfaceOrigin(orientation, pose.rotation) { origins[photo.id] = it }
+                            .lifeSurfaceOrigin(orientation, pose.rotation) {
+                                origins[photo.id] = it
+                                if(top && onSelectedOrigin!=null) onSelectedOrigin(photo.id,it)
+                            }
+                            .onGloballyPositioned { onPhotoLayout?.invoke(photo.id, it, pose.rotation) }
                             .graphicsLayer {
                                 rotationZ = pose.rotation
                                 alpha = if (photo.id == hiddenPhotoId) 0f else changeAlpha

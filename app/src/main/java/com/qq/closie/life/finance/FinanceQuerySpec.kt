@@ -33,25 +33,17 @@ data class FinanceQueryResult(val spec: FinanceQuerySpec, val costs: List<Person
     val undatedCosts: List<PersonalCostRow> = emptyList(), val undatedCash: List<FinanceEntryEntity> = emptyList())
 
 object FinanceQueryEngine {
-    fun execute(snapshot: FinanceSnapshot, spec: FinanceQuerySpec): FinanceQueryResult {
-        spec.validate()
-        require(spec.accountIds.all { id -> snapshot.accounts.any { it.id==id } } &&
-            spec.categoryIds.all { id -> snapshot.categories.any { it.id==id } } &&
-            spec.tagIds.all { id -> snapshot.tags.any { it.id==id } } &&
-            spec.eventIds.all { id -> snapshot.v4?.events.orEmpty().any { it.id==id } }) {
-            "查询中的账户、分类、标签或事项已不可用，请更新条件"
+    fun execute(snapshot: FinanceSnapshot, spec: FinanceQuerySpec, includeAccountText:Boolean=true): FinanceQueryResult {
+        validateFinanceQueryReferences(snapshot,spec)
+        if(spec.mode==FinanceQueryMode.CASH_MOVEMENT) {
+            val selection=FinanceLedgerQuery.execute(snapshot,spec)
+            return FinanceQueryResult(spec,emptyList(),selection.cash,selection.totals,undatedCash=selection.undatedCash)
         }
         val range = FinanceDateRange(spec.startInclusive, spec.endExclusive)
         val accounts = snapshot.accounts.associateBy { it.id }
         val entries=snapshot.entries.associateBy { it.id }
         val events=snapshot.v4?.events.orEmpty().filter {it.voidedAt==null}.associateBy {it.id}
-        val unknownDates=snapshot.v16?.entryTimingRows.orEmpty()
-            .filter {it.voidedAt==null && it.cashPrecision==FinanceTimePrecision.UNKNOWN}.map {it.entryId}.toSet()
-        val bounded=spec.startInclusive!=null || spec.endExclusive!=null
-        val transferLegs=snapshot.transfers.flatMap {listOf(it.outflowEntryId,it.inflowEntryId)}.toSet()
-        val entryTagIds=snapshot.entryTags.groupBy { it.entryId }.mapValues { it.value.map { row -> row.tagId }.toSet() }
         val categories = spec.categoryIds.flatMap { FinanceCategoryTree(snapshot.categories).descendants(it) }.toSet()
-        val entryEvents = snapshot.v4?.activeLinks.orEmpty().groupBy { it.entryId }.mapValues { (_, links) -> links.map { it.eventId }.toSet() }
         val eventAccounts = snapshot.v4?.activeLinks.orEmpty().groupBy { it.eventId }.mapValues { (_, links) ->
             links.mapNotNull { entries[it.entryId]?.takeIf { entry -> entry.voidedAt==null }?.accountId }.toSet()
         }
@@ -66,28 +58,14 @@ object FinanceQueryEngine {
                 (categories.isEmpty() || it.categoryId in categories) &&
                 (spec.tagIds.isEmpty() || it.tagIds.containsAll(spec.tagIds)) &&
                 (spec.text.isBlank() || (listOf(it.description,FinanceProjection.categoryPath(snapshot.categories,it.categoryId).orEmpty())+
-                    it.tags).any { value -> value.contains(spec.text,true) }) && amountMatches(it.amountMinor)
+                    it.tags+(if(includeAccountText) (eventAccounts[it.eventId].orEmpty()+listOfNotNull(entries[it.entryId]?.accountId))
+                        .mapNotNull {id->accounts[id]?.name} else emptyList())).any { value -> value.contains(spec.text.trim(),true) }) && amountMatches(it.amountMinor)
         }
         val costPeriod=FinanceCostProjection.period(snapshot,costCandidates,range)
         val undatedCosts=costPeriod.undatedCosts
         val costs=costPeriod.rows
-        val cashCandidates = if (spec.mode != FinanceQueryMode.CASH_MOVEMENT) emptyList() else snapshot.entries.filter {
-            it.voidedAt == null && (spec.accountIds.isEmpty() || it.accountId in spec.accountIds) &&
-                (spec.nature == null || entryEvents[it.id].orEmpty().any {id->events[id]?.nature==spec.nature} ||
-                    (spec.nature==FinanceNature.PERSONAL && entryEvents[it.id].isNullOrEmpty() && it.id !in transferLegs)) &&
-                (spec.currencyCode == null || accounts[it.accountId]?.currencyCode == spec.currencyCode) &&
-                (categories.isEmpty() || it.categoryId in categories) &&
-                (spec.eventIds.isEmpty() || entryEvents[it.id].orEmpty().any { id -> id in spec.eventIds }) &&
-                (spec.tagIds.isEmpty() || entryTagIds[it.id].orEmpty().containsAll(spec.tagIds)) &&
-                (spec.text.isBlank() || it.description.contains(spec.text, true)) && amountMatches(it.amountMinor)
-        }
-        val undatedCash=if(bounded) cashCandidates.filter {it.id in unknownDates} else emptyList()
-        val undatedCashIds=undatedCash.map {it.id}.toSet()
-        val cash=cashCandidates.filter {it.id !in undatedCashIds && range.contains(it.occurredAt)}
-        val totals = if (spec.mode == FinanceQueryMode.PERSONAL_COST) costs.groupBy { it.currencyCode }.mapValues { FinanceCostProjection.total(it.value) }
-        else cash.groupBy { accounts.getValue(it.accountId).currencyCode }.mapValues { (_, rows) ->
-            PersonalCostTotal(exactSum(rows.map { if (it.direction == FinanceDirection.OUTFLOW) it.amountMinor else -it.amountMinor }), 0)
-        }
-        return FinanceQueryResult(spec, costs, cash, totals, undatedCosts, undatedCash)
+        val totals=costs.groupBy {it.currencyCode}.mapValues {FinanceCostProjection.total(it.value)}
+        return FinanceQueryResult(spec,costs,emptyList(),totals,undatedCosts=undatedCosts)
+
     }
 }

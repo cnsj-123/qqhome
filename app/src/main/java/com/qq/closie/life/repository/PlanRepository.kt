@@ -95,7 +95,8 @@ class PlanRepository(
         dueAt: Long? = null,
         sortOrder: Int = 0,
         id: String = UUID.randomUUID().toString(),
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        homeVisible: Boolean = false
     ): PlanItemEntity = gateCheckedTransaction {
         val entity = lifeRepository.createEntity(entityType = PlanEntityType.PLAN, timestamp = now)
         val item = PlanItemEntity(
@@ -110,6 +111,7 @@ class PlanRepository(
             sortOrder = sortOrder
         )
         dao.insert(item)
+        if(homeVisible) writeHomeVisibility(item,true,now)
         item
     }
 
@@ -130,6 +132,25 @@ class PlanRepository(
     fun observeById(id: String): Flow<PlanItemEntity?> = gateAwareFlow { dao.observeById(id) }
 
     fun observeAll(): Flow<List<PlanItemEntity>> = gateAwareFlow { dao.observeAll() }
+
+    fun observeHomeVisible(): Flow<List<PlanItemEntity>> = gateAwareFlow { dao.observeHomeVisible() }
+    fun observeHomeVisibility(id:String):Flow<Boolean> = gateAwareFlow { dao.observeHomeVisibility(id) }
+
+    /** This relation grants Home display only; it grants neither AI access nor external sharing. */
+    suspend fun setHomeVisible(id:String,visible:Boolean,now:Long=System.currentTimeMillis()) = gateCheckedTransaction {
+        val item=requireNotNull(dao.getById(id)) {"计划已不存在"}
+        writeHomeVisibility(item,visible,now)
+        touchEntity(item.lifeEntityId,now)
+    }
+
+    private suspend fun writeHomeVisibility(item:PlanItemEntity,visible:Boolean,now:Long) {
+        val owner=requireNotNull(lifeRepository.getEntity(item.lifeEntityId)) {"计划身份已失效"}
+        require(owner.deletedAt==null && owner.entityType==PlanEntityType.PLAN) {"计划已不可展示"}
+        if(visible) {
+            if(!lifeRepository.relationExists(owner.id,owner.id,"home-plan-display"))
+                lifeRepository.addRelation(owner.id,owner.id,"home-plan-display",now)
+        } else lifeRepository.removeRelation(owner.id,owner.id,"home-plan-display")
+    }
 
     fun observeCompleted(limit: Int? = null): Flow<List<PlanItemEntity>> =
         gateAwareFlow { if (limit == null) dao.observeCompleted() else dao.observeCompletedLimited(limit) }
@@ -219,9 +240,8 @@ class PlanRepository(
     // ------------------------------------------------------------------
 
     /**
-     * Field-level edit. A null argument means "leave alone" — except [note] and [dueAt], which the
-     * caller clears through the dedicated [clearDueAt] path so that "remove the date" and "I did not
-     * touch the date" stay distinguishable.
+     * Field-level edit. Null leaves the field alone. An empty note clears it and [clearDue]
+     * explicitly clears the date. An explicitly supplied Home choice commits in this transaction.
      */
     suspend fun update(
         id: String,
@@ -229,17 +249,20 @@ class PlanRepository(
         note: String? = null,
         dueAt: Long? = null,
         sortOrder: Int? = null,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        homeVisible: Boolean? = null,
+        clearDue: Boolean = false
     ): PlanItemEntity? = gateCheckedTransaction {
         val current = dao.getById(id) ?: return@gateCheckedTransaction null
         val updated = current.copy(
             title = title?.trim()?.takeIf { it.isNotEmpty() } ?: current.title,
             note = if (note != null) note.trim().takeIf { it.isNotEmpty() } else current.note,
-            dueAt = dueAt ?: current.dueAt,
+            dueAt = if(clearDue) null else dueAt ?: current.dueAt,
             sortOrder = sortOrder ?: current.sortOrder,
             updatedAt = now
         )
         dao.update(updated)
+        if(homeVisible!=null) writeHomeVisibility(updated,homeVisible,now)
         touchEntity(current.lifeEntityId, now)
         updated
     }

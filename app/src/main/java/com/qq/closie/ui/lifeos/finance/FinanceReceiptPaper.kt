@@ -4,10 +4,9 @@ import android.graphics.*
 import android.graphics.drawable.Drawable
 
 /** Opaque legible paper with stable torn edges. */
-internal class FinanceReceiptPaper(private val paper: Int, private val line: Int, private val density: Float) : Drawable() {
+internal class FinanceReceiptPaper(private val paper: Int, private val density: Float) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
-    private val dash = DashPathEffect(floatArrayOf(3 * density, 4 * density), 0f)
 
     override fun onBoundsChange(bounds: Rect) {
         val tear = 9 * density
@@ -36,10 +35,7 @@ internal class FinanceReceiptPaper(private val paper: Int, private val line: Int
     override fun draw(canvas: Canvas) {
         paint.color = paper; paint.style = Paint.Style.FILL; paint.pathEffect = null
         canvas.drawPath(path, paint)
-        paint.color = line; paint.style = Paint.Style.STROKE; paint.strokeWidth = density
-        paint.pathEffect = dash
-        val footer = bounds.bottom - 105 * density
-        if (footer > bounds.top) canvas.drawLine(bounds.left + 20 * density, footer, bounds.right - 20 * density, footer, paint)
+        // Rules belong to the measured content rows, never to a fixed offset through the action bar.
     }
     override fun setAlpha(alpha: Int) { paint.alpha = alpha; invalidateSelf() }
     override fun setColorFilter(filter: ColorFilter?) { paint.colorFilter = filter; invalidateSelf() }

@@ -354,6 +354,7 @@ fun DataSettingsScreen(
     }
 
     if (showBackupPassword) SettingsPaperPrompt(paper=lifeSurface,origin=backupOrigin,busy=busy,
+        scrimColor=if(!LocalLifeOsColors.current.isDark) androidx.compose.ui.graphics.Color(0xFF84758F) else null,
         onDismissRequest = { showBackupPassword = false; backupPassword = ""; repeatedPassword = "" },
         title = { Text("创建加密备份") },
         text = { Column(Modifier.testTag("backup-password-fields")) {

@@ -81,6 +81,26 @@ class FinanceQueryDateBoundaryTest : FinanceRoomTest() {
         assertTrue(explicit.totals.isEmpty())
     }
 
+    @Test fun oneGrantedTransferLegDoesNotExposeThePeerAccountOrUseItsDate() = runTest {
+        val source=account("授权账户A")
+        val peer=account("私有目标B")
+        val transfer=finance.saveTransfer(sourceAccountId=source.id,targetAccountId=peer.id,amountMinor=700,
+            description="自己的调拨",occurredAt=2_000)
+        val grant=finance.workspace.grant(finance.economics.token(),FinanceReadPurpose.LOCAL_QUERY,
+            "local-conditions",emptySet(),setOf(transfer.outflowEntryId),true,true,true,5_000)
+        val spec=FinanceQuerySpec(mode=FinanceQueryMode.CASH_MOVEMENT,startInclusive=1_000,endExclusive=3_000)
+        val snapshot=finance.snapshot()
+        assertEquals(transfer.id,FinanceLedgerQuery.execute(snapshot,spec.copy(text=peer.name)).rows.single().id)
+        assertTrue(FinancePurposeRead.query(snapshot,spec.copy(text=peer.name),grant,1_000).cash.isEmpty())
+        unknown(transfer.inflowEntryId)
+        val updated=finance.snapshot()
+        assertEquals(transfer.id,FinanceLedgerQuery.execute(updated,spec).undatedRows.single().id)
+        val scoped=FinancePurposeRead.query(updated,spec,grant,1_000)
+        assertEquals(listOf(transfer.outflowEntryId),scoped.cash.map {it.id})
+        assertTrue(scoped.undatedCash.isEmpty())
+        assertEquals(PersonalCostTotal(700,0),scoped.totals.getValue("CNY"))
+    }
+
     @Test fun savedNatureQueriesRoundTripWithAnExplicitVersionAndKeepLegacyViewsReadable() = runTest {
         val a = account(); payment(a.id, 1_000)
         val split = payment(a.id, 2_000, nature = FinanceNature.SPLIT, share = 500)

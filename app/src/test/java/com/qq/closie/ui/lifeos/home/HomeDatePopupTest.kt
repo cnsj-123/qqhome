@@ -1,6 +1,7 @@
 package com.qq.closie.ui.lifeos.home
 
 import androidx.compose.runtime.*
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.qq.closie.ui.lifeos.theme.LifeOsTheme
@@ -30,7 +31,7 @@ class HomeDatePopupTest {
         }
         compose.onNodeWithContentDescription("2026-10-08").performClick()
         compose.runOnIdle { assertEquals(LocalDate.of(2026, 10, 8), selected) }
-        compose.onNodeWithContentDescription("关闭日期选择").assertDoesNotExist()
+        compose.onNodeWithTag("home-date-paper").assertDoesNotExist()
     }
 
     @Test fun cancellingYearMonthWheelDoesNotChangeHomeSelection() {
@@ -43,7 +44,7 @@ class HomeDatePopupTest {
         compose.onNodeWithText("2026年10月").performClick()
         compose.onNodeWithContentDescription("年份").assertExists()
         compose.onNodeWithContentDescription("月份").assertExists()
-        compose.onNodeWithContentDescription("关闭日期选择").performClick()
+        compose.onNodeWithTag("home-date-scrim").performTouchInput { click(Offset(4f, 4f)) }
         compose.runOnIdle { assertTrue(dismissed); assertNull(selected) }
     }
 }

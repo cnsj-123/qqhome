@@ -18,7 +18,8 @@ import com.qq.closie.life.finance.*
 import com.qq.closie.ui.lifeos.theme.*
 
 @Composable
-internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountEntity?, vm: FinanceViewModel, onClose: () -> Unit) {
+internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountEntity?, vm: FinanceViewModel,
+    onSaved: (() -> Unit)? = null, onClose: () -> Unit) {
     if(!state.loaded) {FinanceReceipt("正在打开账户",error=state.error,onClose=onClose){Text("读取账本快照后继续。")} ;return}
     val colors = LocalLifeOsColors.current
     val epoch=rememberSaveable(account?.id) {state.snapshot.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
@@ -37,7 +38,7 @@ internal fun FinanceAccountSheet(state: FinanceUiState, account: FinanceAccountE
     var confirmArchive by remember { mutableStateOf(false) }
     val kind = FinanceAccountKind.valueOf(kindName)
     FinanceAccountPaperForm(if (account == null) "新建账户" else "编辑账户", state.busy, state.error, onClose, actions = {
-        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency,FinanceOpeningChoice.valueOf(openingChoice),anchorText,expectedVersion,epoch,includedInNet), onClose) }, enabled = !state.busy,
+        Button(onClick = { vm.saveAccount(account?.id, FinanceAccountDraft(name, kind, balance, currency,FinanceOpeningChoice.valueOf(openingChoice),anchorText,expectedVersion,epoch,includedInNet), onSaved ?: onClose) }, enabled = !state.busy,
             shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
             Text(if (state.busy) "正在保存……" else "保存账户", style = LedgerText.body.copy(fontSize = 14.sp, lineHeight = 17.sp))
