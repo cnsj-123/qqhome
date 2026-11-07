@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalView
@@ -64,7 +65,7 @@ internal fun HomeDatePopup(
             .testTag("home-date-scrim").clickable(onClickLabel="关闭日期选择",onClick=onDismiss))
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = if(choosingMonth)30.dp else 28.dp, vertical = 36.dp),
             contentAlignment = Alignment.TopStart) {
-            Surface(Modifier.padding(top = minOf(80.dp, maxHeight * .10f))
+            Surface(Modifier.padding(top = minOf(104.dp, maxHeight * .13f))
                 .widthIn(max = if (choosingMonth) 210.dp else 350.dp).fillMaxWidth().testTag("home-date-paper")
                 .heightIn(max = maxHeight * .88f).pointerInput(Unit) {detectTapGestures(onTap={})},
                 shape = RoundedCornerShape(if(choosingMonth)35.dp else 40.dp), color = colors.card.copy(alpha=.97f),
@@ -118,7 +119,7 @@ internal fun HomeDatePopup(
                                                 this.selected = date == selected
                                             }, contentAlignment = Alignment.Center) {
                                             if (day?.photos?.isNotEmpty() == true)
-                                                LifeMediaImage(day.photos.first(), Modifier.size(32.dp).testTag("home-photo-"+date))
+                                                LifeMediaImage(day.photos.first(), Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)).testTag("home-photo-"+date))
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 Text(date.dayOfMonth.toString(),
                                                     Modifier.background(if (date == selected) colors.accentDeep.copy(alpha = .10f) else androidx.compose.ui.graphics.Color.Transparent,
@@ -142,7 +143,7 @@ internal fun HomeDatePopup(
                             verticalAlignment=Alignment.CenterVertically) {
                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                                 val firstPhoto=days.values.firstNotNullOfOrNull {it.photos.firstOrNull()}
-                                if(firstPhoto!=null) LifeMediaImage(firstPhoto,Modifier.size(16.dp))
+                                if(firstPhoto!=null) LifeMediaImage(firstPhoto,Modifier.size(16.dp).clip(RoundedCornerShape(3.dp)))
                                 else Icon(painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_note),null,Modifier.size(14.dp),tint=colors.secondary)
                                 Text("有照片",style=LifeText.caption,color=colors.inkSecondary)
                             }

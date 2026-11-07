@@ -156,7 +156,11 @@ class FinanceReceiptSessionTest {
         control("业务性质 · 分账").performClick();applyField()
         assertTrue(control("业务性质 · 分账").isSelected)
         advanceDebounce();await("applied fields saved together") {
-            session(id)?.let {it.accountId==b.id && it.categoryId==category.id && it.nature==FinanceNature.SPLIT}==true
+            session(id)?.let {it.accountId==b.id && it.categoryId==category.id && it.category==category.name && it.nature==FinanceNature.SPLIT}==true
+        }
+        control("分类").performClick();choose("未分类/自定义");applyField()
+        advanceDebounce();await("clearing a category removes its id and old names") {
+            session(id)?.let {it.categoryId==null && it.category.isBlank() && it.subcategory.isBlank()}==true
         }
         assertTrue(repository.snapshot().entries.isEmpty())
     }

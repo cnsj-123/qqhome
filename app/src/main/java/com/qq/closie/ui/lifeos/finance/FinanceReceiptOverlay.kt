@@ -153,7 +153,7 @@ internal class FinanceReceiptOverlay(private val context:Context,private val sco
                 backAction={if(!editor.back())later()}
                 val frame=editor.view.apply {
                     if(embeddedHost!=null)setOnClickListener {} // Blank paper never reaches the backdrop.
-                    background=FinanceReceiptPaper(if(tokens.isDark) Color.parseColor(tokens.card) else Color.parseColor("#FFFCF8"),density)
+                    background=FinanceReceiptPaper(if(tokens.isDark) Color.parseColor(tokens.card) else Color.parseColor("#FFFCF8"))
                     elevation=dp(8).toFloat()
                 }
                 val paperWidth=(context.resources.displayMetrics.widthPixels*.87f).toInt()

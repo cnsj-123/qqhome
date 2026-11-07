@@ -40,7 +40,7 @@ internal class FinanceNativeReceiptEditor(
     private var rendering=false
     private var imeVisible=false
     private var valid=true
-    private val body=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(30),dp(22),0)}
+    private val body=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(36),dp(22),0)}
     private val panel=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE;setPadding(dp(22),dp(24),dp(22),dp(8))}
     private val pages=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;addView(body);addView(panel)}
     val scroll:ScrollView=object:ScrollView(context) {
@@ -54,7 +54,7 @@ internal class FinanceNativeReceiptEditor(
         override fun dispatchKeyEvent(event:KeyEvent)=route(event)||super.dispatchKeyEvent(event)
         override fun dispatchKeyEventPreIme(event:KeyEvent)=route(event)||super.dispatchKeyEventPreIme(event)
     }.apply {isFocusableInTouchMode=true;isFillViewport=false;addView(pages)}
-    private val reviewActions=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(8),dp(22),dp(14))}
+    private val reviewActions=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(8),dp(22),dp(22))}
     private val fieldActions=LinearLayout(context).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(22),dp(8),dp(22),dp(14));visibility=View.GONE}
     val view:LinearLayout=LinearLayout(context).apply {
         orientation=LinearLayout.VERTICAL
@@ -91,13 +91,14 @@ internal class FinanceNativeReceiptEditor(
     }
     private fun button(label:String,primary:Boolean=false)=Button(context).apply {
         text=label;isAllCaps=false;minWidth=0;minimumWidth=0;minHeight=0;minimumHeight=0
+        stateListAnimator=null
         style(this,if(primary)14 else 12,if(primary)Color.parseColor(tokens.onAccent) else accent)
         background=shapeBackground(if(primary)accent else Color.TRANSPARENT,
             if(primary)null else line,10);setPadding(dp(10),0,dp(10),0)
     }
     private fun fieldRow(label:String,control:View,height:Int=32) {
         val row=LinearLayout(context).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(11),0,0,0)}
-        row.addView(TextView(context).apply {text=label;style(this,13,secondary,false)},LinearLayout.LayoutParams(dp(80),-2))
+        row.addView(TextView(context).apply {text=label;style(this,13,secondary,false);letterSpacing=.20f},LinearLayout.LayoutParams(dp(80),-2))
         row.addView(control,LinearLayout.LayoutParams(0,-1,1f))
         body.addView(row,LinearLayout.LayoutParams(-1,dp(height)))
     }
@@ -158,7 +159,11 @@ internal class FinanceNativeReceiptEditor(
         write:(FinanceEntryDraft,String)->FinanceEntryDraft,attach:Boolean=true):Button {
         val control=button(label).apply {decorateField(this,label)}
         refreshers+={
-            val value=options.firstOrNull {it.first==read(state.applied)}?.second ?: "请选择"
+            val selected=read(state.applied)
+            val customCategory=if(label=="分类" && selected.isBlank()) {
+                listOf(state.applied.category,state.applied.subcategory).filter(String::isNotBlank).joinToString(" · ")
+            } else ""
+            val value=customCategory.ifBlank {options.firstOrNull {it.first==selected}?.second ?: "请选择"}
             control.text=if(label=="收付/转出账户" || label=="转账时的转入账户")value.removeSuffix(" · CNY") else value
             androidx.core.view.ViewCompat.setStateDescription(control,value)
             style(control,12)
@@ -213,27 +218,30 @@ internal class FinanceNativeReceiptEditor(
     init {
         val brand=FrameLayout(context)
         brand.addView(TextView(context).apply {
-            text="Life OS";style(this,40);typeface=ResourcesCompat.getFont(context,R.font.shalimar_regular);gravity=Gravity.CENTER
+            text="Life OS";style(this,40);typeface=ResourcesCompat.getFont(context,R.font.shalimar_regular);letterSpacing=.07f;gravity=Gravity.CENTER
         },FrameLayout.LayoutParams(-1,dp(49),Gravity.TOP))
-        brand.addView(TextView(context).apply {text="记 账 小 票 · RECORD";style(this,10,secondary,false);gravity=Gravity.END},
+        brand.addView(TextView(context).apply {text="记 账 小 票 · RECORD";style(this,10,secondary,false);letterSpacing=.10f;gravity=Gravity.END},
             FrameLayout.LayoutParams(-1,dp(14),Gravity.BOTTOM).apply {rightMargin=dp(58)})
         brand.addView(ImageButton(context).apply {background=null;contentDescription="稍后处理并返回";setImageResource(R.drawable.lifeos_finance_entry_back);imageTintList=android.content.res.ColorStateList.valueOf(secondary);onReceiptClick {if(state.reviewing)later()}},
             FrameLayout.LayoutParams(dp(32),dp(40),Gravity.START or Gravity.TOP))
-        body.addView(brand,LinearLayout.LayoutParams(-1,dp(64)))
+        body.addView(brand,LinearLayout.LayoutParams(-1,dp(58)))
         val kind=choice("类型",FinanceEditorKind.entries.map {it.name to it.label},{it.kind.name},{d,v->d.copy(kind=FinanceEditorKind.valueOf(v))},false)
         val money=LinearLayout(context).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
         style(prefix,32);prefix.onReceiptClick {kind.performClick()};prefix.isClickable=true;mainControls+=prefix
         amount.apply {
             setText(initial.amount);contentDescription="金额 · "+(currency ?: "待确认币种")
-            background=null;setSingleLine(true);gravity=Gravity.CENTER;setPadding(0,0,0,0);minWidth=dp(48);minimumWidth=0
-            hint="待核对金额";setHintTextColor(secondary)
+            background=null;setSingleLine(true);gravity=Gravity.START or Gravity.CENTER_VERTICAL;setPadding(0,0,0,0);minWidth=dp(48);minimumWidth=0
+            hint=if(initial.amount.isBlank())"待核对金额" else null;setHintTextColor(secondary)
             inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
             style(this,32);imeDone(this)
-            addTextChangedListener(watcher {state.changeApplied {it.copy(amount=text.toString())}})
+            addTextChangedListener(watcher {
+                hint=if(text.isBlank())"待核对金额" else null
+                state.changeApplied {it.copy(amount=text.toString())}
+            })
         }
         mainControls+=amount;money.addView(prefix);money.addView(amount,LinearLayout.LayoutParams(-2,-1))
         body.addView(money,LinearLayout.LayoutParams(-1,dp(44)))
-        body.addView(TextView(context).apply {text=source+" · 待确认";style(this,10,secondary,false);gravity=Gravity.CENTER},LinearLayout.LayoutParams(-1,dp(24)))
+        body.addView(TextView(context).apply {text=source+" · 待确认";style(this,10,secondary,false);letterSpacing=.10f;gravity=Gravity.CENTER},LinearLayout.LayoutParams(-1,dp(20)))
         line()
         val accounts=listOf("" to "请选择真实账户与币种")+snapshot.accounts.filter {it.archivedAt==null && (currency==null || it.currencyCode==currency)}.map {it.id to (it.name+" · "+it.currencyCode)}
         choice("收付/转出账户",accounts,{it.accountId},{d,v->d.copy(accountId=v)})
@@ -241,7 +249,12 @@ internal class FinanceNativeReceiptEditor(
         val targetRow=target.parent as View
         refreshers+={targetRow.visibility=if(state.applied.kind==FinanceEditorKind.TRANSFER)View.VISIBLE else View.GONE}
         choice("分类",listOf("" to "未分类/自定义")+snapshot.categories.map {it.id to (FinanceProjection.categoryPath(snapshot.categories,it.id) ?: it.name)},
-            {it.categoryId.orEmpty()},{d,v->d.copy(categoryId=v.ifBlank {null})})
+            {it.categoryId.orEmpty()},{d,v->
+                val category=snapshot.categories.firstOrNull {it.id==v}
+                val parent=snapshot.categories.firstOrNull {it.id==category?.parentId}
+                d.copy(categoryId=category?.id,category=parent?.name ?: category?.name.orEmpty(),
+                    subcategory=if(parent==null)"" else category?.name.orEmpty())
+            })
         date.apply {
             setText(initial.occurredAt);decorateField(this,"实际发生时间 · 年-月-日 时:分");isFocusable=false
             onReceiptClick {
@@ -273,16 +286,16 @@ internal class FinanceNativeReceiptEditor(
         listOf(FinanceNature.PERSONAL,FinanceNature.SPLIT,FinanceNature.REIMBURSABLE,FinanceNature.PROXY_PURCHASE).forEach {n->
             val chip=button(natureOptions.first {it.first==n.name}.second).apply {
                 contentDescription="业务性质 · "+natureOptions.first {it.first==n.name}.second
-                setPadding(dp(9),0,dp(9),0);onReceiptClick {choiceLaunchers.getValue(nature)(n.name)}
+                setPadding(dp(13),0,dp(13),0);onReceiptClick {choiceLaunchers.getValue(nature)(n.name)}
             }
             refreshers+={chip.isSelected=state.applied.relationship.nature==n;chip.background=shapeBackground(if(chip.isSelected)Color.parseColor(tokens.paperTertiary) else Color.TRANSPARENT,if(chip.isSelected)accent else line)}
-            chips.addView(chip,LinearLayout.LayoutParams(-2,dp(24)).apply {marginEnd=dp(7)});mainControls+=chip
+            chips.addView(chip,LinearLayout.LayoutParams(-2,dp(24)).apply {if(n!=FinanceNature.PROXY_PURCHASE)marginEnd=dp(8)});mainControls+=chip
         }
-        body.addView(chips,LinearLayout.LayoutParams(-1,dp(34)))
+        body.addView(chips,LinearLayout.LayoutParams(-1,dp(61)))
         val extras=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE}
         val extraStart=body.childCount
-        textEditor("自定义主分类（选填）",{it.category},{d,v->d.copy(category=v)})
-        textEditor("自定义子分类（选填）",{it.subcategory},{d,v->d.copy(subcategory=v)})
+        textEditor("自定义主分类（选填）",{it.category},{d,v->d.copy(categoryId=null,category=v)})
+        textEditor("自定义子分类（选填）",{it.subcategory},{d,v->d.copy(categoryId=null,subcategory=v)})
         textEditor("标签 · 逗号分隔",{it.tags},{d,v->d.copy(tags=v)})
         choice("业务性质",natureOptions,{it.relationship.nature.name},{d,v->d.copy(relationship=d.relationship.copy(nature=FinanceNature.valueOf(v)))})
         choice("资金角色",FinanceFlowRole.entries.map {it.name to it.label},{it.relationship.role.name},{d,v->d.copy(relationship=d.relationship.copy(role=FinanceFlowRole.valueOf(v)))})
@@ -300,7 +313,7 @@ internal class FinanceNativeReceiptEditor(
         reviewActions.addView(button("稍后处理 · 进入待确认").apply {
             background=null;mainControls+=this;onReceiptClick {if(state.reviewing)later()}
         },LinearLayout.LayoutParams(-1,dp(30)))
-        reviewActions.addView(TextView(context).apply {text="THANK YOU · 收好自己的日子";style(this,9,secondary,false);gravity=Gravity.CENTER})
+        reviewActions.addView(TextView(context).apply {text="THANK YOU · 收好自己的日子";style(this,9,secondary,false);letterSpacing=2f/9f;gravity=Gravity.CENTER})
         fieldActions.addView(button("取消").apply {onReceiptClick {cancelField()}},LinearLayout.LayoutParams(0,dp(42),1f).apply {marginEnd=dp(8)})
         fieldActions.addView(button("应用",true).apply {contentDescription="应用字段编辑";onReceiptClick {
             if(state.field!=null && !state.saving && applyField?.invoke()==true && state.apply()) {

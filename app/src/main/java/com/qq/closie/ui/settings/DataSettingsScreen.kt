@@ -364,6 +364,8 @@ fun DataSettingsScreen(
             SettingsPasswordLine(repeatedPassword,{repeatedPassword=it},"再次输入","backup-password-repeat",enabled=!busy,last=true)
         } },
         confirmButton = {_,canConfirm->TextButton(enabled = canConfirm && backupPassword.length >= 12 && backupPassword == repeatedPassword,
+            colors = if(lifeSurface) ButtonDefaults.textButtonColors(
+                disabledContentColor=LocalLifeOsColors.current.onAccent.copy(alpha=.76f)) else ButtonDefaults.textButtonColors(),
             onClick = { showBackupPassword = false; exportLauncher.launch("LifeOS-backup-${LocalDate.now()}.lifeos") }) { Text("创建并验证") } },
         dismissButton = { close->TextButton(close) { Text("取消") } })
     if (confirmCsv) AlertDialog(onDismissRequest = { confirmCsv = false }, title = { Text("导出明文 CSV？") },

@@ -126,6 +126,8 @@ internal fun FinanceQuerySheet(
     val currentPreview=previewData?.takeIf {it.snapshot===snapshot && it.spec==previewSpec && it.dateBasis==previewBasis}?.result
     val preview=currentPreview?.getOrNull()
     val previewError=currentPreview?.exceptionOrNull()?.message
+    val screenHeight=LocalConfiguration.current.screenHeightDp
+    val fullHeightLayout=screenHeight>=800
     // Keep the draft and scroll position above both surfaces. Only one window owns focus.
     val filterScroll=rememberScrollState()
     if(!saveOpen) ModalBottomSheet(
@@ -137,9 +139,10 @@ internal fun FinanceQuerySheet(
         shape = ManualReceiptShape,
         dragHandle = null
     ) {
-        Column(Modifier.fillMaxWidth().testTag("finance-query-sheet").heightIn(max = (LocalConfiguration.current.screenHeightDp * .73f).dp)
+        Column(Modifier.fillMaxWidth().testTag("finance-query-sheet").heightIn(max = (screenHeight * .72f).dp)
             .padding(horizontal = 32.dp).imePadding()) {
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(top = if(fullHeightLayout)38.dp else 12.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClose, Modifier.width(40.dp).offset(x = (-8).dp)) {
                     Icon(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_finance_entry_back),
                         "取消查账条件", Modifier.size(24.dp))
@@ -150,7 +153,7 @@ internal fun FinanceQuerySheet(
                 }, enabled = state.loaded && validSession) { Text("存为视图", style = LedgerText.caption) }
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(filterScroll),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth().height(40.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text("关键词",style=LedgerText.caption,color=colors.inkSecondary)
                     androidx.compose.foundation.text.BasicTextField(draft.query,{draft=draft.copy(query=it.take(FinanceFilterState.MAX_QUERY));error=null},
@@ -242,7 +245,8 @@ internal fun FinanceQuerySheet(
             previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
             Button({
                 runCatching { prepared() }.onSuccess { onApply(it, useCalendar) }.onFailure { error = it.message ?: "请检查查询条件" }
-            }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp).height(42.dp), enabled = state.loaded && validSession,shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+            }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = if(fullHeightLayout)44.dp else 20.dp).height(42.dp),
+                enabled = state.loaded && validSession,shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                 Text("查看结果",style=LedgerText.body)
             }
         }

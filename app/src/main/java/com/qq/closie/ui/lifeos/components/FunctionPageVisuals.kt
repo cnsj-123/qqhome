@@ -57,11 +57,11 @@ internal fun LifePaperBackdrop(effects: FunctionPageEffects, modifier: Modifier 
             if (home || drawer) {
                 androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_top), null,
                     Modifier.align(androidx.compose.ui.Alignment.TopEnd)
-                        .offset(x=if(drawer)(-46).dp else 28.dp,y=if(drawer)(-33).dp else (-26).dp).size(190.dp),
-                    alpha = if(drawer).08f else .10f, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
+                        .offset(x=if(drawer)10.dp else 28.dp,y=if(drawer)(-33).dp else (-26).dp).size(190.dp),
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
                 if(home) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.qq.closie.R.drawable.lifeos_leaf_bottom), null,
                     Modifier.align(androidx.compose.ui.Alignment.BottomStart).offset(x = (-70).dp, y = 28.dp).size(190.dp),
-                    alpha = .10f, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.muted))
             }
         }
     }
