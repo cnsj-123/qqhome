@@ -1,6 +1,7 @@
 package com.qq.closie.ui.lifeos.finance
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -36,7 +37,7 @@ private data class QueryPreviewLoad(val snapshot:FinanceSnapshot,val spec:Financ
     val result:Result<FinanceQueryPreview>)
 
 /** A disposable filter draft over the module's existing query state. Apply publishes it once. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun FinanceQuerySheet(
     state: FinanceUiState,
@@ -128,17 +129,52 @@ internal fun FinanceQuerySheet(
     val previewError=currentPreview?.exceptionOrNull()?.message
     val screenHeight=LocalConfiguration.current.screenHeightDp
     val fullHeightLayout=screenHeight>=800
-    // Keep the draft and scroll position above both surfaces. Only one window owns focus.
+    // Keep filter and saved-view editing inside the same measured sheet and focus owner.
     val filterScroll=rememberScrollState()
-    if(!saveOpen) ModalBottomSheet(
-        onDismissRequest = onClose,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ModalBottomSheet(
+        onDismissRequest = {if(!state.busy) onClose()},
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+            confirmValueChange = {!state.busy || it!=SheetValue.Hidden}),
         containerColor = colors.paper,
         // Figma 1929:20344 uses the same violet overlay sample as the formal receipt.
         scrimColor = if(colors.isDark) BottomSheetDefaults.ScrimColor else Color(0xFF84758F).copy(alpha=.16f),
         shape = ManualReceiptShape,
         dragHandle = null
     ) {
+        if(saveOpen) {
+            BackHandler {if(!state.busy) saveOpen=false}
+            Column(Modifier.fillMaxWidth().testTag("finance-query-save-dialog").heightIn(max=(screenHeight*.72f).dp)
+                .imePadding().padding(horizontal=32.dp).padding(top=30.dp,bottom=24.dp)) {
+                Text("存为查账视图",style=LedgerText.title,color=colors.ink)
+                Column(Modifier.weight(1f,fill=false).verticalScroll(rememberScrollState()).padding(top=14.dp),
+                    verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(name,{name=it.take(80)},Modifier.fillMaxWidth().testTag("finance-query-view-name"),
+                        label={Text("视图名称")},singleLine=true,enabled=!state.busy)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        FinanceQueryMode.entries.forEach {mode->
+                            LedgerFilterChip(savedMode==mode,{savedMode=mode},
+                                modifier=Modifier.testTag("finance-query-save-mode-"+mode.name),enabled=!state.busy) {
+                                Text(if(mode==FinanceQueryMode.CASH_MOVEMENT)"真实资金流水" else "个人成本",style=LedgerText.caption)
+                            }
+                        }
+                    }
+                    Text(if(savedMode==FinanceQueryMode.CASH_MOVEMENT)"按真实收付日期查询" else "按经济日期查询本人承担",style=LifeText.caption)
+                    preview?.let {FinanceQueryPreviewSummary(it,animateCount=false)}
+                    previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
+                    Text("只保存查询条件。新记录会按条件进入结果。",style=LifeText.caption)
+                    (error ?: state.error)?.let {Text(it,color=MaterialTheme.colorScheme.error,style=LifeText.caption)}
+                }
+                Row(Modifier.fillMaxWidth().padding(top=14.dp),horizontalArrangement=Arrangement.End) {
+                    TextButton({saveOpen=false},enabled=!state.busy) {Text("取消")}
+                    Button({
+                        runCatching {prepared().querySpec(savedMode).also(FinanceQuerySpec::validate)}
+                            .onSuccess {onSaveView(name.trim(),it) {saveOpen=false}}
+                            .onFailure {error=it.message}
+                    },enabled=name.isNotBlank() && !state.busy && validSession) {Text("保存视图")}
+                }
+            }
+            return@ModalBottomSheet
+        }
         Column(Modifier.fillMaxWidth().testTag("finance-query-sheet").heightIn(max = (screenHeight * .72f).dp)
             .padding(horizontal = 32.dp).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(top = if(fullHeightLayout)38.dp else 12.dp, bottom = 4.dp),
@@ -305,43 +341,6 @@ internal fun FinanceQuerySheet(
             .entries.sortedByDescending { it.value }.take(6).map { it.key } else emptyList()
         FinanceChoiceSheet(kind.label, selected, options, { select(it) }, { dimension = null }, { select(null) }, common)
     }
-    if (saveOpen) AlertDialog(
-        onDismissRequest = { if (!state.busy) saveOpen = false },
-        modifier = Modifier.testTag("finance-query-save-dialog"),
-        title = { Text("存为查账视图") },
-        text = {
-            Column {
-                OutlinedTextField(name, { name = it.take(80) }, Modifier.testTag("finance-query-view-name"), label = { Text("视图名称") }, singleLine = true, enabled = !state.busy)
-                FinanceQueryMode.entries.forEach { mode ->
-                    LedgerFilterChip(savedMode == mode, { savedMode = mode }, modifier=Modifier.testTag("finance-query-save-mode-"+mode.name), enabled = !state.busy,
-                        label = { Text(if (mode == FinanceQueryMode.CASH_MOVEMENT) "真实资金流水" else "个人成本") })
-                }
-                Text(if(savedMode==FinanceQueryMode.CASH_MOVEMENT) "按真实收付日期查询" else "按经济日期查询本人承担",style=LifeText.caption)
-                // A confirmation dialog has intrinsic sizing: keep its summary free of
-                // AnimatedContent's size/lookahead feedback. The query sheet still rolls digits.
-                preview?.let {FinanceQueryPreviewSummary(it,animateCount=false)}
-                previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
-                Text("只保存查询条件。新记录会按条件进入结果。", style = LifeText.caption)
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = LifeText.caption) }
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = LifeText.caption) }
-            }
-        },
-        confirmButton = { TextButton({
-            runCatching {
-                val filter = prepared()
-                FinanceQuerySpec(
-                    version = if (filter.nature != null) 2 else 1,
-                    mode = savedMode,
-                    startInclusive = filter.range.startInclusive, endExclusive = filter.range.endExclusive,
-                    accountIds = setOfNotNull(filter.accountId), categoryIds = setOfNotNull(filter.categoryId),
-                    tagIds = setOfNotNull(filter.tagId), currencyCode = filter.currencyCode,
-                    minimumMinor = filter.minimumMinor, maximumMinor = filter.maximumMinor, text = filter.query,
-                    nature = filter.nature
-                ).also(FinanceQuerySpec::validate)
-            }.onSuccess { onSaveView(name.trim(), it) { saveOpen = false } }.onFailure { error = it.message }
-        }, enabled = name.isNotBlank() && !state.busy && validSession) { Text("保存视图") } },
-        dismissButton = { TextButton({ saveOpen = false }, enabled = !state.busy) { Text("取消") } }
-    )
 }
 
 @Composable

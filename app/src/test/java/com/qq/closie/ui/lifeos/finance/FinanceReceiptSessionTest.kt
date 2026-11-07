@@ -167,25 +167,29 @@ class FinanceReceiptSessionTest {
 
     @Test fun failedConfirmationRetainsAppliedInputAndCanRetryWithoutDuplicate()=runBlocking {
         val account=repository.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,balanceAnchorAt=0L)
-        val id=attach(FinanceTime.parse("2026-10-12 14:32"))
+        val id=attach()
         control("收付/转出账户").performClick();choose("合成零钱 · CNY");applyField()
         val amount=views().filterIsInstance<EditText>().single {it.contentDescription?.toString()?.startsWith("金额 ·")==true}
-        amount.setText("0");val confirm=control("确认记账");confirm.performClick()
-        await("rejected zero amount retains real draft and restores controls") {session(id)?.amountText=="0" && confirm.isEnabled}
-        assertTrue("The first rejection must be the invalid amount",views().filterIsInstance<TextView>().any {it.text.toString()=="金额必须大于 0"})
-        assertTrue(overlay.isShowing);assertEquals("0",amount.text.toString());assertTrue(repository.snapshot().entries.isEmpty())
-        assertEquals(account.id,session(id)?.accountId)
-        val rejectedRevision=requireNotNull(session(id)).revision
-        amount.setText("23.45");confirm.performClick();confirm.performClick()
+        amount.setText("23.45");val confirm=control("确认记账");confirm.performClick()
+        await("the real confirmation with a missing date must return") {!overlay.isShowing || confirm.isEnabled}
+        assertTrue(overlay.isShowing)
+        assertTrue("The first rejection must be the missing date",
+            views().filterIsInstance<TextView>().any {it.text.toString().startsWith("发生时间请填写为")})
+        assertEquals("23.45",amount.text.toString());assertTrue(repository.snapshot().entries.isEmpty())
+        val rejected=requireNotNull(session(id))
+        assertEquals("23.45",rejected.amountText);assertEquals(account.id,rejected.accountId);assertEquals("",rejected.occurredText)
+        dateField().performClick();updatePicker();applyField()
+        confirm.performClick();confirm.performClick()
         await("retry returns from the real Room command") {!overlay.isShowing || confirm.isEnabled}
         val retried=requireNotNull(session(id))
         val errors=views().filterIsInstance<TextView>().map {it.text.toString()}.filter {it.isNotBlank()}
         assertEquals("Retry must persist the corrected applied amount; revision=${retried.revision}; paper=$errors","23.45",retried.amountText)
-        assertTrue("Retry must advance the persisted revision; paper=$errors",retried.revision>rejectedRevision)
+        assertTrue("Retry must advance the persisted revision; paper=$errors",retried.revision>rejected.revision)
         assertEquals("Retry must commit exactly one entry; review=$retried; paper=$errors",1,repository.snapshot().entries.size)
         assertFalse("A successful retry closes its original paper; review=$retried; paper=$errors",overlay.isShowing)
         assertEquals(FinanceReviewState.COMPLETED,retried.state)
         assertEquals(2345L,repository.snapshot().entries.single().amountMinor)
+        assertEquals(FinanceTime.parse("2026-11-03 10:44"),repository.snapshot().entries.single().occurredAt)
     }
 
     @Test fun screenshotPermissionRevocationInvalidatesRetainedConfirmAndDiscardsPendingDate()=runBlocking {

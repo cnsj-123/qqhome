@@ -202,12 +202,18 @@ class V16VisualEvidenceTest:FinanceRoomTest() {
             assertEquals("验收第一笔咖啡",committed.description)
             val ledgerRow=compose.onNodeWithTag("finance-ledger-row-${committed.id}",useUnmergedTree=true)
             ledgerRow.assertIsDisplayed()
-            val fullHeight=paper.fetchSemanticsNode().boundsInRoot.height
-            capture("finance-print-visible-before")
-            compose.mainClock.advanceTimeBy(496)
+            compose.mainClock.advanceTimeBy(368)
             compose.runOnIdle {}
+            val printedBounds=paper.fetchSemanticsNode().boundsInRoot
+            capture("finance-print-visible-before")
+            compose.mainClock.advanceTimeBy(128)
+            compose.runOnIdle {}
+            val inFlight=paper.fetchSemanticsNode().boundsInRoot
+            val target=ledgerRow.fetchSemanticsNode().boundsInRoot.center
             assertTrue("A real destination must shrink the printed paper; fallback only fades it",
-                paper.fetchSemanticsNode().boundsInRoot.height < fullHeight * .9f)
+                inFlight.height < printedBounds.height * .9f)
+            assertTrue("The flight must approach the new canonical row",
+                (inFlight.center-target).getDistance() < (printedBounds.center-target).getDistance())
             capture("finance-print-visible-flight")
             compose.mainClock.advanceTimeBy(224)
             compose.runOnIdle {}

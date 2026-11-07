@@ -19,7 +19,18 @@ private val QuerySpecSaver=Saver<FinanceQuerySpec,String>(
 @Composable
 internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     val s=state.snapshot
-    val now by produceState(System.currentTimeMillis()) {while(true){value=System.currentTimeMillis();kotlinx.coroutines.delay(1_000)}}
+    val localGrants=remember(s.v16?.purposeGrantRows) {
+        s.v16?.purposeGrantRows.orEmpty().filter {it.purpose==FinanceReadPurpose.LOCAL_QUERY &&
+            it.providerId=="local-conditions" && it.voidedAt==null}
+    }
+    val now by produceState(System.currentTimeMillis(),localGrants) {
+        while(true) {
+            val current=System.currentTimeMillis()
+            value=current
+            if(localGrants.none {it.expiresAt>current}) break
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
     val epoch=rememberSaveable {s.v16?.controlRows?.singleOrNull()?.restoreEpoch ?: 0L}
     var spec by rememberSaveable(stateSaver=QuerySpecSaver) {mutableStateOf(FinanceQuerySpec())}
     var name by rememberSaveable {mutableStateOf("")}
@@ -85,7 +96,7 @@ internal fun FinanceQueryWorkbench(state:FinanceUiState,vm:FinanceViewModel) {
     Text("本地受限查账",style=LifeText.title)
     Text("例如：今年 标签=回家 分类=交通 花多少。完整解释后展示条件；不执行修改、删除、SQL或不完整语句。",style=LifeText.caption)
     OutlinedTextField(localText,{localText=it},label={Text("用固定短句描述查询")},modifier=Modifier.testTag("finance-query-local-input"))
-    val grants=s.v16?.purposeGrantRows.orEmpty().filter {it.purpose==FinanceReadPurpose.LOCAL_QUERY && it.providerId=="local-conditions" && it.voidedAt==null && it.expiresAt>now}
+    val grants=localGrants.filter {it.expiresAt>now}
     FinanceChoice("本次查询授权",grant.orEmpty(),grants.map {it.id to ("授权至 "+FinanceTime.input(it.expiresAt))}){grant=it}
     Text("在预算与隐私页可选择事项并单独授权本地查询；Home、分享和AI授权互不替代。",style=LifeText.caption)
     TextButton({runCatching {FinanceLocalQueryParser.parse(localText,s)}.onSuccess {adopt(it);useLocal=true;error=null}.onFailure {error=it.message}}){Text("解释为可见查询条件")}
