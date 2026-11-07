@@ -35,7 +35,10 @@ class SettingsStorageControlsTest : FinanceRoomTest() {
         val queries=mutableListOf<String>()
         val context:Context=ApplicationProvider.getApplicationContext()
         val gallery=Room.inMemoryDatabaseBuilder(context,LifeDatabase::class.java).allowMainThreadQueries()
-            .setQueryCallback({sql,_->if(sql.trimStart().startsWith("SELECT",ignoreCase=true)) queries+=sql},Executor {it.run()}).build()
+            .setQueryCallback({sql,_->
+                val readsMedia=sql.contains("FROM media_assets",ignoreCase=true) || sql.contains("FROM media_resources",ignoreCase=true)
+                if(sql.trimStart().startsWith("SELECT",ignoreCase=true) && readsMedia) queries+=sql
+            },Executor {it.run()}).build()
         try {
             gallery.withTransaction {
                 repeat(1000) {index->
@@ -55,7 +58,7 @@ class SettingsStorageControlsTest : FinanceRoomTest() {
             assertEquals(1,summary.localOriginals)
             assertEquals(200,summary.missingOriginals)
             assertEquals(1,inspected)
-            assertEquals("Storage summary must not query each asset individually",2,queries.size)
+            assertEquals("Storage must use two media reads, independent of Room's invalidation bookkeeping: $queries",2,queries.size)
         } finally {gallery.close()}
     }
     @Test fun clearingTheActualImageCachePreservesBackupScratchAndOriginals() {

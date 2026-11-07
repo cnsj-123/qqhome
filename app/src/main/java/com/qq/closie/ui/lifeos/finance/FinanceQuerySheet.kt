@@ -126,7 +126,9 @@ internal fun FinanceQuerySheet(
     val currentPreview=previewData?.takeIf {it.snapshot===snapshot && it.spec==previewSpec && it.dateBasis==previewBasis}?.result
     val preview=currentPreview?.getOrNull()
     val previewError=currentPreview?.exceptionOrNull()?.message
-    ModalBottomSheet(
+    // Keep the draft and scroll position above both surfaces. Only one window owns focus.
+    val filterScroll=rememberScrollState()
+    if(!saveOpen) ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colors.paper,
@@ -147,7 +149,7 @@ internal fun FinanceQuerySheet(
                     runCatching { prepared() }.onSuccess { saveOpen = true }.onFailure { error = it.message }
                 }, enabled = state.loaded && validSession) { Text("存为视图", style = LedgerText.caption) }
             }
-            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            Column(Modifier.weight(1f, fill = false).verticalScroll(filterScroll),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth().height(40.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text("关键词",style=LedgerText.caption,color=colors.inkSecondary)
@@ -236,10 +238,8 @@ internal fun FinanceQuerySheet(
                 error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
                 state.error?.let { Text(it, style = LifeText.caption, color = MaterialTheme.colorScheme.error) }
             }
-            if(!saveOpen) {
-                preview?.let {FinanceQueryPreviewSummary(it)}
-                previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
-            }
+            preview?.let {FinanceQueryPreviewSummary(it)}
+            previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
             Button({
                 runCatching { prepared() }.onSuccess { onApply(it, useCalendar) }.onFailure { error = it.message ?: "请检查查询条件" }
             }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp).height(42.dp), enabled = state.loaded && validSession,shape=androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
@@ -313,7 +313,9 @@ internal fun FinanceQuerySheet(
                         label = { Text(if (mode == FinanceQueryMode.CASH_MOVEMENT) "真实资金流水" else "个人成本") })
                 }
                 Text(if(savedMode==FinanceQueryMode.CASH_MOVEMENT) "按真实收付日期查询" else "按经济日期查询本人承担",style=LifeText.caption)
-                preview?.let {FinanceQueryPreviewSummary(it)}
+                // A confirmation dialog has intrinsic sizing: keep its summary free of
+                // AnimatedContent's size/lookahead feedback. The query sheet still rolls digits.
+                preview?.let {FinanceQueryPreviewSummary(it,animateCount=false)}
                 previewError?.let {Text(it,style=LifeText.caption,color=MaterialTheme.colorScheme.error)}
                 Text("只保存查询条件。新记录会按条件进入结果。", style = LifeText.caption)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = LifeText.caption) }

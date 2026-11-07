@@ -60,7 +60,7 @@ class FinanceExternalReceiptVisualTest:FinanceRoomTest() {
         return all(activity.window.decorView)
     }
     private fun button(description:String)=views().filterIsInstance<Button>().single {it.contentDescription==description}
-    private fun date()=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("实际发生时间")}
+    private fun date()=views().filterIsInstance<EditText>().single {it.contentDescription?.toString()?.startsWith("实际发生时间")==true}
     private fun capture(name:String) {
         val decor=activity.window.decorView
         val display=activity.resources.displayMetrics

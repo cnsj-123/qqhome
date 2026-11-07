@@ -89,7 +89,7 @@ class FinanceReceiptSessionTest {
     private val repository get()=container.financeRepository
     private fun control(label:String)=views().filterIsInstance<Button>().single {it.contentDescription==label}
     private fun button(label:String)=views().filterIsInstance<Button>().single {it.text.toString()==label}
-    private fun dateField()=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("实际发生时间")}
+    private fun dateField()=views().filterIsInstance<EditText>().single {it.contentDescription?.toString()?.startsWith("实际发生时间")==true}
     private fun choose(option:String) {
         views().filterIsInstance<Button>().single {it.contentDescription==null && it.text.toString().removePrefix("✓ ")==option}.performClick()
     }
@@ -163,15 +163,24 @@ class FinanceReceiptSessionTest {
 
     @Test fun failedConfirmationRetainsAppliedInputAndCanRetryWithoutDuplicate()=runBlocking {
         val account=repository.saveAccount(name="合成零钱",kind=FinanceAccountKind.WECHAT,balanceAnchorAt=0L)
-        val id=attach()
+        val id=attach(FinanceTime.parse("2026-10-12 14:32"))
         control("收付/转出账户").performClick();choose("合成零钱 · CNY");applyField()
-        val amount=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("金额 ·")}
+        val amount=views().filterIsInstance<EditText>().single {it.contentDescription?.toString()?.startsWith("金额 ·")==true}
         amount.setText("0");val confirm=control("确认记账");confirm.performClick()
         await("rejected zero amount retains real draft and restores controls") {session(id)?.amountText=="0" && confirm.isEnabled}
+        assertTrue("The first rejection must be the invalid amount",views().filterIsInstance<TextView>().any {it.text.toString()=="金额必须大于 0"})
         assertTrue(overlay.isShowing);assertEquals("0",amount.text.toString());assertTrue(repository.snapshot().entries.isEmpty())
         assertEquals(account.id,session(id)?.accountId)
+        val rejectedRevision=requireNotNull(session(id)).revision
         amount.setText("23.45");confirm.performClick();confirm.performClick()
-        await("retry commits one entry") {repository.snapshot().entries.size==1 && !overlay.isShowing}
+        await("retry returns from the real Room command") {!overlay.isShowing || confirm.isEnabled}
+        val retried=requireNotNull(session(id))
+        val errors=views().filterIsInstance<TextView>().map {it.text.toString()}.filter {it.isNotBlank()}
+        assertEquals("Retry must persist the corrected applied amount; revision=${retried.revision}; paper=$errors","23.45",retried.amountText)
+        assertTrue("Retry must advance the persisted revision; paper=$errors",retried.revision>rejectedRevision)
+        assertEquals("Retry must commit exactly one entry; review=$retried; paper=$errors",1,repository.snapshot().entries.size)
+        assertFalse("A successful retry closes its original paper; review=$retried; paper=$errors",overlay.isShowing)
+        assertEquals(FinanceReviewState.COMPLETED,retried.state)
         assertEquals(2345L,repository.snapshot().entries.single().amountMinor)
     }
 
@@ -211,7 +220,7 @@ class FinanceReceiptSessionTest {
         val oldAccount=control("收付/转出账户")
         val oldHandoff=button("应用内接力")
         val oldLater=button("稍后处理 · 进入待确认")
-        val oldAmount=views().filterIsInstance<EditText>().single {it.contentDescription.toString().startsWith("金额 ·")}
+        val oldAmount=views().filterIsInstance<EditText>().single {it.contentDescription?.toString()?.startsWith("金额 ·")==true}
         dateField().performClick();updatePicker()
         val oldApply=control("应用字段编辑")
         overlay.close()

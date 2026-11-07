@@ -34,7 +34,7 @@ class FinanceQueryAcceptanceTest:FinanceRoomTest() {
     private var models:ViewModelStore?=null
     private lateinit var vm:FinanceViewModel
     private val workbench=mutableStateOf(false)
-    @After fun stopReader(){compose.runOnIdle {models?.clear()}}
+    @After fun stopReader(){compose.runOnUiThread {models?.clear()}}
 
     private fun launch() {
         compose.setContent {
@@ -230,7 +230,7 @@ class FinanceQueryAcceptanceTest:FinanceRoomTest() {
         compose.onNodeWithContentDescription("筛选与日期").performClick()
         previewCount(1)
         compose.onNodeWithText("存为视图").performClick()
-        compose.onNodeWithTag("finance-query-save-mode-CASH_MOVEMENT").assertIsSelected()
+        compose.onNode(isSelected() and hasAnyAncestor(hasTestTag("finance-query-save-mode-CASH_MOVEMENT"))).assertIsSelected()
         previewCount(0)
         compose.onNodeWithText("按真实收付日期查询").assertExists()
         compose.onNodeWithText("取消").performClick()

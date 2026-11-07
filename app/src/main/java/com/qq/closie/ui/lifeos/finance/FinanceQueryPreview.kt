@@ -52,14 +52,16 @@ internal fun financeQueryPreview(snapshot:FinanceSnapshot,spec:FinanceQuerySpec,
     }
 
 @Composable
-internal fun FinanceQueryPreviewSummary(result:FinanceQueryPreview,label:String="符合当前条件：",tag:String="finance-query-preview") {
+internal fun FinanceQueryPreviewSummary(result:FinanceQueryPreview,label:String="符合当前条件：",tag:String="finance-query-preview",
+    animateCount:Boolean=true) {
     val colors=LocalLifeOsColors.current
     val single=result.totals.entries.singleOrNull()
     Column(Modifier.testTag(tag)) {
         Row(Modifier.fillMaxWidth().padding(top=12.dp),verticalAlignment=Alignment.CenterVertically) {
             Text(label,style=LedgerText.caption,color=colors.inkSecondary)
-            LedgerOdometer(result.count.toString(),LedgerText.caption,colors.inkSecondary,
+            if(animateCount) LedgerOdometer(result.count.toString(),LedgerText.caption,colors.inkSecondary,
                 modifier=Modifier.testTag("$tag-count"))
+            else Text(result.count.toString(),Modifier.testTag("$tag-count"),style=LedgerText.caption,color=colors.inkSecondary)
             Text(if(result.spec.mode==FinanceQueryMode.CASH_MOVEMENT) " 笔" else " 项",style=LedgerText.caption,color=colors.inkSecondary)
             single?.let {(code,total)->Text(" · "+result.totalLabel(code,total),Modifier.weight(1f),
                 style=LedgerText.caption,color=colors.inkSecondary)}

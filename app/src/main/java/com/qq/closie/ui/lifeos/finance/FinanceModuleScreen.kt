@@ -14,6 +14,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
 import androidx.compose.foundation.lazy.LazyColumn
@@ -54,6 +55,7 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
     onFinanceSettings: (() -> Unit)? = null,
     secondaryActions: @Composable () -> Unit = {}) {
     val colors = LocalLifeOsColors.current
+    val ledgerHost=LocalView.current
     val requestedFilter by vm.filterInput.collectAsState()
     val rowOrigins=remember {mutableMapOf<String,com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin>()}
     val rowCoordinates=remember {mutableMapOf<String,androidx.compose.ui.layout.LayoutCoordinates>()}
@@ -550,8 +552,10 @@ internal fun FinanceModuleScreen(state: FinanceUiState, vm: FinanceViewModel, on
                         if(coordinates!=null && viewport!=null && view==FinanceView.TRANSACTIONS && detailAccount==null && chartLabel==null) {
                             val top=coordinates.localToWindow(Offset.Zero)
                             val bottom=coordinates.localToWindow(Offset(coordinates.size.width.toFloat(),coordinates.size.height.toFloat()))
-                            com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin(androidx.compose.ui.geometry.Rect(top,bottom),0f,orientation)
-                                .takeIf {viewport.contains(it.rect.center)}
+                            val bounds=androidx.compose.ui.geometry.Rect(top,bottom)
+                            if(viewport.contains(bounds.center)) com.qq.closie.ui.lifeos.components.LifeSurfaceOrigin(
+                                bounds.translate(ledgerHost.financeWindowToScreenOffset()),0f,orientation)
+                            else null
                         } else null
                     }
                 ) { recordDestination = FinanceRecordDestination.Closed }
