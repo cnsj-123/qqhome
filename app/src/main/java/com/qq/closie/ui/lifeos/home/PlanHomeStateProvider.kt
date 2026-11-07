@@ -28,13 +28,21 @@ class PlanHomeStateProvider(
         val upcoming=if(date.isBefore(todayDate)) emptyList() else open.filter {plan->
             plan.dueAt?.let { !Instant.ofEpochMilli(it).atZone(zone).toLocalDate().isBefore(date) } ?: true
         }
-        state.copy(futureIntents=upcoming.take(3).map {plan->FutureIntentUi(plan.id,
-            plan.dueAt?.let {Instant.ofEpochMilli(it).atZone(zone).toLocalDate()},plan.title,plan.note)},
-            calendarDays=state.calendarDays.toMutableMap().apply {
-                open.filter {it.dueAt!=null}.groupBy {Instant.ofEpochMilli(it.dueAt!!).atZone(zone).toLocalDate()}
-                    .forEach {(day,rows)->put(day,(get(day)?:CalendarDayUi(day)).let {old->
-                        old.copy(intents=old.intents+rows.map {CalendarIntentUi(it.id,it.title,"计划")})
-                    })
-            }).sourceStatus("计划",read.loading,read.failed)
+        val calendarDays = state.calendarDays.toMutableMap()
+        open.mapNotNull { plan ->
+            plan.dueAt?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() to plan }
+        }.groupBy({ it.first }, { it.second }).forEach { (day, rows) ->
+            val existing = calendarDays[day] ?: CalendarDayUi(day)
+            calendarDays[day] = existing.copy(intents = existing.intents + rows.map {
+                CalendarIntentUi(it.id, it.title, "计划")
+            })
+        }
+        state.copy(
+            futureIntents = upcoming.take(3).map { plan ->
+                val dueDate = plan.dueAt?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+                FutureIntentUi(plan.id, dueDate, plan.title, plan.note)
+            },
+            calendarDays = calendarDays
+        ).sourceStatus("计划", read.loading, read.failed)
     }
 }
